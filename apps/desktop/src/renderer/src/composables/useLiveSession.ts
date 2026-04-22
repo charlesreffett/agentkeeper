@@ -1,10 +1,19 @@
-import { onUnmounted, ref, shallowRef } from 'vue'
+import { onUnmounted, ref, shallowRef, toRaw } from 'vue'
 import type {
   LiveSessionStatus,
   StartSessionParams,
   TranscriptEvent,
 } from '@shared/ipc-contract'
 import { sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
+
+/**
+ * Vue's reactive proxies are NOT structured-cloneable, so anything we send
+ * over Electron IPC must be un-proxied first. toRaw + spread gives a plain
+ * own-property copy good enough for our flat param objects.
+ */
+function plain<T extends object>(obj: T): T {
+  return { ...toRaw(obj) }
+}
 
 export function useLiveSession() {
   const sessionId = ref<string | null>(null)
@@ -32,7 +41,7 @@ export function useLiveSession() {
     status.value = 'starting'
     sdkSessionId.value = null
     try {
-      const id = await window.orchestral.sessions.start(params)
+      const id = await window.orchestral.sessions.start(plain(params))
       sessionId.value = id
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
