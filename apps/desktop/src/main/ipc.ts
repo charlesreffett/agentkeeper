@@ -62,19 +62,41 @@ export function registerIpcHandlers() {
       readSession(projectPath, sessionId),
   )
 
-  // Sessions — live
+  // Sessions — live. Every handler normalizes its error to a plain message
+  // because Electron's IPC structured-clone refuses some Error shapes
+  // (causes, AggregateError, class-prototype'd exceptions from the SDK).
   ipcMain.handle(
     IPC_CHANNELS.sessionStart,
-    (_event, params: StartSessionParams) => startSession(params),
+    async (_event, params: StartSessionParams) => {
+      try {
+        return await startSession(params)
+      } catch (err) {
+        console.error('[ipc] session:start failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionInput,
-    (_event, sessionId: string, text: string) => {
-      sendInput(sessionId, text)
+    async (_event, sessionId: string, text: string) => {
+      try {
+        sendInput(sessionId, text)
+      } catch (err) {
+        console.error('[ipc] session:input failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
     },
   )
-  ipcMain.handle(IPC_CHANNELS.sessionCancel, (_event, sessionId: string) =>
-    cancelSession(sessionId),
+  ipcMain.handle(
+    IPC_CHANNELS.sessionCancel,
+    async (_event, sessionId: string) => {
+      try {
+        await cancelSession(sessionId)
+      } catch (err) {
+        console.error('[ipc] session:cancel failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
   )
 
   // Settings

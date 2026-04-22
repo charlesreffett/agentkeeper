@@ -91,6 +91,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
     setStatus(session, 'completed')
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    console.error(`[agent] session ${session.id} stream error:`, err)
     setStatus(session, 'error', message)
   } finally {
     active.delete(session.id)
@@ -126,6 +127,11 @@ export async function startSession(params: StartSessionParams): Promise<string> 
     childEnv['ANTHROPIC_API_KEY'] = apiKey
   }
 
+  // V2: no permission-prompt UI yet. 'bypassPermissions' skips the prompt
+  // flow entirely (equivalent to `claude --dangerously-skip-permissions`).
+  // canUseTool was removed because a function in options can't cross the
+  // internal serialization boundary — it tripped "an object could not be
+  // cloned" on the first turn. V3 will bring a real permission UI.
   const q = query({
     prompt: input,
     options: {
@@ -133,15 +139,7 @@ export async function startSession(params: StartSessionParams): Promise<string> 
       ...(params.model ? { model: params.model } : {}),
       abortController: controller,
       env: childEnv,
-      // V2: no permission-prompt UI yet. Explicitly allow every tool via
-      // canUseTool so we don't rely on permissionMode='bypassPermissions'
-      // (which gates behind an extra safety flag) or 'default' (which would
-      // hang waiting for a prompt UI we haven't built yet).
-      permissionMode: 'default',
-      canUseTool: async (_toolName, input) => ({
-        behavior: 'allow',
-        updatedInput: input,
-      }),
+      permissionMode: 'bypassPermissions',
       settingSources: ['user', 'project'],
     },
   })
