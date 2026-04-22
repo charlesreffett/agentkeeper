@@ -1,9 +1,17 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import SessionsList from './SessionsList.vue'
 import SessionDetail from './SessionDetail.vue'
-import type { RecentProject, SessionSummary } from '@shared/ipc-contract'
+import NewSessionModal from './NewSessionModal.vue'
+import SettingsModal from './SettingsModal.vue'
+import LiveSessionView from './LiveSessionView.vue'
+import type {
+  AppSettings,
+  RecentProject,
+  SessionSummary,
+  StartSessionParams,
+} from '@shared/ipc-contract'
 
 const props = defineProps<{ project: RecentProject }>()
 const emit = defineEmits<{ close: [] }>()
@@ -11,20 +19,58 @@ const emit = defineEmits<{ close: [] }>()
 const selectedSessionId = ref<string | null>(null)
 const refreshTrigger = ref(0)
 
+const newSessionOpen = ref(false)
+const settingsOpen = ref(false)
+const liveStartParams = ref<StartSessionParams | null>(null)
+
+const settings = ref<AppSettings>({ defaultModel: 'claude-sonnet-4-6' })
+const hasApiKey = ref(false)
+
+async function refreshConfig() {
+  settings.value = await window.orchestral.settings.get()
+  hasApiKey.value = await window.orchestral.secrets.has('anthropicApiKey')
+}
+
 function selectSession(session: SessionSummary) {
   selectedSessionId.value = session.id
 }
 
-function refresh() {
+function refreshList() {
   refreshTrigger.value++
+}
+
+async function onNewSessionClick() {
+  await refreshConfig()
+  if (!hasApiKey.value) {
+    settingsOpen.value = true
+    return
+  }
+  newSessionOpen.value = true
+}
+
+function onStartSession(params: { initialPrompt: string; model: string }) {
+  newSessionOpen.value = false
+  liveStartParams.value = {
+    projectPath: props.project.path,
+    initialPrompt: params.initialPrompt,
+    model: params.model,
+  }
+}
+
+function onLiveClose() {
+  liveStartParams.value = null
+  refreshList()
 }
 
 watch(
   () => props.project.path,
   () => {
     selectedSessionId.value = null
+    liveStartParams.value = null
   },
 )
+
+onMounted(refreshConfig)
 </script>
 
 <template>
@@ -39,10 +85,26 @@ watch(
           {{ project.path }}
         </div>
       </div>
-      <Button variant="ghost" size="sm" @click="refresh">Refresh</Button>
+      <Button size="sm" @click="onNewSessionClick">New session</Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        :aria-label="'Settings'"
+        @click="settingsOpen = true"
+      >
+        Settings
+      </Button>
+      <Button variant="ghost" size="sm" @click="refreshList">Refresh</Button>
     </header>
 
-    <div class="flex-1 flex min-h-0">
+    <div v-if="liveStartParams" class="flex-1 min-h-0">
+      <LiveSessionView
+        :start-params="liveStartParams"
+        @close="onLiveClose"
+      />
+    </div>
+
+    <div v-else class="flex-1 flex min-h-0">
       <aside
         class="w-80 border-r border-border shrink-0 overflow-y-auto bg-card/30"
       >
@@ -60,5 +122,19 @@ watch(
         />
       </main>
     </div>
+
+    <NewSessionModal
+      :open="newSessionOpen"
+      :project-path="project.path"
+      :default-model="settings.defaultModel"
+      @close="newSessionOpen = false"
+      @start="onStartSession"
+    />
+
+    <SettingsModal
+      :open="settingsOpen"
+      @close="settingsOpen = false"
+      @saved="refreshConfig"
+    />
   </div>
 </template>

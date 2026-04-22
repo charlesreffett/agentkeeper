@@ -9,7 +9,7 @@ export interface RecentProject {
   lastOpenedAt: number
 }
 
-// ─── Sessions ───────────────────────────────────────────────────────────────
+// ─── Sessions (historical, JSONL-backed) ────────────────────────────────────
 
 export interface SessionSummary {
   id: string
@@ -67,6 +67,43 @@ export interface SessionTranscript {
   lastActivityAt: number
 }
 
+// ─── Live sessions (Agent SDK–driven) ───────────────────────────────────────
+
+export type LiveSessionStatus =
+  | 'starting'
+  | 'running'
+  | 'idle'
+  | 'completed'
+  | 'cancelled'
+  | 'error'
+
+export interface StartSessionParams {
+  projectPath: string
+  initialPrompt: string
+  model?: string
+}
+
+/** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
+export interface LiveSessionEvent {
+  sessionId: string
+  message: unknown
+}
+
+export interface LiveSessionStatusUpdate {
+  sessionId: string
+  status: LiveSessionStatus
+  sdkSessionId?: string
+  error?: string
+}
+
+// ─── Settings & secrets ─────────────────────────────────────────────────────
+
+export interface AppSettings {
+  defaultModel: string
+}
+
+export type SecretKeyName = 'anthropicApiKey'
+
 // ─── IPC API exposed to renderer as window.orchestral ───────────────────────
 
 export interface OrchestralApi {
@@ -83,6 +120,22 @@ export interface OrchestralApi {
       projectPath: string,
       sessionId: string,
     ) => Promise<SessionTranscript | null>
+    start: (params: StartSessionParams) => Promise<string>
+    sendInput: (sessionId: string, text: string) => Promise<void>
+    cancel: (sessionId: string) => Promise<void>
+    onEvent: (callback: (event: LiveSessionEvent) => void) => () => void
+    onStatus: (
+      callback: (update: LiveSessionStatusUpdate) => void,
+    ) => () => void
+  }
+  settings: {
+    get: () => Promise<AppSettings>
+    set: (partial: Partial<AppSettings>) => Promise<AppSettings>
+  }
+  secrets: {
+    has: (key: SecretKeyName) => Promise<boolean>
+    set: (key: SecretKeyName, value: string) => Promise<void>
+    delete: (key: SecretKeyName) => Promise<void>
   }
 }
 
@@ -92,4 +145,14 @@ export const IPC_CHANNELS = {
   projectRecentRemove: 'project:recent:remove',
   sessionsList: 'sessions:list',
   sessionsRead: 'sessions:read',
+  sessionStart: 'session:start',
+  sessionInput: 'session:input',
+  sessionCancel: 'session:cancel',
+  sessionEvent: 'session:event',
+  sessionStatus: 'session:status',
+  settingsGet: 'settings:get',
+  settingsSet: 'settings:set',
+  secretsHas: 'secrets:has',
+  secretsSet: 'secrets:set',
+  secretsDelete: 'secrets:delete',
 } as const
