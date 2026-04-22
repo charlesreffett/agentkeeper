@@ -29,15 +29,35 @@ interface ActiveSession {
 
 const active = new Map<string, ActiveSession>()
 
+/**
+ * Deep-plain an object so Electron's structured-clone IPC can serialize it.
+ * The Agent SDK returns objects from @anthropic-ai/sdk which can have class
+ * prototypes, getters, or non-enumerable properties that structured-clone
+ * refuses ("an object could not be cloned"). JSON round-trip produces a
+ * plain-object tree with only structured-clone-safe values.
+ */
+function toPlain<T>(value: T): T {
+  try {
+    return JSON.parse(JSON.stringify(value)) as T
+  } catch (err) {
+    return {
+      _unclonable: true,
+      _reason: err instanceof Error ? err.message : String(err),
+    } as unknown as T
+  }
+}
+
 function broadcastEvent(event: LiveSessionEvent): void {
+  const payload = toPlain(event)
   for (const wc of webContents.getAllWebContents()) {
-    if (!wc.isDestroyed()) wc.send('session:event', event)
+    if (!wc.isDestroyed()) wc.send('session:event', payload)
   }
 }
 
 function broadcastStatus(update: LiveSessionStatusUpdate): void {
+  const payload = toPlain(update)
   for (const wc of webContents.getAllWebContents()) {
-    if (!wc.isDestroyed()) wc.send('session:status', update)
+    if (!wc.isDestroyed()) wc.send('session:status', payload)
   }
 }
 
