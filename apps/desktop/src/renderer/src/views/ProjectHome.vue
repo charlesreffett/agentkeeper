@@ -5,12 +5,14 @@ import SessionsList from './SessionsList.vue'
 import SessionDetail from './SessionDetail.vue'
 import NewSessionModal from './NewSessionModal.vue'
 import SettingsModal from './SettingsModal.vue'
+import RolesModal from './RolesModal.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
 import type {
   AppSettings,
   RecentProject,
+  Role,
   SessionSummary,
 } from '@shared/ipc-contract'
 
@@ -24,6 +26,7 @@ const refreshTrigger = ref(0)
 
 const newSessionOpen = ref(false)
 const settingsOpen = ref(false)
+const rolesOpen = ref(false)
 
 const settings = ref<AppSettings>({ defaultModel: 'claude-sonnet-4-6' })
 
@@ -57,6 +60,7 @@ async function onStartSession(params: {
   model: string
   useWorktree: boolean
   branch: string
+  role: Role | null
 }) {
   newSessionOpen.value = false
   selectedHistoricalId.value = null
@@ -83,6 +87,13 @@ async function onStartSession(params: {
     projectPath: props.project.path,
     ...(worktreePath ? { worktreePath } : {}),
     ...(branch ? { branch } : {}),
+    ...(params.role?.name ? { roleName: params.role.name } : {}),
+    ...(params.role?.systemPrompt
+      ? { systemPromptAppend: params.role.systemPrompt }
+      : {}),
+    ...(params.role?.allowedTools && params.role.allowedTools.length
+      ? { allowedTools: params.role.allowedTools }
+      : {}),
     initialPrompt: params.initialPrompt,
     model: params.model,
   })
@@ -112,6 +123,7 @@ onMounted(refreshConfig)
         </div>
       </div>
       <Button size="sm" @click="onNewSessionClick">New session</Button>
+      <Button variant="ghost" size="sm" @click="rolesOpen = true">Roles</Button>
       <Button variant="ghost" size="sm" @click="settingsOpen = true">
         Settings
       </Button>
@@ -176,6 +188,12 @@ onMounted(refreshConfig)
       :open="settingsOpen"
       @close="settingsOpen = false"
       @saved="refreshConfig"
+    />
+
+    <RolesModal
+      :open="rolesOpen"
+      :project-path="project.path"
+      @close="rolesOpen = false"
     />
   </div>
 </template>

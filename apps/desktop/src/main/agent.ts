@@ -134,17 +134,26 @@ export async function startSession(params: StartSessionParams): Promise<string> 
   // cloned" on the first turn. V3 will bring a real permission UI.
   const cwd = params.worktreePath ?? params.projectPath
 
-  const q = query({
-    prompt: input,
-    options: {
-      cwd,
-      ...(params.model ? { model: params.model } : {}),
-      abortController: controller,
-      env: childEnv,
-      permissionMode: 'bypassPermissions',
-      settingSources: ['user', 'project'],
-    },
-  })
+  const options: Parameters<typeof query>[0]['options'] = {
+    cwd,
+    ...(params.model ? { model: params.model } : {}),
+    abortController: controller,
+    env: childEnv,
+    permissionMode: 'bypassPermissions',
+    settingSources: ['user', 'project'],
+  }
+  if (params.systemPromptAppend) {
+    options!.systemPrompt = {
+      type: 'preset',
+      preset: 'claude_code',
+      append: params.systemPromptAppend,
+    }
+  }
+  if (params.allowedTools && params.allowedTools.length) {
+    options!.allowedTools = params.allowedTools
+  }
+
+  const q = query({ prompt: input, options })
 
   const session: ActiveSession = {
     id,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
+import type { Role } from '@shared/ipc-contract'
 
 const props = defineProps<{
   open: boolean
@@ -16,6 +17,7 @@ const emit = defineEmits<{
       model: string
       useWorktree: boolean
       branch: string
+      role: Role | null
     },
   ]
 }>()
@@ -29,13 +31,29 @@ const useWorktree = ref(true)
 const branch = ref('')
 const branchTouched = ref(false)
 
+const roles = ref<Role[]>([])
+const selectedRoleId = ref<string>('') // '' = freeform
+
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-7', label: 'Opus 4.7' },
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 ] as const
 
-// Auto-suggest a branch from the prompt's first words.
+const selectedRole = computed<Role | null>(() =>
+  selectedRoleId.value
+    ? (roles.value.find((r) => r.id === selectedRoleId.value) ?? null)
+    : null,
+)
+
+async function loadRoles() {
+  try {
+    roles.value = await window.orchestral.roles.list(props.projectPath)
+  } catch {
+    roles.value = []
+  }
+}
+
 const suggestedBranch = computed(() => {
   const raw = prompt.value.trim().split(/\s+/).slice(0, 6).join(' ')
   return raw
@@ -49,6 +67,11 @@ const suggestedBranch = computed(() => {
 
 watch(suggestedBranch, (v) => {
   if (!branchTouched.value) branch.value = v
+})
+
+// When a role with a default model is picked, apply that model.
+watch(selectedRole, (r) => {
+  if (r?.model) model.value = r.model
 })
 
 function onBranchInput(event: Event) {
@@ -69,6 +92,7 @@ function start() {
     model: model.value,
     useWorktree: useWorktree.value,
     branch: branch.value.trim(),
+    role: selectedRole.value,
   })
 }
 
@@ -88,6 +112,8 @@ watch(
       branchTouched.value = false
       model.value = props.defaultModel
       useWorktree.value = true
+      selectedRoleId.value = ''
+      await loadRoles()
       await nextTick()
       dialog.value?.showModal()
       textarea.value?.focus()
@@ -99,7 +125,8 @@ watch(
 
 onMounted(() => {
   if (props.open) {
-    void nextTick(() => {
+    void nextTick(async () => {
+      await loadRoles()
       dialog.value?.showModal()
       textarea.value?.focus()
     })
@@ -147,7 +174,7 @@ onMounted(() => {
         </label>
         <p class="text-xs text-muted-foreground leading-relaxed pl-6">
           Isolates this session to its own branch so parallel sessions don't
-          step on each other. Leave off to run in the project root directly.
+          step on each other.
         </p>
         <div v-if="useWorktree" class="space-y-1.5 pl-6">
           <label class="text-xs text-muted-foreground">Branch name</label>
@@ -158,23 +185,37 @@ onMounted(() => {
             class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
             @input="onBranchInput"
           />
-          <p v-if="!branchTouched && branch" class="text-[11px] text-muted-foreground">
-            Auto-suggested from prompt — edit to customize.
-          </p>
         </div>
       </div>
 
-      <div class="space-y-2">
-        <label class="text-sm font-medium">Model</label>
-        <select
-          v-model="model"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-        >
-          <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
-            {{ m.label }}
-          </option>
-        </select>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium">Role</label>
+          <select
+            v-model="selectedRoleId"
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          >
+            <option value="">Freeform (no role)</option>
+            <option v-for="r in roles" :key="r.id" :value="r.id">
+              {{ r.name }} ({{ r.scope }})
+            </option>
+          </select>
+        </div>
+        <div class="space-y-1.5">
+          <label class="text-sm font-medium">Model</label>
+          <select
+            v-model="model"
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          >
+            <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
+              {{ m.label }}
+            </option>
+          </select>
+        </div>
       </div>
+      <p v-if="selectedRole?.description" class="text-xs text-muted-foreground pl-1">
+        {{ selectedRole.description }}
+      </p>
 
       <footer class="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" size="sm" @click="emit('close')">Cancel</Button>

@@ -13,6 +13,8 @@ import { cancelSession, sendInput, startSession } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
+import { deleteRole, listRoles, saveRole } from './roles'
+import type { RoleDraft, RoleScope } from '../shared/ipc-contract'
 
 async function pickProject(): Promise<RecentProject | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -137,6 +139,43 @@ export function registerIpcHandlers() {
         return await removeWorktree(projectPath, worktreePath)
       } catch (err) {
         console.error('[ipc] worktrees:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  // Roles
+  ipcMain.handle(IPC_CHANNELS.rolesList, async (_event, projectPath: string) => {
+    try {
+      return await listRoles(projectPath)
+    } catch (err) {
+      console.error('[ipc] roles:list failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+  ipcMain.handle(
+    IPC_CHANNELS.rolesSave,
+    async (
+      _event,
+      scope: RoleScope,
+      projectPath: string,
+      role: RoleDraft,
+    ) => {
+      try {
+        return await saveRole(scope, projectPath, role)
+      } catch (err) {
+        console.error('[ipc] roles:save failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.rolesRemove,
+    async (_event, scope: RoleScope, projectPath: string, id: string) => {
+      try {
+        return await deleteRole(scope, projectPath, id)
+      } catch (err) {
+        console.error('[ipc] roles:remove failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

@@ -5,6 +5,8 @@ import {
   type LiveSessionEvent,
   type LiveSessionStatusUpdate,
   type OrchestralApi,
+  type RoleDraft,
+  type RoleScope,
   type SecretKeyName,
   type StartSessionParams,
 } from '../shared/ipc-contract'
@@ -51,6 +53,14 @@ const api: OrchestralApi = {
       ipcRenderer.invoke(IPC_CHANNELS.worktreesCreate, projectPath, branchRequest),
     remove: (projectPath: string, worktreePath: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.worktreesRemove, projectPath, worktreePath),
+  },
+  roles: {
+    list: (projectPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.rolesList, projectPath),
+    save: (scope: RoleScope, projectPath: string, role: RoleDraft) =>
+      ipcRenderer.invoke(IPC_CHANNELS.rolesSave, scope, projectPath, role),
+    remove: (scope: RoleScope, projectPath: string, id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.rolesRemove, scope, projectPath, id),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),

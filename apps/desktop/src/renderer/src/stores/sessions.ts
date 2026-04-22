@@ -16,6 +16,8 @@ export interface LiveSession {
   worktreePath: string | null
   /** Branch name if session runs in a worktree, else null. */
   branch: string | null
+  /** Role name applied to this session, if any. */
+  roleName: string | null
   initialPrompt: string
   model: string | null
   status: LiveSessionStatus
@@ -92,10 +94,14 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   async function start(
-    params: StartSessionParams & { branch?: string | null },
+    params: StartSessionParams & {
+      branch?: string | null
+      roleName?: string | null
+    },
   ): Promise<string> {
     const plain = plainParams(params) as StartSessionParams & {
       branch?: string | null
+      roleName?: string | null
     }
     const localId = plain.localId ?? cryptoRandomId()
 
@@ -105,6 +111,7 @@ export const useSessionStore = defineStore('sessions', () => {
       projectPath: plain.projectPath,
       worktreePath: plain.worktreePath ?? null,
       branch: plain.branch ?? null,
+      roleName: plain.roleName ?? null,
       initialPrompt: plain.initialPrompt,
       model: plain.model ?? null,
       status: 'starting',
@@ -120,8 +127,8 @@ export const useSessionStore = defineStore('sessions', () => {
     flushBuffer(localId)
 
     try {
-      // `branch` is a renderer-only hint; strip before crossing IPC.
-      const { branch: _branch, ...startArgs } = plain
+      // `branch` and `roleName` are renderer-only hints; strip before crossing IPC.
+      const { branch: _branch, roleName: _roleName, ...startArgs } = plain
       await window.orchestral.sessions.start({ ...startArgs, localId })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

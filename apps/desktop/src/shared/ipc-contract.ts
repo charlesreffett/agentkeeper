@@ -93,6 +93,9 @@ export interface StartSessionParams {
   worktreePath?: string
   initialPrompt: string
   model?: string
+  /** Role-derived options — appended to the default Claude Code preset. */
+  systemPromptAppend?: string
+  allowedTools?: string[]
 }
 
 // ─── Worktrees ──────────────────────────────────────────────────────────────
@@ -102,6 +105,24 @@ export interface WorktreeInfo {
   branch: string
   head: string
 }
+
+// ─── Roles ──────────────────────────────────────────────────────────────────
+
+export type RoleScope = 'project' | 'global'
+
+export interface Role {
+  id: string
+  scope: RoleScope
+  path: string
+  name: string
+  description: string
+  model: string | null
+  allowedTools: string[] | null
+  allowedPeers: string[] | null
+  systemPrompt: string
+}
+
+export type RoleDraft = Omit<Role, 'scope' | 'path'>
 
 /** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
 export interface LiveSessionEvent {
@@ -153,6 +174,15 @@ export interface OrchestralApi {
     create: (projectPath: string, branchRequest: string) => Promise<WorktreeInfo>
     remove: (projectPath: string, worktreePath: string) => Promise<void>
   }
+  roles: {
+    list: (projectPath: string) => Promise<Role[]>
+    save: (
+      scope: RoleScope,
+      projectPath: string,
+      role: RoleDraft,
+    ) => Promise<Role>
+    remove: (scope: RoleScope, projectPath: string, id: string) => Promise<void>
+  }
   settings: {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
@@ -178,6 +208,9 @@ export const IPC_CHANNELS = {
   worktreesList: 'worktrees:list',
   worktreesCreate: 'worktrees:create',
   worktreesRemove: 'worktrees:remove',
+  rolesList: 'roles:list',
+  rolesSave: 'roles:save',
+  rolesRemove: 'roles:remove',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   secretsHas: 'secrets:has',

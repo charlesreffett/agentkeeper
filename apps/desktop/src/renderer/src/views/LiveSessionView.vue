@@ -116,6 +116,12 @@ const statusDotClass = computed(() => {
           · ⎇ {{ session.branch }}
         </span>
         <span
+          v-if="session.roleName"
+          class="text-xs text-muted-foreground"
+        >
+          · {{ session.roleName }}
+        </span>
+        <span
           v-if="session.sdkSessionId"
           class="text-xs text-muted-foreground font-mono ml-auto"
         >
