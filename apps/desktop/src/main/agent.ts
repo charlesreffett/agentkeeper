@@ -114,7 +114,7 @@ export async function startSession(params: StartSessionParams): Promise<string> 
   // We prefer (a) if set, otherwise let the SDK fall through to (b).
   const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
 
-  const id = randomUUID()
+  const id = params.localId ?? randomUUID()
   const controller = new AbortController()
   const input = new AsyncQueue<SDKUserMessage>()
   input.push(messageFromText(params.initialPrompt))

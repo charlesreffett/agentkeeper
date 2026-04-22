@@ -6,33 +6,39 @@ import SessionDetail from './SessionDetail.vue'
 import NewSessionModal from './NewSessionModal.vue'
 import SettingsModal from './SettingsModal.vue'
 import LiveSessionView from './LiveSessionView.vue'
+import { useSessionStore } from '@/stores/sessions'
+import type { LiveSession } from '@/stores/sessions'
 import type {
   AppSettings,
   RecentProject,
   SessionSummary,
-  StartSessionParams,
 } from '@shared/ipc-contract'
 
 const props = defineProps<{ project: RecentProject }>()
 const emit = defineEmits<{ close: [] }>()
 
-const selectedSessionId = ref<string | null>(null)
+const sessionStore = useSessionStore()
+
+const selectedHistoricalId = ref<string | null>(null)
 const refreshTrigger = ref(0)
 
 const newSessionOpen = ref(false)
 const settingsOpen = ref(false)
-const liveStartParams = ref<StartSessionParams | null>(null)
 
 const settings = ref<AppSettings>({ defaultModel: 'claude-sonnet-4-6' })
-const hasApiKey = ref(false)
 
 async function refreshConfig() {
   settings.value = await window.orchestral.settings.get()
-  hasApiKey.value = await window.orchestral.secrets.has('anthropicApiKey')
 }
 
-function selectSession(session: SessionSummary) {
-  selectedSessionId.value = session.id
+function selectHistorical(session: SessionSummary) {
+  selectedHistoricalId.value = session.id
+  sessionStore.clearFocus()
+}
+
+function selectLive(session: LiveSession) {
+  selectedHistoricalId.value = null
+  sessionStore.focus(session.localId)
 }
 
 function refreshList() {
@@ -44,25 +50,24 @@ async function onNewSessionClick() {
   newSessionOpen.value = true
 }
 
-function onStartSession(params: { initialPrompt: string; model: string }) {
+async function onStartSession(params: {
+  initialPrompt: string
+  model: string
+}) {
   newSessionOpen.value = false
-  liveStartParams.value = {
+  selectedHistoricalId.value = null
+  await sessionStore.start({
     projectPath: props.project.path,
     initialPrompt: params.initialPrompt,
     model: params.model,
-  }
-}
-
-function onLiveClose() {
-  liveStartParams.value = null
-  refreshList()
+  })
 }
 
 watch(
   () => props.project.path,
   () => {
-    selectedSessionId.value = null
-    liveStartParams.value = null
+    selectedHistoricalId.value = null
+    sessionStore.clearFocus()
   },
 )
 
@@ -82,40 +87,42 @@ onMounted(refreshConfig)
         </div>
       </div>
       <Button size="sm" @click="onNewSessionClick">New session</Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        :aria-label="'Settings'"
-        @click="settingsOpen = true"
-      >
+      <Button variant="ghost" size="sm" @click="settingsOpen = true">
         Settings
       </Button>
       <Button variant="ghost" size="sm" @click="refreshList">Refresh</Button>
     </header>
 
-    <div v-if="liveStartParams" class="flex-1 min-h-0">
-      <LiveSessionView
-        :start-params="liveStartParams"
-        @close="onLiveClose"
-      />
-    </div>
-
-    <div v-else class="flex-1 flex min-h-0">
+    <div class="flex-1 flex min-h-0">
       <aside
-        class="w-80 border-r border-border shrink-0 overflow-y-auto bg-card/30"
+        class="w-80 border-r border-border shrink-0 overflow-hidden flex flex-col bg-card/30"
       >
         <SessionsList
           :project-path="project.path"
-          :selected-id="selectedSessionId"
+          :selected-historical-id="selectedHistoricalId"
           :refresh-key="refreshTrigger"
-          @select="selectSession"
+          @select-historical="selectHistorical"
+          @select-live="selectLive"
         />
       </aside>
-      <main class="flex-1 min-w-0 overflow-y-auto">
-        <SessionDetail
-          :project-path="project.path"
-          :session-id="selectedSessionId"
+      <main class="flex-1 min-w-0 overflow-hidden">
+        <LiveSessionView
+          v-if="sessionStore.currentLiveId"
+          :live-id="sessionStore.currentLiveId"
         />
+        <SessionDetail
+          v-else-if="selectedHistoricalId"
+          :project-path="project.path"
+          :session-id="selectedHistoricalId"
+        />
+        <div
+          v-else
+          class="h-full flex items-center justify-center text-muted-foreground"
+        >
+          <div class="text-center space-y-1">
+            <p class="text-sm">Select a session or start a new one.</p>
+          </div>
+        </div>
       </main>
     </div>
 

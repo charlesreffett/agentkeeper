@@ -1,21 +1,16 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
 import MessageInput from '@/components/MessageInput.vue'
-import { useLiveSession } from '@/composables/useLiveSession'
-import type { StartSessionParams } from '@shared/ipc-contract'
+import { useSessionStore } from '@/stores/sessions'
 import { shortModel } from '@/lib/format'
 
-const props = defineProps<{ startParams: StartSessionParams }>()
-const emit = defineEmits<{ close: [] }>()
+const props = defineProps<{ liveId: string }>()
 
-const live = useLiveSession()
+const store = useSessionStore()
+const session = computed(() => store.getSession(props.liveId))
 const scroller = ref<HTMLElement | null>(null)
-
-onMounted(() => {
-  void live.start(props.startParams)
-})
 
 async function scrollToBottom() {
   await nextTick()
@@ -24,25 +19,45 @@ async function scrollToBottom() {
 }
 
 watch(
-  () => live.events.value.length,
+  () => session.value?.events.length ?? 0,
   () => {
     void scrollToBottom()
   },
 )
 
+watch(
+  () => props.liveId,
+  () => {
+    void scrollToBottom()
+  },
+  { immediate: true },
+)
+
 function onSend(text: string) {
-  void live.send(text)
+  void store.send(props.liveId, text)
 }
 
-async function onCancel() {
-  await live.cancel()
+async function onEnd() {
+  await store.cancel(props.liveId)
 }
 
-const canSend = () =>
-  live.status.value === 'idle' || live.status.value === 'running'
+function onDismiss() {
+  store.dismiss(props.liveId)
+}
 
-const statusLabel = () => {
-  switch (live.status.value) {
+const canSend = computed(
+  () => session.value?.status === 'idle' || session.value?.status === 'running',
+)
+
+const isTerminal = computed(
+  () =>
+    session.value?.status === 'completed' ||
+    session.value?.status === 'cancelled' ||
+    session.value?.status === 'error',
+)
+
+const statusLabel = computed(() => {
+  switch (session.value?.status) {
     case 'starting':
       return 'Starting…'
     case 'running':
@@ -55,97 +70,93 @@ const statusLabel = () => {
       return 'Cancelled'
     case 'error':
       return 'Error'
+    default:
+      return ''
   }
-}
+})
 
-const statusTone = () => {
-  switch (live.status.value) {
+const statusDotClass = computed(() => {
+  switch (session.value?.status) {
     case 'running':
     case 'starting':
-      return 'text-foreground'
+      return 'bg-emerald-500 animate-pulse'
     case 'idle':
-      return 'text-foreground'
+      return 'bg-amber-500'
+    case 'completed':
+    case 'cancelled':
+      return 'bg-muted-foreground'
     case 'error':
-      return 'text-destructive'
+      return 'bg-destructive'
     default:
-      return 'text-muted-foreground'
+      return 'bg-muted-foreground'
   }
-}
+})
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
+  <div v-if="session" class="h-full flex flex-col">
     <header
       class="border-b border-border px-6 py-3 shrink-0 flex items-center gap-4"
     >
       <div class="flex items-center gap-2 min-w-0 flex-1">
         <span class="inline-flex items-center gap-1.5 text-xs">
-          <span
-            class="size-1.5 rounded-full"
-            :class="{
-              'bg-emerald-500 animate-pulse':
-                live.status.value === 'running' ||
-                live.status.value === 'starting',
-              'bg-amber-500': live.status.value === 'idle',
-              'bg-muted-foreground':
-                live.status.value === 'completed' ||
-                live.status.value === 'cancelled',
-              'bg-destructive': live.status.value === 'error',
-            }"
-          />
-          <span :class="statusTone()">{{ statusLabel() }}</span>
+          <span class="size-1.5 rounded-full" :class="statusDotClass" />
+          <span>{{ statusLabel }}</span>
         </span>
         <span
-          v-if="shortModel(startParams.model ?? null)"
+          v-if="shortModel(session.model)"
           class="text-xs text-muted-foreground font-mono"
         >
-          · {{ shortModel(startParams.model ?? null) }}
+          · {{ shortModel(session.model) }}
         </span>
         <span
-          v-if="live.sdkSessionId.value"
+          v-if="session.sdkSessionId"
           class="text-xs text-muted-foreground font-mono ml-auto"
         >
-          {{ live.sdkSessionId.value.slice(0, 8) }}
+          {{ session.sdkSessionId.slice(0, 8) }}
         </span>
       </div>
       <div class="flex items-center gap-2">
         <Button
-          v-if="
-            live.status.value === 'running' ||
-            live.status.value === 'starting' ||
-            live.status.value === 'idle'
-          "
+          v-if="!isTerminal"
           variant="ghost"
           size="sm"
-          @click="onCancel"
+          @click="onEnd"
         >
           End session
         </Button>
-        <Button variant="ghost" size="sm" @click="emit('close')">Close</Button>
+        <Button v-else variant="ghost" size="sm" @click="onDismiss">
+          Dismiss
+        </Button>
       </div>
     </header>
 
     <div ref="scroller" class="flex-1 overflow-y-auto min-h-0">
-      <div v-if="live.error.value" class="max-w-4xl mx-auto p-6">
+      <div v-if="session.error" class="max-w-4xl mx-auto p-6">
         <div
           class="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
         >
-          {{ live.error.value }}
+          {{ session.error }}
         </div>
       </div>
-      <Transcript :events="live.events.value" />
+      <Transcript :events="session.events" />
     </div>
 
     <MessageInput
-      :disabled="!canSend()"
+      :disabled="!canSend"
       :placeholder="
-        live.status.value === 'starting'
+        session.status === 'starting'
           ? 'Waiting for session to start…'
-          : live.status.value === 'running'
+          : session.status === 'running'
             ? 'Model is working — message will queue'
-            : undefined
+            : isTerminal
+              ? 'Session ended'
+              : undefined
       "
       @send="onSend"
     />
+  </div>
+  <div v-else class="h-full flex items-center justify-center text-muted-foreground text-sm">
+    Session not found.
   </div>
 </template>

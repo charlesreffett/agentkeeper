@@ -78,6 +78,12 @@ export type LiveSessionStatus =
   | 'error'
 
 export interface StartSessionParams {
+  /**
+   * Caller-supplied id so the renderer can add the session to its store
+   * BEFORE main starts broadcasting status/event messages. If omitted,
+   * main generates one — the value returned from start() is authoritative.
+   */
+  localId?: string
   projectPath: string
   initialPrompt: string
   model?: string
