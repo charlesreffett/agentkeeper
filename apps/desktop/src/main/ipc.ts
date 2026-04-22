@@ -12,6 +12,7 @@ import { listSessions, readSession } from './sessions'
 import { cancelSession, sendInput, startSession } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
+import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
 
 async function pickProject(): Promise<RecentProject | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -104,6 +105,41 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     IPC_CHANNELS.settingsSet,
     (_event, partial: Partial<AppSettings>) => settingsStore.set(partial),
+  )
+
+  // Worktrees
+  ipcMain.handle(
+    IPC_CHANNELS.worktreesList,
+    async (_event, projectPath: string) => {
+      try {
+        return await listWorktrees(projectPath)
+      } catch (err) {
+        console.error('[ipc] worktrees:list failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.worktreesCreate,
+    async (_event, projectPath: string, branchRequest: string) => {
+      try {
+        return await createWorktree(projectPath, { branchRequest })
+      } catch (err) {
+        console.error('[ipc] worktrees:create failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.worktreesRemove,
+    async (_event, projectPath: string, worktreePath: string) => {
+      try {
+        return await removeWorktree(projectPath, worktreePath)
+      } catch (err) {
+        console.error('[ipc] worktrees:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
   )
 
   // Secrets

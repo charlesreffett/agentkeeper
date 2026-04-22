@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
@@ -10,7 +10,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  start: [params: { initialPrompt: string; model: string }]
+  start: [
+    params: {
+      initialPrompt: string
+      model: string
+      useWorktree: boolean
+      branch: string
+    },
+  ]
 }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -18,15 +25,51 @@ const prompt = ref('')
 const model = ref(props.defaultModel)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
+const useWorktree = ref(true)
+const branch = ref('')
+const branchTouched = ref(false)
+
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-7', label: 'Opus 4.7' },
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 ] as const
 
+// Auto-suggest a branch from the prompt's first words.
+const suggestedBranch = computed(() => {
+  const raw = prompt.value.trim().split(/\s+/).slice(0, 6).join(' ')
+  return raw
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/[^a-z0-9./-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^[-./]+|[-./]+$/g, '')
+    .slice(0, 60)
+})
+
+watch(suggestedBranch, (v) => {
+  if (!branchTouched.value) branch.value = v
+})
+
+function onBranchInput(event: Event) {
+  branchTouched.value = true
+  branch.value = (event.target as HTMLInputElement).value
+}
+
+const canStart = computed(() => {
+  if (!prompt.value.trim()) return false
+  if (useWorktree.value && !branch.value.trim()) return false
+  return true
+})
+
 function start() {
-  if (!prompt.value.trim()) return
-  emit('start', { initialPrompt: prompt.value.trim(), model: model.value })
+  if (!canStart.value) return
+  emit('start', {
+    initialPrompt: prompt.value.trim(),
+    model: model.value,
+    useWorktree: useWorktree.value,
+    branch: branch.value.trim(),
+  })
 }
 
 function onKeyDown(event: KeyboardEvent) {
@@ -41,7 +84,10 @@ watch(
   async (isOpen) => {
     if (isOpen) {
       prompt.value = ''
+      branch.value = ''
+      branchTouched.value = false
       model.value = props.defaultModel
+      useWorktree.value = true
       await nextTick()
       dialog.value?.showModal()
       textarea.value?.focus()
@@ -88,6 +134,36 @@ onMounted(() => {
         />
       </div>
 
+      <div class="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input
+            v-model="useWorktree"
+            type="checkbox"
+            class="size-4 rounded border-input"
+          />
+          <span class="text-sm font-medium">
+            Create a git worktree for this session
+          </span>
+        </label>
+        <p class="text-xs text-muted-foreground leading-relaxed pl-6">
+          Isolates this session to its own branch so parallel sessions don't
+          step on each other. Leave off to run in the project root directly.
+        </p>
+        <div v-if="useWorktree" class="space-y-1.5 pl-6">
+          <label class="text-xs text-muted-foreground">Branch name</label>
+          <input
+            :value="branch"
+            type="text"
+            placeholder="e.g. add-login-page"
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+            @input="onBranchInput"
+          />
+          <p v-if="!branchTouched && branch" class="text-[11px] text-muted-foreground">
+            Auto-suggested from prompt — edit to customize.
+          </p>
+        </div>
+      </div>
+
       <div class="space-y-2">
         <label class="text-sm font-medium">Model</label>
         <select
@@ -102,7 +178,7 @@ onMounted(() => {
 
       <footer class="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" size="sm" @click="emit('close')">Cancel</Button>
-        <Button size="sm" :disabled="!prompt.trim()" @click="start">
+        <Button size="sm" :disabled="!canStart" @click="start">
           Start session
         </Button>
       </footer>

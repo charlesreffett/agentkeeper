@@ -44,6 +44,14 @@ const api: OrchestralApi = {
     onStatus: (cb) =>
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
   },
+  worktrees: {
+    list: (projectPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.worktreesList, projectPath),
+    create: (projectPath: string, branchRequest: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.worktreesCreate, projectPath, branchRequest),
+    remove: (projectPath: string, worktreePath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.worktreesRemove, projectPath, worktreePath),
+  },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
     set: (partial: Partial<AppSettings>) =>

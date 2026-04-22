@@ -110,6 +110,12 @@ const statusDotClass = computed(() => {
           · {{ shortModel(session.model) }}
         </span>
         <span
+          v-if="session.branch"
+          class="text-xs text-muted-foreground font-mono"
+        >
+          · ⎇ {{ session.branch }}
+        </span>
+        <span
           v-if="session.sdkSessionId"
           class="text-xs text-muted-foreground font-mono ml-auto"
         >

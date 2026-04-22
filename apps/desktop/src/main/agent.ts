@@ -132,10 +132,12 @@ export async function startSession(params: StartSessionParams): Promise<string> 
   // canUseTool was removed because a function in options can't cross the
   // internal serialization boundary — it tripped "an object could not be
   // cloned" on the first turn. V3 will bring a real permission UI.
+  const cwd = params.worktreePath ?? params.projectPath
+
   const q = query({
     prompt: input,
     options: {
-      cwd: params.projectPath,
+      cwd,
       ...(params.model ? { model: params.model } : {}),
       abortController: controller,
       env: childEnv,

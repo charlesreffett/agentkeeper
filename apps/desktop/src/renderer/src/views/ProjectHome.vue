@@ -50,14 +50,39 @@ async function onNewSessionClick() {
   newSessionOpen.value = true
 }
 
+const startError = ref<string | null>(null)
+
 async function onStartSession(params: {
   initialPrompt: string
   model: string
+  useWorktree: boolean
+  branch: string
 }) {
   newSessionOpen.value = false
   selectedHistoricalId.value = null
+  startError.value = null
+
+  let worktreePath: string | undefined
+  let branch: string | undefined
+  if (params.useWorktree && params.branch) {
+    try {
+      const wt = await window.orchestral.worktrees.create(
+        props.project.path,
+        params.branch,
+      )
+      worktreePath = wt.path
+      branch = wt.branch
+    } catch (err) {
+      startError.value =
+        err instanceof Error ? err.message : String(err)
+      return
+    }
+  }
+
   await sessionStore.start({
     projectPath: props.project.path,
+    ...(worktreePath ? { worktreePath } : {}),
+    ...(branch ? { branch } : {}),
     initialPrompt: params.initialPrompt,
     model: params.model,
   })
@@ -92,6 +117,19 @@ onMounted(refreshConfig)
       </Button>
       <Button variant="ghost" size="sm" @click="refreshList">Refresh</Button>
     </header>
+
+    <div
+      v-if="startError"
+      class="border-b border-destructive/40 bg-destructive/5 px-4 py-2 text-xs text-destructive flex items-center gap-2"
+    >
+      <span class="flex-1 truncate">{{ startError }}</span>
+      <button
+        class="hover:underline"
+        @click="startError = null"
+      >
+        Dismiss
+      </button>
+    </div>
 
     <div class="flex-1 flex min-h-0">
       <aside

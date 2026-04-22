@@ -84,9 +84,23 @@ export interface StartSessionParams {
    * main generates one — the value returned from start() is authoritative.
    */
   localId?: string
+  /** The logical project the session belongs to (the main repo root). */
   projectPath: string
+  /**
+   * Actual cwd for the SDK subprocess. Defaults to projectPath. Set this
+   * to a worktree path when a session should run in a separate branch/dir.
+   */
+  worktreePath?: string
   initialPrompt: string
   model?: string
+}
+
+// ─── Worktrees ──────────────────────────────────────────────────────────────
+
+export interface WorktreeInfo {
+  path: string
+  branch: string
+  head: string
 }
 
 /** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
@@ -134,6 +148,11 @@ export interface OrchestralApi {
       callback: (update: LiveSessionStatusUpdate) => void,
     ) => () => void
   }
+  worktrees: {
+    list: (projectPath: string) => Promise<WorktreeInfo[]>
+    create: (projectPath: string, branchRequest: string) => Promise<WorktreeInfo>
+    remove: (projectPath: string, worktreePath: string) => Promise<void>
+  }
   settings: {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
@@ -156,6 +175,9 @@ export const IPC_CHANNELS = {
   sessionCancel: 'session:cancel',
   sessionEvent: 'session:event',
   sessionStatus: 'session:status',
+  worktreesList: 'worktrees:list',
+  worktreesCreate: 'worktrees:create',
+  worktreesRemove: 'worktrees:remove',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   secretsHas: 'secrets:has',

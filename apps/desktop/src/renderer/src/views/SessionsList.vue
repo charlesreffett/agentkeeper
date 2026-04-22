@@ -126,6 +126,12 @@ function liveStatusDot(s: LiveSession): string {
               {{ shortModel(s.model) }}
             </span>
           </div>
+          <div
+            v-if="s.branch"
+            class="mt-1 pl-3.5 text-[10px] text-muted-foreground font-mono truncate"
+          >
+            ⎇ {{ s.branch }}
+          </div>
         </li>
       </ul>
     </section>

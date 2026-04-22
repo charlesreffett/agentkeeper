@@ -10,7 +10,12 @@ import { sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
 export interface LiveSession {
   localId: string
   sdkSessionId: string | null
+  /** Logical project the session belongs to (used for sidebar filtering). */
   projectPath: string
+  /** Actual cwd given to the SDK — differs from projectPath if a worktree. */
+  worktreePath: string | null
+  /** Branch name if session runs in a worktree, else null. */
+  branch: string | null
   initialPrompt: string
   model: string | null
   status: LiveSessionStatus
@@ -86,14 +91,20 @@ export const useSessionStore = defineStore('sessions', () => {
     return sessions[id] ?? null
   }
 
-  async function start(params: StartSessionParams): Promise<string> {
-    const plain = plainParams(params)
+  async function start(
+    params: StartSessionParams & { branch?: string | null },
+  ): Promise<string> {
+    const plain = plainParams(params) as StartSessionParams & {
+      branch?: string | null
+    }
     const localId = plain.localId ?? cryptoRandomId()
 
     sessions[localId] = {
       localId,
       sdkSessionId: null,
       projectPath: plain.projectPath,
+      worktreePath: plain.worktreePath ?? null,
+      branch: plain.branch ?? null,
       initialPrompt: plain.initialPrompt,
       model: plain.model ?? null,
       status: 'starting',
@@ -109,7 +120,9 @@ export const useSessionStore = defineStore('sessions', () => {
     flushBuffer(localId)
 
     try {
-      await window.orchestral.sessions.start({ ...plain, localId })
+      // `branch` is a renderer-only hint; strip before crossing IPC.
+      const { branch: _branch, ...startArgs } = plain
+      await window.orchestral.sessions.start({ ...startArgs, localId })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sessions[localId]!.status = 'error'
