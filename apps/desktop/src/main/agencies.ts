@@ -1,0 +1,150 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import os from 'node:os'
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import type { Agency, AgencyDraft, AgencyScope } from '../shared/ipc-contract'
+
+const PROJECT_DIR = '.orchestral/agencies'
+const GLOBAL_DIR = '.orchestral/agencies'
+
+function projectAgenciesDir(projectPath: string): string {
+  return path.join(projectPath, PROJECT_DIR)
+}
+
+function globalAgenciesDir(): string {
+  return path.join(os.homedir(), GLOBAL_DIR)
+}
+
+function scopeDir(scope: AgencyScope, projectPath: string): string {
+  return scope === 'project'
+    ? projectAgenciesDir(projectPath)
+    : globalAgenciesDir()
+}
+
+function agencyPath(scope: AgencyScope, projectPath: string, id: string): string {
+  return path.join(scopeDir(scope, projectPath), `${id}.md`)
+}
+
+function parseAgencyFile(
+  source: string,
+  meta: { scope: AgencyScope; path: string; id: string },
+): Agency | null {
+  const trimmed = source.replace(/^﻿/, '')
+  if (!trimmed.startsWith('---')) return null
+  const end = trimmed.indexOf('\n---', 3)
+  if (end === -1) return null
+  const fm = trimmed.slice(3, end).replace(/^\r?\n/, '')
+  const body = trimmed.slice(end + 4).replace(/^\r?\n/, '').trimEnd()
+  let parsed: Record<string, unknown>
+  try {
+    parsed = (parseYaml(fm) ?? {}) as Record<string, unknown>
+  } catch {
+    return null
+  }
+  const name = typeof parsed['name'] === 'string' ? parsed['name'] : meta.id
+  const description =
+    typeof parsed['description'] === 'string' ? parsed['description'] : ''
+  const roles = Array.isArray(parsed['roles'])
+    ? (parsed['roles'] as unknown[]).filter(
+        (r): r is string => typeof r === 'string',
+      )
+    : []
+  const flowsRaw = Array.isArray(parsed['flows']) ? parsed['flows'] : []
+  const flows: Array<[string, string]> = []
+  for (const f of flowsRaw) {
+    if (Array.isArray(f) && f.length === 2 && typeof f[0] === 'string' && typeof f[1] === 'string') {
+      flows.push([f[0], f[1]])
+    }
+  }
+  const entryPoints = Array.isArray(parsed['entryPoints'])
+    ? (parsed['entryPoints'] as unknown[]).filter(
+        (r): r is string => typeof r === 'string',
+      )
+    : []
+  return {
+    id: meta.id,
+    scope: meta.scope,
+    path: meta.path,
+    name,
+    description,
+    roles,
+    flows,
+    entryPoints,
+    notes: body,
+  }
+}
+
+function serializeAgency(a: AgencyDraft): string {
+  const fm: Record<string, unknown> = {
+    name: a.name,
+    description: a.description,
+    roles: a.roles,
+    flows: a.flows,
+    entryPoints: a.entryPoints,
+  }
+  return `---\n${stringifyYaml(fm).trimEnd()}\n---\n\n${(a.notes ?? '').trim()}\n`
+}
+
+async function listScope(
+  scope: AgencyScope,
+  projectPath: string,
+): Promise<Agency[]> {
+  const dir = scopeDir(scope, projectPath)
+  let entries: string[]
+  try {
+    entries = await fs.readdir(dir)
+  } catch {
+    return []
+  }
+  const mdFiles = entries.filter((e) => e.endsWith('.md'))
+  const out: Agency[] = []
+  for (const filename of mdFiles) {
+    const full = path.join(dir, filename)
+    const id = filename.replace(/\.md$/, '')
+    try {
+      const content = await fs.readFile(full, 'utf8')
+      const a = parseAgencyFile(content, { scope, path: full, id })
+      if (a) out.push(a)
+    } catch {
+      /* skip */
+    }
+  }
+  return out
+}
+
+export async function listAgencies(projectPath: string): Promise<Agency[]> {
+  const [project, global] = await Promise.all([
+    listScope('project', projectPath),
+    listScope('global', projectPath),
+  ])
+  const byId = new Map<string, Agency>()
+  for (const g of global) byId.set(g.id, g)
+  for (const p of project) byId.set(p.id, p)
+  return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name))
+}
+
+export async function saveAgency(
+  scope: AgencyScope,
+  projectPath: string,
+  draft: AgencyDraft,
+): Promise<Agency> {
+  const dir = scopeDir(scope, projectPath)
+  await fs.mkdir(dir, { recursive: true })
+  const filePath = agencyPath(scope, projectPath, draft.id)
+  await fs.writeFile(filePath, serializeAgency(draft), 'utf8')
+  return { ...draft, scope, path: filePath }
+}
+
+export async function deleteAgency(
+  scope: AgencyScope,
+  projectPath: string,
+  id: string,
+): Promise<void> {
+  const filePath = agencyPath(scope, projectPath, id)
+  try {
+    await fs.unlink(filePath)
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code !== 'ENOENT') throw err
+  }
+}

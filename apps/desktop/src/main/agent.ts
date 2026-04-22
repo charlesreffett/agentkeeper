@@ -15,7 +15,7 @@ import type {
 import { AsyncQueue } from './async-queue'
 import { secrets, SECRET_KEYS } from './secrets'
 
-interface ActiveSession {
+export interface ActiveSession {
   id: string
   sdkSessionId: string | null
   projectPath: string
@@ -25,6 +25,21 @@ interface ActiveSession {
   abortController: AbortController
   status: LiveSessionStatus
   startedAt: number
+  /** Agency membership (null if freestanding). */
+  agencyInstanceId: string | null
+  roleId: string | null
+  /** Full SDK message history for orchestrator routing. */
+  events: SDKMessage[]
+  /** Resolvers awaiting next terminal status (idle/completed/error/cancelled). */
+  idleWaiters: Array<(status: LiveSessionStatus) => void>
+}
+
+/** Optional extras orchestrator passes to startSession that aren't in the
+ *  IPC contract (mcpServers is an SDK object, not transportable). */
+export interface InternalStartExtras {
+  mcpServer?: ReturnType<
+    typeof import('@anthropic-ai/claude-agent-sdk').createSdkMcpServer
+  >
 }
 
 const active = new Map<string, ActiveSession>()
@@ -61,17 +76,32 @@ function broadcastStatus(update: LiveSessionStatusUpdate): void {
   }
 }
 
+const TERMINAL_STATUSES: LiveSessionStatus[] = [
+  'idle',
+  'completed',
+  'cancelled',
+  'error',
+]
+
 function setStatus(s: ActiveSession, status: LiveSessionStatus, error?: string) {
   s.status = status
-  broadcastStatus({ sessionId: s.id, status, error })
+  broadcastStatus({ sessionId: s.id, status, ...(error ? { error } : {}) })
+  if (TERMINAL_STATUSES.includes(status)) {
+    const waiters = s.idleWaiters.splice(0, s.idleWaiters.length)
+    for (const w of waiters) w(status)
+  }
 }
 
 async function consumeStream(session: ActiveSession): Promise<void> {
   try {
     for await (const msg of session.query) {
-      // Capture the SDK-assigned session_id from the init message
+      session.events.push(msg)
+
       if (msg.type === 'system') {
-        const anyMsg = msg as unknown as { subtype?: string; session_id?: string }
+        const anyMsg = msg as unknown as {
+          subtype?: string
+          session_id?: string
+        }
         if (anyMsg.subtype === 'init' && typeof anyMsg.session_id === 'string') {
           session.sdkSessionId = anyMsg.session_id
           broadcastStatus({
@@ -105,7 +135,10 @@ function messageFromText(text: string): SDKUserMessage {
   } as SDKUserMessage
 }
 
-export async function startSession(params: StartSessionParams): Promise<string> {
+export async function startSession(
+  params: StartSessionParams,
+  extras: InternalStartExtras = {},
+): Promise<string> {
   // Auth is either:
   //   (a) an ANTHROPIC_API_KEY stored in the OS keychain (Console users), or
   //   (b) an existing `claude login` session on disk (Pro/Max users) —
@@ -127,11 +160,6 @@ export async function startSession(params: StartSessionParams): Promise<string> 
     childEnv['ANTHROPIC_API_KEY'] = apiKey
   }
 
-  // V2: no permission-prompt UI yet. 'bypassPermissions' skips the prompt
-  // flow entirely (equivalent to `claude --dangerously-skip-permissions`).
-  // canUseTool was removed because a function in options can't cross the
-  // internal serialization boundary — it tripped "an object could not be
-  // cloned" on the first turn. V3 will bring a real permission UI.
   const cwd = params.worktreePath ?? params.projectPath
 
   const options: Parameters<typeof query>[0]['options'] = {
@@ -152,6 +180,9 @@ export async function startSession(params: StartSessionParams): Promise<string> 
   if (params.allowedTools && params.allowedTools.length) {
     options!.allowedTools = params.allowedTools
   }
+  if (extras.mcpServer) {
+    options!.mcpServers = { orchestral: extras.mcpServer }
+  }
 
   const q = query({ prompt: input, options })
 
@@ -165,6 +196,10 @@ export async function startSession(params: StartSessionParams): Promise<string> 
     abortController: controller,
     status: 'starting',
     startedAt: Date.now(),
+    agencyInstanceId: params.agencyInstanceId ?? null,
+    roleId: params.roleId ?? null,
+    events: [],
+    idleWaiters: [],
   }
 
   active.set(id, session)
@@ -214,6 +249,22 @@ export function isSessionActive(sessionId: string): boolean {
   return active.has(sessionId)
 }
 
+export function getActiveSession(sessionId: string): ActiveSession | null {
+  return active.get(sessionId) ?? null
+}
+
+/** Resolve when the session next reaches idle (or a terminal status). */
+export function waitForNextIdle(
+  sessionId: string,
+): Promise<LiveSessionStatus> {
+  const s = active.get(sessionId)
+  if (!s) return Promise.reject(new Error(`session ${sessionId} not found`))
+  if (TERMINAL_STATUSES.includes(s.status)) {
+    return Promise.resolve(s.status)
+  }
+  return new Promise((resolve) => s.idleWaiters.push(resolve))
+}
+
 export function listActiveSessions(): Array<{
   id: string
   sdkSessionId: string | null
@@ -221,6 +272,8 @@ export function listActiveSessions(): Array<{
   status: LiveSessionStatus
   startedAt: number
   model: string | undefined
+  agencyInstanceId: string | null
+  roleId: string | null
 }> {
   return Array.from(active.values()).map((s) => ({
     id: s.id,
@@ -229,5 +282,7 @@ export function listActiveSessions(): Array<{
     status: s.status,
     startedAt: s.startedAt,
     model: s.model,
+    agencyInstanceId: s.agencyInstanceId,
+    roleId: s.roleId,
   }))
 }

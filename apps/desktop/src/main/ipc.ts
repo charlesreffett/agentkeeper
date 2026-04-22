@@ -14,7 +14,15 @@ import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, listRoles, saveRole } from './roles'
-import type { RoleDraft, RoleScope } from '../shared/ipc-contract'
+import { deleteAgency, listAgencies, saveAgency } from './agencies'
+import { startAgency } from './orchestrator'
+import type {
+  AgencyDraft,
+  AgencyScope,
+  RoleDraft,
+  RoleScope,
+  StartAgencyParams,
+} from '../shared/ipc-contract'
 
 async function pickProject(): Promise<RecentProject | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -176,6 +184,57 @@ export function registerIpcHandlers() {
         return await deleteRole(scope, projectPath, id)
       } catch (err) {
         console.error('[ipc] roles:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  // Agencies
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesList,
+    async (_event, projectPath: string) => {
+      try {
+        return await listAgencies(projectPath)
+      } catch (err) {
+        console.error('[ipc] agencies:list failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesSave,
+    async (
+      _event,
+      scope: AgencyScope,
+      projectPath: string,
+      agency: AgencyDraft,
+    ) => {
+      try {
+        return await saveAgency(scope, projectPath, agency)
+      } catch (err) {
+        console.error('[ipc] agencies:save failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesRemove,
+    async (_event, scope: AgencyScope, projectPath: string, id: string) => {
+      try {
+        return await deleteAgency(scope, projectPath, id)
+      } catch (err) {
+        console.error('[ipc] agencies:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesStart,
+    async (_event, params: StartAgencyParams) => {
+      try {
+        return await startAgency(params)
+      } catch (err) {
+        console.error('[ipc] agencies:start failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

@@ -18,6 +18,10 @@ export interface LiveSession {
   branch: string | null
   /** Role name applied to this session, if any. */
   roleName: string | null
+  /** Agency instance id if this session is part of a running agency. */
+  agencyInstanceId: string | null
+  /** Agency display name. */
+  agencyName: string | null
   initialPrompt: string
   model: string | null
   status: LiveSessionStatus
@@ -112,6 +116,8 @@ export const useSessionStore = defineStore('sessions', () => {
       worktreePath: plain.worktreePath ?? null,
       branch: plain.branch ?? null,
       roleName: plain.roleName ?? null,
+      agencyInstanceId: null,
+      agencyName: null,
       initialPrompt: plain.initialPrompt,
       model: plain.model ?? null,
       status: 'starting',
@@ -169,6 +175,41 @@ export const useSessionStore = defineStore('sessions', () => {
     currentLiveId.value = id
   }
 
+  /**
+   * Register a session started outside the store (e.g. by the orchestrator
+   * as part of an agency). Events/status broadcasts find it by id from then on.
+   */
+  function registerExternal(entry: {
+    localId: string
+    projectPath: string
+    worktreePath?: string | null
+    branch?: string | null
+    roleName?: string | null
+    agencyInstanceId?: string | null
+    agencyName?: string | null
+    initialPrompt: string
+    model?: string | null
+  }): void {
+    sessions[entry.localId] = {
+      localId: entry.localId,
+      sdkSessionId: null,
+      projectPath: entry.projectPath,
+      worktreePath: entry.worktreePath ?? null,
+      branch: entry.branch ?? null,
+      roleName: entry.roleName ?? null,
+      agencyInstanceId: entry.agencyInstanceId ?? null,
+      agencyName: entry.agencyName ?? null,
+      initialPrompt: entry.initialPrompt,
+      model: entry.model ?? null,
+      status: 'starting',
+      events: [],
+      error: null,
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+    }
+    flushBuffer(entry.localId)
+  }
+
   function clearFocus(): void {
     currentLiveId.value = null
   }
@@ -214,5 +255,6 @@ export const useSessionStore = defineStore('sessions', () => {
     dismiss,
     focus,
     clearFocus,
+    registerExternal,
   }
 })

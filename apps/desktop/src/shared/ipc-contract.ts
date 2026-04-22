@@ -96,6 +96,9 @@ export interface StartSessionParams {
   /** Role-derived options — appended to the default Claude Code preset. */
   systemPromptAppend?: string
   allowedTools?: string[]
+  /** Membership in an agency run, if applicable — tagged by the orchestrator. */
+  agencyInstanceId?: string
+  roleId?: string
 }
 
 // ─── Worktrees ──────────────────────────────────────────────────────────────
@@ -123,6 +126,53 @@ export interface Role {
 }
 
 export type RoleDraft = Omit<Role, 'scope' | 'path'>
+
+// ─── Agencies ───────────────────────────────────────────────────────────────
+
+export type AgencyScope = 'project' | 'global'
+
+export interface Agency {
+  id: string
+  scope: AgencyScope
+  path: string
+  name: string
+  description: string
+  roles: string[]
+  flows: Array<[string, string]>
+  entryPoints: string[]
+  notes: string
+}
+
+export type AgencyDraft = Omit<Agency, 'scope' | 'path'>
+
+/** Parameters to launch an agency: creates one shared worktree (optional)
+ *  and spawns one session per role. Entry-point roles receive initialPrompt. */
+export interface StartAgencyParams {
+  projectPath: string
+  agencyId: string
+  agencyScope: AgencyScope
+  initialPrompt: string
+  useWorktree: boolean
+  branch?: string
+  model?: string
+}
+
+export interface AgencyInstanceSession {
+  localId: string
+  roleId: string
+  roleName: string
+  isEntryPoint: boolean
+}
+
+export interface AgencyInstance {
+  instanceId: string
+  agencyId: string
+  agencyName: string
+  projectPath: string
+  worktreePath: string | null
+  branch: string | null
+  sessions: AgencyInstanceSession[]
+}
 
 /** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
 export interface LiveSessionEvent {
@@ -183,6 +233,20 @@ export interface OrchestralApi {
     ) => Promise<Role>
     remove: (scope: RoleScope, projectPath: string, id: string) => Promise<void>
   }
+  agencies: {
+    list: (projectPath: string) => Promise<Agency[]>
+    save: (
+      scope: AgencyScope,
+      projectPath: string,
+      agency: AgencyDraft,
+    ) => Promise<Agency>
+    remove: (
+      scope: AgencyScope,
+      projectPath: string,
+      id: string,
+    ) => Promise<void>
+    start: (params: StartAgencyParams) => Promise<AgencyInstance>
+  }
   settings: {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
@@ -211,6 +275,10 @@ export const IPC_CHANNELS = {
   rolesList: 'roles:list',
   rolesSave: 'roles:save',
   rolesRemove: 'roles:remove',
+  agenciesList: 'agencies:list',
+  agenciesSave: 'agencies:save',
+  agenciesRemove: 'agencies:remove',
+  agenciesStart: 'agencies:start',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   secretsHas: 'secrets:has',

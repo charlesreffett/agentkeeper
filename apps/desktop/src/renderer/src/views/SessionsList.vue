@@ -127,9 +127,12 @@ function liveStatusDot(s: LiveSession): string {
             </span>
           </div>
           <div
-            v-if="s.branch || s.roleName"
-            class="mt-1 pl-3.5 text-[10px] text-muted-foreground truncate flex gap-2"
+            v-if="s.branch || s.roleName || s.agencyName"
+            class="mt-1 pl-3.5 text-[10px] text-muted-foreground truncate flex gap-2 flex-wrap"
           >
+            <span v-if="s.agencyName" class="text-foreground/80">
+              ◎ {{ s.agencyName }}
+            </span>
             <span v-if="s.branch" class="font-mono">⎇ {{ s.branch }}</span>
             <span v-if="s.roleName">{{ s.roleName }}</span>
           </div>

@@ -6,6 +6,7 @@ import SessionDetail from './SessionDetail.vue'
 import NewSessionModal from './NewSessionModal.vue'
 import SettingsModal from './SettingsModal.vue'
 import RolesModal from './RolesModal.vue'
+import AgenciesModal from './AgenciesModal.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
@@ -27,6 +28,7 @@ const refreshTrigger = ref(0)
 const newSessionOpen = ref(false)
 const settingsOpen = ref(false)
 const rolesOpen = ref(false)
+const agenciesOpen = ref(false)
 
 const settings = ref<AppSettings>({ defaultModel: 'claude-sonnet-4-6' })
 
@@ -123,6 +125,9 @@ onMounted(refreshConfig)
         </div>
       </div>
       <Button size="sm" @click="onNewSessionClick">New session</Button>
+      <Button variant="ghost" size="sm" @click="agenciesOpen = true">
+        Agencies
+      </Button>
       <Button variant="ghost" size="sm" @click="rolesOpen = true">Roles</Button>
       <Button variant="ghost" size="sm" @click="settingsOpen = true">
         Settings
@@ -194,6 +199,20 @@ onMounted(refreshConfig)
       :open="rolesOpen"
       :project-path="project.path"
       @close="rolesOpen = false"
+    />
+
+    <AgenciesModal
+      :open="agenciesOpen"
+      :project-path="project.path"
+      @close="agenciesOpen = false"
+      @started="
+        (_instanceId, entrySessionId) => {
+          if (entrySessionId) {
+            selectedHistoricalId = null
+            sessionStore.focus(entrySessionId)
+          }
+        }
+      "
     />
   </div>
 </template>

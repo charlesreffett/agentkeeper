@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   IPC_CHANNELS,
+  type AgencyDraft,
+  type AgencyScope,
   type AppSettings,
   type LiveSessionEvent,
   type LiveSessionStatusUpdate,
@@ -8,6 +10,7 @@ import {
   type RoleDraft,
   type RoleScope,
   type SecretKeyName,
+  type StartAgencyParams,
   type StartSessionParams,
 } from '../shared/ipc-contract'
 
@@ -61,6 +64,16 @@ const api: OrchestralApi = {
       ipcRenderer.invoke(IPC_CHANNELS.rolesSave, scope, projectPath, role),
     remove: (scope: RoleScope, projectPath: string, id: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.rolesRemove, scope, projectPath, id),
+  },
+  agencies: {
+    list: (projectPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.agenciesList, projectPath),
+    save: (scope: AgencyScope, projectPath: string, agency: AgencyDraft) =>
+      ipcRenderer.invoke(IPC_CHANNELS.agenciesSave, scope, projectPath, agency),
+    remove: (scope: AgencyScope, projectPath: string, id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id),
+    start: (params: StartAgencyParams) =>
+      ipcRenderer.invoke(IPC_CHANNELS.agenciesStart, params),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),

@@ -122,6 +122,12 @@ const statusDotClass = computed(() => {
           · {{ session.roleName }}
         </span>
         <span
+          v-if="session.agencyName"
+          class="text-xs text-muted-foreground"
+        >
+          · ◎ {{ session.agencyName }}
+        </span>
+        <span
           v-if="session.sdkSessionId"
           class="text-xs text-muted-foreground font-mono ml-auto"
         >
