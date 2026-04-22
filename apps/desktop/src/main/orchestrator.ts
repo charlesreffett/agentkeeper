@@ -40,10 +40,33 @@ interface RuntimeAgency {
 
 const instances = new Map<string, RuntimeAgency>()
 const sessionToInstance = new Map<string, string>()
+/**
+ * Who is each session currently waiting on a reply from?
+ * If X has called send_message(Y) and is awaiting Y's idle, waitingFor[X] = Y.
+ * Used to detect cycles: if Y tries to call send_message(Z), and Z is
+ * transitively waiting on Y (or on anyone in Y's chain), a call would
+ * deadlock forever — reject with an informative error instead.
+ */
+const waitingFor = new Map<string, string>()
 
 function instanceOfSession(sessionId: string): RuntimeAgency | null {
   const id = sessionToInstance.get(sessionId)
   return id ? (instances.get(id) ?? null) : null
+}
+
+function wouldCycle(from: string, to: string): boolean {
+  // Would `from calls to` create a cycle? i.e., is `to` (transitively)
+  // waiting on `from`?
+  let cursor: string | undefined = to
+  const visited = new Set<string>()
+  while (cursor) {
+    if (visited.has(cursor)) return true
+    visited.add(cursor)
+    const waitsOn = waitingFor.get(cursor)
+    if (waitsOn === from) return true
+    cursor = waitsOn
+  }
+  return false
 }
 
 async function routeMessage(
@@ -67,6 +90,10 @@ async function routeMessage(
   const toSessionId = inst.sessionByRole.get(toRole)
   if (!toSessionId) return `Error: no active agent with role "${toRole}".`
 
+  if (wouldCycle(fromSessionId, toSessionId)) {
+    return `Error: "${toRole}" is already waiting on your reply (directly or transitively). Calling send_message now would deadlock both of you. Respond with plain text instead — your reply is delivered automatically as the caller's tool_result.`
+  }
+
   const target = getActiveSession(toSessionId)
   if (!target) {
     return `Error: target session for role "${toRole}" is no longer active.`
@@ -77,13 +104,27 @@ async function routeMessage(
   try {
     sendInput(
       toSessionId,
-      `[message from peer "${fromRole}"]\n\n${content}\n\n[end message — reply to "${fromRole}" with your answer; it will be delivered as their send_message return value]`,
+      [
+        `[message from peer "${fromRole}"]`,
+        '',
+        content,
+        '',
+        `[end message]`,
+        '',
+        `Respond to "${fromRole}" with plain text. Your reply is captured automatically and returned as their send_message tool_result — DO NOT call send_message back to "${fromRole}" (that would deadlock). If you need a different peer, call send_message to that peer normally.`,
+      ].join('\n'),
     )
   } catch (err) {
     return `Error queuing message: ${err instanceof Error ? err.message : String(err)}`
   }
 
-  const status = await waitForNextIdle(toSessionId)
+  waitingFor.set(fromSessionId, toSessionId)
+  let status: Awaited<ReturnType<typeof waitForNextIdle>>
+  try {
+    status = await waitForNextIdle(toSessionId)
+  } finally {
+    waitingFor.delete(fromSessionId)
+  }
   if (status !== 'idle') {
     return `Error: target session ended with status "${status}" before replying.`
   }
@@ -200,11 +241,17 @@ export async function startAgency(
     const contextPreamble = [
       `You are the "${role.name}" (role id: "${roleId}") in an agency named "${agency.name}".`,
       `All member roles (by id): ${peerList}.`,
-      `Use the mcp__orchestral__send_message tool to contact peers by role id; it waits for their reply and returns it.`,
+      ``,
+      `Communication protocol:`,
+      `- Use the mcp__orchestral__send_message tool to contact a peer by role id.`,
+      `- send_message BLOCKS until the peer replies; their response becomes your tool_result.`,
+      `- When another peer addresses YOU via send_message, you'll receive a user turn wrapped in "[message from peer X]" markers. Your plain-text reply is automatically captured and returned to them — DO NOT call send_message back to the peer that addressed you. That would deadlock both of you and the orchestrator will reject it.`,
+      `- If replying to peer X requires input from peer Z, you CAN call send_message(Z) first, then use Z's answer when composing your plain-text reply to X. That's fine as long as Z isn't also waiting on you.`,
+      ``,
       `Collaborate — don't try to do every role's job yourself.`,
       isEntry
         ? `You are an entry point — you receive the initial task from the user.`
-        : `You will receive tasks from peer agents via send_message. Reply with plain text; the sender receives it as their tool result.`,
+        : `You will receive tasks from peer agents via send_message. Stand by until addressed.`,
     ].join('\n')
 
     const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
