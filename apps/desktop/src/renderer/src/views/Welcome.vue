@@ -1,9 +1,16 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Button } from '@/components/ui/button'
+import { useSessionStore } from '@/stores/sessions'
 import type { RecentProject } from '@shared/ipc-contract'
 
-const emit = defineEmits<{ open: [project: RecentProject] }>()
+const emit = defineEmits<{
+  open: [project: RecentProject]
+  monitor: []
+}>()
+
+const sessionStore = useSessionStore()
+const activeCount = computed(() => sessionStore.liveList.length)
 
 const recent = ref<RecentProject[]>([])
 const loading = ref(true)
@@ -42,8 +49,16 @@ onMounted(refresh)
         <p class="text-muted-foreground">Open a project to begin</p>
       </div>
 
-      <div class="flex justify-center">
+      <div class="flex justify-center gap-2">
         <Button size="lg" @click="pickProject">Open Project…</Button>
+        <Button
+          v-if="activeCount > 0"
+          size="lg"
+          variant="outline"
+          @click="emit('monitor')"
+        >
+          Monitor ({{ activeCount }} live)
+        </Button>
       </div>
 
       <div v-if="!loading && recent.length" class="space-y-2">
