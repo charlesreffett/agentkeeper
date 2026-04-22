@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain } from 'electron'
 import path from 'node:path'
 import { IPC_CHANNELS, type RecentProject } from '../shared/ipc-contract'
 import { recentProjectsStore } from './store'
+import { listSessions, readSession } from './sessions'
 
 async function pickProject(): Promise<RecentProject | null> {
   const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
@@ -33,4 +34,13 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.projectRecentRemove, (_event, p: string) => {
     recentProjectsStore.remove(p)
   })
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsList,
+    (_event, projectPath: string) => listSessions(projectPath),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsRead,
+    (_event, projectPath: string, sessionId: string) =>
+      readSession(projectPath, sessionId),
+  )
 }

@@ -10,6 +10,12 @@ const api: OrchestralApi = {
         ipcRenderer.invoke(IPC_CHANNELS.projectRecentRemove, path),
     },
   },
+  sessions: {
+    list: (projectPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.sessionsList, projectPath),
+    read: (projectPath: string, sessionId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.sessionsRead, projectPath, sessionId),
+  },
 }
 
 contextBridge.exposeInMainWorld('orchestral', api)
