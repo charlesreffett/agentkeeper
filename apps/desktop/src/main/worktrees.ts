@@ -61,20 +61,48 @@ export interface CreateWorktreeOptions {
   branchRequest: string
 }
 
+async function branchExists(projectPath: string, branch: string): Promise<boolean> {
+  try {
+    await git(projectPath, ['rev-parse', '--verify', `refs/heads/${branch}`])
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Find a branch name derived from `base` that has neither a worktree on
+ * disk nor an existing ref in the repo. Returns { branch, path } ready for
+ * `git worktree add -b`.
+ */
+async function findFreeBranch(
+  projectPath: string,
+  rootDir: string,
+  base: string,
+): Promise<{ branch: string; wtPath: string }> {
+  for (let n = 1; n < 1000; n++) {
+    const candidate = n === 1 ? base : `${base}-${n}`
+    const wtPath = path.join(rootDir, candidate)
+    const pathTaken = await pathExists(wtPath)
+    const refTaken = await branchExists(projectPath, candidate)
+    if (!pathTaken && !refTaken) {
+      return { branch: candidate, wtPath }
+    }
+  }
+  throw new Error(`Exhausted search for a free branch name starting with "${base}".`)
+}
+
 export async function createWorktree(
   projectPath: string,
   opts: CreateWorktreeOptions,
 ): Promise<WorktreeInfo> {
   await ensureGitRepo(projectPath)
-  const branch = sanitizeBranch(opts.branchRequest)
+  const base = sanitizeBranch(opts.branchRequest)
   const rootDir = worktreesRoot(projectPath)
-  const wtPath = path.join(rootDir, branch)
 
   await fs.mkdir(rootDir, { recursive: true })
 
-  if (await pathExists(wtPath)) {
-    throw new Error(`A worktree already exists at ${wtPath}`)
-  }
+  const { branch, wtPath } = await findFreeBranch(projectPath, rootDir, base)
 
   try {
     await git(projectPath, ['worktree', 'add', '-b', branch, wtPath])
