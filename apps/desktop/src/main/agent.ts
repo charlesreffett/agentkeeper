@@ -85,17 +85,26 @@ function messageFromText(text: string): SDKUserMessage {
 }
 
 export async function startSession(params: StartSessionParams): Promise<string> {
+  // Auth is either:
+  //   (a) an ANTHROPIC_API_KEY stored in the OS keychain (Console users), or
+  //   (b) an existing `claude login` session on disk (Pro/Max users) —
+  //       the SDK subprocess is the same binary as the terminal `claude` CLI,
+  //       so it picks up those credentials automatically.
+  // We prefer (a) if set, otherwise let the SDK fall through to (b).
   const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
-  if (!apiKey) {
-    throw new Error(
-      'No ANTHROPIC_API_KEY set. Open settings and add your API key.',
-    )
-  }
 
   const id = randomUUID()
   const controller = new AbortController()
   const input = new AsyncQueue<SDKUserMessage>()
   input.push(messageFromText(params.initialPrompt))
+
+  const childEnv: Record<string, string | undefined> = {
+    ...process.env,
+    CLAUDE_AGENT_SDK_CLIENT_APP: 'orchestral-ai',
+  }
+  if (apiKey) {
+    childEnv['ANTHROPIC_API_KEY'] = apiKey
+  }
 
   const q = query({
     prompt: input,
@@ -103,11 +112,7 @@ export async function startSession(params: StartSessionParams): Promise<string> 
       cwd: params.projectPath,
       ...(params.model ? { model: params.model } : {}),
       abortController: controller,
-      env: {
-        ...process.env,
-        ANTHROPIC_API_KEY: apiKey,
-        CLAUDE_AGENT_SDK_CLIENT_APP: 'orchestral-ai',
-      },
+      env: childEnv,
       // V2: no permission-prompt UI yet. Explicitly allow every tool via
       // canUseTool so we don't rely on permissionMode='bypassPermissions'
       // (which gates behind an extra safety flag) or 'default' (which would

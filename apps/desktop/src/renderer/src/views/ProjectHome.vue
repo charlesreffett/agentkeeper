@@ -41,10 +41,6 @@ function refreshList() {
 
 async function onNewSessionClick() {
   await refreshConfig()
-  if (!hasApiKey.value) {
-    settingsOpen.value = true
-    return
-  }
   newSessionOpen.value = true
 }
 

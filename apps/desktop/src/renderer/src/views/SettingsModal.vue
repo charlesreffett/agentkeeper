@@ -88,26 +88,47 @@ onMounted(() => {
         <h2 class="text-lg font-semibold">Settings</h2>
       </header>
 
-      <div class="space-y-2">
-        <label class="text-sm font-medium">Anthropic API key</label>
-        <p class="text-xs text-muted-foreground">
-          Stored in your OS keychain via keytar. Never written to disk in plain text.
-        </p>
-        <input
-          v-model="apiKeyInput"
-          type="password"
-          autocomplete="off"
-          :placeholder="keyStored ? '•••••••••• (key set) — enter new to replace' : 'sk-ant-…'"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-        />
-        <div v-if="keyStored" class="flex items-center justify-between">
-          <span class="text-xs text-muted-foreground">Key is configured.</span>
-          <button
-            class="text-xs text-destructive hover:underline"
-            @click="clearKey"
-          >
-            Remove key
-          </button>
+      <div class="space-y-3">
+        <label class="text-sm font-medium">Authentication</label>
+        <div
+          class="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed space-y-1"
+        >
+          <p class="text-foreground font-medium">
+            If you have a Claude Pro or Max plan
+          </p>
+          <p class="text-muted-foreground">
+            Run <code class="font-mono bg-background px-1 rounded">claude login</code>
+            in a terminal once. The app shares those credentials — no API key
+            needed here.
+          </p>
+        </div>
+        <div class="space-y-2">
+          <p class="text-xs text-muted-foreground">
+            Or, if you have an Anthropic Console account, paste an API key below
+            (stored in your OS keychain via keytar):
+          </p>
+          <input
+            v-model="apiKeyInput"
+            type="password"
+            autocomplete="off"
+            :placeholder="
+              keyStored
+                ? '•••••••••• (key set) — enter new to replace'
+                : 'sk-ant-… (optional)'
+            "
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+          />
+          <div v-if="keyStored" class="flex items-center justify-between">
+            <span class="text-xs text-muted-foreground">
+              API key is configured.
+            </span>
+            <button
+              class="text-xs text-destructive hover:underline"
+              @click="clearKey"
+            >
+              Remove key
+            </button>
+          </div>
         </div>
       </div>
 
