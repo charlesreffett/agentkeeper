@@ -8,4 +8,11 @@ build
 .env
 .env.local
 .env.*.local
-.orchestral/
+
+# Claude Code local state (per-project sessions, worktree metadata, etc.)
+.claude/
+
+# Git worktrees the app creates live in a sibling dir, not inside the repo
+# (see main/worktrees.ts → `<projectPath>--worktrees/`), so nothing to ignore
+# for those. `.orchestral/` holds committed role/agency definitions — DO NOT
+# ignore it.
