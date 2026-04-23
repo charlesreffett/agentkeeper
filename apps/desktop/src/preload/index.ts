@@ -30,8 +30,33 @@ function toPlain<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function describeArg(a: unknown): string {
+  if (a === null) return 'null'
+  if (a === undefined) return 'undefined'
+  if (Array.isArray(a)) return `array(${a.length})`
+  if (typeof a === 'object') {
+    const ctor = (a as object).constructor?.name ?? 'object'
+    const keys = Object.keys(a as object).slice(0, 6).join(',')
+    return `${ctor}{${keys}}`
+  }
+  return typeof a
+}
+
 function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
-  return ipcRenderer.invoke(channel, ...args.map(toPlain))
+  const plainArgs = args.map(toPlain)
+  // Fast-fail: verify the payload actually crosses structured-clone BEFORE
+  // ipcRenderer.invoke does it, so the error surfaces with our own context
+  // instead of Electron's opaque "An object could not be cloned."
+  try {
+    structuredClone(plainArgs)
+  } catch (err) {
+    const shape = plainArgs.map((a, i) => `${i}:${describeArg(a)}`).join(' ')
+    const reason = err instanceof Error ? err.message : String(err)
+    throw new Error(
+      `IPC ${channel}: args not structured-clone safe after toPlain [${shape}] — ${reason}`,
+    )
+  }
+  return ipcRenderer.invoke(channel, ...plainArgs)
 }
 
 function onChannel<P>(
