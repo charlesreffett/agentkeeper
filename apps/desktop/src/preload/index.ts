@@ -18,6 +18,22 @@ import {
   type StartSessionParams,
 } from '../shared/ipc-contract'
 
+/**
+ * JSON round-trip to strip Vue reactive Proxies, class instances, and
+ * anything else that Electron's structured-clone IPC refuses. Primitives
+ * pass through unchanged. Applied uniformly in invoke() below so call
+ * sites never have to think about it.
+ */
+function toPlain<T>(value: T): T {
+  if (value === null || value === undefined) return value
+  if (typeof value !== 'object') return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+  return ipcRenderer.invoke(channel, ...args.map(toPlain))
+}
+
 function onChannel<P>(
   channel: string,
   callback: (payload: P) => void,
@@ -31,87 +47,112 @@ function onChannel<P>(
 
 const api: OrchestralApi = {
   project: {
-    pick: () => ipcRenderer.invoke(IPC_CHANNELS.projectPick),
+    pick: () => invoke(IPC_CHANNELS.projectPick) as Promise<never>,
     recent: {
-      list: () => ipcRenderer.invoke(IPC_CHANNELS.projectRecentList),
+      list: () => invoke(IPC_CHANNELS.projectRecentList) as Promise<never>,
       remove: (path: string) =>
-        ipcRenderer.invoke(IPC_CHANNELS.projectRecentRemove, path),
+        invoke(IPC_CHANNELS.projectRecentRemove, path) as Promise<void>,
     },
   },
   sessions: {
     list: (projectPath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.sessionsList, projectPath),
+      invoke(IPC_CHANNELS.sessionsList, projectPath) as Promise<never>,
     read: (projectPath: string, sessionId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.sessionsRead, projectPath, sessionId),
+      invoke(IPC_CHANNELS.sessionsRead, projectPath, sessionId) as Promise<never>,
     start: (params: StartSessionParams) =>
-      ipcRenderer.invoke(IPC_CHANNELS.sessionStart, params),
+      invoke(IPC_CHANNELS.sessionStart, params) as Promise<string>,
     sendInput: (sessionId: string, text: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.sessionInput, sessionId, text),
+      invoke(IPC_CHANNELS.sessionInput, sessionId, text) as Promise<void>,
     cancel: (sessionId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.sessionCancel, sessionId),
+      invoke(IPC_CHANNELS.sessionCancel, sessionId) as Promise<void>,
     onEvent: (cb) => onChannel<LiveSessionEvent>(IPC_CHANNELS.sessionEvent, cb),
     onStatus: (cb) =>
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
   },
   worktrees: {
     list: (projectPath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.worktreesList, projectPath),
+      invoke(IPC_CHANNELS.worktreesList, projectPath) as Promise<never>,
     create: (projectPath: string, branchRequest: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.worktreesCreate, projectPath, branchRequest),
+      invoke(IPC_CHANNELS.worktreesCreate, projectPath, branchRequest) as Promise<never>,
     remove: (projectPath: string, worktreePath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.worktreesRemove, projectPath, worktreePath),
+      invoke(IPC_CHANNELS.worktreesRemove, projectPath, worktreePath) as Promise<void>,
   },
   roles: {
     list: (projectPath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.rolesList, projectPath),
+      invoke(IPC_CHANNELS.rolesList, projectPath) as Promise<never>,
     save: (scope: RoleScope, projectPath: string, role: RoleDraft) =>
-      ipcRenderer.invoke(IPC_CHANNELS.rolesSave, scope, projectPath, role),
+      invoke(IPC_CHANNELS.rolesSave, scope, projectPath, role) as Promise<never>,
     remove: (scope: RoleScope, projectPath: string, id: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.rolesRemove, scope, projectPath, id),
+      invoke(IPC_CHANNELS.rolesRemove, scope, projectPath, id) as Promise<void>,
   },
   agencies: {
     list: (projectPath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.agenciesList, projectPath),
+      invoke(IPC_CHANNELS.agenciesList, projectPath) as Promise<never>,
     save: (scope: AgencyScope, projectPath: string, agency: AgencyDraft) =>
-      ipcRenderer.invoke(IPC_CHANNELS.agenciesSave, scope, projectPath, agency),
+      invoke(IPC_CHANNELS.agenciesSave, scope, projectPath, agency) as Promise<never>,
     remove: (scope: AgencyScope, projectPath: string, id: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id),
+      invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id) as Promise<void>,
     start: (params: StartAgencyParams) =>
-      ipcRenderer.invoke(IPC_CHANNELS.agenciesStart, params),
+      invoke(IPC_CHANNELS.agenciesStart, params) as Promise<never>,
   },
   skills: {
     list: (projectPath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.skillsList, projectPath),
-    install: (projectPath: string, source: string, scope: 'project' | 'global', skillIds?: string[]) =>
-      ipcRenderer.invoke(IPC_CHANNELS.skillsInstall, projectPath, source, scope, skillIds),
+      invoke(IPC_CHANNELS.skillsList, projectPath) as Promise<never>,
+    install: (
+      projectPath: string,
+      source: string,
+      scope: 'project' | 'global',
+      skillIds?: string[],
+    ) =>
+      invoke(
+        IPC_CHANNELS.skillsInstall,
+        projectPath,
+        source,
+        scope,
+        skillIds,
+      ) as Promise<void>,
     remove: (skill: Skill) =>
-      ipcRenderer.invoke(IPC_CHANNELS.skillsRemove, skill),
+      invoke(IPC_CHANNELS.skillsRemove, skill) as Promise<void>,
     preview: (projectPath: string, source: string): Promise<SkillPreview[]> =>
-      ipcRenderer.invoke(IPC_CHANNELS.skillsPreview, projectPath, source),
+      invoke(IPC_CHANNELS.skillsPreview, projectPath, source) as Promise<
+        SkillPreview[]
+      >,
   },
   commands: {
     list: (projectPath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.commandsList, projectPath),
-    save: (scope: 'project' | 'global', projectPath: string, id: string, body: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.commandsSave, scope, projectPath, id, body),
+      invoke(IPC_CHANNELS.commandsList, projectPath) as Promise<never>,
+    save: (
+      scope: 'project' | 'global',
+      projectPath: string,
+      id: string,
+      body: string,
+    ) =>
+      invoke(
+        IPC_CHANNELS.commandsSave,
+        scope,
+        projectPath,
+        id,
+        body,
+      ) as Promise<never>,
     remove: (cmd: SlashCommand) =>
-      ipcRenderer.invoke(IPC_CHANNELS.commandsRemove, cmd),
+      invoke(IPC_CHANNELS.commandsRemove, cmd) as Promise<void>,
   },
   settings: {
-    get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),
+    get: () => invoke(IPC_CHANNELS.settingsGet) as Promise<never>,
     set: (partial: Partial<AppSettings>) =>
-      ipcRenderer.invoke(IPC_CHANNELS.settingsSet, partial),
+      invoke(IPC_CHANNELS.settingsSet, partial) as Promise<never>,
   },
   secrets: {
-    has: (key: SecretKeyName) => ipcRenderer.invoke(IPC_CHANNELS.secretsHas, key),
+    has: (key: SecretKeyName) =>
+      invoke(IPC_CHANNELS.secretsHas, key) as Promise<boolean>,
     set: (key: SecretKeyName, value: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.secretsSet, key, value),
+      invoke(IPC_CHANNELS.secretsSet, key, value) as Promise<void>,
     delete: (key: SecretKeyName) =>
-      ipcRenderer.invoke(IPC_CHANNELS.secretsDelete, key),
+      invoke(IPC_CHANNELS.secretsDelete, key) as Promise<void>,
   },
   reset: {
     execute: (request: ResetRequest) =>
-      ipcRenderer.invoke(IPC_CHANNELS.resetExecute, request),
+      invoke(IPC_CHANNELS.resetExecute, request) as Promise<never>,
   },
 }
 
