@@ -18,7 +18,11 @@ function globalSkillsDir(): string {
   return path.join(os.homedir(), GLOBAL_SKILLS_DIR)
 }
 
-function parseFrontmatter(source: string): { name: string; description: string; body: string } {
+function parseFrontmatter(source: string): {
+  name: string
+  description: string
+  body: string
+} {
   const trimmed = source.replace(/^﻿/, '')
   if (trimmed.startsWith('---')) {
     const end = trimmed.indexOf('\n---', 3)
@@ -37,64 +41,142 @@ function parseFrontmatter(source: string): { name: string; description: string; 
   return { name: '', description: '', body: trimmed.trimEnd() }
 }
 
-function normalizeSource(source: string): string {
-  if (/^[a-zA-Z0-9_][\w.-]*\/[\w.-]+$/.test(source)) {
-    return `https://github.com/${source}`
+type ResolvedSource =
+  | { type: 'local'; path: string }
+  | { type: 'remote'; url: string }
+
+/**
+ * Classify a user-provided source string.
+ *  - local path (absolute, ./rel, ../rel)  → read in place
+ *  - http(s) / git@ / owner/repo            → git clone
+ */
+function classifySource(source: string): ResolvedSource {
+  const trimmed = source.trim()
+  if (/^(\.{1,2}\/|\/)/.test(trimmed)) return { type: 'local', path: trimmed }
+  if (/^https?:\/\//.test(trimmed)) return { type: 'remote', url: trimmed }
+  if (/^git@/.test(trimmed)) return { type: 'remote', url: trimmed }
+  if (/^[a-zA-Z0-9_][\w.-]*\/[\w.-]+$/.test(trimmed)) {
+    return { type: 'remote', url: `https://github.com/${trimmed}.git` }
   }
-  return source
+  // Ambiguous — treat as local path and let the read error speak if wrong.
+  return { type: 'local', path: trimmed }
 }
 
-function stripAnsi(s: string): string {
-  return s.replace(/\x1b\[[0-9;]*m/g, '')
+async function gitClone(url: string, dest: string): Promise<void> {
+  try {
+    await execFileAsync('git', ['clone', '--depth', '1', url, dest], {
+      timeout: 60000,
+      maxBuffer: 10 * 1024 * 1024,
+    })
+  } catch (err) {
+    const message =
+      (err as NodeJS.ErrnoException & { stderr?: string }).stderr?.trim() ||
+      (err instanceof Error ? err.message : String(err))
+    throw new Error(`git clone failed: ${message}`)
+  }
 }
 
-function parsePreviewOutput(stdout: string): SkillPreview[] {
-  const lines = stripAnsi(stdout).split('\n')
-
-  const structured: SkillPreview[] = []
-  // "  - id" or "  - id: description"
-  const dashRe = /^\s*-\s+([\w.-]+)(?:\s*:\s*(.+))?$/
-  // "  id: description"
-  const colonRe = /^\s*([\w.-]+):\s+(.+)$/
-  // "  ✓ name" or "  • name" etc.
-  const bulletRe = /^\s*[✓✗✔●•*]\s+(.+)$/
-
-  for (const line of lines) {
-    const m1 = dashRe.exec(line)
-    if (m1) {
-      structured.push({ id: m1[1]!, name: m1[1]!, description: m1[2]?.trim() ?? '' })
-      continue
+/** Recursively locate every SKILL.md under `root`, skipping hidden dirs. */
+async function findSkillFiles(root: string): Promise<string[]> {
+  const results: string[] = []
+  async function walk(dir: string): Promise<void> {
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = (await fs.readdir(dir, { withFileTypes: true })) as unknown as
+        import('node:fs').Dirent[]
+    } catch {
+      return
     }
-    const m2 = colonRe.exec(line)
-    if (m2) {
-      if (!/^(error|done|warning|info|cloning|fetching|resolving|installing|available|selecting)/i.test(m2[1]!)) {
-        structured.push({ id: m2[1]!, name: m2[1]!, description: m2[2]!.trim() })
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue // skip .git, .github, .claude etc.
+      if (e.name === 'node_modules') continue
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) {
+        await walk(full)
+      } else if (e.isFile() && e.name === 'SKILL.md') {
+        results.push(full)
       }
-      continue
-    }
-    const m3 = bulletRe.exec(line)
-    if (m3) {
-      const name = m3[1]!.trim()
-      structured.push({
-        id: name.toLowerCase().replace(/\s+/g, '-'),
-        name,
-        description: '',
-      })
     }
   }
+  await walk(root)
+  return results
+}
 
-  if (structured.length > 0) return structured
+async function copyDir(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true })
+  const entries = (await fs.readdir(src, { withFileTypes: true })) as unknown as
+    import('node:fs').Dirent[]
+  for (const e of entries) {
+    const srcPath = path.join(src, e.name)
+    const destPath = path.join(dest, e.name)
+    if (e.isDirectory()) {
+      await copyDir(srcPath, destPath)
+    } else if (e.isFile()) {
+      await fs.copyFile(srcPath, destPath)
+    }
+  }
+}
 
-  // Fall back: raw non-empty, non-header lines
-  return lines
-    .map((l) => l.trim())
-    .filter(
-      (l) =>
-        l.length > 0 &&
-        !l.endsWith(':') &&
-        !/^(available|skills|installing|preview|selecting|fetching|cloning)/i.test(l),
-    )
-    .map((l) => ({ id: l, name: l, description: '' }))
+async function withSourceRoot<T>(
+  projectPath: string,
+  source: string,
+  fn: (root: string) => Promise<T>,
+): Promise<T> {
+  const resolved = classifySource(source)
+  if (resolved.type === 'local') {
+    const abs = path.isAbsolute(resolved.path)
+      ? resolved.path
+      : path.resolve(projectPath, resolved.path)
+    const stat = await fs.stat(abs).catch(() => null)
+    if (!stat || !stat.isDirectory()) {
+      throw new Error(`Source path is not a directory: ${abs}`)
+    }
+    return await fn(abs)
+  }
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'orchestral-skills-'))
+  try {
+    await gitClone(resolved.url, tmp)
+    return await fn(tmp)
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+function deriveId(skillDir: string, root: string): string {
+  // Prefer the directory name. If two skills in the same source share a
+  // basename, disambiguate with the parent directory.
+  const rel = path.relative(root, skillDir)
+  const parts = rel.split(path.sep).filter(Boolean)
+  return parts[parts.length - 1] ?? path.basename(skillDir)
+}
+
+async function collectPreviews(root: string): Promise<SkillPreview[]> {
+  const files = await findSkillFiles(root)
+  const previews: SkillPreview[] = []
+  const seenIds = new Set<string>()
+  for (const file of files) {
+    const skillDir = path.dirname(file)
+    let id = deriveId(skillDir, root)
+    // Resolve id collisions by prefixing with parent dir name.
+    if (seenIds.has(id)) {
+      const parentName = path.basename(path.dirname(skillDir))
+      id = parentName ? `${parentName}-${id}` : `${id}-dup`
+    }
+    seenIds.add(id)
+    try {
+      const content = await fs.readFile(file, 'utf8')
+      const { name, description } = parseFrontmatter(content)
+      previews.push({
+        id,
+        name: name || id,
+        description: description || '',
+      })
+    } catch {
+      // unreadable SKILL.md — skip
+    }
+  }
+  previews.sort((a, b) => a.name.localeCompare(b.name))
+  return previews
 }
 
 async function listScope(
@@ -144,18 +226,7 @@ export async function previewSkills(
   projectPath: string,
   source: string,
 ): Promise<SkillPreview[]> {
-  const normalized = normalizeSource(source)
-  const { stdout } = await execFileAsync(
-    'npx',
-    ['--yes', 'skills', 'add', normalized, '--list', '--yes'],
-    { cwd: projectPath, timeout: 30000 },
-  ).catch((err) => {
-    throw new Error(
-      (err as NodeJS.ErrnoException & { stderr?: string }).stderr?.trim() ||
-        err.message,
-    )
-  })
-  return parsePreviewOutput(stdout)
+  return withSourceRoot(projectPath, source, (root) => collectPreviews(root))
 }
 
 export async function installSkill(
@@ -164,23 +235,32 @@ export async function installSkill(
   scope: 'project' | 'global',
   skillIds?: string[],
 ): Promise<void> {
-  const normalized = normalizeSource(source)
-  const args: string[] = ['--yes', 'skills', 'add']
-  if (scope === 'global') args.push('-g')
-  args.push(normalized)
-  if (skillIds && skillIds.length > 0) {
-    for (const id of skillIds) {
-      args.push('--skill', id)
+  await withSourceRoot(projectPath, source, async (root) => {
+    const files = await findSkillFiles(root)
+    const wanted = skillIds && skillIds.length > 0 ? new Set(skillIds) : null
+    const destRoot =
+      scope === 'global' ? globalSkillsDir() : projectSkillsDir(projectPath)
+    await fs.mkdir(destRoot, { recursive: true })
+
+    const installed: string[] = []
+    for (const file of files) {
+      const skillDir = path.dirname(file)
+      const id = deriveId(skillDir, root)
+      if (wanted && !wanted.has(id)) continue
+      const destDir = path.join(destRoot, id)
+      await fs.rm(destDir, { recursive: true, force: true })
+      await copyDir(skillDir, destDir)
+      installed.push(id)
     }
-  } else {
-    args.push('--all')
-  }
-  const cwd = scope === 'global' ? os.homedir() : projectPath
-  await execFileAsync('npx', args, { cwd, timeout: 60000 }).catch((err) => {
-    throw new Error(
-      (err as NodeJS.ErrnoException & { stderr?: string }).stderr?.trim() ||
-        err.message,
-    )
+
+    if (wanted) {
+      const missing = [...wanted].filter((id) => !installed.includes(id))
+      if (missing.length > 0) {
+        throw new Error(
+          `Requested skills not found in source: ${missing.join(', ')}`,
+        )
+      }
+    }
   })
 }
 
