@@ -43,7 +43,7 @@ function beginNew() {
 }
 
 function beginEdit(cmd: SlashCommand) {
-  selectedId.value = cmd.id
+  selectedId.value = `${cmd.scope}:${cmd.id}`
   isNew.value = false
   editing.value = true
   form.value = { id: cmd.id, scope: cmd.scope, body: cmd.body }
@@ -93,7 +93,7 @@ async function remove(cmd: SlashCommand) {
   try {
     await window.orchestral.commands.remove(cmd)
     await refresh()
-    if (selectedId.value === cmd.id) cancelEdit()
+    if (selectedId.value === `${cmd.scope}:${cmd.id}`) cancelEdit()
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   }
@@ -153,7 +153,7 @@ watch(
               v-for="cmd in commands"
               :key="`${cmd.scope}:${cmd.id}`"
               class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
-              :class="selectedId === cmd.id ? 'bg-accent' : ''"
+              :class="selectedId === `${cmd.scope}:${cmd.id}` ? 'bg-accent' : ''"
               @click="beginEdit(cmd)"
             >
               <div class="text-sm font-medium truncate font-mono">/{{ cmd.id }}</div>
@@ -194,7 +194,8 @@ watch(
                 <label class="text-xs font-medium">Scope</label>
                 <select
                   v-model="form.scope"
-                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+                  :disabled="!isNew"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring disabled:opacity-50"
                 >
                   <option value="project">Project</option>
                   <option value="global">Global</option>
@@ -233,7 +234,7 @@ watch(
                 class="text-destructive"
                 @click="
                   () => {
-                    const cmd = commands.find((x) => x.id === selectedId)
+                    const cmd = commands.find((x) => `${x.scope}:${x.id}` === selectedId)
                     if (cmd) remove(cmd)
                   }
                 "

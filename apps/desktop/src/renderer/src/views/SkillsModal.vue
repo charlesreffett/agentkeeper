@@ -98,7 +98,6 @@ watch(
       </header>
 
       <div class="flex-1 overflow-y-auto min-h-0">
-        <!-- Install form -->
         <div class="px-6 py-4 border-b border-border space-y-3">
           <p class="text-xs font-medium">Install skill</p>
           <div class="flex gap-2">
@@ -130,7 +129,6 @@ watch(
           </div>
         </div>
 
-        <!-- Skills list -->
         <div v-if="loading" class="p-6 text-sm text-muted-foreground">Loading…</div>
         <div
           v-else-if="skills.length === 0"

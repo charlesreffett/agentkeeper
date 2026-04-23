@@ -89,16 +89,12 @@ export async function installSkill(
     ? ['skills', 'add', '-g', source]
     : ['skills', 'add', source]
   const cwd = scope === 'global' ? os.homedir() : projectPath
-  const { stderr } = await execFileAsync('npx', args, { cwd }).catch((err) => {
+  await execFileAsync('npx', args, { cwd }).catch((err) => {
     throw new Error(
       (err as NodeJS.ErrnoException & { stderr?: string }).stderr?.trim() ||
         err.message,
     )
   })
-  if (stderr) {
-    const cleaned = stderr.trim()
-    if (cleaned) console.warn('[skills:install]', cleaned)
-  }
 }
 
 export async function removeSkill(skill: Skill): Promise<void> {
