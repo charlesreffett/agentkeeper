@@ -13,10 +13,6 @@ async function removeSafely(p: string): Promise<void> {
   }
 }
 
-async function resetRecentProjects(): Promise<void> {
-  await removeSafely(path.join(app.getPath('userData'), 'recent-projects.json'))
-}
-
 async function resetAppSettings(): Promise<void> {
   await removeSafely(path.join(app.getPath('userData'), 'settings.json'))
   const allKeys = Object.values(SECRET_KEYS) as SecretKey[]
@@ -40,23 +36,12 @@ async function resetGlobalDefinitions(): Promise<void> {
 export async function executeReset(request: ResetRequest): Promise<ResetResult> {
   const errors: string[] = []
   const result: ResetResult = {
-    recentProjectsCleared: false,
     appSettingsCleared: false,
     globalDefinitionsCleared: false,
     projectDefinitionsCleared: false,
     errors,
   }
 
-  if (request.recentProjects) {
-    try {
-      await resetRecentProjects()
-      result.recentProjectsCleared = true
-    } catch (err) {
-      errors.push(
-        `recent projects: ${err instanceof Error ? err.message : String(err)}`,
-      )
-    }
-  }
   if (request.appSettings) {
     try {
       await resetAppSettings()
