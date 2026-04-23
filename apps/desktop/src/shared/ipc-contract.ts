@@ -211,8 +211,10 @@ export type SecretKeyName = 'anthropicApiKey'
 // ─── Factory reset ──────────────────────────────────────────────────────────
 
 export interface ResetRequest {
-  /** Recent projects, settings.json, and all stored secrets (keychain). */
-  appState: boolean
+  /** Just the recent-projects list. Kept separate from app settings. */
+  recentProjects: boolean
+  /** settings.json and all stored secrets (keychain API key, etc.). */
+  appSettings: boolean
   /** `~/.orchestral/` role and agency definitions. */
   globalDefinitions: boolean
   /** `<projectPath>/.orchestral/` — set to null to skip. */
@@ -220,7 +222,8 @@ export interface ResetRequest {
 }
 
 export interface ResetResult {
-  appStateCleared: boolean
+  recentProjectsCleared: boolean
+  appSettingsCleared: boolean
   globalDefinitionsCleared: boolean
   projectDefinitionsCleared: boolean
   errors: string[]

@@ -20,7 +20,8 @@ const MODEL_OPTIONS = [
 ] as const
 
 // Danger-zone state
-const resetAppStateSel = ref(false)
+const resetRecentSel = ref(false)
+const resetAppSettingsSel = ref(false)
 const resetProjectSel = ref(false)
 const resetGlobalSel = ref(false)
 const resetting = ref(false)
@@ -28,7 +29,8 @@ const resetMessage = ref<string | null>(null)
 
 const canReset = computed(
   () =>
-    resetAppStateSel.value ||
+    resetRecentSel.value ||
+    resetAppSettingsSel.value ||
     (resetProjectSel.value && !!props.projectPath) ||
     resetGlobalSel.value,
 )
@@ -83,7 +85,8 @@ async function clearKey() {
 async function onReset() {
   if (!canReset.value) return
   const scopes: string[] = []
-  if (resetAppStateSel.value) scopes.push('app state')
+  if (resetRecentSel.value) scopes.push('recent projects')
+  if (resetAppSettingsSel.value) scopes.push('app settings')
   if (resetProjectSel.value && props.projectPath)
     scopes.push('project definitions')
   if (resetGlobalSel.value) scopes.push('global definitions')
@@ -98,7 +101,8 @@ async function onReset() {
   resetMessage.value = null
   try {
     const result = await window.orchestral.reset.execute({
-      appState: resetAppStateSel.value,
+      recentProjects: resetRecentSel.value,
+      appSettings: resetAppSettingsSel.value,
       globalDefinitions: resetGlobalSel.value,
       projectDefinitions:
         resetProjectSel.value && props.projectPath
@@ -106,7 +110,8 @@ async function onReset() {
           : null,
     })
     const cleared: string[] = []
-    if (result.appStateCleared) cleared.push('app state')
+    if (result.recentProjectsCleared) cleared.push('recent projects')
+    if (result.appSettingsCleared) cleared.push('app settings')
     if (result.projectDefinitionsCleared) cleared.push('project definitions')
     if (result.globalDefinitionsCleared) cleared.push('global definitions')
 
@@ -114,7 +119,8 @@ async function onReset() {
       ? `Cleared: ${cleared.join(', ') || 'nothing'}. Errors: ${result.errors.join('; ')}`
       : `Cleared: ${cleared.join(', ')}. Restart the app to pick up the changes.`
 
-    resetAppStateSel.value = false
+    resetRecentSel.value = false
+    resetAppSettingsSel.value = false
     resetProjectSel.value = false
     resetGlobalSel.value = false
     await refresh()
@@ -130,7 +136,8 @@ watch(
   () => props.open,
   async (isOpen) => {
     if (isOpen) {
-      resetAppStateSel.value = false
+      resetRecentSel.value = false
+      resetAppSettingsSel.value = false
       resetProjectSel.value = false
       resetGlobalSel.value = false
       resetMessage.value = null
@@ -260,14 +267,30 @@ onMounted(() => {
           <div class="space-y-2">
             <label class="flex items-start gap-2 cursor-pointer select-none">
               <input
-                v-model="resetAppStateSel"
+                v-model="resetRecentSel"
                 type="checkbox"
                 class="size-4 mt-0.5 rounded border-input shrink-0"
               />
               <div class="text-xs min-w-0">
-                <div class="font-medium text-foreground">App state</div>
+                <div class="font-medium text-foreground">Recent projects</div>
                 <div class="text-muted-foreground">
-                  Recent projects, settings (model/effort), API key in keychain.
+                  The list you see on the Welcome screen. Doesn't touch the
+                  projects themselves.
+                </div>
+              </div>
+            </label>
+
+            <label class="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                v-model="resetAppSettingsSel"
+                type="checkbox"
+                class="size-4 mt-0.5 rounded border-input shrink-0"
+              />
+              <div class="text-xs min-w-0">
+                <div class="font-medium text-foreground">App settings</div>
+                <div class="text-muted-foreground">
+                  Default model, default effort, and the API key stored in the
+                  OS keychain.
                 </div>
               </div>
             </label>

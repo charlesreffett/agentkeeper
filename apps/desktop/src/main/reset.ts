@@ -13,10 +13,12 @@ async function removeSafely(p: string): Promise<void> {
   }
 }
 
-async function resetAppState(): Promise<void> {
-  const userData = app.getPath('userData')
-  await removeSafely(path.join(userData, 'recent-projects.json'))
-  await removeSafely(path.join(userData, 'settings.json'))
+async function resetRecentProjects(): Promise<void> {
+  await removeSafely(path.join(app.getPath('userData'), 'recent-projects.json'))
+}
+
+async function resetAppSettings(): Promise<void> {
+  await removeSafely(path.join(app.getPath('userData'), 'settings.json'))
   const allKeys = Object.values(SECRET_KEYS) as SecretKey[]
   for (const key of allKeys) {
     try {
@@ -38,19 +40,30 @@ async function resetGlobalDefinitions(): Promise<void> {
 export async function executeReset(request: ResetRequest): Promise<ResetResult> {
   const errors: string[] = []
   const result: ResetResult = {
-    appStateCleared: false,
+    recentProjectsCleared: false,
+    appSettingsCleared: false,
     globalDefinitionsCleared: false,
     projectDefinitionsCleared: false,
     errors,
   }
 
-  if (request.appState) {
+  if (request.recentProjects) {
     try {
-      await resetAppState()
-      result.appStateCleared = true
+      await resetRecentProjects()
+      result.recentProjectsCleared = true
     } catch (err) {
       errors.push(
-        `app state: ${err instanceof Error ? err.message : String(err)}`,
+        `recent projects: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+  if (request.appSettings) {
+    try {
+      await resetAppSettings()
+      result.appSettingsCleared = true
+    } catch (err) {
+      errors.push(
+        `app settings: ${err instanceof Error ? err.message : String(err)}`,
       )
     }
   }
