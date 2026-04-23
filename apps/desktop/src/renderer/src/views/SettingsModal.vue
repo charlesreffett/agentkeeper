@@ -21,6 +21,15 @@ const MODEL_OPTIONS = [
 
 async function refresh() {
   settings.value = await window.orchestral.settings.get()
+  // Defensive: if main is running an older build (no defaults for
+  // defaultEffort), or the on-disk settings has an invalid value, fall
+  // back to 'medium' in the UI so the dropdown never starts blank.
+  if (
+    !settings.value.defaultEffort ||
+    !ROLE_EFFORT_VALUES.includes(settings.value.defaultEffort)
+  ) {
+    settings.value.defaultEffort = 'medium'
+  }
   keyStored.value = await window.orchestral.secrets.has('anthropicApiKey')
   apiKeyInput.value = ''
   message.value = null

@@ -1,7 +1,10 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AppSettings } from '../shared/ipc-contract'
+import {
+  ROLE_EFFORT_VALUES,
+  type AppSettings,
+} from '../shared/ipc-contract'
 
 const DEFAULTS: AppSettings = {
   defaultModel: 'claude-sonnet-4-6',
@@ -16,7 +19,14 @@ function read(): AppSettings {
   try {
     const raw = fs.readFileSync(filePath(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    return { ...DEFAULTS, ...parsed }
+    const merged = { ...DEFAULTS, ...parsed }
+    // Guard against stale / malformed data on disk (e.g. an older
+    // settings.json written before `defaultEffort` existed, or a manual
+    // edit). Fall back to the default for any invalid effort value.
+    if (!ROLE_EFFORT_VALUES.includes(merged.defaultEffort)) {
+      merged.defaultEffort = DEFAULTS.defaultEffort
+    }
+    return merged
   } catch {
     return { ...DEFAULTS }
   }
