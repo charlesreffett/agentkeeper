@@ -110,6 +110,27 @@ export interface WorktreeInfo {
   head: string
 }
 
+// ─── Skills ─────────────────────────────────────────────────────────────────
+
+export interface Skill {
+  id: string
+  scope: 'project' | 'global'
+  path: string
+  name: string
+  description: string
+  body: string
+}
+
+// ─── Commands ────────────────────────────────────────────────────────────────
+
+export interface SlashCommand {
+  id: string
+  scope: 'project' | 'global'
+  path: string
+  name: string
+  body: string
+}
+
 // ─── Roles ──────────────────────────────────────────────────────────────────
 
 export type RoleScope = 'project' | 'global'
@@ -278,6 +299,25 @@ export interface OrchestralApi {
     ) => Promise<void>
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
   }
+  skills: {
+    list: (projectPath: string) => Promise<Skill[]>
+    install: (
+      projectPath: string,
+      source: string,
+      scope: 'project' | 'global',
+    ) => Promise<void>
+    remove: (skill: Skill) => Promise<void>
+  }
+  commands: {
+    list: (projectPath: string) => Promise<SlashCommand[]>
+    save: (
+      scope: 'project' | 'global',
+      projectPath: string,
+      id: string,
+      body: string,
+    ) => Promise<SlashCommand>
+    remove: (cmd: SlashCommand) => Promise<void>
+  }
   settings: {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
@@ -313,6 +353,12 @@ export const IPC_CHANNELS = {
   agenciesSave: 'agencies:save',
   agenciesRemove: 'agencies:remove',
   agenciesStart: 'agencies:start',
+  skillsList: 'skills:list',
+  skillsInstall: 'skills:install',
+  skillsRemove: 'skills:remove',
+  commandsList: 'commands:list',
+  commandsSave: 'commands:save',
+  commandsRemove: 'commands:remove',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   secretsHas: 'secrets:has',

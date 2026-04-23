@@ -11,6 +11,8 @@ import {
   type RoleDraft,
   type RoleScope,
   type SecretKeyName,
+  type Skill,
+  type SlashCommand,
   type StartAgencyParams,
   type StartSessionParams,
 } from '../shared/ipc-contract'
@@ -75,6 +77,22 @@ const api: OrchestralApi = {
       ipcRenderer.invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id),
     start: (params: StartAgencyParams) =>
       ipcRenderer.invoke(IPC_CHANNELS.agenciesStart, params),
+  },
+  skills: {
+    list: (projectPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.skillsList, projectPath),
+    install: (projectPath: string, source: string, scope: 'project' | 'global') =>
+      ipcRenderer.invoke(IPC_CHANNELS.skillsInstall, projectPath, source, scope),
+    remove: (skill: Skill) =>
+      ipcRenderer.invoke(IPC_CHANNELS.skillsRemove, skill),
+  },
+  commands: {
+    list: (projectPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.commandsList, projectPath),
+    save: (scope: 'project' | 'global', projectPath: string, id: string, body: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.commandsSave, scope, projectPath, id, body),
+    remove: (cmd: SlashCommand) =>
+      ipcRenderer.invoke(IPC_CHANNELS.commandsRemove, cmd),
   },
   settings: {
     get: () => ipcRenderer.invoke(IPC_CHANNELS.settingsGet),

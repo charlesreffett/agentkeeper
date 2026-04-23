@@ -17,12 +17,16 @@ import { deleteRole, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
 import { startAgency } from './orchestrator'
 import { executeReset } from './reset'
+import { installSkill, listSkills, removeSkill } from './skills'
+import { listCommands, removeCommand, saveCommand } from './commands'
 import type {
   AgencyDraft,
   AgencyScope,
   ResetRequest,
   RoleDraft,
   RoleScope,
+  Skill,
+  SlashCommand,
   StartAgencyParams,
 } from '../shared/ipc-contract'
 
@@ -237,6 +241,87 @@ export function registerIpcHandlers() {
         return await startAgency(params)
       } catch (err) {
         console.error('[ipc] agencies:start failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  // Skills
+  ipcMain.handle(
+    IPC_CHANNELS.skillsList,
+    async (_event, projectPath: string) => {
+      try {
+        return await listSkills(projectPath)
+      } catch (err) {
+        console.error('[ipc] skills:list failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.skillsInstall,
+    async (
+      _event,
+      projectPath: string,
+      source: string,
+      scope: 'project' | 'global',
+    ) => {
+      try {
+        return await installSkill(projectPath, source, scope)
+      } catch (err) {
+        console.error('[ipc] skills:install failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.skillsRemove,
+    async (_event, skill: Skill) => {
+      try {
+        return await removeSkill(skill)
+      } catch (err) {
+        console.error('[ipc] skills:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  // Commands
+  ipcMain.handle(
+    IPC_CHANNELS.commandsList,
+    async (_event, projectPath: string) => {
+      try {
+        return await listCommands(projectPath)
+      } catch (err) {
+        console.error('[ipc] commands:list failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.commandsSave,
+    async (
+      _event,
+      scope: 'project' | 'global',
+      projectPath: string,
+      id: string,
+      body: string,
+    ) => {
+      try {
+        return await saveCommand(scope, projectPath, id, body)
+      } catch (err) {
+        console.error('[ipc] commands:save failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.commandsRemove,
+    async (_event, cmd: SlashCommand) => {
+      try {
+        return await removeCommand(cmd)
+      } catch (err) {
+        console.error('[ipc] commands:remove failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

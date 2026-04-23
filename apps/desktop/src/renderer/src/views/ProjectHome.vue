@@ -7,6 +7,8 @@ import NewSessionModal from './NewSessionModal.vue'
 import SettingsModal from './SettingsModal.vue'
 import RolesModal from './RolesModal.vue'
 import AgenciesModal from './AgenciesModal.vue'
+import SkillsModal from './SkillsModal.vue'
+import CommandsModal from './CommandsModal.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
@@ -30,6 +32,8 @@ const newSessionOpen = ref(false)
 const settingsOpen = ref(false)
 const rolesOpen = ref(false)
 const agenciesOpen = ref(false)
+const skillsOpen = ref(false)
+const commandsOpen = ref(false)
 
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
@@ -137,6 +141,8 @@ onMounted(refreshConfig)
         Agencies
       </Button>
       <Button variant="ghost" size="sm" @click="rolesOpen = true">Roles</Button>
+      <Button variant="ghost" size="sm" @click="skillsOpen = true">Skills</Button>
+      <Button variant="ghost" size="sm" @click="commandsOpen = true">Commands</Button>
       <Button variant="ghost" size="sm" @click="settingsOpen = true">
         Settings
       </Button>
@@ -224,6 +230,18 @@ onMounted(refreshConfig)
           }
         }
       "
+    />
+
+    <SkillsModal
+      :open="skillsOpen"
+      :project-path="project.path"
+      @close="skillsOpen = false"
+    />
+
+    <CommandsModal
+      :open="commandsOpen"
+      :project-path="project.path"
+      @close="commandsOpen = false"
     />
   </div>
 </template>
