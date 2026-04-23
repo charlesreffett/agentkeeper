@@ -38,7 +38,7 @@ function parseFrontmatter(source: string): { name: string; description: string; 
 }
 
 function normalizeSource(source: string): string {
-  if (/^[\w.-]+\/[\w.-]+$/.test(source)) {
+  if (/^[a-zA-Z0-9_][\w.-]*\/[\w.-]+$/.test(source)) {
     return `https://github.com/${source}`
   }
   return source
@@ -67,7 +67,9 @@ function parsePreviewOutput(stdout: string): SkillPreview[] {
     }
     const m2 = colonRe.exec(line)
     if (m2) {
-      structured.push({ id: m2[1]!, name: m2[1]!, description: m2[2]!.trim() })
+      if (!/^(error|done|warning|info|cloning|fetching|resolving|installing|available|selecting)/i.test(m2[1]!)) {
+        structured.push({ id: m2[1]!, name: m2[1]!, description: m2[2]!.trim() })
+      }
       continue
     }
     const m3 = bulletRe.exec(line)
@@ -143,16 +145,17 @@ export async function previewSkills(
   source: string,
 ): Promise<SkillPreview[]> {
   const normalized = normalizeSource(source)
-  try {
-    const { stdout } = await execFileAsync(
-      'npx',
-      ['--yes', 'skills', 'add', normalized, '--list', '--yes'],
-      { cwd: projectPath, timeout: 30000 },
+  const { stdout } = await execFileAsync(
+    'npx',
+    ['--yes', 'skills', 'add', normalized, '--list', '--yes'],
+    { cwd: projectPath, timeout: 30000 },
+  ).catch((err) => {
+    throw new Error(
+      (err as NodeJS.ErrnoException & { stderr?: string }).stderr?.trim() ||
+        err.message,
     )
-    return parsePreviewOutput(stdout)
-  } catch {
-    return []
-  }
+  })
+  return parsePreviewOutput(stdout)
 }
 
 export async function installSkill(

@@ -54,13 +54,6 @@ async function startPreview() {
   try {
     const result = await window.orchestral.skills.preview(props.projectPath, source)
     previews.value = result
-
-    if (result.length === 1) {
-      // single skill — install immediately without showing selection UI
-      await doInstall([result[0]!.id])
-      return
-    }
-
     selectedIds.value = result.map((p) => p.id)
     step.value = 'select'
   } catch (e) {
@@ -160,7 +153,6 @@ watch(
 
       <div class="flex-1 overflow-y-auto min-h-0">
         <div class="px-6 py-4 border-b border-border space-y-3">
-          <!-- Step 1: source entry -->
           <template v-if="step === 'source'">
             <p class="text-xs font-medium">Install skill</p>
             <div class="flex gap-2">
@@ -186,7 +178,6 @@ watch(
             </div>
           </template>
 
-          <!-- Step 2: skill selection -->
           <template v-else>
             <div class="flex items-center gap-2">
               <Button variant="ghost" size="sm" @click="step = 'source'">← Back</Button>
@@ -197,7 +188,6 @@ watch(
               </p>
             </div>
 
-            <!-- 0 previews: fallback -->
             <div v-if="previews.length === 0" class="space-y-2">
               <p class="text-sm text-muted-foreground">
                 Could not detect skills in this source — install all?
@@ -207,7 +197,6 @@ watch(
               </Button>
             </div>
 
-            <!-- ≥2 previews: checklist -->
             <div v-else class="space-y-2">
               <div class="flex items-center justify-between">
                 <button
