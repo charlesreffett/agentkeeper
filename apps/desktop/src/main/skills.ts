@@ -41,141 +41,124 @@ function parseFrontmatter(source: string): {
   return { name: '', description: '', body: trimmed.trimEnd() }
 }
 
-type ResolvedSource =
-  | { type: 'local'; path: string }
-  | { type: 'remote'; url: string }
-
 /**
- * Classify a user-provided source string.
- *  - local path (absolute, ./rel, ../rel)  → read in place
- *  - http(s) / git@ / owner/repo            → git clone
+ * Strip ANSI / terminal control sequences so we can parse decorated CLI
+ * output. The previous version only matched color CSIs (`\x1b[...m`), which
+ * let cursor moves ([999D), erase ([J, [K), and mode-toggles ([?25l, [?25h)
+ * leak through — and those were the reason the "preview" treated progress
+ * frames as skills. This version matches any CSI (final byte in @-~) plus
+ * OSC and single-char escapes.
  */
-function classifySource(source: string): ResolvedSource {
-  const trimmed = source.trim()
-  if (/^(\.{1,2}\/|\/)/.test(trimmed)) return { type: 'local', path: trimmed }
-  if (/^https?:\/\//.test(trimmed)) return { type: 'remote', url: trimmed }
-  if (/^git@/.test(trimmed)) return { type: 'remote', url: trimmed }
-  if (/^[a-zA-Z0-9_][\w.-]*\/[\w.-]+$/.test(trimmed)) {
-    return { type: 'remote', url: `https://github.com/${trimmed}.git` }
-  }
-  // Ambiguous — treat as local path and let the read error speak if wrong.
-  return { type: 'local', path: trimmed }
+function stripAnsi(s: string): string {
+  return s
+    // CSI: ESC [ <params> <intermediates> <final 0x40-0x7E>
+    .replace(/\x1b\[[\d;?>=!]*[@-~]/g, '')
+    // OSC: ESC ] ... BEL or ST
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
+    // Single-char escape sequences (ESC + one letter)
+    .replace(/\x1b[A-Za-z=>]/g, '')
 }
 
-async function gitClone(url: string, dest: string): Promise<void> {
+async function runSkills(
+  args: string[],
+  cwd: string,
+): Promise<{ stdout: string; stderr: string }> {
   try {
-    await execFileAsync('git', ['clone', '--depth', '1', url, dest], {
-      timeout: 60000,
+    return await execFileAsync('npx', ['--yes', 'skills', ...args], {
+      cwd,
+      timeout: 90000,
       maxBuffer: 10 * 1024 * 1024,
     })
   } catch (err) {
-    const message =
-      (err as NodeJS.ErrnoException & { stderr?: string }).stderr?.trim() ||
-      (err instanceof Error ? err.message : String(err))
-    throw new Error(`git clone failed: ${message}`)
+    const e = err as NodeJS.ErrnoException & {
+      stdout?: string
+      stderr?: string
+    }
+    const raw = (e.stderr?.trim() || e.stdout?.trim() || e.message) ?? ''
+    throw new Error(`skills CLI failed: ${stripAnsi(raw).trim()}`)
   }
 }
 
-/** Recursively locate every SKILL.md under `root`, skipping hidden dirs. */
-async function findSkillFiles(root: string): Promise<string[]> {
-  const results: string[] = []
-  async function walk(dir: string): Promise<void> {
-    let entries: import('node:fs').Dirent[]
-    try {
-      entries = (await fs.readdir(dir, { withFileTypes: true })) as unknown as
-        import('node:fs').Dirent[]
-    } catch {
-      return
+/**
+ * Parse the output of `npx skills add <source> -l -y`.
+ *
+ * Observed format (stripped of ANSI):
+ *
+ *     Found 18 skills
+ *
+ *     ◇  Available Skills
+ *     Claude Api
+ *     │
+ *     │    claude-api
+ *     │
+ *     │      Build, debug, and optimize Claude API ...
+ *
+ *     Document Skills
+ *     │
+ *     │    docx
+ *     │
+ *     │      Use this skill ...
+ *     ...
+ *     └   Use --skill <name> to install specific skills
+ *
+ * Group headers are flush-left, skill ids are "│ " + 4 spaces + slug,
+ * descriptions are "│ " + 6+ spaces + text, terminated by the outro marker.
+ */
+function parsePreviewOutput(raw: string): SkillPreview[] {
+  const clean = stripAnsi(raw)
+  const lines = clean.split('\n')
+
+  let start = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (/Available Skills/.test(lines[i]!)) {
+      start = i + 1
+      break
     }
-    for (const e of entries) {
-      if (e.name.startsWith('.')) continue // skip .git, .github, .claude etc.
-      if (e.name === 'node_modules') continue
-      const full = path.join(dir, e.name)
-      if (e.isDirectory()) {
-        await walk(full)
-      } else if (e.isFile() && e.name === 'SKILL.md') {
-        results.push(full)
+  }
+  if (start === -1) {
+    for (let i = 0; i < lines.length; i++) {
+      if (/Found \d+ skills?/.test(lines[i]!)) {
+        start = i + 1
+        break
       }
     }
   }
-  await walk(root)
-  return results
-}
+  if (start === -1) return []
 
-async function copyDir(src: string, dest: string): Promise<void> {
-  await fs.mkdir(dest, { recursive: true })
-  const entries = (await fs.readdir(src, { withFileTypes: true })) as unknown as
-    import('node:fs').Dirent[]
-  for (const e of entries) {
-    const srcPath = path.join(src, e.name)
-    const destPath = path.join(dest, e.name)
-    if (e.isDirectory()) {
-      await copyDir(srcPath, destPath)
-    } else if (e.isFile()) {
-      await fs.copyFile(srcPath, destPath)
-    }
-  }
-}
+  const idRegex = /^(?:│|\|) {2,5}([a-z][a-z0-9_-]*)\s*$/
+  const descRegex = /^(?:│|\|) {4,}(\S.*)$/
+  const outroRegex = /^(?:└|\\)\s+Use --skill/
 
-async function withSourceRoot<T>(
-  projectPath: string,
-  source: string,
-  fn: (root: string) => Promise<T>,
-): Promise<T> {
-  const resolved = classifySource(source)
-  if (resolved.type === 'local') {
-    const abs = path.isAbsolute(resolved.path)
-      ? resolved.path
-      : path.resolve(projectPath, resolved.path)
-    const stat = await fs.stat(abs).catch(() => null)
-    if (!stat || !stat.isDirectory()) {
-      throw new Error(`Source path is not a directory: ${abs}`)
-    }
-    return await fn(abs)
-  }
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'orchestral-skills-'))
-  try {
-    await gitClone(resolved.url, tmp)
-    return await fn(tmp)
-  } finally {
-    await fs.rm(tmp, { recursive: true, force: true }).catch(() => {})
-  }
-}
-
-function deriveId(skillDir: string, root: string): string {
-  // Prefer the directory name. If two skills in the same source share a
-  // basename, disambiguate with the parent directory.
-  const rel = path.relative(root, skillDir)
-  const parts = rel.split(path.sep).filter(Boolean)
-  return parts[parts.length - 1] ?? path.basename(skillDir)
-}
-
-async function collectPreviews(root: string): Promise<SkillPreview[]> {
-  const files = await findSkillFiles(root)
   const previews: SkillPreview[] = []
-  const seenIds = new Set<string>()
-  for (const file of files) {
-    const skillDir = path.dirname(file)
-    let id = deriveId(skillDir, root)
-    // Resolve id collisions by prefixing with parent dir name.
-    if (seenIds.has(id)) {
-      const parentName = path.basename(path.dirname(skillDir))
-      id = parentName ? `${parentName}-${id}` : `${id}-dup`
+  const seen = new Set<string>()
+
+  for (let i = start; i < lines.length; i++) {
+    const line = lines[i]!
+    if (outroRegex.test(line)) break
+
+    const idMatch = idRegex.exec(line)
+    if (!idMatch) continue
+
+    const id = idMatch[1]!
+    if (seen.has(id)) continue
+
+    let description = ''
+    for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+      const nextLine = lines[j]!
+      if (/^(?:│|\|)\s*$/.test(nextLine)) continue
+      if (idRegex.test(nextLine)) break
+      const descMatch = descRegex.exec(nextLine)
+      if (descMatch) {
+        description = descMatch[1]!.trim()
+        break
+      }
+      break
     }
-    seenIds.add(id)
-    try {
-      const content = await fs.readFile(file, 'utf8')
-      const { name, description } = parseFrontmatter(content)
-      previews.push({
-        id,
-        name: name || id,
-        description: description || '',
-      })
-    } catch {
-      // unreadable SKILL.md — skip
-    }
+
+    previews.push({ id, name: id, description })
+    seen.add(id)
   }
-  previews.sort((a, b) => a.name.localeCompare(b.name))
+
   return previews
 }
 
@@ -183,7 +166,8 @@ async function listScope(
   scope: 'project' | 'global',
   projectPath: string,
 ): Promise<Skill[]> {
-  const dir = scope === 'project' ? projectSkillsDir(projectPath) : globalSkillsDir()
+  const dir =
+    scope === 'project' ? projectSkillsDir(projectPath) : globalSkillsDir()
   let entries: string[]
   try {
     entries = await fs.readdir(dir)
@@ -226,7 +210,11 @@ export async function previewSkills(
   projectPath: string,
   source: string,
 ): Promise<SkillPreview[]> {
-  return withSourceRoot(projectPath, source, (root) => collectPreviews(root))
+  const { stdout } = await runSkills(
+    ['add', source, '-a', 'claude-code', '-l', '-y'],
+    projectPath,
+  )
+  return parsePreviewOutput(stdout)
 }
 
 export async function installSkill(
@@ -235,33 +223,17 @@ export async function installSkill(
   scope: 'project' | 'global',
   skillIds?: string[],
 ): Promise<void> {
-  await withSourceRoot(projectPath, source, async (root) => {
-    const files = await findSkillFiles(root)
-    const wanted = skillIds && skillIds.length > 0 ? new Set(skillIds) : null
-    const destRoot =
-      scope === 'global' ? globalSkillsDir() : projectSkillsDir(projectPath)
-    await fs.mkdir(destRoot, { recursive: true })
-
-    const installed: string[] = []
-    for (const file of files) {
-      const skillDir = path.dirname(file)
-      const id = deriveId(skillDir, root)
-      if (wanted && !wanted.has(id)) continue
-      const destDir = path.join(destRoot, id)
-      await fs.rm(destDir, { recursive: true, force: true })
-      await copyDir(skillDir, destDir)
-      installed.push(id)
+  const cwd = scope === 'global' ? os.homedir() : projectPath
+  const args: string[] = ['add', source, '-a', 'claude-code', '-y']
+  if (scope === 'global') args.push('-g')
+  if (skillIds && skillIds.length > 0) {
+    for (const id of skillIds) {
+      args.push('-s', id)
     }
-
-    if (wanted) {
-      const missing = [...wanted].filter((id) => !installed.includes(id))
-      if (missing.length > 0) {
-        throw new Error(
-          `Requested skills not found in source: ${missing.join(', ')}`,
-        )
-      }
-    }
-  })
+  } else {
+    args.push('-s', '*')
+  }
+  await runSkills(args, cwd)
 }
 
 export async function removeSkill(skill: Skill): Promise<void> {
