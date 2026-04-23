@@ -17,7 +17,7 @@ import { deleteRole, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
 import { startAgency } from './orchestrator'
 import { executeReset } from './reset'
-import { installSkill, listSkills, removeSkill } from './skills'
+import { installSkill, listSkills, previewSkills, removeSkill } from './skills'
 import { listCommands, removeCommand, saveCommand } from './commands'
 import type {
   AgencyDraft,
@@ -265,11 +265,23 @@ export function registerIpcHandlers() {
       projectPath: string,
       source: string,
       scope: 'project' | 'global',
+      skillIds?: string[],
     ) => {
       try {
-        return await installSkill(projectPath, source, scope)
+        return await installSkill(projectPath, source, scope, skillIds)
       } catch (err) {
         console.error('[ipc] skills:install failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.skillsPreview,
+    async (_event, projectPath: string, source: string) => {
+      try {
+        return await previewSkills(projectPath, source)
+      } catch (err) {
+        console.error('[ipc] skills:preview failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

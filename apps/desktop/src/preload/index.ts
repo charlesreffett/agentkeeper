@@ -12,6 +12,7 @@ import {
   type RoleScope,
   type SecretKeyName,
   type Skill,
+  type SkillPreview,
   type SlashCommand,
   type StartAgencyParams,
   type StartSessionParams,
@@ -81,10 +82,12 @@ const api: OrchestralApi = {
   skills: {
     list: (projectPath: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.skillsList, projectPath),
-    install: (projectPath: string, source: string, scope: 'project' | 'global') =>
-      ipcRenderer.invoke(IPC_CHANNELS.skillsInstall, projectPath, source, scope),
+    install: (projectPath: string, source: string, scope: 'project' | 'global', skillIds?: string[]) =>
+      ipcRenderer.invoke(IPC_CHANNELS.skillsInstall, projectPath, source, scope, skillIds),
     remove: (skill: Skill) =>
       ipcRenderer.invoke(IPC_CHANNELS.skillsRemove, skill),
+    preview: (projectPath: string, source: string): Promise<SkillPreview[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.skillsPreview, projectPath, source),
   },
   commands: {
     list: (projectPath: string) =>

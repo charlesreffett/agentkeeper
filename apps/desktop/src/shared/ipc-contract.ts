@@ -112,6 +112,12 @@ export interface WorktreeInfo {
 
 // ─── Skills ─────────────────────────────────────────────────────────────────
 
+export interface SkillPreview {
+  id: string
+  name: string
+  description: string
+}
+
 export interface Skill {
   id: string
   scope: 'project' | 'global'
@@ -305,8 +311,10 @@ export interface OrchestralApi {
       projectPath: string,
       source: string,
       scope: 'project' | 'global',
+      skillIds?: string[],
     ) => Promise<void>
     remove: (skill: Skill) => Promise<void>
+    preview: (projectPath: string, source: string) => Promise<SkillPreview[]>
   }
   commands: {
     list: (projectPath: string) => Promise<SlashCommand[]>
@@ -356,6 +364,7 @@ export const IPC_CHANNELS = {
   skillsList: 'skills:list',
   skillsInstall: 'skills:install',
   skillsRemove: 'skills:remove',
+  skillsPreview: 'skills:preview',
   commandsList: 'commands:list',
   commandsSave: 'commands:save',
   commandsRemove: 'commands:remove',

@@ -3,7 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { Skill } from '../shared/ipc-contract'
+import type { Skill, SkillPreview } from '../shared/ipc-contract'
 
 const execFileAsync = promisify(execFile)
 
@@ -35,6 +35,64 @@ function parseFrontmatter(source: string): { name: string; description: string; 
     }
   }
   return { name: '', description: '', body: trimmed.trimEnd() }
+}
+
+function normalizeSource(source: string): string {
+  if (/^[\w.-]+\/[\w.-]+$/.test(source)) {
+    return `https://github.com/${source}`
+  }
+  return source
+}
+
+function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*m/g, '')
+}
+
+function parsePreviewOutput(stdout: string): SkillPreview[] {
+  const lines = stripAnsi(stdout).split('\n')
+
+  const structured: SkillPreview[] = []
+  // "  - id" or "  - id: description"
+  const dashRe = /^\s*-\s+([\w.-]+)(?:\s*:\s*(.+))?$/
+  // "  id: description"
+  const colonRe = /^\s*([\w.-]+):\s+(.+)$/
+  // "  ✓ name" or "  • name" etc.
+  const bulletRe = /^\s*[✓✗✔●•*]\s+(.+)$/
+
+  for (const line of lines) {
+    const m1 = dashRe.exec(line)
+    if (m1) {
+      structured.push({ id: m1[1]!, name: m1[1]!, description: m1[2]?.trim() ?? '' })
+      continue
+    }
+    const m2 = colonRe.exec(line)
+    if (m2) {
+      structured.push({ id: m2[1]!, name: m2[1]!, description: m2[2]!.trim() })
+      continue
+    }
+    const m3 = bulletRe.exec(line)
+    if (m3) {
+      const name = m3[1]!.trim()
+      structured.push({
+        id: name.toLowerCase().replace(/\s+/g, '-'),
+        name,
+        description: '',
+      })
+    }
+  }
+
+  if (structured.length > 0) return structured
+
+  // Fall back: raw non-empty, non-header lines
+  return lines
+    .map((l) => l.trim())
+    .filter(
+      (l) =>
+        l.length > 0 &&
+        !l.endsWith(':') &&
+        !/^(available|skills|installing|preview|selecting|fetching|cloning)/i.test(l),
+    )
+    .map((l) => ({ id: l, name: l, description: '' }))
 }
 
 async function listScope(
@@ -80,16 +138,42 @@ export async function listSkills(projectPath: string): Promise<Skill[]> {
   return [...project, ...global]
 }
 
+export async function previewSkills(
+  projectPath: string,
+  source: string,
+): Promise<SkillPreview[]> {
+  const normalized = normalizeSource(source)
+  try {
+    const { stdout } = await execFileAsync(
+      'npx',
+      ['--yes', 'skills', 'add', normalized, '--list', '--yes'],
+      { cwd: projectPath, timeout: 30000 },
+    )
+    return parsePreviewOutput(stdout)
+  } catch {
+    return []
+  }
+}
+
 export async function installSkill(
   projectPath: string,
   source: string,
   scope: 'project' | 'global',
+  skillIds?: string[],
 ): Promise<void> {
-  const args = scope === 'global'
-    ? ['skills', 'add', '-g', source]
-    : ['skills', 'add', source]
+  const normalized = normalizeSource(source)
+  const args: string[] = ['--yes', 'skills', 'add']
+  if (scope === 'global') args.push('-g')
+  args.push(normalized)
+  if (skillIds && skillIds.length > 0) {
+    for (const id of skillIds) {
+      args.push('--skill', id)
+    }
+  } else {
+    args.push('--all')
+  }
   const cwd = scope === 'global' ? os.homedir() : projectPath
-  await execFileAsync('npx', args, { cwd }).catch((err) => {
+  await execFileAsync('npx', args, { cwd, timeout: 60000 }).catch((err) => {
     throw new Error(
       (err as NodeJS.ErrnoException & { stderr?: string }).stderr?.trim() ||
         err.message,

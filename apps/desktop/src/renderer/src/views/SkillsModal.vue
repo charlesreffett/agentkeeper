@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import type { Skill } from '@shared/ipc-contract'
+import type { Skill, SkillPreview } from '@shared/ipc-contract'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
 const emit = defineEmits<{ close: [] }>()
@@ -13,8 +13,13 @@ const loading = ref(false)
 const expanded = ref<string | null>(null)
 const message = ref<string | null>(null)
 
+type Step = 'source' | 'select'
+const step = ref<Step>('source')
 const installSource = ref('')
 const installScope = ref<'project' | 'global'>('project')
+const previewing = ref(false)
+const previews = ref<SkillPreview[]>([])
+const selectedIds = ref<string[]>([])
 const installing = ref(false)
 
 async function refresh() {
@@ -30,22 +35,78 @@ async function refresh() {
   }
 }
 
-async function install() {
+function resetInstallForm() {
+  step.value = 'source'
+  installSource.value = ''
+  previews.value = []
+  selectedIds.value = []
+  message.value = null
+}
+
+async function startPreview() {
   const source = installSource.value.trim()
   if (!source) {
     message.value = 'Source is required.'
     return
   }
+  previewing.value = true
+  message.value = null
+  try {
+    const result = await window.orchestral.skills.preview(props.projectPath, source)
+    previews.value = result
+
+    if (result.length === 1) {
+      // single skill — install immediately without showing selection UI
+      await doInstall([result[0]!.id])
+      return
+    }
+
+    selectedIds.value = result.map((p) => p.id)
+    step.value = 'select'
+  } catch (e) {
+    message.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    previewing.value = false
+  }
+}
+
+async function doInstall(skillIds?: string[]) {
+  const source = installSource.value.trim()
   installing.value = true
   message.value = null
   try {
-    await window.orchestral.skills.install(props.projectPath, source, installScope.value)
-    installSource.value = ''
+    await window.orchestral.skills.install(
+      props.projectPath,
+      source,
+      installScope.value,
+      skillIds,
+    )
+    resetInstallForm()
     await refresh()
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   } finally {
     installing.value = false
+  }
+}
+
+function installSelected() {
+  doInstall(selectedIds.value.length > 0 ? selectedIds.value : undefined)
+}
+
+function toggleAll() {
+  if (selectedIds.value.length === previews.value.length) {
+    selectedIds.value = []
+  } else {
+    selectedIds.value = previews.value.map((p) => p.id)
+  }
+}
+
+function toggleId(id: string) {
+  if (selectedIds.value.includes(id)) {
+    selectedIds.value = selectedIds.value.filter((x) => x !== id)
+  } else {
+    selectedIds.value = [...selectedIds.value, id]
   }
 }
 
@@ -71,7 +132,7 @@ watch(
   async (isOpen) => {
     if (isOpen) {
       expanded.value = null
-      installSource.value = ''
+      resetInstallForm()
       await refresh()
       await nextTick()
       dialog.value?.showModal()
@@ -99,28 +160,101 @@ watch(
 
       <div class="flex-1 overflow-y-auto min-h-0">
         <div class="px-6 py-4 border-b border-border space-y-3">
-          <p class="text-xs font-medium">Install skill</p>
-          <div class="flex gap-2">
-            <input
-              v-model="installSource"
-              type="text"
-              placeholder="GitHub URL or local path"
-              class="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-              :disabled="installing"
-              @keydown.enter="install"
-            />
-            <select
-              v-model="installScope"
-              class="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-              :disabled="installing"
-            >
-              <option value="project">Project</option>
-              <option value="global">Global</option>
-            </select>
-            <Button size="sm" :disabled="installing" @click="install">
-              {{ installing ? 'Installing…' : 'Install' }}
-            </Button>
-          </div>
+          <!-- Step 1: source entry -->
+          <template v-if="step === 'source'">
+            <p class="text-xs font-medium">Install skill</p>
+            <div class="flex gap-2">
+              <input
+                v-model="installSource"
+                type="text"
+                placeholder="e.g. anthropics/skills or owner/repo"
+                class="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+                :disabled="previewing || installing"
+                @keydown.enter="startPreview"
+              />
+              <select
+                v-model="installScope"
+                class="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+                :disabled="previewing || installing"
+              >
+                <option value="project">Project</option>
+                <option value="global">Global</option>
+              </select>
+              <Button size="sm" :disabled="previewing || installing" @click="startPreview">
+                {{ previewing ? 'Previewing…' : 'Preview skills' }}
+              </Button>
+            </div>
+          </template>
+
+          <!-- Step 2: skill selection -->
+          <template v-else>
+            <div class="flex items-center gap-2">
+              <Button variant="ghost" size="sm" @click="step = 'source'">← Back</Button>
+              <p class="text-xs font-medium">
+                Select skills from
+                <span class="font-mono">{{ installSource }}</span>
+                <span class="ml-1 text-muted-foreground">({{ installScope }})</span>
+              </p>
+            </div>
+
+            <!-- 0 previews: fallback -->
+            <div v-if="previews.length === 0" class="space-y-2">
+              <p class="text-sm text-muted-foreground">
+                Could not detect skills in this source — install all?
+              </p>
+              <Button size="sm" :disabled="installing" @click="doInstall()">
+                {{ installing ? 'Installing…' : 'Install all' }}
+              </Button>
+            </div>
+
+            <!-- ≥2 previews: checklist -->
+            <div v-else class="space-y-2">
+              <div class="flex items-center justify-between">
+                <button
+                  class="text-xs text-muted-foreground hover:text-foreground"
+                  @click="toggleAll"
+                >
+                  {{
+                    selectedIds.length === previews.length
+                      ? 'Deselect all'
+                      : 'Select all'
+                  }}
+                </button>
+              </div>
+              <ul class="space-y-1.5">
+                <li
+                  v-for="preview in previews"
+                  :key="preview.id"
+                  class="flex items-start gap-2 cursor-pointer"
+                  @click="toggleId(preview.id)"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedIds.includes(preview.id)"
+                    class="mt-0.5 shrink-0"
+                    @click.stop="toggleId(preview.id)"
+                  />
+                  <div class="min-w-0">
+                    <div class="text-sm font-medium font-mono">{{ preview.name }}</div>
+                    <div
+                      v-if="preview.description"
+                      class="text-xs text-muted-foreground"
+                    >
+                      {{ preview.description }}
+                    </div>
+                  </div>
+                </li>
+              </ul>
+              <Button
+                size="sm"
+                :disabled="installing || selectedIds.length === 0"
+                @click="installSelected"
+              >
+                {{ installing ? 'Installing…' : `Install selected (${selectedIds.length})` }}
+              </Button>
+            </div>
+          </template>
+
           <div
             v-if="message"
             class="text-xs rounded-md bg-muted/40 px-3 py-2 text-destructive"
@@ -134,7 +268,8 @@ watch(
           v-else-if="skills.length === 0"
           class="p-6 text-sm text-muted-foreground leading-relaxed"
         >
-          No skills installed. Install one using a GitHub URL or local path.
+          No skills installed. Install one using a GitHub URL or
+          <code class="font-mono text-foreground">owner/repo</code> shorthand.
           They live in
           <code class="font-mono text-foreground">.claude/skills/</code>
           (project) or
