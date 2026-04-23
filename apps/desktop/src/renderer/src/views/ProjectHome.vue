@@ -14,6 +14,7 @@ import type {
   AppSettings,
   RecentProject,
   Role,
+  RoleEffort,
   SessionSummary,
 } from '@shared/ipc-contract'
 
@@ -30,7 +31,10 @@ const settingsOpen = ref(false)
 const rolesOpen = ref(false)
 const agenciesOpen = ref(false)
 
-const settings = ref<AppSettings>({ defaultModel: 'claude-sonnet-4-6' })
+const settings = ref<AppSettings>({
+  defaultModel: 'claude-sonnet-4-6',
+  defaultEffort: 'medium',
+})
 
 async function refreshConfig() {
   settings.value = await window.orchestral.settings.get()
@@ -60,6 +64,7 @@ const startError = ref<string | null>(null)
 async function onStartSession(params: {
   initialPrompt: string
   model: string
+  effort: RoleEffort
   useWorktree: boolean
   branch: string
   role: Role | null
@@ -85,6 +90,8 @@ async function onStartSession(params: {
     }
   }
 
+  // `effort` from the dialog already resolved the precedence:
+  //   manual override > role.effort > settings.defaultEffort
   await sessionStore.start({
     projectPath: props.project.path,
     ...(worktreePath ? { worktreePath } : {}),
@@ -96,7 +103,7 @@ async function onStartSession(params: {
     ...(params.role?.allowedTools && params.role.allowedTools.length
       ? { allowedTools: params.role.allowedTools }
       : {}),
-    ...(params.role?.effort ? { effort: params.role.effort } : {}),
+    effort: params.effort,
     initialPrompt: params.initialPrompt,
     model: params.model,
   })
@@ -186,6 +193,7 @@ onMounted(refreshConfig)
       :open="newSessionOpen"
       :project-path="project.path"
       :default-model="settings.defaultModel"
+      :default-effort="settings.defaultEffort"
       @close="newSessionOpen = false"
       @start="onStartSession"
     />

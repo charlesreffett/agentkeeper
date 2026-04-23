@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import type { Role } from '@shared/ipc-contract'
+import {
+  ROLE_EFFORT_VALUES,
+  type Role,
+  type RoleEffort,
+} from '@shared/ipc-contract'
 
 const props = defineProps<{
   open: boolean
   projectPath: string
   defaultModel: string
+  defaultEffort: RoleEffort
 }>()
 
 const emit = defineEmits<{
@@ -15,6 +20,7 @@ const emit = defineEmits<{
     params: {
       initialPrompt: string
       model: string
+      effort: RoleEffort
       useWorktree: boolean
       branch: string
       role: Role | null
@@ -30,6 +36,9 @@ const textarea = ref<HTMLTextAreaElement | null>(null)
 const useWorktree = ref(true)
 const branch = ref('')
 const branchTouched = ref(false)
+
+const effort = ref<RoleEffort>(props.defaultEffort)
+const effortTouched = ref(false)
 
 const roles = ref<Role[]>([])
 const selectedRoleId = ref<string>('') // '' = freeform
@@ -69,10 +78,20 @@ watch(suggestedBranch, (v) => {
   if (!branchTouched.value) branch.value = v
 })
 
-// When a role with a default model is picked, apply that model.
+// When a role is picked, apply its model and effort (unless the user has
+// already overridden effort manually for this session). Precedence:
+//   manual (this dialog) > role > settings default
 watch(selectedRole, (r) => {
   if (r?.model) model.value = r.model
+  if (!effortTouched.value) {
+    effort.value = r?.effort ?? props.defaultEffort
+  }
 })
+
+function onEffortChange(event: Event) {
+  effortTouched.value = true
+  effort.value = (event.target as HTMLSelectElement).value as RoleEffort
+}
 
 function onBranchInput(event: Event) {
   branchTouched.value = true
@@ -90,6 +109,7 @@ function start() {
   emit('start', {
     initialPrompt: prompt.value.trim(),
     model: model.value,
+    effort: effort.value,
     useWorktree: useWorktree.value,
     branch: branch.value.trim(),
     role: selectedRole.value,
@@ -111,6 +131,8 @@ watch(
       branch.value = ''
       branchTouched.value = false
       model.value = props.defaultModel
+      effort.value = props.defaultEffort
+      effortTouched.value = false
       useWorktree.value = true
       selectedRoleId.value = ''
       await loadRoles()
@@ -216,6 +238,19 @@ onMounted(() => {
       <p v-if="selectedRole?.description" class="text-xs text-muted-foreground pl-1">
         {{ selectedRole.description }}
       </p>
+
+      <div class="space-y-1.5">
+        <label class="text-sm font-medium">Effort</label>
+        <select
+          :value="effort"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          @change="onEffortChange"
+        >
+          <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+            {{ e }}
+          </option>
+        </select>
+      </div>
 
       <footer class="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" size="sm" @click="emit('close')">Cancel</Button>

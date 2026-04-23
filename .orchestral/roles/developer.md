@@ -1,8 +1,9 @@
 ---
 name: Developer
-description: Implements planned work — writes code, runs typecheck and build, commits changes
+description: Implements planned work — writes code, runs typecheck and build,
+  commits changes
 model: claude-sonnet-4-6
-effort: medium
+effort: high
 allowedPeers:
   - planner
   - reviewer

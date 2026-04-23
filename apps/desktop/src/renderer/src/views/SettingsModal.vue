@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import type { AppSettings } from '@shared/ipc-contract'
+import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -39,6 +39,7 @@ async function save() {
     if (settings.value) {
       await window.orchestral.settings.set({
         defaultModel: settings.value.defaultModel,
+        defaultEffort: settings.value.defaultEffort,
       })
     }
     message.value = 'Saved.'
@@ -140,6 +141,23 @@ onMounted(() => {
         >
           <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
             {{ m.label }}
+          </option>
+        </select>
+      </div>
+
+      <div v-if="settings" class="space-y-2">
+        <label class="text-sm font-medium">Default effort</label>
+        <p class="text-xs text-muted-foreground">
+          Baseline effort level for new sessions. A selected role can
+          override this, and you can override either from the New Session
+          dialog.
+        </p>
+        <select
+          v-model="settings.defaultEffort"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+        >
+          <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+            {{ e }}
           </option>
         </select>
       </div>

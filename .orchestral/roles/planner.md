@@ -1,8 +1,9 @@
 ---
 name: Planner
-description: Decomposes tasks, researches unknowns, decides approach, delegates implementation
-model: claude-opus-4-7
-effort: high
+description: Decomposes tasks, researches unknowns, decides approach, delegates
+  implementation
+model: claude-sonnet-4-6
+effort: xhigh
 allowedTools:
   - Read
   - Grep

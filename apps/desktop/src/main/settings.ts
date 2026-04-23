@@ -5,6 +5,7 @@ import type { AppSettings } from '../shared/ipc-contract'
 
 const DEFAULTS: AppSettings = {
   defaultModel: 'claude-sonnet-4-6',
+  defaultEffort: 'medium',
 }
 
 function filePath() {

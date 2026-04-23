@@ -203,6 +203,7 @@ export interface LiveSessionStatusUpdate {
 
 export interface AppSettings {
   defaultModel: string
+  defaultEffort: RoleEffort
 }
 
 export type SecretKeyName = 'anthropicApiKey'
