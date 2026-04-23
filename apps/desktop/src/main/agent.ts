@@ -165,6 +165,7 @@ export async function startSession(
   const options: Parameters<typeof query>[0]['options'] = {
     cwd,
     ...(params.model ? { model: params.model } : {}),
+    ...(params.effort ? { effort: params.effort } : {}),
     abortController: controller,
     env: childEnv,
     permissionMode: 'bypassPermissions',

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import type { Role, RoleDraft, RoleScope } from '@shared/ipc-contract'
+import {
+  ROLE_EFFORT_VALUES,
+  type Role,
+  type RoleDraft,
+  type RoleScope,
+} from '@shared/ipc-contract'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -19,6 +24,7 @@ const form = ref<RoleDraft & { scope: RoleScope }>({
   name: '',
   description: '',
   model: null,
+  effort: null,
   allowedTools: null,
   allowedPeers: null,
   systemPrompt: '',
@@ -57,6 +63,7 @@ function beginNew() {
     name: '',
     description: '',
     model: null,
+    effort: null,
     allowedTools: null,
     allowedPeers: null,
     systemPrompt: '',
@@ -74,6 +81,7 @@ function beginEdit(role: Role) {
     name: role.name,
     description: role.description,
     model: role.model,
+    effort: role.effort,
     allowedTools: role.allowedTools,
     allowedPeers: role.allowedPeers,
     systemPrompt: role.systemPrompt,
@@ -123,6 +131,7 @@ async function save() {
       name: form.value.name.trim(),
       description: form.value.description.trim(),
       model: form.value.model || null,
+      effort: form.value.effort || null,
       allowedTools: parseCsv(allowedToolsText.value),
       allowedPeers: parseCsv(allowedPeersText.value),
       systemPrompt: form.value.systemPrompt.trim(),
@@ -286,14 +295,27 @@ watch(
                 </select>
               </div>
               <div class="space-y-1.5">
-                <label class="text-xs font-medium">Allowed tools (comma-separated)</label>
-                <input
-                  v-model="allowedToolsText"
-                  type="text"
-                  placeholder="Read, Edit, Write, Bash, Grep"
-                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-                />
+                <label class="text-xs font-medium">Effort</label>
+                <select
+                  v-model="form.effort"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+                >
+                  <option :value="null">SDK default</option>
+                  <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+                    {{ e }}
+                  </option>
+                </select>
               </div>
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium">Allowed tools (comma-separated)</label>
+              <input
+                v-model="allowedToolsText"
+                type="text"
+                placeholder="Read, Edit, Write, Bash, Grep"
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+              />
             </div>
 
             <div class="space-y-1.5">

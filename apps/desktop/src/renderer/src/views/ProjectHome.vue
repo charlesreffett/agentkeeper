@@ -96,6 +96,7 @@ async function onStartSession(params: {
     ...(params.role?.allowedTools && params.role.allowedTools.length
       ? { allowedTools: params.role.allowedTools }
       : {}),
+    ...(params.role?.effort ? { effort: params.role.effort } : {}),
     initialPrompt: params.initialPrompt,
     model: params.model,
   })

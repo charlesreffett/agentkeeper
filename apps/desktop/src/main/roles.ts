@@ -2,7 +2,12 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { Role, RoleScope } from '../shared/ipc-contract'
+import {
+  ROLE_EFFORT_VALUES,
+  type Role,
+  type RoleEffort,
+  type RoleScope,
+} from '../shared/ipc-contract'
 
 const PROJECT_ROLES_DIR = '.orchestral/roles'
 const GLOBAL_ROLES_DIR = '.orchestral/roles'
@@ -48,6 +53,11 @@ function parseRoleFile(
     typeof parsed['description'] === 'string' ? parsed['description'] : ''
   const model =
     typeof parsed['model'] === 'string' ? (parsed['model'] as string) : null
+  const effort: RoleEffort | null =
+    typeof parsed['effort'] === 'string' &&
+    (ROLE_EFFORT_VALUES as string[]).includes(parsed['effort'] as string)
+      ? (parsed['effort'] as RoleEffort)
+      : null
   const allowedTools = Array.isArray(parsed['allowedTools'])
     ? (parsed['allowedTools'] as unknown[]).filter(
         (t): t is string => typeof t === 'string',
@@ -65,6 +75,7 @@ function parseRoleFile(
     name,
     description,
     model,
+    effort,
     allowedTools,
     allowedPeers,
     systemPrompt: body.trimEnd(),
@@ -77,6 +88,7 @@ function serializeRole(role: Omit<Role, 'scope' | 'path'>): string {
     description: role.description,
   }
   if (role.model) fm['model'] = role.model
+  if (role.effort) fm['effort'] = role.effort
   if (role.allowedTools && role.allowedTools.length)
     fm['allowedTools'] = role.allowedTools
   if (role.allowedPeers && role.allowedPeers.length)

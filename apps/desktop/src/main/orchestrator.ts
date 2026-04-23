@@ -272,6 +272,7 @@ export async function startAgency(
           : params.model
             ? { model: params.model }
             : {}),
+        ...(role.effort ? { effort: role.effort } : {}),
         systemPromptAppend,
         ...(role.allowedTools && role.allowedTools.length
           ? { allowedTools: role.allowedTools }

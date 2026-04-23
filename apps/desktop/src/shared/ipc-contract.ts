@@ -93,6 +93,7 @@ export interface StartSessionParams {
   worktreePath?: string
   initialPrompt: string
   model?: string
+  effort?: RoleEffort
   /** Role-derived options — appended to the default Claude Code preset. */
   systemPromptAppend?: string
   allowedTools?: string[]
@@ -113,6 +114,16 @@ export interface WorktreeInfo {
 
 export type RoleScope = 'project' | 'global'
 
+export type RoleEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+export const ROLE_EFFORT_VALUES: RoleEffort[] = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+]
+
 export interface Role {
   id: string
   scope: RoleScope
@@ -120,6 +131,7 @@ export interface Role {
   name: string
   description: string
   model: string | null
+  effort: RoleEffort | null
   allowedTools: string[] | null
   allowedPeers: string[] | null
   systemPrompt: string

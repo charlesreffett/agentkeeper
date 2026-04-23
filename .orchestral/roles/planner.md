@@ -2,6 +2,7 @@
 name: Planner
 description: Decomposes tasks, researches unknowns, decides approach, delegates implementation
 model: claude-opus-4-7
+effort: high
 allowedTools:
   - Read
   - Grep
