@@ -200,8 +200,10 @@ onMounted(refreshConfig)
 
     <SettingsModal
       :open="settingsOpen"
+      :project-path="project.path"
       @close="settingsOpen = false"
       @saved="refreshConfig"
+      @reset="refreshConfig"
     />
 
     <RolesModal

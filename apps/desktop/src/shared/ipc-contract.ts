@@ -208,6 +208,24 @@ export interface AppSettings {
 
 export type SecretKeyName = 'anthropicApiKey'
 
+// ─── Factory reset ──────────────────────────────────────────────────────────
+
+export interface ResetRequest {
+  /** Recent projects, settings.json, and all stored secrets (keychain). */
+  appState: boolean
+  /** `~/.orchestral/` role and agency definitions. */
+  globalDefinitions: boolean
+  /** `<projectPath>/.orchestral/` — set to null to skip. */
+  projectDefinitions: { projectPath: string } | null
+}
+
+export interface ResetResult {
+  appStateCleared: boolean
+  globalDefinitionsCleared: boolean
+  projectDefinitionsCleared: boolean
+  errors: string[]
+}
+
 // ─── IPC API exposed to renderer as window.orchestral ───────────────────────
 
 export interface OrchestralApi {
@@ -269,6 +287,9 @@ export interface OrchestralApi {
     set: (key: SecretKeyName, value: string) => Promise<void>
     delete: (key: SecretKeyName) => Promise<void>
   }
+  reset: {
+    execute: (request: ResetRequest) => Promise<ResetResult>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -297,4 +318,5 @@ export const IPC_CHANNELS = {
   secretsHas: 'secrets:has',
   secretsSet: 'secrets:set',
   secretsDelete: 'secrets:delete',
+  resetExecute: 'reset:execute',
 } as const

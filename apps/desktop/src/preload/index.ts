@@ -7,6 +7,7 @@ import {
   type LiveSessionEvent,
   type LiveSessionStatusUpdate,
   type OrchestralApi,
+  type ResetRequest,
   type RoleDraft,
   type RoleScope,
   type SecretKeyName,
@@ -86,6 +87,10 @@ const api: OrchestralApi = {
       ipcRenderer.invoke(IPC_CHANNELS.secretsSet, key, value),
     delete: (key: SecretKeyName) =>
       ipcRenderer.invoke(IPC_CHANNELS.secretsDelete, key),
+  },
+  reset: {
+    execute: (request: ResetRequest) =>
+      ipcRenderer.invoke(IPC_CHANNELS.resetExecute, request),
   },
 }
 

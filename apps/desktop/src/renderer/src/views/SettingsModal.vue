@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 
-const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; saved: [] }>()
+const props = defineProps<{ open: boolean; projectPath?: string }>()
+const emit = defineEmits<{ close: []; saved: []; reset: [] }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const apiKeyInput = ref('')
@@ -18,6 +18,20 @@ const MODEL_OPTIONS = [
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (balanced)' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
 ] as const
+
+// Danger-zone state
+const resetAppStateSel = ref(false)
+const resetProjectSel = ref(false)
+const resetGlobalSel = ref(false)
+const resetting = ref(false)
+const resetMessage = ref<string | null>(null)
+
+const canReset = computed(
+  () =>
+    resetAppStateSel.value ||
+    (resetProjectSel.value && !!props.projectPath) ||
+    resetGlobalSel.value,
+)
 
 async function refresh() {
   settings.value = await window.orchestral.settings.get()
@@ -66,10 +80,60 @@ async function clearKey() {
   await refresh()
 }
 
+async function onReset() {
+  if (!canReset.value) return
+  const scopes: string[] = []
+  if (resetAppStateSel.value) scopes.push('app state')
+  if (resetProjectSel.value && props.projectPath)
+    scopes.push('project definitions')
+  if (resetGlobalSel.value) scopes.push('global definitions')
+
+  // eslint-disable-next-line no-alert
+  const ok = confirm(
+    `This will permanently reset: ${scopes.join(', ')}.\n\nWorktrees and Claude Code state are NOT touched. This can't be undone (except via git for committed role/agency files).\n\nContinue?`,
+  )
+  if (!ok) return
+
+  resetting.value = true
+  resetMessage.value = null
+  try {
+    const result = await window.orchestral.reset.execute({
+      appState: resetAppStateSel.value,
+      globalDefinitions: resetGlobalSel.value,
+      projectDefinitions:
+        resetProjectSel.value && props.projectPath
+          ? { projectPath: props.projectPath }
+          : null,
+    })
+    const cleared: string[] = []
+    if (result.appStateCleared) cleared.push('app state')
+    if (result.projectDefinitionsCleared) cleared.push('project definitions')
+    if (result.globalDefinitionsCleared) cleared.push('global definitions')
+
+    resetMessage.value = result.errors.length
+      ? `Cleared: ${cleared.join(', ') || 'nothing'}. Errors: ${result.errors.join('; ')}`
+      : `Cleared: ${cleared.join(', ')}. Restart the app to pick up the changes.`
+
+    resetAppStateSel.value = false
+    resetProjectSel.value = false
+    resetGlobalSel.value = false
+    await refresh()
+    emit('reset')
+  } catch (err) {
+    resetMessage.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    resetting.value = false
+  }
+}
+
 watch(
   () => props.open,
   async (isOpen) => {
     if (isOpen) {
+      resetAppStateSel.value = false
+      resetProjectSel.value = false
+      resetGlobalSel.value = false
+      resetMessage.value = null
       await refresh()
       await nextTick()
       dialog.value?.showModal()
@@ -177,6 +241,97 @@ onMounted(() => {
       >
         {{ message }}
       </div>
+
+      <details class="group rounded-md border border-destructive/40 bg-destructive/5">
+        <summary
+          class="cursor-pointer select-none px-3 py-2 text-sm font-medium flex items-center justify-between"
+        >
+          <span>Danger zone</span>
+          <span class="text-xs text-muted-foreground group-open:hidden">
+            click to expand
+          </span>
+        </summary>
+        <div class="px-3 pb-3 pt-1 space-y-3">
+          <p class="text-xs text-muted-foreground">
+            Resets are permanent. Worktrees and Claude Code state
+            (<code class="font-mono">~/.claude/</code>) are never touched.
+          </p>
+
+          <div class="space-y-2">
+            <label class="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                v-model="resetAppStateSel"
+                type="checkbox"
+                class="size-4 mt-0.5 rounded border-input shrink-0"
+              />
+              <div class="text-xs min-w-0">
+                <div class="font-medium text-foreground">App state</div>
+                <div class="text-muted-foreground">
+                  Recent projects, settings (model/effort), API key in keychain.
+                </div>
+              </div>
+            </label>
+
+            <label
+              v-if="projectPath"
+              class="flex items-start gap-2 cursor-pointer select-none"
+            >
+              <input
+                v-model="resetProjectSel"
+                type="checkbox"
+                class="size-4 mt-0.5 rounded border-input shrink-0"
+              />
+              <div class="text-xs min-w-0">
+                <div class="font-medium text-foreground">
+                  Project role &amp; agency definitions
+                </div>
+                <div class="text-muted-foreground font-mono truncate">
+                  {{ projectPath }}/.orchestral/
+                </div>
+                <div class="text-muted-foreground mt-0.5">
+                  These are usually committed to git — restore with
+                  <code class="font-mono">git checkout .orchestral</code>
+                  if you regret it.
+                </div>
+              </div>
+            </label>
+
+            <label class="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                v-model="resetGlobalSel"
+                type="checkbox"
+                class="size-4 mt-0.5 rounded border-input shrink-0"
+              />
+              <div class="text-xs min-w-0">
+                <div class="font-medium text-foreground">
+                  Global role &amp; agency definitions
+                </div>
+                <div class="text-muted-foreground font-mono">
+                  ~/.orchestral/
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div
+            v-if="resetMessage"
+            class="text-xs rounded-md bg-background/60 border border-border px-3 py-2"
+          >
+            {{ resetMessage }}
+          </div>
+
+          <div class="flex items-center justify-end">
+            <Button
+              variant="destructive"
+              size="sm"
+              :disabled="!canReset || resetting"
+              @click="onReset"
+            >
+              {{ resetting ? 'Resetting…' : 'Reset selected' }}
+            </Button>
+          </div>
+        </div>
+      </details>
 
       <footer class="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" size="sm" @click="emit('close')">Close</Button>

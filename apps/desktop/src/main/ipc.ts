@@ -16,9 +16,11 @@ import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
 import { startAgency } from './orchestrator'
+import { executeReset } from './reset'
 import type {
   AgencyDraft,
   AgencyScope,
+  ResetRequest,
   RoleDraft,
   RoleScope,
   StartAgencyParams,
@@ -251,5 +253,18 @@ export function registerIpcHandlers() {
   )
   ipcMain.handle(IPC_CHANNELS.secretsDelete, (_event, key: SecretKeyName) =>
     secrets.delete(secretKeyToKeytarKey(key)),
+  )
+
+  // Factory reset
+  ipcMain.handle(
+    IPC_CHANNELS.resetExecute,
+    async (_event, request: ResetRequest) => {
+      try {
+        return await executeReset(request)
+      } catch (err) {
+        console.error('[ipc] reset:execute failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
   )
 }
