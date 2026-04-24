@@ -28,6 +28,7 @@ export interface RawJiraIssue {
     }
     assignee?: { displayName: string }
     issuetype?: { name: string; iconUrl?: string }
+    issueType?: { name: string; iconUrl?: string }
   }
 }
 
@@ -81,7 +82,7 @@ export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
   const summary = raw.fields?.summary ?? raw.summary ?? raw.key
   const description = raw.fields?.description ?? raw.description ?? ''
   const assignee = raw.fields?.assignee?.displayName ?? raw.assignee?.displayName
-  const issueType = raw.fields?.issuetype?.name ?? raw.issuetype?.name
+  const issueType = raw.fields?.issuetype?.name ?? raw.fields?.issueType?.name ?? raw.issuetype?.name
   return {
     id: raw.key,
     source: 'jira',
