@@ -23,3 +23,22 @@ export const secrets = {
     await keytar.deletePassword(SERVICE, key)
   },
 }
+
+export function createPluginSecrets(pluginId: string): {
+  get(key: string): Promise<string | undefined>
+  set(key: string, value: string): Promise<void>
+  delete(key: string): Promise<void>
+} {
+  const prefix = `plugin:${pluginId}:`
+  return {
+    async get(key) {
+      return (await keytar.getPassword(SERVICE, `${prefix}${key}`)) ?? undefined
+    },
+    async set(key, value) {
+      await keytar.setPassword(SERVICE, `${prefix}${key}`, value)
+    },
+    async delete(key) {
+      await keytar.deletePassword(SERVICE, `${prefix}${key}`)
+    },
+  }
+}

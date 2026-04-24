@@ -72,7 +72,7 @@ export interface Plugin<TSettings = unknown> {
   id: string
   name?: string
   version?: string
-  settings?: z.ZodType<TSettings>
+  settings?: z.ZodType<TSettings, z.ZodTypeDef, unknown>
   activate(ctx: PluginContext<TSettings>): void | Promise<void>
   deactivate?(): void | Promise<void>
 }
@@ -118,6 +118,8 @@ export type EventMap = {
   'session.completed': { sessionId: string }
   'pr.opened': { prUrl: string; workItemId?: string }
   'pr.merged': { prUrl: string; workItemId?: string }
+  'plugin.unhealthy': { pluginId: string; reason: string }
+  'plugin.healthy': { pluginId: string }
 }
 
 export type EventHandler<K extends keyof EventMap> = (
@@ -126,6 +128,7 @@ export type EventHandler<K extends keyof EventMap> = (
 
 export interface EventBus {
   on<K extends keyof EventMap>(event: K, handler: EventHandler<K>): () => void
+  emit<K extends keyof EventMap>(event: K, payload: EventMap[K]): void
 }
 
 export interface WorkItemSource {
@@ -137,7 +140,8 @@ export interface WorkItemSource {
 }
 
 export interface WorkItemRegistry {
-  registerSource(source: WorkItemSource): () => void
+  register(source: WorkItemSource): void
+  unregister(id: string): void
 }
 
 export type UISlot =

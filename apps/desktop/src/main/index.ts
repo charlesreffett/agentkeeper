@@ -2,6 +2,8 @@ import { app, BrowserWindow, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers } from './ipc'
+import { activatePlugins } from './plugins'
+import { setWorkItemRegistry } from './agent'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -39,8 +41,10 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(() => {
-  registerIpcHandlers()
+app.whenReady().then(async () => {
+  const registry = await activatePlugins(app)
+  setWorkItemRegistry(registry)
+  registerIpcHandlers(registry)
   createWindow()
 
   app.on('activate', () => {

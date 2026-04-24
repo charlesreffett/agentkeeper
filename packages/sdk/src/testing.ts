@@ -87,13 +87,20 @@ export function createMockContext<TSettings = unknown>(
           set.delete(handler as EventHandler<keyof EventMap>)
         }
       },
+      emit<K extends keyof EventMap>(event: K, payload: EventMap[K]) {
+        const handlers = eventHandlers.get(event)
+        if (!handlers) return
+        for (const h of handlers) {
+          void (h as EventHandler<K>)(payload)
+        }
+      },
     },
     workItems: {
-      registerSource(source) {
+      register(source: WorkItemSource) {
         workItemSources.set(source.id, source)
-        return () => {
-          workItemSources.delete(source.id)
-        }
+      },
+      unregister(id: string) {
+        workItemSources.delete(id)
       },
     },
     ui: {

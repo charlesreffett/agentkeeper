@@ -16,6 +16,7 @@ import {
   type SlashCommand,
   type StartAgencyParams,
   type StartSessionParams,
+  type WorkItemStatus,
 } from '../shared/ipc-contract'
 
 /**
@@ -52,9 +53,20 @@ function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
   } catch (err) {
     const shape = plainArgs.map((a, i) => `${i}:${describeArg(a)}`).join(' ')
     const reason = err instanceof Error ? err.message : String(err)
+    console.error('[preload] IPC clone-check failed', {
+      channel,
+      shape,
+      reason,
+      rawArgs: args,
+      plainArgs,
+    })
     throw new Error(
       `IPC ${channel}: args not structured-clone safe after toPlain [${shape}] — ${reason}`,
     )
+  }
+  if (channel === IPC_CHANNELS.skillsInstall || channel === IPC_CHANNELS.skillsPreview) {
+    const shape = plainArgs.map((a, i) => `${i}:${describeArg(a)}`).join(' ')
+    console.log('[preload] →', channel, shape, plainArgs)
   }
   return ipcRenderer.invoke(channel, ...plainArgs)
 }
@@ -178,6 +190,12 @@ const api: OrchestralApi = {
   reset: {
     execute: (request: ResetRequest) =>
       invoke(IPC_CHANNELS.resetExecute, request) as Promise<never>,
+  },
+  workItems: {
+    list: () => invoke(IPC_CHANNELS.workItemsList) as Promise<never>,
+    get: (id: string) => invoke(IPC_CHANNELS.workItemsGet, id) as Promise<never>,
+    updateStatus: (id: string, status: WorkItemStatus) =>
+      invoke(IPC_CHANNELS.workItemsUpdateStatus, id, status) as Promise<void>,
   },
 }
 

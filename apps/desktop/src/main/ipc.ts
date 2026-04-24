@@ -6,7 +6,9 @@ import {
   type RecentProject,
   type SecretKeyName,
   type StartSessionParams,
+  type WorkItemStatus,
 } from '../shared/ipc-contract'
+import type { WorkItemRegistryFull } from './plugins'
 import { recentProjectsStore } from './store'
 import { listSessions, readSession } from './sessions'
 import { cancelSession, sendInput, startSession } from './agent'
@@ -59,7 +61,7 @@ function secretKeyToKeytarKey(k: SecretKeyName) {
   }
 }
 
-export function registerIpcHandlers() {
+export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Projects
   ipcMain.handle(IPC_CHANNELS.projectPick, () => pickProject())
   ipcMain.handle(IPC_CHANNELS.projectRecentList, () =>
@@ -267,8 +269,17 @@ export function registerIpcHandlers() {
       scope: 'project' | 'global',
       skillIds?: string[],
     ) => {
+      console.log('[ipc] skills:install ←', {
+        projectPath,
+        source,
+        scope,
+        skillIdsCount: skillIds?.length ?? 0,
+        skillIds,
+      })
       try {
-        return await installSkill(projectPath, source, scope, skillIds)
+        const result = await installSkill(projectPath, source, scope, skillIds)
+        console.log('[ipc] skills:install ok', { source, scope })
+        return result
       } catch (err) {
         console.error('[ipc] skills:install failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -278,6 +289,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(
     IPC_CHANNELS.skillsPreview,
     async (_event, projectPath: string, source: string) => {
+      console.log('[ipc] skills:preview ←', { projectPath, source })
       try {
         return await previewSkills(projectPath, source)
       } catch (err) {
@@ -360,6 +372,35 @@ export function registerIpcHandlers() {
         return await executeReset(request)
       } catch (err) {
         console.error('[ipc] reset:execute failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
+  // Work items (plugin registry)
+  ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {
+    try {
+      return await registry.list()
+    } catch (err) {
+      console.error('[ipc] workItems:list failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.workItemsGet, async (_event, id: string) => {
+    try {
+      return await registry.get(id)
+    } catch (err) {
+      console.error('[ipc] workItems:get failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+  ipcMain.handle(
+    IPC_CHANNELS.workItemsUpdateStatus,
+    async (_event, id: string, status: WorkItemStatus) => {
+      try {
+        return await registry.updateStatus(id, status)
+      } catch (err) {
+        console.error('[ipc] workItems:updateStatus failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

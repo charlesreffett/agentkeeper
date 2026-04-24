@@ -1,6 +1,9 @@
 // Shared between main, preload, and renderer. Pure types/constants only — no
 // runtime imports from Electron or Node.
 
+import type { WorkItem, WorkItemStatus } from '@orchestral/sdk'
+export type { WorkItem, WorkItemStatus }
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 
 export interface RecentProject {
@@ -100,6 +103,8 @@ export interface StartSessionParams {
   /** Membership in an agency run, if applicable — tagged by the orchestrator. */
   agencyInstanceId?: string
   roleId?: string
+  /** Work item to attach as context for the session. */
+  workItemId?: string
 }
 
 // ─── Worktrees ──────────────────────────────────────────────────────────────
@@ -338,6 +343,11 @@ export interface OrchestralApi {
   reset: {
     execute: (request: ResetRequest) => Promise<ResetResult>
   }
+  workItems: {
+    list: () => Promise<WorkItem[]>
+    get: (id: string) => Promise<WorkItem | undefined>
+    updateStatus: (id: string, status: WorkItemStatus) => Promise<void>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -374,4 +384,7 @@ export const IPC_CHANNELS = {
   secretsSet: 'secrets:set',
   secretsDelete: 'secrets:delete',
   resetExecute: 'reset:execute',
+  workItemsList: 'workItems:list',
+  workItemsGet: 'workItems:get',
+  workItemsUpdateStatus: 'workItems:updateStatus',
 } as const

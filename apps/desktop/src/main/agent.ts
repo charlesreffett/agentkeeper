@@ -14,6 +14,7 @@ import type {
 } from '../shared/ipc-contract'
 import { AsyncQueue } from './async-queue'
 import { secrets, SECRET_KEYS } from './secrets'
+import type { WorkItemRegistryFull } from './plugins'
 
 export interface ActiveSession {
   id: string
@@ -43,6 +44,12 @@ export interface InternalStartExtras {
 }
 
 const active = new Map<string, ActiveSession>()
+
+let workItemRegistry: WorkItemRegistryFull | null = null
+
+export function setWorkItemRegistry(registry: WorkItemRegistryFull): void {
+  workItemRegistry = registry
+}
 
 /**
  * Deep-plain an object so Electron's structured-clone IPC can serialize it.
@@ -147,6 +154,23 @@ export async function startSession(
   // We prefer (a) if set, otherwise let the SDK fall through to (b).
   const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
 
+  let systemPromptAppend = params.systemPromptAppend
+  if (params.workItemId && workItemRegistry) {
+    const item = await workItemRegistry.get(params.workItemId)
+    if (item) {
+      console.log(`[agent] attaching work item ${item.id} to session`)
+      const itemContext = [
+        `## Work Item: ${item.title}`,
+        '',
+        item.body ?? '',
+        '',
+        `Status: ${item.status}`,
+        ...(item.assignee ? [`Assignee: ${item.assignee}`] : []),
+      ].join('\n')
+      systemPromptAppend = [itemContext, systemPromptAppend].filter(Boolean).join('\n\n')
+    }
+  }
+
   const id = params.localId ?? randomUUID()
   const controller = new AbortController()
   const input = new AsyncQueue<SDKUserMessage>()
@@ -171,11 +195,11 @@ export async function startSession(
     permissionMode: 'bypassPermissions',
     settingSources: ['user', 'project'],
   }
-  if (params.systemPromptAppend) {
+  if (systemPromptAppend) {
     options!.systemPrompt = {
       type: 'preset',
       preset: 'claude_code',
-      append: params.systemPromptAppend,
+      append: systemPromptAppend,
     }
   }
   if (params.allowedTools && params.allowedTools.length) {
