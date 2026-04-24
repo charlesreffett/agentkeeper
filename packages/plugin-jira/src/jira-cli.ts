@@ -1,21 +1,13 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { WorkItem, WorkItemStatus } from '@orchestral/sdk'
+import type { IssueTransition, WorkItem, WorkItemStatus } from '@orchestral/sdk'
 
-const statusToJira: Record<WorkItemStatus, string> = {
-  open: 'To Do',
+const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
+  open: 'Open',
   in_progress: 'In Progress',
   in_review: 'In Review',
   done: 'Done',
   closed: 'Closed',
-}
-
-const statusKeywords: Record<WorkItemStatus, string[]> = {
-  in_progress: ['progress', 'work', 'start'],
-  done: ['done', 'resolved', 'complete', 'fixed'],
-  closed: ['closed', 'close'],
-  open: ['open', 'todo', 'to do', 'backlog'],
-  in_review: ['review', 'testing', 'qa'],
 }
 
 const execFileAsync = promisify(execFile)
@@ -120,16 +112,27 @@ export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
   }
 }
 
-export async function getIssueTransitions(id: string): Promise<string[]> {
+export async function getIssueTransitions(id: string): Promise<IssueTransition[]> {
   try {
-    await execFileAsync('jira', ['issue', 'move', id, '__probe__'])
+    const { stdout } = await execFileAsync('jira', [
+      'api', `/rest/api/2/issue/${id}/transitions`,
+    ])
+    const data = JSON.parse(stdout.trim()) as {
+      transitions: Array<{
+        name: string
+        to: { name?: string; statusCategory?: { name?: string } }
+      }>
+    }
+    return data.transitions.map((t) => {
+      const toStatus = mapStatus(t.to)
+      return {
+        name: t.name,
+        toStatus,
+        toStatusLabel: toStatusDisplayLabel[toStatus],
+      }
+    })
+  } catch {
     return []
-  } catch (err: unknown) {
-    const stderr = (err as { stderr?: string }).stderr ?? ''
-    const match = stderr.match(/Available states for issue [^:]+: (.+)/)
-    const statesStr = match?.[1]
-    if (!statesStr) return []
-    return statesStr.match(/'([^']+)'/g)?.map((s) => s.slice(1, -1)) ?? []
   }
 }
 
@@ -139,26 +142,13 @@ export async function transitionIssue(id: string, name: string): Promise<void> {
 
 export async function updateIssueStatus(id: string, status: WorkItemStatus): Promise<void> {
   const transitions = await getIssueTransitions(id)
-  if (transitions.length === 0) {
-    await execFileAsync('jira', ['issue', 'move', id, statusToJira[status]])
+  const match = transitions.find((t) => t.toStatus === status)
+  if (match) {
+    await transitionIssue(id, match.name)
     return
   }
-
-  const target = statusToJira[status]
-  const exact = transitions.find((t) => t === target)
-  if (exact) { await transitionIssue(id, exact); return }
-
-  const ci = transitions.find((t) => t.toLowerCase() === target.toLowerCase())
-  if (ci) { await transitionIssue(id, ci); return }
-
-  const keywords = statusKeywords[status]
-  const keyword = transitions.find((t) =>
-    keywords.some((k) => t.toLowerCase().includes(k)),
-  )
-  if (keyword) { await transitionIssue(id, keyword); return }
-
   throw new Error(
-    `No matching transition for '${status}'. Available: ${transitions.map((t) => `'${t}'`).join(', ')}`,
+    `No transition leads to '${status}'. Available destinations: ${transitions.map((t) => t.toStatusLabel).join(', ')}`,
   )
 }
 

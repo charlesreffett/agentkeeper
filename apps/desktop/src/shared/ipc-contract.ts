@@ -1,8 +1,8 @@
 // Shared between main, preload, and renderer. Pure types/constants only — no
 // runtime imports from Electron or Node.
 
-import type { WorkItem, WorkItemStatus } from '@orchestral/sdk'
-export type { WorkItem, WorkItemStatus }
+import type { IssueTransition, WorkItem, WorkItemStatus } from '@orchestral/sdk'
+export type { IssueTransition, WorkItem, WorkItemStatus }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
 
@@ -352,7 +352,7 @@ export interface OrchestralApi {
     list: () => Promise<WorkItem[]>
     get: (id: string) => Promise<WorkItem | undefined>
     updateStatus: (id: string, status: WorkItemStatus) => Promise<void>
-    getTransitions: (id: string) => Promise<string[]>
+    getTransitions: (id: string) => Promise<IssueTransition[]>
     transition: (id: string, name: string) => Promise<void>
   }
 }

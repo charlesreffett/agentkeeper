@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
-import type { WorkItem, WorkItemStatus } from '@shared/ipc-contract'
+import type { IssueTransition, WorkItem, WorkItemStatus } from '@shared/ipc-contract'
 
 const props = defineProps<{
   id: string
@@ -20,7 +20,7 @@ const loading = ref(true)
 const startError = ref<string | null>(null)
 const statusUpdating = ref<string | null>(null)
 const statusError = ref<string | null>(null)
-const availableTransitions = ref<string[]>([])
+const availableTransitions = ref<IssueTransition[]>([])
 const transitionsLoading = ref(false)
 
 const fallbackStatuses: WorkItemStatus[] = ['open', 'in_progress', 'in_review', 'done', 'closed']
@@ -177,13 +177,13 @@ async function startSession() {
           <template v-if="availableTransitions.length > 0">
             <button
               v-for="t in availableTransitions"
-              :key="t"
+              :key="t.name"
               class="text-xs px-2.5 py-1 rounded-full border border-transparent bg-muted/40 text-foreground/80 transition-opacity hover:opacity-90"
-              :class="statusUpdating === t ? 'opacity-40 cursor-wait' : ''"
+              :class="statusUpdating === t.name ? 'opacity-40 cursor-wait' : ''"
               :disabled="statusUpdating !== null"
-              @click="applyTransition(t)"
+              @click="applyTransition(t.name)"
             >
-              {{ statusUpdating === t ? '…' : t }}
+              {{ statusUpdating === t.name ? '…' : t.toStatusLabel }}
             </button>
           </template>
           <template v-else>

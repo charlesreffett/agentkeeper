@@ -133,6 +133,12 @@ export interface EventBus {
   emit<K extends keyof EventMap>(event: K, payload: EventMap[K]): void
 }
 
+export interface IssueTransition {
+  name: string
+  toStatus: WorkItemStatus
+  toStatusLabel: string
+}
+
 export interface WorkItemSource {
   id: string
   label: string
@@ -140,7 +146,7 @@ export interface WorkItemSource {
   get(id: string): Promise<WorkItem | undefined>
   updateStatus?(id: string, status: WorkItemStatus): Promise<void>
   addComment?(id: string, body: string): Promise<void>
-  getTransitions?(id: string): Promise<string[]>
+  getTransitions?(id: string): Promise<IssueTransition[]>
   transition?(id: string, name: string): Promise<void>
 }
 
