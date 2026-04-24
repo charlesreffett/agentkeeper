@@ -2,8 +2,10 @@ import type { WorkItem, WorkItemSource, WorkItemStatus } from '@orchestral/sdk'
 import {
   addComment as cliAddComment,
   getIssue,
+  getIssueTransitions,
   listIssues,
   mapToWorkItem,
+  transitionIssue,
   updateIssueStatus,
 } from './jira-cli'
 
@@ -38,6 +40,14 @@ export class JiraWorkItemSource implements WorkItemSource {
 
   async addComment(id: string, body: string): Promise<void> {
     await cliAddComment(id, body)
+  }
+
+  async getTransitions(id: string): Promise<string[]> {
+    return getIssueTransitions(id)
+  }
+
+  async transition(id: string, name: string): Promise<void> {
+    await transitionIssue(id, name)
   }
 
   async refresh(): Promise<void> {

@@ -352,6 +352,8 @@ export interface OrchestralApi {
     list: () => Promise<WorkItem[]>
     get: (id: string) => Promise<WorkItem | undefined>
     updateStatus: (id: string, status: WorkItemStatus) => Promise<void>
+    getTransitions: (id: string) => Promise<string[]>
+    transition: (id: string, name: string) => Promise<void>
   }
 }
 
@@ -392,6 +394,8 @@ export const IPC_CHANNELS = {
   workItemsList: 'workItems:list',
   workItemsGet: 'workItems:get',
   workItemsUpdateStatus: 'workItems:updateStatus',
+  workItemsGetTransitions: 'workItems:getTransitions',
+  workItemsTransition: 'workItems:transition',
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',

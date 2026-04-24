@@ -28,6 +28,8 @@ export interface WorkItemRegistryFull extends WorkItemRegistry {
   list(): Promise<WorkItem[]>
   get(id: string): Promise<WorkItem | undefined>
   updateStatus(id: string, status: WorkItemStatus): Promise<void>
+  getTransitions(id: string): Promise<string[]>
+  transition(id: string, name: string): Promise<void>
 }
 
 class WorkItemRegistryImpl implements WorkItemRegistryFull {
@@ -73,6 +75,29 @@ class WorkItemRegistryImpl implements WorkItemRegistryFull {
     if (!item) return
     const source = this.sources.get(item.source)
     await source?.addComment?.(id, body)
+  }
+
+  async getTransitions(id: string): Promise<string[]> {
+    for (const source of this.sources.values()) {
+      const item = await source.get(id)
+      if (item !== undefined) {
+        if (!source.getTransitions) throw new Error(`Source '${source.id}' does not support getTransitions`)
+        return source.getTransitions(id)
+      }
+    }
+    throw new Error(`No registered source owns work item '${id}'`)
+  }
+
+  async transition(id: string, name: string): Promise<void> {
+    for (const source of this.sources.values()) {
+      const item = await source.get(id)
+      if (item !== undefined) {
+        if (!source.transition) throw new Error(`Source '${source.id}' does not support transition`)
+        await source.transition(id, name)
+        return
+      }
+    }
+    throw new Error(`No registered source owns work item '${id}'`)
   }
 }
 

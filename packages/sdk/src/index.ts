@@ -140,6 +140,8 @@ export interface WorkItemSource {
   get(id: string): Promise<WorkItem | undefined>
   updateStatus?(id: string, status: WorkItemStatus): Promise<void>
   addComment?(id: string, body: string): Promise<void>
+  getTransitions?(id: string): Promise<string[]>
+  transition?(id: string, name: string): Promise<void>
 }
 
 export interface WorkItemRegistry {

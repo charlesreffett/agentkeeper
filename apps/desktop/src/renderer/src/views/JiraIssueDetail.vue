@@ -18,18 +18,12 @@ const sessionStore = useSessionStore()
 const item = ref<WorkItem | null>(null)
 const loading = ref(true)
 const startError = ref<string | null>(null)
-const statusUpdating = ref<WorkItemStatus | null>(null)
+const statusUpdating = ref<string | null>(null)
 const statusError = ref<string | null>(null)
+const availableTransitions = ref<string[]>([])
+const transitionsLoading = ref(false)
 
-onMounted(async () => {
-  try {
-    item.value = (await window.orchestral.workItems.get(props.id)) ?? null
-  } finally {
-    loading.value = false
-  }
-})
-
-const allStatuses: WorkItemStatus[] = ['open', 'in_progress', 'in_review', 'done', 'closed']
+const fallbackStatuses: WorkItemStatus[] = ['open', 'in_progress', 'in_review', 'done', 'closed']
 
 const statusLabel: Record<WorkItemStatus, string> = {
   open: 'Open',
@@ -46,6 +40,26 @@ const statusClass: Record<WorkItemStatus, string> = {
   done: 'bg-green-500/20 text-green-400',
   closed: 'bg-muted text-muted-foreground',
 }
+
+async function loadTransitions(id: string) {
+  transitionsLoading.value = true
+  try {
+    availableTransitions.value = await window.orchestral.workItems.getTransitions(id)
+  } catch {
+    availableTransitions.value = []
+  } finally {
+    transitionsLoading.value = false
+  }
+}
+
+onMounted(async () => {
+  try {
+    item.value = (await window.orchestral.workItems.get(props.id)) ?? null
+    if (item.value) await loadTransitions(item.value.id)
+  } finally {
+    loading.value = false
+  }
+})
 
 interface IssueTypeBadge { icon: string; cls: string }
 
@@ -64,6 +78,24 @@ function issueTypeBadge(type: string | undefined): IssueTypeBadge | null {
   }
 }
 
+async function applyTransition(transitionName: string) {
+  if (!item.value) return
+  statusError.value = null
+  statusUpdating.value = transitionName
+  try {
+    await window.orchestral.workItems.transition(item.value.id, transitionName)
+    const refreshed = await window.orchestral.workItems.get(item.value.id)
+    if (refreshed) {
+      item.value = refreshed
+      await loadTransitions(item.value.id)
+    }
+  } catch (err) {
+    statusError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    statusUpdating.value = null
+  }
+}
+
 async function setStatus(newStatus: WorkItemStatus) {
   if (!item.value || newStatus === item.value.status) return
   statusError.value = null
@@ -71,7 +103,10 @@ async function setStatus(newStatus: WorkItemStatus) {
   try {
     await window.orchestral.workItems.updateStatus(item.value.id, newStatus)
     const refreshed = await window.orchestral.workItems.get(item.value.id)
-    if (refreshed) item.value = refreshed
+    if (refreshed) {
+      item.value = refreshed
+      await loadTransitions(item.value.id)
+    }
   } catch (err) {
     statusError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -137,21 +172,36 @@ async function startSession() {
       <!-- Status pills -->
       <div class="space-y-1">
         <div class="text-xs text-muted-foreground">Update status</div>
-        <div class="flex flex-wrap gap-1.5">
-          <button
-            v-for="s in allStatuses"
-            :key="s"
-            class="text-xs px-2.5 py-1 rounded-full border transition-opacity"
-            :class="[
-              statusClass[s],
-              s === item.status ? 'border-current opacity-100 ring-1 ring-current' : 'border-transparent opacity-60 hover:opacity-90',
-              statusUpdating === s ? 'opacity-40 cursor-wait' : '',
-            ]"
-            :disabled="statusUpdating !== null"
-            @click="setStatus(s)"
-          >
-            {{ statusUpdating === s ? '…' : statusLabel[s] }}
-          </button>
+        <div v-if="transitionsLoading" class="text-xs text-muted-foreground">Loading transitions…</div>
+        <div v-else class="flex flex-wrap gap-1.5">
+          <template v-if="availableTransitions.length > 0">
+            <button
+              v-for="t in availableTransitions"
+              :key="t"
+              class="text-xs px-2.5 py-1 rounded-full border border-transparent bg-muted/40 text-foreground/80 transition-opacity hover:opacity-90"
+              :class="statusUpdating === t ? 'opacity-40 cursor-wait' : ''"
+              :disabled="statusUpdating !== null"
+              @click="applyTransition(t)"
+            >
+              {{ statusUpdating === t ? '…' : t }}
+            </button>
+          </template>
+          <template v-else>
+            <button
+              v-for="s in fallbackStatuses"
+              :key="s"
+              class="text-xs px-2.5 py-1 rounded-full border transition-opacity"
+              :class="[
+                statusClass[s],
+                s === item.status ? 'border-current opacity-100 ring-1 ring-current' : 'border-transparent opacity-60 hover:opacity-90',
+                statusUpdating === s ? 'opacity-40 cursor-wait' : '',
+              ]"
+              :disabled="statusUpdating !== null"
+              @click="setStatus(s)"
+            >
+              {{ statusUpdating === s ? '…' : statusLabel[s] }}
+            </button>
+          </template>
         </div>
         <div v-if="statusError" class="text-xs text-destructive">{{ statusError }}</div>
       </div>

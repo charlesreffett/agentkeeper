@@ -413,6 +413,25 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+  ipcMain.handle(IPC_CHANNELS.workItemsGetTransitions, async (_event, id: string) => {
+    try {
+      return await registry.getTransitions(id)
+    } catch (err) {
+      console.error('[ipc] workItems:getTransitions failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+  ipcMain.handle(
+    IPC_CHANNELS.workItemsTransition,
+    async (_event, id: string, name: string) => {
+      try {
+        return await registry.transition(id, name)
+      } catch (err) {
+        console.error('[ipc] workItems:transition failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
 }
 
 export function wirePluginEventRelay(win: BrowserWindow): void {

@@ -204,6 +204,10 @@ const api: OrchestralApi = {
     get: (id: string) => invoke(IPC_CHANNELS.workItemsGet, id) as Promise<never>,
     updateStatus: (id: string, status: WorkItemStatus) =>
       invoke(IPC_CHANNELS.workItemsUpdateStatus, id, status) as Promise<void>,
+    getTransitions: (id: string) =>
+      invoke(IPC_CHANNELS.workItemsGetTransitions, id) as Promise<string[]>,
+    transition: (id: string, name: string) =>
+      invoke(IPC_CHANNELS.workItemsTransition, id, name) as Promise<void>,
   },
 }
 
