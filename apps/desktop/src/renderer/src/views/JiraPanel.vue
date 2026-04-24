@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import JiraIssueDetail from './JiraIssueDetail.vue'
 import type { WorkItem } from '@shared/ipc-contract'
 
@@ -42,9 +42,6 @@ async function load() {
   try {
     const all = await window.orchestral.workItems.list()
     items.value = all.filter((i) => i.source === 'jira')
-    if (items.value.length === 0) {
-      cliMissing.value = true
-    }
   } catch {
     cliMissing.value = true
   } finally {
@@ -67,7 +64,7 @@ watch(
   },
 )
 
-const filtered = () => {
+const filtered = computed(() => {
   const q = filter.value.toLowerCase()
   if (!q) return items.value
   return items.value.filter(
@@ -75,7 +72,7 @@ const filtered = () => {
       i.title.toLowerCase().includes(q) ||
       i.externalRef.toLowerCase().includes(q),
   )
-}
+})
 
 function onSessionStarted(localId: string) {
   emit('close')
@@ -132,13 +129,13 @@ function onSessionStarted(localId: string) {
             Jira CLI not found. Install <code class="mx-1 font-mono text-xs bg-muted px-1 rounded">jira</code> to use this panel.
           </div>
 
-          <div v-else-if="filtered().length === 0" class="flex items-center justify-center py-12 text-muted-foreground text-sm">
+          <div v-else-if="filtered.length === 0" class="flex items-center justify-center py-12 text-muted-foreground text-sm">
             No issues match.
           </div>
 
           <ul v-else class="divide-y divide-border">
             <li
-              v-for="item in filtered()"
+              v-for="item in filtered"
               :key="item.id"
               class="flex items-center gap-3 px-4 py-3 hover:bg-muted/40 cursor-pointer"
               @click="selectedId = item.id"

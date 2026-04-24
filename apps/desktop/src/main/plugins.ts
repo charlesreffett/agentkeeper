@@ -145,14 +145,12 @@ function buildBackgroundWork(): BackgroundWork {
 
 const noopUI: UIContributions = {
   contribute(_slot: UISlot, _contribution: UIContribution): () => void {
-    console.warn('[plugin] UIContributions.contribute called but not implemented')
     return () => {}
   },
 }
 
 const noopCommands: CommandRegistry = {
   register(_cmd: CommandDefinition): () => void {
-    console.warn('[plugin] CommandRegistry.register called but not implemented')
     return () => {}
   },
 }

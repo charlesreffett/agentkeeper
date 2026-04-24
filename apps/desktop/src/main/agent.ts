@@ -158,7 +158,6 @@ export async function startSession(
   if (params.workItemId && workItemRegistry) {
     const item = await workItemRegistry.get(params.workItemId)
     if (item) {
-      console.log(`[agent] attaching work item ${item.id} to session`)
       const itemContext = [
         `## Work Item: ${item.title}`,
         '',

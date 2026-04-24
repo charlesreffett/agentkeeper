@@ -64,10 +64,6 @@ function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
       `IPC ${channel}: args not structured-clone safe after toPlain [${shape}] — ${reason}`,
     )
   }
-  if (channel === IPC_CHANNELS.skillsInstall || channel === IPC_CHANNELS.skillsPreview) {
-    const shape = plainArgs.map((a, i) => `${i}:${describeArg(a)}`).join(' ')
-    console.log('[preload] →', channel, shape, plainArgs)
-  }
   return ipcRenderer.invoke(channel, ...plainArgs)
 }
 

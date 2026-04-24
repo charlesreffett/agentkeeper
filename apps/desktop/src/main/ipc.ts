@@ -269,17 +269,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       scope: 'project' | 'global',
       skillIds?: string[],
     ) => {
-      console.log('[ipc] skills:install ←', {
-        projectPath,
-        source,
-        scope,
-        skillIdsCount: skillIds?.length ?? 0,
-        skillIds,
-      })
       try {
-        const result = await installSkill(projectPath, source, scope, skillIds)
-        console.log('[ipc] skills:install ok', { source, scope })
-        return result
+        return await installSkill(projectPath, source, scope, skillIds)
       } catch (err) {
         console.error('[ipc] skills:install failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -289,7 +280,6 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   ipcMain.handle(
     IPC_CHANNELS.skillsPreview,
     async (_event, projectPath: string, source: string) => {
-      console.log('[ipc] skills:preview ←', { projectPath, source })
       try {
         return await previewSkills(projectPath, source)
       } catch (err) {
