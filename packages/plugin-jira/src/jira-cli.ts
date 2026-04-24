@@ -14,10 +14,19 @@ const execFileAsync = promisify(execFile)
 
 export interface RawJiraIssue {
   key: string
-  summary: string
+  summary?: string
   description?: string
   status?: { name: string }
   assignee?: { displayName: string }
+  fields?: {
+    summary?: string
+    description?: string
+    status?: {
+      name: string
+      statusCategory?: { name: string }
+    }
+    assignee?: { displayName: string }
+  }
 }
 
 export async function checkCliPresent(): Promise<boolean> {
@@ -29,35 +38,55 @@ export async function checkCliPresent(): Promise<boolean> {
   }
 }
 
-function mapStatus(jiraStatus: string | undefined): WorkItemStatus {
-  switch (jiraStatus) {
+function mapStatus(
+  statusField: { name?: string; statusCategory?: { name?: string } } | undefined,
+): WorkItemStatus {
+  switch (statusField?.name) {
     case 'To Do':
     case 'Open':
+    case 'Reopened':
       return 'open'
     case 'In Progress':
       return 'in_progress'
     case 'In Review':
     case 'Under Review':
+    case 'In Testing':
+    case 'In QA':
+    case 'QA':
+    case 'Testing':
       return 'in_review'
     case 'Done':
+    case 'Resolved':
+    case 'Fixed':
+    case 'Completed':
+    case 'Accepted':
+    case 'Verified':
+    case 'Released':
       return 'done'
     case 'Closed':
     case "Won't Do":
       return 'closed'
-    default:
+    default: {
+      const cat = statusField?.statusCategory?.name
+      if (cat === 'Done') return 'done'
+      if (cat === 'In Progress') return 'in_progress'
       return 'open'
+    }
   }
 }
 
 export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
+  const summary = raw.fields?.summary ?? raw.summary ?? raw.key
+  const description = raw.fields?.description ?? raw.description ?? ''
+  const assignee = raw.fields?.assignee?.displayName ?? raw.assignee?.displayName
   return {
     id: raw.key,
     source: 'jira',
     externalRef: raw.key,
-    title: raw.summary ?? raw.key,
-    body: raw.description ?? '',
-    status: mapStatus(raw.status?.name),
-    ...(raw.assignee?.displayName ? { assignee: raw.assignee.displayName } : {}),
+    title: summary,
+    body: typeof description === 'string' ? description : '',
+    status: mapStatus(raw.fields?.status ?? raw.status),
+    ...(assignee ? { assignee } : {}),
     links: [],
   }
 }
