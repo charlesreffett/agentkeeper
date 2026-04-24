@@ -82,8 +82,9 @@ function onSessionStarted(localId: string) {
   emit('sessionStarted', localId)
 }
 
+let unsub: (() => void) | null = null
 onMounted(() => {
-  const unsub = window.orchestral.plugins.onEvent((event) => {
+  unsub = window.orchestral.plugins.onEvent((event) => {
     if (event === 'plugin.healthy') {
       cliMissing.value = false
       void loadIssues()
@@ -91,7 +92,9 @@ onMounted(() => {
       cliMissing.value = true
     }
   })
-  onUnmounted(unsub)
+})
+onUnmounted(() => {
+  unsub?.()
 })
 </script>
 

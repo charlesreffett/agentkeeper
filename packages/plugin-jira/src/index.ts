@@ -48,6 +48,14 @@ export const jiraPlugin: Plugin<JiraSettings> = {
     }
 
     await startJira(ctx)
+
+    ctx.events.on('settings.changed', async ({ pluginId, config }) => {
+      if (pluginId !== 'jira') return
+      cancelPolling?.()
+      cancelPolling = null
+      ctx.workItems.unregister('jira')
+      await startJira({ ...ctx, config: config as JiraSettings })
+    })
   },
 
   async deactivate() {

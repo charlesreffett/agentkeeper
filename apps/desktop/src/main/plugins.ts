@@ -222,9 +222,15 @@ export async function activatePlugins(
   const bus = buildEventBus()
   pluginEventBus = bus
 
+  // Restore config saved from a previous session.
+  const persistedConfig: Record<string, unknown> = {}
+  for (const key of await kvStore.list()) {
+    persistedConfig[key] = await kvStore.get(key)
+  }
+
   type JiraConfig = Parameters<(typeof jiraPlugin)['activate']>[0]['config']
   const ctx: PluginContext<JiraConfig> = {
-    config: {},
+    config: persistedConfig as JiraConfig,
     logger: buildLogger('jira'),
     storage: kvStore,
     secrets: createPluginSecrets('jira') as SecretsApi,
