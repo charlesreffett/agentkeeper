@@ -133,7 +133,8 @@ export async function getIssueTransitions(id: string): Promise<IssueTransition[]
         toStatusLabel: toStatusDisplayLabel[toStatus],
       }
     })
-  } catch {
+  } catch (err) {
+    console.error('[jira] getIssueTransitions failed:', err)
     return []
   }
 }
@@ -143,12 +144,43 @@ export async function transitionIssue(id: string, name: string): Promise<void> {
 }
 
 export async function updateIssueStatus(id: string, status: WorkItemStatus): Promise<void> {
-  const transitions = await getIssueTransitions(id)
+  let transitions = await getIssueTransitions(id)
+
+  // No transitions → issue is likely in the backlog (not on the board).
+  // Try common backlog-exit transition names to move it to 'open' first.
+  if (transitions.length === 0) {
+    for (const name of ['To Do', 'Open', 'Reopen']) {
+      try {
+        await transitionIssue(id, name)
+        break
+      } catch {
+        // try next
+      }
+    }
+    transitions = await getIssueTransitions(id)
+  }
+
+  // Direct path
   const match = transitions.find((t) => t.toStatus === status)
   if (match) {
     await transitionIssue(id, match.name)
     return
   }
+
+  // Two-step path: go through 'open' as an intermediate (e.g. backlog → open → in_progress)
+  if (status !== 'open') {
+    const openMatch = transitions.find((t) => t.toStatus === 'open')
+    if (openMatch) {
+      await transitionIssue(id, openMatch.name)
+      const nextTransitions = await getIssueTransitions(id)
+      const nextMatch = nextTransitions.find((t) => t.toStatus === status)
+      if (nextMatch) {
+        await transitionIssue(id, nextMatch.name)
+        return
+      }
+    }
+  }
+
   if (transitions.length === 0) {
     throw new Error(
       `No transitions are available from the current status. This issue may need to be moved onto the board in Jira first.`,
