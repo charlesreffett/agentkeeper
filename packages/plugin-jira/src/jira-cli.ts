@@ -2,6 +2,14 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { WorkItem, WorkItemStatus } from '@orchestral/sdk'
 
+const statusToJira: Record<WorkItemStatus, string> = {
+  open: 'To Do',
+  in_progress: 'In Progress',
+  in_review: 'In Review',
+  done: 'Done',
+  closed: 'Closed',
+}
+
 const execFileAsync = promisify(execFile)
 
 export interface RawJiraIssue {
@@ -70,6 +78,10 @@ export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
   }
 }
 
-export async function updateIssueStatus(id: string, status: string): Promise<void> {
-  await execFileAsync('jira', ['issue', 'move', id, status])
+export async function updateIssueStatus(id: string, status: WorkItemStatus): Promise<void> {
+  await execFileAsync('jira', ['issue', 'move', id, statusToJira[status]])
+}
+
+export async function addComment(id: string, body: string): Promise<void> {
+  await execFileAsync('jira', ['issue', 'comment', 'add', id, '-b', body])
 }

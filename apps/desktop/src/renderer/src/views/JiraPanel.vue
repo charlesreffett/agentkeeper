@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Settings } from 'lucide-vue-next'
 import JiraIssueDetail from './JiraIssueDetail.vue'
+import JiraSettingsModal from './JiraSettingsModal.vue'
 import type { WorkItem } from '@shared/ipc-contract'
 
 const props = defineProps<{
@@ -19,6 +21,7 @@ const loading = ref(false)
 const filter = ref('')
 const selectedId = ref<string | null>(null)
 const cliMissing = ref(false)
+const settingsOpen = ref(false)
 
 const statusLabel: Record<string, string> = {
   open: 'Open',
@@ -36,7 +39,7 @@ const statusClass: Record<string, string> = {
   closed: 'bg-muted text-muted-foreground',
 }
 
-async function load() {
+async function loadIssues() {
   loading.value = true
   cliMissing.value = false
   try {
@@ -55,7 +58,7 @@ watch(
     if (isOpen) {
       selectedId.value = null
       filter.value = ''
-      await load()
+      await loadIssues()
       await nextTick()
       dialog.value?.showModal()
     } else {
@@ -78,6 +81,18 @@ function onSessionStarted(localId: string) {
   emit('close')
   emit('sessionStarted', localId)
 }
+
+onMounted(() => {
+  const unsub = window.orchestral.plugins.onEvent((event) => {
+    if (event === 'plugin.healthy') {
+      cliMissing.value = false
+      void loadIssues()
+    } else if (event === 'plugin.unhealthy') {
+      cliMissing.value = true
+    }
+  })
+  onUnmounted(unsub)
+})
 </script>
 
 <template>
@@ -90,12 +105,21 @@ function onSessionStarted(localId: string) {
     <div class="flex flex-col max-h-[85vh]">
       <header class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <span class="font-semibold text-sm">Jira Issues</span>
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
-          @click="emit('close')"
-        >
-          ×
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+            title="Jira settings"
+            @click="settingsOpen = true"
+          >
+            <Settings :size="14" />
+          </button>
+          <button
+            class="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
+            @click="emit('close')"
+          >
+            ×
+          </button>
+        </div>
       </header>
 
       <div v-if="selectedId" class="flex-1 min-h-0">
@@ -156,4 +180,10 @@ function onSessionStarted(localId: string) {
       </template>
     </div>
   </dialog>
+
+  <JiraSettingsModal
+    :open="settingsOpen"
+    @close="settingsOpen = false"
+    @saved="loadIssues"
+  />
 </template>

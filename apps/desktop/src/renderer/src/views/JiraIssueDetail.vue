@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
-import type { WorkItem } from '@shared/ipc-contract'
+import type { WorkItem, WorkItemStatus } from '@shared/ipc-contract'
 
 const props = defineProps<{
   id: string
@@ -18,6 +18,8 @@ const sessionStore = useSessionStore()
 const item = ref<WorkItem | null>(null)
 const loading = ref(true)
 const startError = ref<string | null>(null)
+const statusUpdating = ref<WorkItemStatus | null>(null)
+const statusError = ref<string | null>(null)
 
 onMounted(async () => {
   try {
@@ -27,7 +29,9 @@ onMounted(async () => {
   }
 })
 
-const statusLabel: Record<string, string> = {
+const allStatuses: WorkItemStatus[] = ['open', 'in_progress', 'in_review', 'done', 'closed']
+
+const statusLabel: Record<WorkItemStatus, string> = {
   open: 'Open',
   in_progress: 'In Progress',
   in_review: 'In Review',
@@ -35,12 +39,27 @@ const statusLabel: Record<string, string> = {
   closed: 'Closed',
 }
 
-const statusClass: Record<string, string> = {
+const statusClass: Record<WorkItemStatus, string> = {
   open: 'bg-blue-500/20 text-blue-400',
   in_progress: 'bg-yellow-500/20 text-yellow-400',
   in_review: 'bg-purple-500/20 text-purple-400',
   done: 'bg-green-500/20 text-green-400',
   closed: 'bg-muted text-muted-foreground',
+}
+
+async function setStatus(newStatus: WorkItemStatus) {
+  if (!item.value || newStatus === item.value.status) return
+  statusError.value = null
+  statusUpdating.value = newStatus
+  try {
+    await window.orchestral.workItems.updateStatus(item.value.id, newStatus)
+    const refreshed = await window.orchestral.workItems.get(item.value.id)
+    if (refreshed) item.value = refreshed
+  } catch (err) {
+    statusError.value = err instanceof Error ? err.message : String(err)
+  } finally {
+    statusUpdating.value = null
+  }
 }
 
 async function startSession() {
@@ -86,6 +105,28 @@ async function startSession() {
         >
           {{ statusLabel[item.status] ?? item.status }}
         </span>
+      </div>
+
+      <!-- Status pills -->
+      <div class="space-y-1">
+        <div class="text-xs text-muted-foreground">Update status</div>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="s in allStatuses"
+            :key="s"
+            class="text-xs px-2.5 py-1 rounded-full border transition-opacity"
+            :class="[
+              statusClass[s],
+              s === item.status ? 'border-current opacity-100 ring-1 ring-current' : 'border-transparent opacity-60 hover:opacity-90',
+              statusUpdating === s ? 'opacity-40 cursor-wait' : '',
+            ]"
+            :disabled="statusUpdating !== null"
+            @click="setStatus(s)"
+          >
+            {{ statusUpdating === s ? '…' : statusLabel[s] }}
+          </button>
+        </div>
+        <div v-if="statusError" class="text-xs text-destructive">{{ statusError }}</div>
       </div>
 
       <div v-if="item.assignee" class="text-xs text-muted-foreground">

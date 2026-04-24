@@ -120,6 +120,7 @@ export type EventMap = {
   'pr.merged': { prUrl: string; workItemId?: string }
   'plugin.unhealthy': { pluginId: string; reason: string }
   'plugin.healthy': { pluginId: string }
+  'settings.changed': { pluginId: string; config: unknown }
 }
 
 export type EventHandler<K extends keyof EventMap> = (
@@ -137,11 +138,13 @@ export interface WorkItemSource {
   list(): Promise<WorkItem[]>
   get(id: string): Promise<WorkItem | undefined>
   updateStatus?(id: string, status: WorkItemStatus): Promise<void>
+  addComment?(id: string, body: string): Promise<void>
 }
 
 export interface WorkItemRegistry {
   register(source: WorkItemSource): void
   unregister(id: string): void
+  addComment(id: string, body: string): Promise<void>
 }
 
 export type UISlot =

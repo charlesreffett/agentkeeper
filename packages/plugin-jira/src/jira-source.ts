@@ -1,20 +1,11 @@
 import type { WorkItem, WorkItemSource, WorkItemStatus } from '@orchestral/sdk'
-import { getIssue, listIssues, mapToWorkItem, updateIssueStatus } from './jira-cli'
-
-function statusToJira(status: WorkItemStatus): string {
-  switch (status) {
-    case 'open':
-      return 'To Do'
-    case 'in_progress':
-      return 'In Progress'
-    case 'in_review':
-      return 'In Review'
-    case 'done':
-      return 'Done'
-    case 'closed':
-      return 'Closed'
-  }
-}
+import {
+  addComment as cliAddComment,
+  getIssue,
+  listIssues,
+  mapToWorkItem,
+  updateIssueStatus,
+} from './jira-cli'
 
 export class JiraWorkItemSource implements WorkItemSource {
   readonly id = 'jira'
@@ -42,7 +33,11 @@ export class JiraWorkItemSource implements WorkItemSource {
   }
 
   async updateStatus(id: string, status: WorkItemStatus): Promise<void> {
-    await updateIssueStatus(id, statusToJira(status))
+    await updateIssueStatus(id, status)
+  }
+
+  async addComment(id: string, body: string): Promise<void> {
+    await cliAddComment(id, body)
   }
 
   async refresh(): Promise<void> {

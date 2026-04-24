@@ -187,6 +187,18 @@ const api: OrchestralApi = {
     execute: (request: ResetRequest) =>
       invoke(IPC_CHANNELS.resetExecute, request) as Promise<never>,
   },
+  plugins: {
+    getConfig: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsConfigGet, pluginId) as Promise<unknown>,
+    setConfig: (pluginId: string, config: unknown) =>
+      invoke(IPC_CHANNELS.pluginsConfigSet, pluginId, config) as Promise<void>,
+    onEvent: (handler: (event: string, payload: unknown) => void): () => void => {
+      const listener = (_: IpcRendererEvent, event: string, payload: unknown) =>
+        handler(event, payload)
+      ipcRenderer.on(IPC_CHANNELS.pluginEvent, listener)
+      return () => ipcRenderer.off(IPC_CHANNELS.pluginEvent, listener)
+    },
+  },
   workItems: {
     list: () => invoke(IPC_CHANNELS.workItemsList) as Promise<never>,
     get: (id: string) => invoke(IPC_CHANNELS.workItemsGet, id) as Promise<never>,

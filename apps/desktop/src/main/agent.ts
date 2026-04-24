@@ -1,5 +1,6 @@
 import { webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
+import path from 'node:path'
 import {
   query,
   type Query,
@@ -20,6 +21,7 @@ export interface ActiveSession {
   id: string
   sdkSessionId: string | null
   projectPath: string
+  worktreePath: string | undefined
   model: string | undefined
   query: Query
   input: AsyncQueue<SDKUserMessage>
@@ -29,6 +31,7 @@ export interface ActiveSession {
   /** Agency membership (null if freestanding). */
   agencyInstanceId: string | null
   roleId: string | null
+  workItemId: string | null
   /** Full SDK message history for orchestrator routing. */
   events: SDKMessage[]
   /** Resolvers awaiting next terminal status (idle/completed/error/cancelled). */
@@ -126,6 +129,18 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       }
     }
     setStatus(session, 'completed')
+    if (session.workItemId && workItemRegistry) {
+      const branch = session.worktreePath
+        ? path.basename(session.worktreePath)
+        : path.basename(session.projectPath)
+      const ts = new Date().toISOString()
+      workItemRegistry
+        .addComment(
+          session.workItemId,
+          `🤖 Session completed\n\nBranch: \`${branch}\`\nFinished: ${ts}`,
+        )
+        .catch(() => {})
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[agent] session ${session.id} stream error:`, err)
@@ -214,6 +229,7 @@ export async function startSession(
     id,
     sdkSessionId: null,
     projectPath: params.projectPath,
+    worktreePath: params.worktreePath,
     model: params.model,
     query: q,
     input,
@@ -222,6 +238,7 @@ export async function startSession(
     startedAt: Date.now(),
     agencyInstanceId: params.agencyInstanceId ?? null,
     roleId: params.roleId ?? null,
+    workItemId: params.workItemId ?? null,
     events: [],
     idleWaiters: [],
   }
@@ -298,6 +315,7 @@ export function listActiveSessions(): Array<{
   model: string | undefined
   agencyInstanceId: string | null
   roleId: string | null
+  workItemId: string | null
 }> {
   return Array.from(active.values()).map((s) => ({
     id: s.id,
@@ -308,5 +326,6 @@ export function listActiveSessions(): Array<{
     model: s.model,
     agencyInstanceId: s.agencyInstanceId,
     roleId: s.roleId,
+    workItemId: s.workItemId,
   }))
 }

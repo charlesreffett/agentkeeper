@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
+import type { EventMap } from '@orchestral/sdk'
 import path from 'node:path'
 import {
   IPC_CHANNELS,
@@ -9,6 +10,7 @@ import {
   type WorkItemStatus,
 } from '../shared/ipc-contract'
 import type { WorkItemRegistryFull } from './plugins'
+import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { recentProjectsStore } from './store'
 import { listSessions, readSession } from './sessions'
 import { cancelSession, sendInput, startSession } from './agent'
@@ -367,6 +369,22 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     },
   )
 
+  // Plugin config
+  ipcMain.handle(IPC_CHANNELS.pluginsConfigGet, (_event, pluginId: string) =>
+    getPluginConfig(pluginId),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.pluginsConfigSet,
+    async (_event, pluginId: string, config: unknown) => {
+      try {
+        return await setPluginConfig(pluginId, config)
+      } catch (err) {
+        console.error('[ipc] plugins:config:set failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+
   // Work items (plugin registry)
   ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {
     try {
@@ -395,4 +413,27 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+}
+
+export function wirePluginEventRelay(win: BrowserWindow): void {
+  const bus = getPluginEventBus()
+  if (!bus) return
+  const events: (keyof EventMap)[] = [
+    'plugin.healthy',
+    'plugin.unhealthy',
+    'task.selected',
+    'job.started',
+    'job.completed',
+    'job.failed',
+    'session.started',
+    'session.completed',
+    'pr.opened',
+    'pr.merged',
+    'settings.changed',
+  ]
+  for (const event of events) {
+    bus.on(event, (payload) => {
+      if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.pluginEvent, event, payload)
+    })
+  }
 }

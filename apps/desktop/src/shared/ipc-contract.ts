@@ -343,6 +343,11 @@ export interface OrchestralApi {
   reset: {
     execute: (request: ResetRequest) => Promise<ResetResult>
   }
+  plugins: {
+    getConfig: (pluginId: string) => Promise<unknown>
+    setConfig: (pluginId: string, config: unknown) => Promise<void>
+    onEvent: (handler: (event: string, payload: unknown) => void) => () => void
+  }
   workItems: {
     list: () => Promise<WorkItem[]>
     get: (id: string) => Promise<WorkItem | undefined>
@@ -387,4 +392,7 @@ export const IPC_CHANNELS = {
   workItemsList: 'workItems:list',
   workItemsGet: 'workItems:get',
   workItemsUpdateStatus: 'workItems:updateStatus',
+  pluginsConfigGet: 'plugins:config:get',
+  pluginsConfigSet: 'plugins:config:set',
+  pluginEvent: 'plugin:event',
 } as const

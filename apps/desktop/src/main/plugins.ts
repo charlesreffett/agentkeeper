@@ -67,6 +67,13 @@ class WorkItemRegistryImpl implements WorkItemRegistryFull {
     }
     throw new Error(`No registered source owns work item '${id}'`)
   }
+
+  async addComment(id: string, body: string): Promise<void> {
+    const item = await this.get(id)
+    if (!item) return
+    const source = this.sources.get(item.source)
+    await source?.addComment?.(id, body)
+  }
 }
 
 function buildLogger(pluginId: string): Logger {
@@ -159,11 +166,12 @@ function buildPluginContext<TSettings>(
   pluginId: string,
   registry: WorkItemRegistryImpl,
   config: TSettings,
+  storage: ScopedKVStore,
 ): PluginContext<TSettings> {
   return {
     config,
     logger: buildLogger(pluginId),
-    storage: buildKVStore(pluginId),
+    storage,
     secrets: createPluginSecrets(pluginId) as SecretsApi,
     events: buildEventBus(),
     workItems: registry,
@@ -173,13 +181,59 @@ function buildPluginContext<TSettings>(
   }
 }
 
+// Module-scoped references for IPC access
+let pluginEventBus: EventBus | null = null
+const pluginKVStores = new Map<string, ScopedKVStore>()
+
+export function getPluginEventBus(): EventBus | null {
+  return pluginEventBus
+}
+
+export async function getPluginConfig(pluginId: string): Promise<unknown> {
+  const store = pluginKVStores.get(pluginId)
+  if (!store) return {}
+  const keys = await store.list()
+  const config: Record<string, unknown> = {}
+  for (const key of keys) {
+    config[key] = await store.get(key)
+  }
+  return config
+}
+
+export async function setPluginConfig(pluginId: string, config: unknown): Promise<void> {
+  const store = pluginKVStores.get(pluginId)
+  if (!store) return
+  if (config !== null && typeof config === 'object') {
+    for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+      await store.set(key, value)
+    }
+  }
+  pluginEventBus?.emit('settings.changed', { pluginId, config })
+}
+
 export async function activatePlugins(
   electronApp: typeof app,
 ): Promise<WorkItemRegistryFull> {
   const registry = new WorkItemRegistryImpl()
 
+  const kvStore = buildKVStore('jira')
+  pluginKVStores.set('jira', kvStore)
+
+  const bus = buildEventBus()
+  pluginEventBus = bus
+
   type JiraConfig = Parameters<(typeof jiraPlugin)['activate']>[0]['config']
-  const ctx = buildPluginContext<JiraConfig>('jira', registry, {})
+  const ctx: PluginContext<JiraConfig> = {
+    config: {},
+    logger: buildLogger('jira'),
+    storage: kvStore,
+    secrets: createPluginSecrets('jira') as SecretsApi,
+    events: bus,
+    workItems: registry,
+    ui: noopUI,
+    commands: noopCommands,
+    background: buildBackgroundWork(),
+  }
 
   await jiraPlugin.activate(ctx)
 

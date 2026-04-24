@@ -1,13 +1,13 @@
 import { app, BrowserWindow, shell } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { registerIpcHandlers } from './ipc'
+import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { activatePlugins } from './plugins'
 import { setWorkItemRegistry } from './agent'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-function createWindow() {
+function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -39,13 +39,16 @@ function createWindow() {
   } else {
     win.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  return win
 }
 
 app.whenReady().then(async () => {
   const registry = await activatePlugins(app)
   setWorkItemRegistry(registry)
   registerIpcHandlers(registry)
-  createWindow()
+  const win = createWindow()
+  wirePluginEventRelay(win)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
