@@ -91,7 +91,7 @@ async function remove(cmd: SlashCommand) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove command "/${cmd.id}" (${cmd.scope})?`)) return
   try {
-    await window.orchestral.commands.remove(cmd)
+    await window.orchestral.commands.remove({ ...cmd })
     await refresh()
     if (selectedId.value === `${cmd.scope}:${cmd.id}`) cancelEdit()
   } catch (e) {

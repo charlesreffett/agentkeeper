@@ -67,6 +67,14 @@ async function doInstall(skillIds?: string[]) {
   const source = installSource.value.trim()
   installing.value = true
   message.value = null
+  const payload = {
+    projectPath: props.projectPath,
+    source,
+    scope: installScope.value,
+    skillIds: skillIds ? [...skillIds] : undefined,
+    skillIdsCount: skillIds?.length ?? 0,
+  }
+  console.log('[skills] install →', payload)
   try {
     await window.orchestral.skills.install(
       props.projectPath,
@@ -74,9 +82,11 @@ async function doInstall(skillIds?: string[]) {
       installScope.value,
       skillIds,
     )
+    console.log('[skills] install ok', { source, count: payload.skillIdsCount })
     resetInstallForm()
     await refresh()
   } catch (e) {
+    console.error('[skills] install failed', { payload, error: e })
     message.value = e instanceof Error ? e.message : String(e)
   } finally {
     installing.value = false
@@ -84,7 +94,11 @@ async function doInstall(skillIds?: string[]) {
 }
 
 function installSelected() {
-  doInstall(selectedIds.value.length > 0 ? selectedIds.value : undefined)
+  // Pass a plain copy — selectedIds.value is a Vue reactive Proxy and even
+  // though preload's toPlain() should handle it, copying here means the
+  // logging above shows exactly what crosses the bridge.
+  const ids = selectedIds.value.length > 0 ? [...selectedIds.value] : undefined
+  doInstall(ids)
 }
 
 function toggleAll() {
@@ -107,7 +121,7 @@ async function remove(skill: Skill) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove skill "${skill.name}" (${skill.scope})?`)) return
   try {
-    await window.orchestral.skills.remove(skill)
+    await window.orchestral.skills.remove({ ...skill })
     await refresh()
     if (expanded.value === `${skill.scope}:${skill.id}`) expanded.value = null
   } catch (e) {
