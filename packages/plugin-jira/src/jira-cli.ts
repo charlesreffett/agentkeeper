@@ -45,6 +45,7 @@ function mapStatus(
   statusField: { name?: string; statusCategory?: { name?: string } } | undefined,
 ): WorkItemStatus {
   switch (statusField?.name) {
+    case 'Backlog':
     case 'To Do':
     case 'Open':
     case 'Reopened':
@@ -90,6 +91,7 @@ export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
     title: summary,
     body: typeof description === 'string' ? description : '',
     status: mapStatus(raw.fields?.status ?? raw.status),
+    statusLabel: raw.fields?.status?.name ?? raw.status?.name,
     ...(assignee ? { assignee } : {}),
     ...(issueType ? { issueType } : {}),
     links: [],
@@ -147,8 +149,13 @@ export async function updateIssueStatus(id: string, status: WorkItemStatus): Pro
     await transitionIssue(id, match.name)
     return
   }
+  if (transitions.length === 0) {
+    throw new Error(
+      `No transitions are available from the current status. This issue may need to be moved onto the board in Jira first.`,
+    )
+  }
   throw new Error(
-    `No transition leads to '${status}'. Available destinations: ${transitions.map((t) => t.toStatusLabel).join(', ')}`,
+    `No direct path to '${status}'. Available: ${transitions.map((t) => t.toStatusLabel).join(', ')}. If '${status}' is reachable via an intermediate step, transition to an available status first.`,
   )
 }
 

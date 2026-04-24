@@ -24,6 +24,7 @@ export interface WorkItem {
   title: string
   body: string
   status: WorkItemStatus
+  statusLabel?: string
   assignee?: string
   issueType?: string
   links: WorkItemLink[]
