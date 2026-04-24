@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import type { IssueTransition, WorkItem, WorkItemStatus } from '@orchestral/sdk'
 
 const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
+  backlog: 'Backlog',
   open: 'Open',
   in_progress: 'In Progress',
   in_review: 'In Review',
@@ -46,6 +47,7 @@ function mapStatus(
 ): WorkItemStatus {
   switch (statusField?.name) {
     case 'Backlog':
+      return 'backlog'
     case 'To Do':
     case 'Open':
     case 'Reopened':

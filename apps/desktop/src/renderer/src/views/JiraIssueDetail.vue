@@ -23,9 +23,10 @@ const statusError = ref<string | null>(null)
 const availableTransitions = ref<IssueTransition[]>([])
 const transitionsLoading = ref(false)
 
-const fallbackStatuses: WorkItemStatus[] = ['open', 'in_progress', 'in_review', 'done', 'closed']
+const fallbackStatuses: WorkItemStatus[] = ['backlog', 'open', 'in_progress', 'in_review', 'done', 'closed']
 
 const statusLabel: Record<WorkItemStatus, string> = {
+  backlog: 'Backlog',
   open: 'Open',
   in_progress: 'In Progress',
   in_review: 'In Review',
@@ -34,6 +35,7 @@ const statusLabel: Record<WorkItemStatus, string> = {
 }
 
 const statusClass: Record<WorkItemStatus, string> = {
+  backlog: 'bg-slate-500/15 text-slate-400',
   open: 'bg-blue-500/20 text-blue-400',
   in_progress: 'bg-yellow-500/20 text-yellow-400',
   in_review: 'bg-purple-500/20 text-purple-400',

@@ -5,6 +5,7 @@ import type { z } from 'zod'
 // ────────────────────────────────────────────────────────────────────────────
 
 export type WorkItemStatus =
+  | 'backlog'
   | 'open'
   | 'in_progress'
   | 'in_review'

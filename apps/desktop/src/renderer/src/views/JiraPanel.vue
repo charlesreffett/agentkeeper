@@ -24,6 +24,7 @@ const cliMissing = ref(false)
 const settingsOpen = ref(false)
 
 const statusLabel: Record<string, string> = {
+  backlog: 'Backlog',
   open: 'Open',
   in_progress: 'In Progress',
   in_review: 'In Review',
@@ -32,6 +33,7 @@ const statusLabel: Record<string, string> = {
 }
 
 const statusClass: Record<string, string> = {
+  backlog: 'bg-slate-500/15 text-slate-400',
   open: 'bg-blue-500/20 text-blue-400',
   in_progress: 'bg-yellow-500/20 text-yellow-400',
   in_review: 'bg-purple-500/20 text-purple-400',
