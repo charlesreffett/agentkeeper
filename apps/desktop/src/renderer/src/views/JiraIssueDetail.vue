@@ -47,6 +47,23 @@ const statusClass: Record<WorkItemStatus, string> = {
   closed: 'bg-muted text-muted-foreground',
 }
 
+interface IssueTypeBadge { icon: string; cls: string }
+
+function issueTypeBadge(type: string | undefined): IssueTypeBadge | null {
+  if (!type) return null
+  switch (type.toLowerCase()) {
+    case 'epic':     return { icon: '⚡', cls: 'bg-purple-500/20 text-purple-400' }
+    case 'story':    return { icon: '📋', cls: 'bg-blue-500/20 text-blue-400' }
+    case 'task':     return { icon: '✓', cls: 'bg-blue-500/20 text-blue-400' }
+    case 'bug':
+    case 'defect':   return { icon: '●', cls: 'bg-red-500/20 text-red-400' }
+    case 'sub-task':
+    case 'subtask':  return { icon: '↳', cls: 'bg-muted text-muted-foreground' }
+    case 'feature':  return { icon: '★', cls: 'bg-teal-500/20 text-teal-400' }
+    default:         return { icon: '', cls: 'bg-muted text-muted-foreground' }
+  }
+}
+
 async function setStatus(newStatus: WorkItemStatus) {
   if (!item.value || newStatus === item.value.status) return
   statusError.value = null
@@ -99,12 +116,22 @@ async function startSession() {
           <div class="text-xs font-mono text-muted-foreground mb-1">{{ item.externalRef }}</div>
           <h2 class="text-sm font-semibold leading-snug">{{ item.title }}</h2>
         </div>
-        <span
-          class="shrink-0 text-xs px-2 py-0.5 rounded-full"
-          :class="statusClass[item.status] ?? 'bg-muted text-muted-foreground'"
-        >
-          {{ statusLabel[item.status] ?? item.status }}
-        </span>
+        <div class="shrink-0 flex items-center gap-1.5">
+          <template v-if="item.issueType">
+            <span
+              class="text-xs px-2 py-0.5 rounded-full"
+              :class="issueTypeBadge(item.issueType)?.cls ?? 'bg-muted text-muted-foreground'"
+            >
+              <template v-if="issueTypeBadge(item.issueType)?.icon">{{ issueTypeBadge(item.issueType)!.icon }} </template>{{ item.issueType }}
+            </span>
+          </template>
+          <span
+            class="text-xs px-2 py-0.5 rounded-full"
+            :class="statusClass[item.status] ?? 'bg-muted text-muted-foreground'"
+          >
+            {{ statusLabel[item.status] ?? item.status }}
+          </span>
+        </div>
       </div>
 
       <!-- Status pills -->

@@ -18,6 +18,7 @@ export interface RawJiraIssue {
   description?: string
   status?: { name: string }
   assignee?: { displayName: string }
+  issuetype?: { name: string; iconUrl?: string }
   fields?: {
     summary?: string
     description?: string
@@ -26,6 +27,7 @@ export interface RawJiraIssue {
       statusCategory?: { name: string }
     }
     assignee?: { displayName: string }
+    issuetype?: { name: string; iconUrl?: string }
   }
 }
 
@@ -79,6 +81,7 @@ export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
   const summary = raw.fields?.summary ?? raw.summary ?? raw.key
   const description = raw.fields?.description ?? raw.description ?? ''
   const assignee = raw.fields?.assignee?.displayName ?? raw.assignee?.displayName
+  const issueType = raw.fields?.issuetype?.name ?? raw.issuetype?.name
   return {
     id: raw.key,
     source: 'jira',
@@ -87,6 +90,7 @@ export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
     body: typeof description === 'string' ? description : '',
     status: mapStatus(raw.fields?.status ?? raw.status),
     ...(assignee ? { assignee } : {}),
+    ...(issueType ? { issueType } : {}),
     links: [],
   }
 }
