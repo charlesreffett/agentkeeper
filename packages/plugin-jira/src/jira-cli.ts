@@ -118,26 +118,20 @@ export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
 
 export async function getIssueTransitions(id: string): Promise<IssueTransition[]> {
   try {
-    const { stdout } = await execFileAsync('jira', [
-      'api', `/rest/api/2/issue/${id}/transitions`,
-    ])
-    const data = JSON.parse(stdout.trim()) as {
-      transitions: Array<{
-        name: string
-        to: { name?: string; statusCategory?: { name?: string } }
-      }>
-    }
-    return data.transitions.map((t) => {
-      const toStatus = mapStatus(t.to)
-      return {
-        name: t.name,
-        toStatus,
-        toStatusLabel: toStatusDisplayLabel[toStatus],
-      }
-    })
-  } catch (err) {
-    console.error('[jira] getIssueTransitions failed:', err)
+    await execFileAsync('jira', ['issue', 'move', id, '__ORCHESTRAL_PROBE__'])
     return []
+  } catch (err: unknown) {
+    const output =
+      (err as { stderr?: string }).stderr ??
+      (err as { message?: string }).message ??
+      ''
+    const match = output.match(/Available states for issue [^:]+:\s*(.+)/)
+    if (!match) return []
+    const stateNames = [...match[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!)
+    return stateNames.map((name) => {
+      const toStatus = mapStatus({ name })
+      return { name, toStatus, toStatusLabel: toStatusDisplayLabel[toStatus] }
+    })
   }
 }
 
