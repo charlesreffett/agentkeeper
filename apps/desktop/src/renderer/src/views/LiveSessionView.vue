@@ -7,7 +7,7 @@ import { useSessionStore } from '@/stores/sessions'
 import { shortModel } from '@/lib/format'
 
 const enterToSend = ref(false)
-const sendModifier = ref<'auto' | 'meta' | 'ctrl'>('auto')
+const sendModifier = ref<'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'>('auto')
 onMounted(async () => {
   const s = await window.orchestral.settings.get()
   enterToSend.value = s.enterToSend

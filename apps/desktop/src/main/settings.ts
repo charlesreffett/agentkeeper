@@ -13,7 +13,7 @@ const DEFAULTS: AppSettings = {
   sendModifier: 'auto' as const,
 }
 
-const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl']
+const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']
 
 function filePath() {
   return path.join(app.getPath('userData'), 'settings.json')

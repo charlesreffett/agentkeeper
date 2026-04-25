@@ -270,7 +270,7 @@ export interface AppSettings {
   /** When true: Enter sends, modifier+Enter inserts a newline. Default false. */
   enterToSend: boolean
   /** Which modifier triggers send. 'auto' = platform default (meta on Mac, ctrl elsewhere). */
-  sendModifier: 'auto' | 'meta' | 'ctrl'
+  sendModifier: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
 }
 
 export type SecretKeyName = 'anthropicApiKey'

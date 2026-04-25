@@ -12,7 +12,7 @@ const props = defineProps<{
   /** When true: Enter sends; modifier+Enter inserts newline. */
   enterToSend?: boolean
   projectPath?: string
-  sendModifier?: 'auto' | 'meta' | 'ctrl'
+  sendModifier?: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
 }>()
 
 const emit = defineEmits<{ send: [text: string] }>()
@@ -27,13 +27,22 @@ const resolvedProjectPath = computed(
 
 const isMac = /Mac/i.test(navigator.platform)
 
-const modKey = computed<'meta' | 'ctrl'>(() => {
+const modKey = computed<'meta' | 'ctrl' | 'alt' | 'shift'>(() => {
   if (props.sendModifier === 'meta') return 'meta'
   if (props.sendModifier === 'ctrl') return 'ctrl'
+  if (props.sendModifier === 'alt') return 'alt'
+  if (props.sendModifier === 'shift') return 'shift'
   return isMac ? 'meta' : 'ctrl'
 })
 
-const modLabel = computed(() => (modKey.value === 'meta' ? '⌘' : 'Ctrl'))
+const modLabel = computed(() => {
+  switch (modKey.value) {
+    case 'meta':  return isMac ? '⌘' : 'Meta'
+    case 'ctrl':  return 'Ctrl'
+    case 'alt':   return isMac ? '⌥' : 'Alt'
+    case 'shift': return '⇧'
+  }
+})
 
 const ac = useCommandAutocomplete(text, resolvedProjectPath)
 
@@ -83,7 +92,11 @@ function onKeyDown(event: KeyboardEvent) {
       ac.close()
     }
   }
-  const mod = modKey.value === 'meta' ? event.metaKey : event.ctrlKey
+  const mod =
+    modKey.value === 'meta'  ? event.metaKey  :
+    modKey.value === 'ctrl'  ? event.ctrlKey  :
+    modKey.value === 'alt'   ? event.altKey   :
+    event.shiftKey
   if (props.enterToSend) {
     if (!mod && event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()

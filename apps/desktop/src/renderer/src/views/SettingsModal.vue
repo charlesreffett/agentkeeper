@@ -15,6 +15,33 @@ const settings = ref<AppSettings | null>(null)
 const saving = ref(false)
 const message = ref<string | null>(null)
 
+const isMac = /Mac/i.test(navigator.platform)
+const capturing = ref(false)
+
+const modifierLabel = computed(() => {
+  const mod = settings.value?.sendModifier ?? 'auto'
+  const auto = isMac ? '⌘ Command' : 'Ctrl'
+  switch (mod) {
+    case 'auto':  return `System default (${auto})`
+    case 'meta':  return isMac ? '⌘ Command' : 'Meta'
+    case 'ctrl':  return 'Ctrl'
+    case 'alt':   return isMac ? '⌥ Option' : 'Alt'
+    case 'shift': return '⇧ Shift'
+  }
+})
+
+function captureModifier(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    settings.value!.sendModifier = 'auto'
+    ;(e.currentTarget as HTMLElement).blur()
+    return
+  }
+  if (e.key === 'Meta')         settings.value!.sendModifier = 'meta'
+  else if (e.key === 'Control') settings.value!.sendModifier = 'ctrl'
+  else if (e.key === 'Alt')     settings.value!.sendModifier = 'alt'
+  else if (e.key === 'Shift')   settings.value!.sendModifier = 'shift'
+}
+
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-7', label: 'Opus 4.7 (most capable)' },
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (balanced)' },
@@ -295,14 +322,19 @@ onMounted(() => {
         </label>
         <div class="space-y-1.5 pt-1">
           <label class="text-xs font-medium">Send modifier key</label>
-          <select
-            v-model="settings.sendModifier"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          <div
+            tabindex="0"
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm cursor-pointer select-none focus:outline-none focus:border-ring transition-colors"
+            @keydown.prevent="captureModifier"
+            @focus="capturing = true"
+            @blur="capturing = false"
           >
-            <option value="auto">System default (⌘ on Mac, Ctrl elsewhere)</option>
-            <option value="meta">⌘ Cmd (Meta)</option>
-            <option value="ctrl">Ctrl</option>
-          </select>
+            <span v-if="capturing" class="text-muted-foreground italic">Press a modifier key…</span>
+            <span v-else>{{ modifierLabel }}</span>
+          </div>
+          <p class="text-[11px] text-muted-foreground">
+            Press ⌘, Ctrl, Alt, or ⇧ Shift to set. Press Esc to reset to system default.
+          </p>
         </div>
       </div>
 
