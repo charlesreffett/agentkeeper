@@ -192,6 +192,8 @@ onMounted(refreshConfig)
         <LiveSessionView
           v-if="sessionStore.currentLiveId"
           :live-id="sessionStore.currentLiveId"
+          :enter-to-send="settings.enterToSend"
+          :send-modifier="settings.sendModifier"
         />
         <SessionDetail
           v-else-if="selectedHistoricalId"

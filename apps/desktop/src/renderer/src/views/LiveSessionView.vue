@@ -1,20 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { shortModel } from '@/lib/format'
 
-const enterToSend = ref(false)
-const sendModifier = ref<'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'>('auto')
-onMounted(async () => {
-  const s = await window.orchestral.settings.get()
-  enterToSend.value = s.enterToSend
-  sendModifier.value = s.sendModifier
-})
-
-const props = defineProps<{ liveId: string }>()
+const props = defineProps<{
+  liveId: string
+  enterToSend?: boolean
+  sendModifier?: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
+}>()
 
 const store = useSessionStore()
 const session = computed(() => store.getSession(props.liveId))
@@ -239,8 +235,8 @@ const statusDotClass = computed(() => {
 
     <MessageInput
       :disabled="!canSend"
-      :enter-to-send="enterToSend"
-      :send-modifier="sendModifier"
+      :enter-to-send="props.enterToSend"
+      :send-modifier="props.sendModifier"
       :placeholder="
         session.status === 'starting'
           ? 'Waiting for session to start…'
