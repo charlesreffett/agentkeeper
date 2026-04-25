@@ -2,7 +2,9 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import ProjectPicker from '@/components/ProjectPicker.vue'
+import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
 import { useProjectsStore } from '@/stores/projects'
+import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import {
   ROLE_EFFORT_VALUES,
   type RecentProject,
@@ -51,6 +53,9 @@ const selectedRoleId = ref<string>('')
 
 const selectedProject = ref<RecentProject | null>(null)
 const pickerOpen = ref(false)
+
+const projectPathRef = computed(() => selectedProject.value?.path ?? '')
+const ac = useCommandAutocomplete(prompt, projectPathRef)
 
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-7', label: 'Opus 4.7' },
@@ -142,6 +147,22 @@ function start() {
 }
 
 function onKeyDown(event: KeyboardEvent) {
+  if (ac.isOpen.value) {
+    if (event.key === 'ArrowUp') { event.preventDefault(); ac.moveUp(); return }
+    if (event.key === 'ArrowDown') { event.preventDefault(); ac.moveDown(); return }
+    if (event.key === 'Escape') { event.preventDefault(); ac.close(); return }
+    if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+      const cmd = ac.selectIndex(ac.selectedIndex.value)
+      if (cmd) {
+        event.preventDefault()
+        prompt.value = ac.resolveBody(cmd)
+        ac.close()
+        start()
+        return
+      }
+      ac.close()
+    }
+  }
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
     start()
@@ -222,14 +243,23 @@ onMounted(() => {
 
       <div class="space-y-2">
         <label class="text-sm font-medium">Initial prompt</label>
-        <textarea
-          ref="textarea"
-          v-model="prompt"
-          rows="8"
-          placeholder="What do you want to work on?"
-          class="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-ring font-sans resize-none"
-          @keydown="onKeyDown"
-        />
+        <div class="relative">
+          <CommandAutocomplete
+            v-if="ac.isOpen.value"
+            :suggestions="ac.suggestions.value"
+            :selected-index="ac.selectedIndex.value"
+            @select="(cmd) => { prompt = ac.resolveBody(cmd); ac.close(); start() }"
+            @close="ac.close()"
+          />
+          <textarea
+            ref="textarea"
+            v-model="prompt"
+            rows="8"
+            placeholder="What do you want to work on?"
+            class="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-ring font-sans resize-none"
+            @keydown="onKeyDown"
+          />
+        </div>
       </div>
 
       <div class="space-y-3 rounded-md border border-border bg-muted/20 p-3">
