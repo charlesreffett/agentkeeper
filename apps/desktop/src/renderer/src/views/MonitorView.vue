@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
+import { useProjectStore } from '@/stores/project'
 import type { LiveSession } from '@/stores/sessions'
 import { formatRelativeTime, shortModel } from '@/lib/format'
 import type { RecentProject } from '@shared/ipc-contract'
 
-const emit = defineEmits<{
-  close: []
-  open: [project: RecentProject, sessionId: string]
-}>()
-
+const router = useRouter()
 const store = useSessionStore()
+const projectStore = useProjectStore()
 
 // Group live sessions by project so the grid gives a quick per-project read.
 const grouped = computed(() => {
@@ -82,8 +81,10 @@ function titleFor(s: LiveSession) {
   return firstLine.length > 120 ? firstLine.slice(0, 119) + '…' : firstLine
 }
 
-function openSession(s: LiveSession) {
-  emit('open', projectFromPath(s.projectPath), s.localId)
+async function openSession(s: LiveSession) {
+  projectStore.setProject(projectFromPath(s.projectPath))
+  await router.push('/project')
+  store.focus(s.localId)
 }
 </script>
 
@@ -92,7 +93,7 @@ function openSession(s: LiveSession) {
     <header
       class="border-b border-border px-4 py-2 flex items-center gap-3 shrink-0"
     >
-      <Button variant="ghost" size="sm" @click="emit('close')">← Back</Button>
+      <Button variant="ghost" size="sm" @click="router.push('/')">← Back</Button>
       <div class="flex-1">
         <div class="font-medium text-sm">Monitor</div>
         <div class="text-xs text-muted-foreground">

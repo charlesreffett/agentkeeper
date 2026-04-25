@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
+import { useProjectStore } from '@/stores/project'
 import type { RecentProject } from '@shared/ipc-contract'
 
-const emit = defineEmits<{
-  open: [project: RecentProject]
-  monitor: []
-}>()
-
+const router = useRouter()
 const sessionStore = useSessionStore()
+const projectStore = useProjectStore()
 const activeCount = computed(() => sessionStore.liveList.length)
 
 const recent = ref<RecentProject[]>([])
@@ -24,12 +23,14 @@ async function pickProject() {
   const project = await window.orchestral.project.pick()
   if (project) {
     await refresh()
-    emit('open', project)
+    projectStore.setProject(project)
+    router.push('/project')
   }
 }
 
 function openRecent(project: RecentProject) {
-  emit('open', project)
+  projectStore.setProject(project)
+  router.push('/project')
 }
 
 async function removeRecent(path: string, event: Event) {
@@ -55,7 +56,7 @@ onMounted(refresh)
           v-if="activeCount > 0"
           size="lg"
           variant="outline"
-          @click="emit('monitor')"
+          @click="router.push('/monitor')"
         >
           Monitor ({{ activeCount }} live)
         </Button>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import SessionsList from './SessionsList.vue'
 import SessionDetail from './SessionDetail.vue'
@@ -12,19 +13,21 @@ import CommandsModal from './CommandsModal.vue'
 import JiraPanel from './JiraPanel.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
+import { useProjectStore } from '@/stores/project'
 import type { LiveSession } from '@/stores/sessions'
 import type {
   AppSettings,
-  RecentProject,
   Role,
   RoleEffort,
   SessionSummary,
 } from '@shared/ipc-contract'
 
-const props = defineProps<{ project: RecentProject }>()
-const emit = defineEmits<{ close: [] }>()
-
+const router = useRouter()
 const sessionStore = useSessionStore()
+const projectStore = useProjectStore()
+
+// Invariant: only reachable after setProject(); assert non-null for template ergonomics.
+const project = computed(() => projectStore.currentProject!)
 
 const selectedHistoricalId = ref<string | null>(null)
 const refreshTrigger = ref(0)
@@ -40,6 +43,7 @@ const jiraOpen = ref(false)
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
   defaultEffort: 'medium',
+  enterToSend: false,
 })
 
 async function refreshConfig() {
@@ -84,7 +88,7 @@ async function onStartSession(params: {
   if (params.useWorktree && params.branch) {
     try {
       const wt = await window.orchestral.worktrees.create(
-        props.project.path,
+        project.value.path,
         params.branch,
       )
       worktreePath = wt.path
@@ -99,7 +103,7 @@ async function onStartSession(params: {
   // `effort` from the dialog already resolved the precedence:
   //   manual override > role.effort > settings.defaultEffort
   await sessionStore.start({
-    projectPath: props.project.path,
+    projectPath: project.value.path,
     ...(worktreePath ? { worktreePath } : {}),
     ...(branch ? { branch } : {}),
     ...(params.role?.name ? { roleName: params.role.name } : {}),
@@ -115,8 +119,13 @@ async function onStartSession(params: {
   })
 }
 
+function closeProject() {
+  projectStore.clearProject()
+  router.push('/')
+}
+
 watch(
-  () => props.project.path,
+  () => projectStore.currentProject?.path,
   () => {
     selectedHistoricalId.value = null
     sessionStore.clearFocus()
@@ -131,7 +140,7 @@ onMounted(refreshConfig)
     <header
       class="border-b border-border px-4 py-2 flex items-center gap-3 shrink-0"
     >
-      <Button variant="ghost" size="sm" @click="emit('close')">← Back</Button>
+      <Button variant="ghost" size="sm" @click="closeProject">← Back</Button>
       <div class="min-w-0 flex-1">
         <div class="font-medium text-sm truncate">{{ project.name }}</div>
         <div class="text-xs text-muted-foreground truncate font-mono">
