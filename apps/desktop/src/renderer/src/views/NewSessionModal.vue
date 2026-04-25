@@ -1,15 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
+import ProjectPicker from '@/components/ProjectPicker.vue'
+import { useProjectsStore } from '@/stores/projects'
 import {
   ROLE_EFFORT_VALUES,
+  type RecentProject,
   type Role,
   type RoleEffort,
 } from '@shared/ipc-contract'
 
 const props = defineProps<{
   open: boolean
-  projectPath: string
+  projectPath?: string
   defaultModel: string
   defaultEffort: RoleEffort
 }>()
@@ -18,6 +21,7 @@ const emit = defineEmits<{
   close: []
   start: [
     params: {
+      projectPath: string
       initialPrompt: string
       model: string
       effort: RoleEffort
@@ -27,6 +31,8 @@ const emit = defineEmits<{
     },
   ]
 }>()
+
+const projectsStore = useProjectsStore()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const prompt = ref('')
@@ -41,7 +47,10 @@ const effort = ref<RoleEffort>(props.defaultEffort)
 const effortTouched = ref(false)
 
 const roles = ref<Role[]>([])
-const selectedRoleId = ref<string>('') // '' = freeform
+const selectedRoleId = ref<string>('')
+
+const selectedProject = ref<RecentProject | null>(null)
+const pickerOpen = ref(false)
 
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-7', label: 'Opus 4.7' },
@@ -55,13 +64,30 @@ const selectedRole = computed<Role | null>(() =>
     : null,
 )
 
+function resolveDefaultProject(): RecentProject | null {
+  if (projectsStore.focusedProject) return projectsStore.focusedProject
+  if (props.projectPath) {
+    return projectsStore.projects.find((p) => p.path === props.projectPath) ?? null
+  }
+  return null
+}
+
 async function loadRoles() {
+  const path = selectedProject.value?.path ?? props.projectPath ?? ''
+  if (!path) {
+    roles.value = []
+    return
+  }
   try {
-    roles.value = await window.orchestral.roles.list(props.projectPath)
+    roles.value = await window.orchestral.roles.list(path)
   } catch {
     roles.value = []
   }
 }
+
+watch(selectedProject, () => {
+  void loadRoles()
+})
 
 const suggestedBranch = computed(() => {
   const raw = prompt.value.trim().split(/\s+/).slice(0, 6).join(' ')
@@ -78,9 +104,6 @@ watch(suggestedBranch, (v) => {
   if (!branchTouched.value) branch.value = v
 })
 
-// When a role is picked, apply its model and effort (unless the user has
-// already overridden effort manually for this session). Precedence:
-//   manual (this dialog) > role > settings default
 watch(selectedRole, (r) => {
   if (r?.model) model.value = r.model
   if (!effortTouched.value) {
@@ -99,14 +122,16 @@ function onBranchInput(event: Event) {
 }
 
 const canStart = computed(() => {
+  if (!selectedProject.value) return false
   if (!prompt.value.trim()) return false
   if (useWorktree.value && !branch.value.trim()) return false
   return true
 })
 
 function start() {
-  if (!canStart.value) return
+  if (!canStart.value || !selectedProject.value) return
   emit('start', {
+    projectPath: selectedProject.value.path,
     initialPrompt: prompt.value.trim(),
     model: model.value,
     effort: effort.value,
@@ -123,6 +148,11 @@ function onKeyDown(event: KeyboardEvent) {
   }
 }
 
+function onPickerConfirm(project: RecentProject) {
+  selectedProject.value = project
+  pickerOpen.value = false
+}
+
 watch(
   () => props.open,
   async (isOpen) => {
@@ -135,6 +165,7 @@ watch(
       effortTouched.value = false
       useWorktree.value = true
       selectedRoleId.value = ''
+      selectedProject.value = resolveDefaultProject()
       await loadRoles()
       await nextTick()
       dialog.value?.showModal()
@@ -148,6 +179,7 @@ watch(
 onMounted(() => {
   if (props.open) {
     void nextTick(async () => {
+      selectedProject.value = resolveDefaultProject()
       await loadRoles()
       dialog.value?.showModal()
       textarea.value?.focus()
@@ -166,10 +198,27 @@ onMounted(() => {
     <div class="p-6 space-y-4">
       <header class="space-y-1">
         <h2 class="text-lg font-semibold">New session</h2>
-        <p class="text-xs text-muted-foreground font-mono truncate">
-          {{ projectPath }}
-        </p>
       </header>
+
+      <!-- Project selector -->
+      <div class="space-y-1.5">
+        <label class="text-sm font-medium">Project</label>
+        <button
+          class="w-full text-left rounded-md border px-3 py-2 text-sm transition-colors"
+          :class="
+            selectedProject
+              ? 'border-input bg-background hover:border-ring'
+              : 'border-amber-500/60 bg-amber-500/5 hover:border-amber-500'
+          "
+          @click="pickerOpen = true"
+        >
+          <span v-if="selectedProject" class="font-medium">{{ selectedProject.name }}</span>
+          <span v-else class="text-muted-foreground">Select a project…</span>
+          <span v-if="selectedProject" class="ml-2 text-xs text-muted-foreground font-mono">
+            {{ selectedProject.repo ?? selectedProject.path }}
+          </span>
+        </button>
+      </div>
 
       <div class="space-y-2">
         <label class="text-sm font-medium">Initial prompt</label>
@@ -254,10 +303,22 @@ onMounted(() => {
 
       <footer class="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" size="sm" @click="emit('close')">Cancel</Button>
-        <Button size="sm" :disabled="!canStart" @click="start">
+        <Button
+          size="sm"
+          :disabled="!canStart"
+          :title="!selectedProject ? 'Select a project to start a session' : undefined"
+          @click="start"
+        >
           Start session
         </Button>
       </footer>
     </div>
   </dialog>
+
+  <ProjectPicker
+    :open="pickerOpen"
+    :preselected="selectedProject?.path"
+    @confirm="onPickerConfirm"
+    @cancel="pickerOpen = false"
+  />
 </template>

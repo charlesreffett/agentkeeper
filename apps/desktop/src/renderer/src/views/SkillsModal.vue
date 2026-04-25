@@ -2,10 +2,12 @@
 import { nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import type { Skill, SkillPreview } from '@shared/ipc-contract'
+import { useProjectsStore } from '@/stores/projects'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
 const emit = defineEmits<{ close: [] }>()
 
+const projectsStore = useProjectsStore()
 const dialog = ref<HTMLDialogElement | null>(null)
 
 const skills = ref<Skill[]>([])
@@ -26,7 +28,7 @@ async function refresh() {
   loading.value = true
   message.value = null
   try {
-    skills.value = await window.orchestral.skills.list(props.projectPath)
+    skills.value = await window.orchestral.skills.list(projectsStore.focusedProject?.path ?? '')
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
     skills.value = []
@@ -146,6 +148,13 @@ watch(
     } else {
       dialog.value?.close()
     }
+  },
+)
+
+watch(
+  () => projectsStore.focusedProject,
+  async () => {
+    if (props.open) await refresh()
   },
 )
 </script>

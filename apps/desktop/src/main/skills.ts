@@ -63,18 +63,41 @@ async function runSkills(
   args: string[],
   cwd: string,
 ): Promise<{ stdout: string; stderr: string }> {
+  const fullArgs = ['--yes', 'skills', ...args]
+  const cmdline = `npx ${fullArgs.join(' ')}`
+  const startedAt = Date.now()
+  console.log('[skills] exec', { cmdline, cwd })
   try {
-    return await execFileAsync('npx', ['--yes', 'skills', ...args], {
+    const result = await execFileAsync('npx', fullArgs, {
       cwd,
       timeout: 90000,
       maxBuffer: 10 * 1024 * 1024,
     })
+    console.log('[skills] exec ok', {
+      cmdline,
+      ms: Date.now() - startedAt,
+      stdoutBytes: result.stdout.length,
+      stderrBytes: result.stderr.length,
+    })
+    return result
   } catch (err) {
     const e = err as NodeJS.ErrnoException & {
       stdout?: string
       stderr?: string
+      code?: string | number
+      signal?: string
     }
     const raw = (e.stderr?.trim() || e.stdout?.trim() || e.message) ?? ''
+    console.error('[skills] exec failed', {
+      cmdline,
+      cwd,
+      ms: Date.now() - startedAt,
+      code: e.code,
+      signal: e.signal,
+      stdout: e.stdout,
+      stderr: e.stderr,
+      message: e.message,
+    })
     throw new Error(`skills CLI failed: ${stripAnsi(raw).trim()}`)
   }
 }
@@ -200,7 +223,7 @@ async function listScope(
 
 export async function listSkills(projectPath: string): Promise<Skill[]> {
   const [project, global] = await Promise.all([
-    listScope('project', projectPath),
+    projectPath ? listScope('project', projectPath) : Promise.resolve([]),
     listScope('global', projectPath),
   ])
   return [...project, ...global]
@@ -233,6 +256,14 @@ export async function installSkill(
   } else {
     args.push('-s', '*')
   }
+  console.log('[skills] installSkill', {
+    source,
+    scope,
+    cwd,
+    selectedCount: skillIds?.length ?? 0,
+    selected: skillIds ?? '(all: -s *)',
+    args,
+  })
   await runSkills(args, cwd)
 }
 

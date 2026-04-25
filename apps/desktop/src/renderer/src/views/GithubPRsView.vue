@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { PRSummary, PRState, CheckState, ReviewDecision } from '@shared/github-types'
+import { useProjectsStore } from '@/stores/projects'
 
 const router = useRouter()
+const projectsStore = useProjectsStore()
 
 const allPRs = ref<PRSummary[]>([])
 const loading = ref(false)
@@ -31,8 +33,17 @@ async function load() {
 onMounted(async () => {
   const cfg = await window.orchestral.github.getConfig()
   repos.value = cfg.repos ?? []
-  await load()
 })
+
+watch(
+  () => projectsStore.focusedProject,
+  (proj) => {
+    if (proj?.repo) repoFilter.value = proj.repo
+    else repoFilter.value = ''
+    void load()
+  },
+  { immediate: true },
+)
 
 const filteredPRs = computed(() => {
   const q = search.value.trim().toLowerCase()

@@ -72,6 +72,7 @@ async function onNewSessionClick() {
 const startError = ref<string | null>(null)
 
 async function onStartSession(params: {
+  projectPath: string
   initialPrompt: string
   model: string
   effort: RoleEffort
@@ -88,7 +89,7 @@ async function onStartSession(params: {
   if (params.useWorktree && params.branch) {
     try {
       const wt = await window.orchestral.worktrees.create(
-        project.value.path,
+        params.projectPath,
         params.branch,
       )
       worktreePath = wt.path
@@ -103,7 +104,7 @@ async function onStartSession(params: {
   // `effort` from the dialog already resolved the precedence:
   //   manual override > role.effort > settings.defaultEffort
   await sessionStore.start({
-    projectPath: project.value.path,
+    projectPath: params.projectPath,
     ...(worktreePath ? { worktreePath } : {}),
     ...(branch ? { branch } : {}),
     ...(params.role?.name ? { roleName: params.role.name } : {}),
