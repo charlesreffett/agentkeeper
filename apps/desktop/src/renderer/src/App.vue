@@ -2,10 +2,13 @@
 import { onMounted } from 'vue'
 import Sidebar from '@/components/Sidebar.vue'
 import { useUIContributionsStore } from '@/stores/uiContributions'
+import { useProjectsStore } from '@/stores/projects'
 
 const uiStore = useUIContributionsStore()
+const projectsStore = useProjectsStore()
 
 onMounted(() => {
+  void projectsStore.load()
   uiStore.contribute('sidebar.primary', {
     id: 'jira',
     label: 'Jira',

@@ -25,7 +25,7 @@ const grouped = computed(() => {
 
 function projectFromPath(p: string): RecentProject {
   const name = p.split('/').filter(Boolean).pop() ?? p
-  return { path: p, name, lastOpenedAt: Date.now() }
+  return { path: p, name, repo: null, lastOpenedAt: Date.now() }
 }
 
 function statusTone(s: LiveSession) {

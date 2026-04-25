@@ -39,6 +39,7 @@ export type {
 export interface RecentProject {
   path: string
   name: string
+  repo: string | null
   lastOpenedAt: number
 }
 
@@ -293,6 +294,14 @@ export interface ResetResult {
 // ─── IPC API exposed to renderer as window.orchestral ───────────────────────
 
 export interface OrchestralApi {
+  projects: {
+    add: (path: string) => Promise<RecentProject>
+    remove: (path: string) => Promise<void>
+    list: () => Promise<RecentProject[]>
+    getFocused: () => Promise<RecentProject | null>
+    setFocused: (path: string | null) => Promise<void>
+    pickFolder: () => Promise<string | null>
+  }
   project: {
     pick: () => Promise<RecentProject | null>
     recent: {
@@ -403,6 +412,12 @@ export interface OrchestralApi {
 }
 
 export const IPC_CHANNELS = {
+  projectsAdd: 'projects:add',
+  projectsRemove: 'projects:remove',
+  projectsList: 'projects:list',
+  projectsGetFocused: 'projects:getFocused',
+  projectsSetFocused: 'projects:setFocused',
+  projectsPickFolder: 'projects:pickFolder',
   projectPick: 'project:pick',
   projectRecentList: 'project:recent:list',
   projectRecentRemove: 'project:recent:remove',

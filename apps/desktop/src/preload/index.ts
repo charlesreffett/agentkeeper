@@ -85,6 +85,17 @@ function onChannel<P>(
 }
 
 const api: OrchestralApi = {
+  projects: {
+    add: (projectPath: string) =>
+      invoke(IPC_CHANNELS.projectsAdd, projectPath) as Promise<never>,
+    remove: (projectPath: string) =>
+      invoke(IPC_CHANNELS.projectsRemove, projectPath) as Promise<void>,
+    list: () => invoke(IPC_CHANNELS.projectsList) as Promise<never>,
+    getFocused: () => invoke(IPC_CHANNELS.projectsGetFocused) as Promise<never>,
+    setFocused: (projectPath: string | null) =>
+      invoke(IPC_CHANNELS.projectsSetFocused, projectPath) as Promise<void>,
+    pickFolder: () => invoke(IPC_CHANNELS.projectsPickFolder) as Promise<string | null>,
+  },
   project: {
     pick: () => invoke(IPC_CHANNELS.projectPick) as Promise<never>,
     recent: {
