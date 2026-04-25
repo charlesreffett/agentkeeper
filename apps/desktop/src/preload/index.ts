@@ -4,11 +4,16 @@ import {
   type AgencyDraft,
   type AgencyScope,
   type AppSettings,
+  type CreatePRParams,
+  type GitHubConfig,
   type IssueTransition,
   type LiveSessionEvent,
   type LiveSessionStatusUpdate,
+  type MergeMethod,
   type OrchestralApi,
+  type PRFilters,
   type ResetRequest,
+  type ReviewEvent,
   type RoleDraft,
   type RoleScope,
   type SecretKeyName,
@@ -209,6 +214,30 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.workItemsGetTransitions, id) as Promise<IssueTransition[]>,
     transition: (id: string, name: string) =>
       invoke(IPC_CHANNELS.workItemsTransition, id, name) as Promise<void>,
+  },
+  github: {
+    getConfig: () =>
+      invoke(IPC_CHANNELS.githubConfigGet) as Promise<GitHubConfig>,
+    setConfig: (config: GitHubConfig) =>
+      invoke(IPC_CHANNELS.githubConfigSet, config) as Promise<void>,
+    listPRs: (filters: PRFilters) =>
+      invoke(IPC_CHANNELS.githubListPRs, filters) as Promise<never>,
+    getPR: (number: number) =>
+      invoke(IPC_CHANNELS.githubGetPR, number) as Promise<never>,
+    getPRDiff: (number: number) =>
+      invoke(IPC_CHANNELS.githubGetPRDiff, number) as Promise<string>,
+    getPRChecks: (number: number) =>
+      invoke(IPC_CHANNELS.githubGetPRChecks, number) as Promise<never>,
+    getPRComments: (number: number) =>
+      invoke(IPC_CHANNELS.githubGetPRComments, number) as Promise<never>,
+    addComment: (number: number, body: string) =>
+      invoke(IPC_CHANNELS.githubAddComment, number, body) as Promise<void>,
+    submitReview: (number: number, event: ReviewEvent, body: string) =>
+      invoke(IPC_CHANNELS.githubSubmitReview, number, event, body) as Promise<void>,
+    mergePR: (number: number, method: MergeMethod) =>
+      invoke(IPC_CHANNELS.githubMergePR, number, method) as Promise<void>,
+    createPR: (params: CreatePRParams) =>
+      invoke(IPC_CHANNELS.githubCreatePR, params) as Promise<never>,
   },
 }
 

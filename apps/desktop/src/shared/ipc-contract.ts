@@ -3,6 +3,36 @@
 
 import type { IssueTransition, WorkItem, WorkItemStatus } from '@orchestral/sdk'
 export type { IssueTransition, WorkItem, WorkItemStatus }
+import type {
+  CheckRun,
+  CheckState,
+  CreatePRParams,
+  GitHubConfig,
+  MergeMethod,
+  PRComment,
+  PRDetail,
+  PRFilters,
+  PRReview,
+  PRState,
+  PRSummary,
+  ReviewDecision,
+  ReviewEvent,
+} from './github-types'
+export type {
+  CheckRun,
+  CheckState,
+  CreatePRParams,
+  GitHubConfig,
+  MergeMethod,
+  PRComment,
+  PRDetail,
+  PRFilters,
+  PRReview,
+  PRState,
+  PRSummary,
+  ReviewDecision,
+  ReviewEvent,
+}
 
 // ─── Projects ───────────────────────────────────────────────────────────────
 
@@ -236,6 +266,8 @@ export interface LiveSessionStatusUpdate {
 export interface AppSettings {
   defaultModel: string
   defaultEffort: RoleEffort
+  /** When true: Enter sends, ⌘/Ctrl+Enter inserts a newline. Default false. */
+  enterToSend: boolean
 }
 
 export type SecretKeyName = 'anthropicApiKey'
@@ -355,6 +387,19 @@ export interface OrchestralApi {
     getTransitions: (id: string) => Promise<IssueTransition[]>
     transition: (id: string, name: string) => Promise<void>
   }
+  github: {
+    getConfig: () => Promise<GitHubConfig>
+    setConfig: (config: GitHubConfig) => Promise<void>
+    listPRs: (filters: PRFilters) => Promise<PRSummary[]>
+    getPR: (number: number) => Promise<PRDetail>
+    getPRDiff: (number: number) => Promise<string>
+    getPRChecks: (number: number) => Promise<CheckRun[]>
+    getPRComments: (number: number) => Promise<PRComment[]>
+    addComment: (number: number, body: string) => Promise<void>
+    submitReview: (number: number, event: ReviewEvent, body: string) => Promise<void>
+    mergePR: (number: number, method: MergeMethod) => Promise<void>
+    createPR: (params: CreatePRParams) => Promise<PRSummary>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -399,4 +444,15 @@ export const IPC_CHANNELS = {
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',
+  githubConfigGet: 'github:config:get',
+  githubConfigSet: 'github:config:set',
+  githubListPRs: 'github:prs:list',
+  githubGetPR: 'github:prs:get',
+  githubGetPRDiff: 'github:prs:diff',
+  githubGetPRChecks: 'github:prs:checks',
+  githubGetPRComments: 'github:prs:comments',
+  githubAddComment: 'github:prs:comment',
+  githubSubmitReview: 'github:prs:review',
+  githubMergePR: 'github:prs:merge',
+  githubCreatePR: 'github:prs:create',
 } as const

@@ -13,6 +13,7 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.117",
     "@orchestral/core": "workspace:*",
+    "@orchestral/plugin-github": "workspace:*",
     "@orchestral/plugin-jira": "workspace:*",
     "@orchestral/sdk": "workspace:*",
     "keytar": "^7.9.0",

@@ -20,6 +20,9 @@ importers:
       '@orchestral/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@orchestral/plugin-github':
+        specifier: workspace:*
+        version: link:../../packages/plugin-github
       '@orchestral/plugin-jira':
         specifier: workspace:*
         version: link:../../packages/plugin-jira
@@ -100,6 +103,15 @@ importers:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+
+  packages/plugin-github:
+    dependencies:
+      '@orchestral/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
 
   packages/plugin-jira:
     dependencies:

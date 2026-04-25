@@ -23,6 +23,7 @@ import type {
   WorkItemStatus,
 } from '@orchestral/sdk'
 import { jiraPlugin } from '@orchestral/plugin-jira'
+import { githubPlugin } from '@orchestral/plugin-github'
 import { createPluginSecrets } from './secrets'
 
 export interface WorkItemRegistryFull extends WorkItemRegistry {
@@ -237,29 +238,26 @@ export async function setPluginConfig(pluginId: string, config: unknown): Promis
   pluginEventBus?.emit('settings.changed', { pluginId, config })
 }
 
-export async function activatePlugins(
+async function activatePlugin<TSettings>(
+  pluginId: string,
+  plugin: { activate(ctx: PluginContext<TSettings>): void | Promise<void>; deactivate?(): void | Promise<void> },
+  registry: WorkItemRegistryImpl,
+  bus: EventBus,
   electronApp: typeof app,
-): Promise<WorkItemRegistryFull> {
-  const registry = new WorkItemRegistryImpl()
+): Promise<void> {
+  const kvStore = buildKVStore(pluginId)
+  pluginKVStores.set(pluginId, kvStore)
 
-  const kvStore = buildKVStore('jira')
-  pluginKVStores.set('jira', kvStore)
-
-  const bus = buildEventBus()
-  pluginEventBus = bus
-
-  // Restore config saved from a previous session.
   const persistedConfig: Record<string, unknown> = {}
   for (const key of await kvStore.list()) {
     persistedConfig[key] = await kvStore.get(key)
   }
 
-  type JiraConfig = Parameters<(typeof jiraPlugin)['activate']>[0]['config']
-  const ctx: PluginContext<JiraConfig> = {
-    config: persistedConfig as JiraConfig,
-    logger: buildLogger('jira'),
+  const ctx: PluginContext<TSettings> = {
+    config: persistedConfig as TSettings,
+    logger: buildLogger(pluginId),
     storage: kvStore,
-    secrets: createPluginSecrets('jira') as SecretsApi,
+    secrets: createPluginSecrets(pluginId) as SecretsApi,
     events: bus,
     workItems: registry,
     ui: noopUI,
@@ -267,11 +265,22 @@ export async function activatePlugins(
     background: buildBackgroundWork(),
   }
 
-  await jiraPlugin.activate(ctx)
+  await plugin.activate(ctx)
 
   electronApp.on('before-quit', () => {
-    void jiraPlugin.deactivate?.()
+    void plugin.deactivate?.()
   })
+}
+
+export async function activatePlugins(
+  electronApp: typeof app,
+): Promise<WorkItemRegistryFull> {
+  const registry = new WorkItemRegistryImpl()
+  const bus = buildEventBus()
+  pluginEventBus = bus
+
+  await activatePlugin('jira', jiraPlugin, registry, bus, electronApp)
+  await activatePlugin('github', githubPlugin, registry, bus, electronApp)
 
   return registry
 }
