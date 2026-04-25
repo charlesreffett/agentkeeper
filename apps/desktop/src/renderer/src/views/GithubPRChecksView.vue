@@ -5,6 +5,7 @@ import type { CheckRun, CheckState } from '@shared/github-types'
 
 const route = useRoute()
 const prNumber = computed(() => Number(route.params.number))
+const prRepo = computed(() => String(route.query.repo ?? ''))
 
 const checks = ref<CheckRun[]>([])
 const loading = ref(true)
@@ -12,7 +13,7 @@ const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
-    checks.value = await window.orchestral.github.getPRChecks(prNumber.value)
+    checks.value = await window.orchestral.github.getPRChecks(prRepo.value, prNumber.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {

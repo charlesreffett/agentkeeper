@@ -5,6 +5,7 @@ import type { PRReview, PRDetail, ReviewEvent } from '@shared/github-types'
 
 const route = useRoute()
 const prNumber = computed(() => Number(route.params.number))
+const prRepo = computed(() => String(route.query.repo ?? ''))
 
 const pr = ref<PRDetail | null>(null)
 const loading = ref(true)
@@ -19,7 +20,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    pr.value = await window.orchestral.github.getPR(prNumber.value)
+    pr.value = await window.orchestral.github.getPR(prRepo.value, prNumber.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -33,7 +34,7 @@ async function submitReview() {
   submitting.value = true
   submitError.value = null
   try {
-    await window.orchestral.github.submitReview(prNumber.value, reviewEvent.value, reviewBody.value)
+    await window.orchestral.github.submitReview(prRepo.value, prNumber.value, reviewEvent.value, reviewBody.value)
     reviewBody.value = ''
     reviewEvent.value = 'COMMENT'
     await load()

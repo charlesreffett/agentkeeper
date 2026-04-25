@@ -109,7 +109,7 @@ function mapCheckItem(check: RawCheckItem): CheckRun {
   return { name, state, conclusion, link }
 }
 
-function mapToPRSummary(raw: RawGHPR): PRSummary {
+function mapToPRSummary(raw: RawGHPR, repo: string): PRSummary {
   return {
     number: raw.number,
     title: raw.title,
@@ -123,6 +123,7 @@ function mapToPRSummary(raw: RawGHPR): PRSummary {
     updatedAt: raw.updatedAt,
     url: raw.url,
     labels: (raw.labels ?? []).map((l) => l.name),
+    repo,
   }
 }
 
@@ -205,7 +206,7 @@ export async function listPRs(repo: string, filters: PRFilters): Promise<PRSumma
   if (filters.search) args.push('--search', filters.search)
 
   const { stdout } = await execFileAsync('gh', args)
-  let results = (JSON.parse(stdout.trim()) as RawGHPR[]).map(mapToPRSummary)
+  let results = (JSON.parse(stdout.trim()) as RawGHPR[]).map((r) => mapToPRSummary(r, repo))
 
   if (filters.checksState) {
     results = results.filter((pr) => pr.checksState === filters.checksState)
@@ -240,7 +241,7 @@ export async function getPR(repo: string, number: number): Promise<PRDetail> {
       : 'UNKNOWN'
 
   return {
-    ...mapToPRSummary(raw),
+    ...mapToPRSummary(raw, repo),
     body: raw.body ?? '',
     additions: raw.additions ?? 0,
     deletions: raw.deletions ?? 0,
@@ -350,5 +351,5 @@ export async function createPR(repo: string, params: CreatePRParams): Promise<PR
     '--repo', repo,
     '--json', PR_SUMMARY_FIELDS,
   ])
-  return mapToPRSummary(JSON.parse(viewOut.trim()) as RawGHPR)
+  return mapToPRSummary(JSON.parse(viewOut.trim()) as RawGHPR, repo)
 }

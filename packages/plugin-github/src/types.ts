@@ -103,6 +103,7 @@ export interface PRSummary {
   updatedAt: string
   url: string
   labels: string[]
+  repo: string
 }
 
 export interface PRComment {
@@ -146,9 +147,11 @@ export interface PRFilters {
   label?: string
   search?: string
   checksState?: CheckState
+  repo?: string
 }
 
 export interface CreatePRParams {
+  repo: string
   title: string
   body: string
   head: string

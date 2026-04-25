@@ -222,20 +222,20 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.githubConfigSet, config) as Promise<void>,
     listPRs: (filters: PRFilters) =>
       invoke(IPC_CHANNELS.githubListPRs, filters) as Promise<never>,
-    getPR: (number: number) =>
-      invoke(IPC_CHANNELS.githubGetPR, number) as Promise<never>,
-    getPRDiff: (number: number) =>
-      invoke(IPC_CHANNELS.githubGetPRDiff, number) as Promise<string>,
-    getPRChecks: (number: number) =>
-      invoke(IPC_CHANNELS.githubGetPRChecks, number) as Promise<never>,
-    getPRComments: (number: number) =>
-      invoke(IPC_CHANNELS.githubGetPRComments, number) as Promise<never>,
-    addComment: (number: number, body: string) =>
-      invoke(IPC_CHANNELS.githubAddComment, number, body) as Promise<void>,
-    submitReview: (number: number, event: ReviewEvent, body: string) =>
-      invoke(IPC_CHANNELS.githubSubmitReview, number, event, body) as Promise<void>,
-    mergePR: (number: number, method: MergeMethod) =>
-      invoke(IPC_CHANNELS.githubMergePR, number, method) as Promise<void>,
+    getPR: (repo: string, number: number) =>
+      invoke(IPC_CHANNELS.githubGetPR, repo, number) as Promise<never>,
+    getPRDiff: (repo: string, number: number) =>
+      invoke(IPC_CHANNELS.githubGetPRDiff, repo, number) as Promise<string>,
+    getPRChecks: (repo: string, number: number) =>
+      invoke(IPC_CHANNELS.githubGetPRChecks, repo, number) as Promise<never>,
+    getPRComments: (repo: string, number: number) =>
+      invoke(IPC_CHANNELS.githubGetPRComments, repo, number) as Promise<never>,
+    addComment: (repo: string, number: number, body: string) =>
+      invoke(IPC_CHANNELS.githubAddComment, repo, number, body) as Promise<void>,
+    submitReview: (repo: string, number: number, event: ReviewEvent, body: string) =>
+      invoke(IPC_CHANNELS.githubSubmitReview, repo, number, event, body) as Promise<void>,
+    mergePR: (repo: string, number: number, method: MergeMethod) =>
+      invoke(IPC_CHANNELS.githubMergePR, repo, number, method) as Promise<void>,
     createPR: (params: CreatePRParams) =>
       invoke(IPC_CHANNELS.githubCreatePR, params) as Promise<never>,
   },

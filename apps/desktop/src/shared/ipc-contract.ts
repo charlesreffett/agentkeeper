@@ -391,13 +391,13 @@ export interface OrchestralApi {
     getConfig: () => Promise<GitHubConfig>
     setConfig: (config: GitHubConfig) => Promise<void>
     listPRs: (filters: PRFilters) => Promise<PRSummary[]>
-    getPR: (number: number) => Promise<PRDetail>
-    getPRDiff: (number: number) => Promise<string>
-    getPRChecks: (number: number) => Promise<CheckRun[]>
-    getPRComments: (number: number) => Promise<PRComment[]>
-    addComment: (number: number, body: string) => Promise<void>
-    submitReview: (number: number, event: ReviewEvent, body: string) => Promise<void>
-    mergePR: (number: number, method: MergeMethod) => Promise<void>
+    getPR: (repo: string, number: number) => Promise<PRDetail>
+    getPRDiff: (repo: string, number: number) => Promise<string>
+    getPRChecks: (repo: string, number: number) => Promise<CheckRun[]>
+    getPRComments: (repo: string, number: number) => Promise<PRComment[]>
+    addComment: (repo: string, number: number, body: string) => Promise<void>
+    submitReview: (repo: string, number: number, event: ReviewEvent, body: string) => Promise<void>
+    mergePR: (repo: string, number: number, method: MergeMethod) => Promise<void>
     createPR: (params: CreatePRParams) => Promise<PRSummary>
   }
 }

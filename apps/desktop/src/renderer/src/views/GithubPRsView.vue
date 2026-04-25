@@ -9,13 +9,17 @@ const allPRs = ref<PRSummary[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const stateFilter = ref<PRState | 'all'>('open')
+const repoFilter = ref<string>('')
 const search = ref('')
+const repos = ref<string[]>([])
 
 async function load() {
   loading.value = true
   error.value = null
   try {
-    const filters = stateFilter.value === 'all' ? {} : { state: stateFilter.value }
+    const filters: Record<string, string> = {}
+    if (stateFilter.value !== 'all') filters.state = stateFilter.value
+    if (repoFilter.value) filters.repo = repoFilter.value
     allPRs.value = await window.orchestral.github.listPRs(filters)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -24,7 +28,11 @@ async function load() {
   }
 }
 
-onMounted(load)
+onMounted(async () => {
+  const cfg = await window.orchestral.github.getConfig()
+  repos.value = cfg.repos ?? []
+  await load()
+})
 
 const filteredPRs = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -72,11 +80,24 @@ const reviewLabel: Record<NonNullable<ReviewDecision>, string> = {
   REVIEW_REQUIRED: 'Review needed',
   COMMENTED: 'Commented',
 }
+
+function openSettingsModal() {
+  // Emit to parent via a custom event on the window so the app shell can open settings
+  window.dispatchEvent(new CustomEvent('orchestral:open-settings'))
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full">
-    <div class="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border">
+    <div class="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border flex-wrap">
+      <select
+        v-model="repoFilter"
+        class="text-sm bg-background border border-input rounded px-2 py-1 text-foreground"
+        @change="load"
+      >
+        <option value="">All repos</option>
+        <option v-for="r in repos" :key="r" :value="r">{{ r }}</option>
+      </select>
       <select
         v-model="stateFilter"
         class="text-sm bg-background border border-input rounded px-2 py-1 text-foreground"
@@ -102,6 +123,16 @@ const reviewLabel: Record<NonNullable<ReviewDecision>, string> = {
     <div v-else-if="error" class="text-destructive text-sm p-4">{{ error }}</div>
 
     <div
+      v-else-if="repos.length === 0"
+      class="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm"
+    >
+      <span>No repos configured.</span>
+      <button class="text-xs underline hover:text-foreground transition-colors" @click="openSettingsModal">
+        Add one in Settings
+      </button>
+    </div>
+
+    <div
       v-else-if="filteredPRs.length === 0"
       class="flex-1 flex items-center justify-center text-muted-foreground text-sm"
     >
@@ -123,9 +154,9 @@ const reviewLabel: Record<NonNullable<ReviewDecision>, string> = {
         <tbody>
           <tr
             v-for="pr in filteredPRs"
-            :key="pr.number"
+            :key="`${pr.repo}/${pr.number}`"
             class="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
-            @click="router.push(`/github/pr/${pr.number}/conversations`)"
+            @click="router.push({ path: `/github/pr/${pr.number}/conversations`, query: { repo: pr.repo } })"
           >
             <td class="px-4 py-2.5 text-muted-foreground font-mono">{{ pr.number }}</td>
             <td class="px-4 py-2.5">
@@ -137,7 +168,8 @@ const reviewLabel: Record<NonNullable<ReviewDecision>, string> = {
                 <span v-if="pr.isDraft" class="shrink-0 text-xs px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">Draft</span>
                 <span class="truncate">{{ pr.title }}</span>
               </div>
-              <div v-if="pr.labels.length" class="flex gap-1 mt-1 flex-wrap">
+              <div class="flex gap-1 mt-1 flex-wrap items-center">
+                <span v-if="repos.length > 1" class="text-xs px-1.5 py-0.5 rounded bg-muted/50 text-muted-foreground font-mono">{{ pr.repo }}</span>
                 <span
                   v-for="label in pr.labels"
                   :key="label"

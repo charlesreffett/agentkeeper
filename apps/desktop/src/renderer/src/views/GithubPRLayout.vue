@@ -5,6 +5,7 @@ import type { PRDetail, PRState } from '@shared/github-types'
 
 const route = useRoute()
 const prNumber = computed(() => Number(route.params.number))
+const prRepo = computed(() => String(route.query.repo ?? ''))
 
 const pr = ref<PRDetail | null>(null)
 const loading = ref(true)
@@ -12,7 +13,7 @@ const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
-    pr.value = await window.orchestral.github.getPR(prNumber.value)
+    pr.value = await window.orchestral.github.getPR(prRepo.value, prNumber.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -27,9 +28,9 @@ const stateClass: Record<PRState, string> = {
 }
 
 const tabs = computed(() => [
-  { label: 'Conversations', path: `/github/pr/${prNumber.value}/conversations` },
-  { label: 'Checks', path: `/github/pr/${prNumber.value}/checks` },
-  { label: 'Reviews', path: `/github/pr/${prNumber.value}/reviews` },
+  { label: 'Conversations', path: `/github/pr/${prNumber.value}/conversations`, query: { repo: prRepo.value } },
+  { label: 'Checks', path: `/github/pr/${prNumber.value}/checks`, query: { repo: prRepo.value } },
+  { label: 'Reviews', path: `/github/pr/${prNumber.value}/reviews`, query: { repo: prRepo.value } },
 ])
 </script>
 
@@ -68,7 +69,7 @@ const tabs = computed(() => [
         <RouterLink
           v-for="tab in tabs"
           :key="tab.label"
-          :to="tab.path"
+          :to="{ path: tab.path, query: tab.query }"
           class="text-sm px-3 py-2 border-b-2 transition-colors"
           :class="route.path === tab.path
             ? 'border-foreground text-foreground'

@@ -401,17 +401,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   // GitHub — config + PR channels
-  async function getGithubRepo(): Promise<string> {
-    const cfg = (await getPluginConfig('github')) as { repo?: string }
-    if (!cfg.repo) throw new Error('GitHub repo not configured. Set it in GitHub settings.')
-    return cfg.repo
+  async function getGithubRepos(): Promise<string[]> {
+    const cfg = (await getPluginConfig('github')) as { repos?: string[]; repo?: string }
+    if (cfg.repos) return cfg.repos
+    if (cfg.repo) return [cfg.repo]
+    return []
   }
 
   ipcMain.handle(IPC_CHANNELS.githubConfigGet, async () => {
-    const cfg = (await getPluginConfig('github')) as { repo?: string }
-    return { repo: cfg.repo ?? '' }
+    const repos = await getGithubRepos()
+    return { repos }
   })
-  ipcMain.handle(IPC_CHANNELS.githubConfigSet, async (_event, config: { repo: string }) => {
+  ipcMain.handle(IPC_CHANNELS.githubConfigSet, async (_event, config: { repos: string[] }) => {
     try {
       return await setPluginConfig('github', config)
     } catch (err) {
@@ -421,39 +422,45 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(IPC_CHANNELS.githubListPRs, async (_event, filters: PRFilters) => {
     try {
-      return await ghListPRs(await getGithubRepo(), filters)
+      const repos = await getGithubRepos()
+      const targets = filters.repo ? [filters.repo] : repos
+      if (targets.length === 0) return []
+      const results = await Promise.all(targets.map((r) => ghListPRs(r, filters)))
+      const flat = results.flat()
+      flat.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+      return flat
     } catch (err) {
       console.error('[ipc] github:prs:list failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
-  ipcMain.handle(IPC_CHANNELS.githubGetPR, async (_event, number: number) => {
+  ipcMain.handle(IPC_CHANNELS.githubGetPR, async (_event, repo: string, number: number) => {
     try {
-      return await ghGetPR(await getGithubRepo(), number)
+      return await ghGetPR(repo, number)
     } catch (err) {
       console.error('[ipc] github:prs:get failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
-  ipcMain.handle(IPC_CHANNELS.githubGetPRDiff, async (_event, number: number) => {
+  ipcMain.handle(IPC_CHANNELS.githubGetPRDiff, async (_event, repo: string, number: number) => {
     try {
-      return await ghGetPRDiff(await getGithubRepo(), number)
+      return await ghGetPRDiff(repo, number)
     } catch (err) {
       console.error('[ipc] github:prs:diff failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
-  ipcMain.handle(IPC_CHANNELS.githubGetPRChecks, async (_event, number: number) => {
+  ipcMain.handle(IPC_CHANNELS.githubGetPRChecks, async (_event, repo: string, number: number) => {
     try {
-      return await ghGetPRChecks(await getGithubRepo(), number)
+      return await ghGetPRChecks(repo, number)
     } catch (err) {
       console.error('[ipc] github:prs:checks failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
-  ipcMain.handle(IPC_CHANNELS.githubGetPRComments, async (_event, number: number) => {
+  ipcMain.handle(IPC_CHANNELS.githubGetPRComments, async (_event, repo: string, number: number) => {
     try {
-      return await ghGetPRComments(await getGithubRepo(), number)
+      return await ghGetPRComments(repo, number)
     } catch (err) {
       console.error('[ipc] github:prs:comments failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -461,9 +468,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(
     IPC_CHANNELS.githubAddComment,
-    async (_event, number: number, body: string) => {
+    async (_event, repo: string, number: number, body: string) => {
       try {
-        return await ghAddComment(await getGithubRepo(), number, body)
+        return await ghAddComment(repo, number, body)
       } catch (err) {
         console.error('[ipc] github:prs:comment failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -472,9 +479,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.githubSubmitReview,
-    async (_event, number: number, event: ReviewEvent, body: string) => {
+    async (_event, repo: string, number: number, event: ReviewEvent, body: string) => {
       try {
-        return await ghSubmitReview(await getGithubRepo(), number, event, body)
+        return await ghSubmitReview(repo, number, event, body)
       } catch (err) {
         console.error('[ipc] github:prs:review failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -483,9 +490,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.githubMergePR,
-    async (_event, number: number, method: MergeMethod) => {
+    async (_event, repo: string, number: number, method: MergeMethod) => {
       try {
-        return await ghMergePR(await getGithubRepo(), number, method)
+        return await ghMergePR(repo, number, method)
       } catch (err) {
         console.error('[ipc] github:prs:merge failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -494,7 +501,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(IPC_CHANNELS.githubCreatePR, async (_event, params: CreatePRParams) => {
     try {
-      return await ghCreatePR(await getGithubRepo(), params)
+      return await ghCreatePR(params.repo, params)
     } catch (err) {
       console.error('[ipc] github:prs:create failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))

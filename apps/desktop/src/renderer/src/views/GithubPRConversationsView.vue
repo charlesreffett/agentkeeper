@@ -5,6 +5,7 @@ import type { PRComment, PRDetail } from '@shared/github-types'
 
 const route = useRoute()
 const prNumber = computed(() => Number(route.params.number))
+const prRepo = computed(() => String(route.query.repo ?? ''))
 
 const pr = ref<PRDetail | null>(null)
 const comments = ref<PRComment[]>([])
@@ -19,8 +20,8 @@ async function load() {
   error.value = null
   try {
     const [detail, fetched] = await Promise.all([
-      window.orchestral.github.getPR(prNumber.value),
-      window.orchestral.github.getPRComments(prNumber.value),
+      window.orchestral.github.getPR(prRepo.value, prNumber.value),
+      window.orchestral.github.getPRComments(prRepo.value, prNumber.value),
     ])
     pr.value = detail
     comments.value = fetched.slice().sort(
@@ -41,9 +42,9 @@ async function submitComment() {
   submitting.value = true
   submitError.value = null
   try {
-    await window.orchestral.github.addComment(prNumber.value, body)
+    await window.orchestral.github.addComment(prRepo.value, prNumber.value, body)
     newComment.value = ''
-    comments.value = (await window.orchestral.github.getPRComments(prNumber.value)).slice().sort(
+    comments.value = (await window.orchestral.github.getPRComments(prRepo.value, prNumber.value)).slice().sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     )
   } catch (e) {
