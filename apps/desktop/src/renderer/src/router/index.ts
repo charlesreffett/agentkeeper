@@ -3,6 +3,7 @@ import Welcome from '@/views/Welcome.vue'
 import ProjectHome from '@/views/ProjectHome.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import GithubLayout from '@/views/GithubLayout.vue'
+import GithubPRLayout from '@/views/GithubPRLayout.vue'
 import GithubPRsView from '@/views/GithubPRsView.vue'
 import GithubPRConversationsView from '@/views/GithubPRConversationsView.vue'
 import GithubPRChecksView from '@/views/GithubPRChecksView.vue'
@@ -19,9 +20,15 @@ const router = createRouter({
       component: GithubLayout,
       children: [
         { path: 'prs', component: GithubPRsView },
-        { path: 'pr/:number/conversations', component: GithubPRConversationsView },
-        { path: 'pr/:number/checks', component: GithubPRChecksView },
-        { path: 'pr/:number/reviews', component: GithubPRReviewsView },
+        {
+          path: 'pr/:number',
+          component: GithubPRLayout,
+          children: [
+            { path: 'conversations', component: GithubPRConversationsView },
+            { path: 'checks', component: GithubPRChecksView },
+            { path: 'reviews', component: GithubPRReviewsView },
+          ],
+        },
       ],
     },
   ],
