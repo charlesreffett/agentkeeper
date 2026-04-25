@@ -33,6 +33,13 @@ export const githubPlugin: Plugin<GitHubSettings> = {
 
   async activate(ctx: PluginContext<GitHubSettings>) {
     pluginCtx = ctx
+    ctx.ui.contribute('sidebar.primary', {
+      id: 'github',
+      label: 'GitHub',
+      icon: 'GitPullRequest',
+      order: 20,
+      component: null,
+    })
     const cliFound = await checkCliPresent()
 
     if (!cliFound) {

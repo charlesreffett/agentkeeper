@@ -170,7 +170,8 @@ export interface UIContribution {
   id: string
   component: unknown
   label?: string
-  icon?: unknown
+  icon?: string
+  order?: number
   when?: (ctx: unknown) => boolean
 }
 

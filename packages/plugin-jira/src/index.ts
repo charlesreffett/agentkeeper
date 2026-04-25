@@ -30,6 +30,13 @@ export const jiraPlugin: Plugin<JiraSettings> = {
 
   async activate(ctx: PluginContext<JiraSettings>) {
     pluginCtx = ctx
+    ctx.ui.contribute('sidebar.primary', {
+      id: 'jira',
+      label: 'Jira',
+      icon: 'Layers',
+      order: 10,
+      component: null,
+    })
     const cliFound = await checkCliPresent()
 
     if (!cliFound) {
