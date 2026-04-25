@@ -267,8 +267,10 @@ export interface LiveSessionStatusUpdate {
 export interface AppSettings {
   defaultModel: string
   defaultEffort: RoleEffort
-  /** When true: Enter sends, ⌘/Ctrl+Enter inserts a newline. Default false. */
+  /** When true: Enter sends, modifier+Enter inserts a newline. Default false. */
   enterToSend: boolean
+  /** Which modifier triggers send. 'auto' = platform default (meta on Mac, ctrl elsewhere). */
+  sendModifier: 'auto' | 'meta' | 'ctrl'
 }
 
 export type SecretKeyName = 'anthropicApiKey'

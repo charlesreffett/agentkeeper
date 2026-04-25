@@ -7,9 +7,11 @@ import { useSessionStore } from '@/stores/sessions'
 import { shortModel } from '@/lib/format'
 
 const enterToSend = ref(false)
+const sendModifier = ref<'auto' | 'meta' | 'ctrl'>('auto')
 onMounted(async () => {
   const s = await window.orchestral.settings.get()
   enterToSend.value = s.enterToSend
+  sendModifier.value = s.sendModifier
 })
 
 const props = defineProps<{ liveId: string }>()
@@ -238,6 +240,7 @@ const statusDotClass = computed(() => {
     <MessageInput
       :disabled="!canSend"
       :enter-to-send="enterToSend"
+      :send-modifier="sendModifier"
       :placeholder="
         session.status === 'starting'
           ? 'Waiting for session to start…'

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, computed } from 'vue'
-import { Button } from '@/components/ui/button'
-import { SquareSlash } from 'lucide-vue-next'
+import { SquareSlash, SendHorizontal } from 'lucide-vue-next'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
@@ -10,9 +9,10 @@ const props = defineProps<{
   disabled?: boolean
   placeholder?: string
   autofocus?: boolean
-  /** When true: Enter sends; ⌘/Ctrl+Enter inserts newline. */
+  /** When true: Enter sends; modifier+Enter inserts newline. */
   enterToSend?: boolean
   projectPath?: string
+  sendModifier?: 'auto' | 'meta' | 'ctrl'
 }>()
 
 const emit = defineEmits<{ send: [text: string] }>()
@@ -24,6 +24,16 @@ const projectsStore = useProjectsStore()
 const resolvedProjectPath = computed(
   () => props.projectPath ?? projectsStore.focusedProject?.path ?? '',
 )
+
+const isMac = /Mac/i.test(navigator.platform)
+
+const modKey = computed<'meta' | 'ctrl'>(() => {
+  if (props.sendModifier === 'meta') return 'meta'
+  if (props.sendModifier === 'ctrl') return 'ctrl'
+  return isMac ? 'meta' : 'ctrl'
+})
+
+const modLabel = computed(() => (modKey.value === 'meta' ? '⌘' : 'Ctrl'))
 
 const ac = useCommandAutocomplete(text, resolvedProjectPath)
 
@@ -73,7 +83,7 @@ function onKeyDown(event: KeyboardEvent) {
       ac.close()
     }
   }
-  const mod = event.metaKey || event.ctrlKey
+  const mod = modKey.value === 'meta' ? event.metaKey : event.ctrlKey
   if (props.enterToSend) {
     if (!mod && event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
@@ -88,7 +98,9 @@ function onKeyDown(event: KeyboardEvent) {
 }
 
 const sendHint = computed(() =>
-  props.enterToSend ? 'Enter to send · ⌘/Ctrl+Enter for newline' : '⌘/Ctrl+Enter to send',
+  props.enterToSend
+    ? `Enter to send · ${modLabel.value}+Enter for newline`
+    : `${modLabel.value}+Enter to send`,
 )
 
 watch(text, () => {
@@ -133,22 +145,26 @@ watch(
             <div class="text-[11px] text-muted-foreground px-1">
               {{ sendHint }}
             </div>
-            <button
-              class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-              title="Browse commands"
-              tabindex="-1"
-              @mousedown.prevent
-              @click="ac.openAll()"
-            >
-              <SquareSlash :size="15" />
-            </button>
-            <Button
-              size="sm"
-              :disabled="disabled || !text.trim()"
-              @click="send"
-            >
-              Send
-            </Button>
+            <div class="flex items-center gap-2">
+              <button
+                class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                title="Browse commands"
+                tabindex="-1"
+                @mousedown.prevent
+                @click="ac.openAll()"
+              >
+                <SquareSlash :size="20" />
+              </button>
+              <button
+                class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                title="Send"
+                :disabled="disabled || !text.trim()"
+                @mousedown.prevent
+                @click="send"
+              >
+                <SendHorizontal :size="20" />
+              </button>
+            </div>
           </div>
         </div>
       </div>

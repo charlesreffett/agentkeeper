@@ -10,7 +10,10 @@ const DEFAULTS: AppSettings = {
   defaultModel: 'claude-sonnet-4-6',
   defaultEffort: 'medium',
   enterToSend: false,
+  sendModifier: 'auto' as const,
 }
+
+const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl']
 
 function filePath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -26,6 +29,9 @@ function read(): AppSettings {
     // edit). Fall back to the default for any invalid effort value.
     if (!ROLE_EFFORT_VALUES.includes(merged.defaultEffort)) {
       merged.defaultEffort = DEFAULTS.defaultEffort
+    }
+    if (!SEND_MODIFIER_VALUES.includes(merged.sendModifier)) {
+      merged.sendModifier = DEFAULTS.sendModifier
     }
     return merged
   } catch {

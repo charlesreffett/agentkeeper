@@ -44,6 +44,7 @@ const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
   defaultEffort: 'medium',
   enterToSend: false,
+  sendModifier: 'auto',
 })
 
 async function refreshConfig() {

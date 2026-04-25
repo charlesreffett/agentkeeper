@@ -96,6 +96,7 @@ async function save() {
         defaultModel: settings.value.defaultModel,
         defaultEffort: settings.value.defaultEffort,
         enterToSend: settings.value.enterToSend,
+        sendModifier: settings.value.sendModifier,
       })
     }
     message.value = 'Saved.'
@@ -287,11 +288,22 @@ onMounted(() => {
           <div class="text-xs leading-relaxed">
             <div class="font-medium text-foreground">Enter to send</div>
             <div class="text-muted-foreground">
-              When on: Enter sends, ⌘/Ctrl+Enter inserts a newline.<br />
-              When off (default): ⌘/Ctrl+Enter sends, Enter inserts a newline.
+              When on: Enter sends, modifier+Enter inserts a newline.<br />
+              When off (default): modifier+Enter sends, Enter inserts a newline.
             </div>
           </div>
         </label>
+        <div class="space-y-1.5 pt-1">
+          <label class="text-xs font-medium">Send modifier key</label>
+          <select
+            v-model="settings.sendModifier"
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          >
+            <option value="auto">System default (⌘ on Mac, Ctrl elsewhere)</option>
+            <option value="meta">⌘ Cmd (Meta)</option>
+            <option value="ctrl">Ctrl</option>
+          </select>
+        </div>
       </div>
 
       <div class="space-y-2">
