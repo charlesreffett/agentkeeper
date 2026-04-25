@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 
+const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
+
 const props = defineProps<{ open: boolean; projectPath?: string }>()
 const emit = defineEmits<{ close: []; saved: []; reset: [] }>()
 
@@ -18,6 +20,26 @@ const MODEL_OPTIONS = [
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (balanced)' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
 ] as const
+
+const githubRepo = ref('')
+const githubRepoError = ref<string | null>(null)
+const githubRepoSaved = ref(false)
+
+async function onGithubRepoBlur() {
+  const val = githubRepo.value.trim()
+  githubRepoError.value = null
+  githubRepoSaved.value = false
+  if (!val) {
+    githubRepoError.value = 'Enter a repo in owner/repo format to enable GitHub features.'
+    return
+  }
+  if (!OWNER_REPO_RE.test(val)) {
+    githubRepoError.value = 'Must be in owner/repo format, e.g. anthropics/claude-code.'
+    return
+  }
+  await window.orchestral.github.setConfig({ repo: val })
+  githubRepoSaved.value = true
+}
 
 // Danger-zone state
 const resetAppSettingsSel = ref(false)
@@ -47,6 +69,10 @@ async function refresh() {
   keyStored.value = await window.orchestral.secrets.has('anthropicApiKey')
   apiKeyInput.value = ''
   message.value = null
+  const ghConfig = await window.orchestral.github.getConfig()
+  githubRepo.value = ghConfig.repo ?? ''
+  githubRepoError.value = null
+  githubRepoSaved.value = false
 }
 
 async function save() {
@@ -260,6 +286,25 @@ onMounted(() => {
             </div>
           </div>
         </label>
+      </div>
+
+      <div class="space-y-2">
+        <label class="text-sm font-medium">GitHub repository</label>
+        <input
+          v-model="githubRepo"
+          type="text"
+          placeholder="owner/repo"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+          @blur="void onGithubRepoBlur()"
+          @input="githubRepoError = null; githubRepoSaved = false"
+        />
+        <p v-if="githubRepoError" class="text-xs text-amber-600 dark:text-amber-400">
+          {{ githubRepoError }}
+        </p>
+        <p v-else-if="githubRepoSaved" class="text-xs text-muted-foreground">Saved.</p>
+        <p v-else class="text-xs text-muted-foreground">
+          Used by the GitHub plugin to scope all PR and issue operations.
+        </p>
       </div>
 
       <div
