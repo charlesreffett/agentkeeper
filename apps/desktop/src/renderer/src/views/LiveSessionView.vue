@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { shortModel } from '@/lib/format'
+
+const enterToSend = ref(false)
+onMounted(async () => {
+  const s = await window.orchestral.settings.get()
+  enterToSend.value = s.enterToSend
+})
 
 const props = defineProps<{ liveId: string }>()
 
@@ -12,22 +18,59 @@ const store = useSessionStore()
 const session = computed(() => store.getSession(props.liveId))
 const scroller = ref<HTMLElement | null>(null)
 
+const isAtBottom = ref(true)
+const hasNewMessages = ref(false)
+const firstNewScrollHeight = ref(0)
+const firstNewEventsLength = ref(0)
+
+const BOTTOM_THRESHOLD = 64
+
+const newMessageCount = computed(() =>
+  hasNewMessages.value
+    ? Math.max(0, (session.value?.events.length ?? 0) - firstNewEventsLength.value)
+    : 0,
+)
+
+function onScroll() {
+  const el = scroller.value
+  if (!el) return
+  isAtBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD
+  if (isAtBottom.value && hasNewMessages.value) {
+    hasNewMessages.value = false
+  }
+}
+
 async function scrollToBottom() {
   await nextTick()
   const el = scroller.value
   if (el) el.scrollTop = el.scrollHeight
 }
 
+function goToNewMessages() {
+  const el = scroller.value
+  if (!el) return
+  el.scrollTo({ top: Math.max(0, firstNewScrollHeight.value - 40), behavior: 'smooth' })
+  hasNewMessages.value = false
+}
+
 watch(
   () => session.value?.events.length ?? 0,
-  () => {
-    void scrollToBottom()
+  (newLen, oldLen) => {
+    if (isAtBottom.value) {
+      void scrollToBottom()
+    } else if (!hasNewMessages.value) {
+      firstNewScrollHeight.value = scroller.value?.scrollHeight ?? 0
+      firstNewEventsLength.value = oldLen
+      hasNewMessages.value = true
+    }
   },
 )
 
 watch(
   () => props.liveId,
   () => {
+    isAtBottom.value = true
+    hasNewMessages.value = false
     void scrollToBottom()
   },
   { immediate: true },
@@ -149,19 +192,52 @@ const statusDotClass = computed(() => {
       </div>
     </header>
 
-    <div ref="scroller" class="flex-1 overflow-y-auto min-h-0">
-      <div v-if="session.error" class="max-w-4xl mx-auto p-6">
-        <div
-          class="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
-        >
-          {{ session.error }}
+    <div class="flex-1 relative min-h-0">
+      <div ref="scroller" class="h-full overflow-y-auto" @scroll.passive="onScroll">
+        <div v-if="session.error" class="max-w-4xl mx-auto p-6">
+          <div
+            class="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
+          >
+            {{ session.error }}
+          </div>
         </div>
+        <Transcript :events="session.events" />
       </div>
-      <Transcript :events="session.events" />
+
+      <Transition
+        enter-active-class="transition-all duration-200 ease-out"
+        enter-from-class="opacity-0 translate-y-2"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-150 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 translate-y-2"
+      >
+        <button
+          v-if="hasNewMessages"
+          class="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-primary px-4 py-1.5 text-xs font-medium text-primary-foreground shadow-lg hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          @click="goToNewMessages"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+          {{ newMessageCount }} new {{ newMessageCount === 1 ? 'message' : 'messages' }}
+        </button>
+      </Transition>
     </div>
 
     <MessageInput
       :disabled="!canSend"
+      :enter-to-send="enterToSend"
       :placeholder="
         session.status === 'starting'
           ? 'Waiting for session to start…'

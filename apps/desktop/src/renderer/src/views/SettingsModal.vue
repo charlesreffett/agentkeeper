@@ -63,6 +63,7 @@ async function save() {
       await window.orchestral.settings.set({
         defaultModel: settings.value.defaultModel,
         defaultEffort: settings.value.defaultEffort,
+        enterToSend: settings.value.enterToSend,
       })
     }
     message.value = 'Saved.'
@@ -233,6 +234,32 @@ onMounted(() => {
             {{ e }}
           </option>
         </select>
+      </div>
+
+      <div v-if="settings" class="space-y-2">
+        <label class="text-sm font-medium">Message sending</label>
+        <label class="flex items-start gap-3 cursor-pointer select-none group">
+          <div class="relative mt-0.5 shrink-0">
+            <input
+              v-model="settings.enterToSend"
+              type="checkbox"
+              class="sr-only peer"
+            />
+            <div
+              class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors"
+            />
+            <div
+              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4"
+            />
+          </div>
+          <div class="text-xs leading-relaxed">
+            <div class="font-medium text-foreground">Enter to send</div>
+            <div class="text-muted-foreground">
+              When on: Enter sends, ⌘/Ctrl+Enter inserts a newline.<br />
+              When off (default): ⌘/Ctrl+Enter sends, Enter inserts a newline.
+            </div>
+          </div>
+        </label>
       </div>
 
       <div

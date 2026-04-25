@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, computed } from 'vue'
 import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   disabled?: boolean
   placeholder?: string
   autofocus?: boolean
+  /** When true: Enter sends; ⌘/Ctrl+Enter inserts newline. */
+  enterToSend?: boolean
 }>()
 
 const emit = defineEmits<{ send: [text: string] }>()
@@ -30,12 +32,26 @@ async function send() {
 }
 
 function onKeyDown(event: KeyboardEvent) {
-  // Cmd/Ctrl + Enter to send
-  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    event.preventDefault()
-    void send()
+  const mod = event.metaKey || event.ctrlKey
+  if (props.enterToSend) {
+    // Enter sends; ⌘/Ctrl+Enter inserts a newline
+    if (!mod && event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void send()
+    }
+    // ⌘/Ctrl+Enter: let the browser insert \n naturally (no preventDefault)
+  } else {
+    // Default: ⌘/Ctrl+Enter sends; plain Enter inserts newline
+    if (mod && event.key === 'Enter') {
+      event.preventDefault()
+      void send()
+    }
   }
 }
+
+const sendHint = computed(() =>
+  props.enterToSend ? 'Enter to send · ⌘/Ctrl+Enter for newline' : '⌘/Ctrl+Enter to send',
+)
 
 watch(text, () => {
   void nextTick(autosize)
@@ -61,7 +77,7 @@ watch(
         <textarea
           ref="textarea"
           v-model="text"
-          :placeholder="placeholder ?? 'Message — ⌘/Ctrl + Enter to send'"
+          :placeholder="placeholder ?? `Message — ${sendHint}`"
           :disabled="disabled"
           rows="1"
           class="w-full resize-none bg-transparent px-3 py-2.5 text-sm leading-relaxed focus:outline-none disabled:opacity-60 font-sans"
@@ -69,7 +85,7 @@ watch(
         />
         <div class="flex items-center justify-between px-2 py-1.5 border-t border-border/60">
           <div class="text-[11px] text-muted-foreground px-1">
-            ⌘/Ctrl + Enter to send
+            {{ sendHint }}
           </div>
           <Button
             size="sm"
