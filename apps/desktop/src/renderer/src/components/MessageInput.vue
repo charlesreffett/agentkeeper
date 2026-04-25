@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, computed } from 'vue'
 import { Button } from '@/components/ui/button'
+import { SquareSlash } from 'lucide-vue-next'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
@@ -132,6 +133,15 @@ watch(
             <div class="text-[11px] text-muted-foreground px-1">
               {{ sendHint }}
             </div>
+            <button
+              class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+              title="Browse commands"
+              tabindex="-1"
+              @mousedown.prevent
+              @click="ac.openAll()"
+            >
+              <SquareSlash :size="15" />
+            </button>
             <Button
               size="sm"
               :disabled="disabled || !text.trim()"

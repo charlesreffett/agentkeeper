@@ -5,6 +5,7 @@ import type { SlashCommand } from '@shared/ipc-contract'
 export function useCommandAutocomplete(text: Ref<string>, projectPath: Ref<string>) {
   const allCommands = ref<SlashCommand[]>([])
   const selectedIndex = ref(-1)
+  const forceOpen = ref(false)
 
   watch(
     projectPath,
@@ -28,15 +29,25 @@ export function useCommandAutocomplete(text: Ref<string>, projectPath: Ref<strin
   })
 
   const suggestions = computed<SlashCommand[]>(() => {
+    if (forceOpen.value) return allCommands.value
     const prefix = slashPrefix.value
     if (prefix === null) return []
     return allCommands.value.filter((cmd) => cmd.id.toLowerCase().startsWith(prefix))
   })
 
-  const isOpen = computed(() => slashPrefix.value !== null && suggestions.value.length > 0)
+  const isOpen = computed(
+    () =>
+      (forceOpen.value && allCommands.value.length > 0) ||
+      (slashPrefix.value !== null && suggestions.value.length > 0),
+  )
 
   watch(suggestions, () => {
     selectedIndex.value = -1
+  })
+
+  // Drop out of force-open the instant the user types; prefix filter takes over
+  watch(text, () => {
+    if (forceOpen.value) forceOpen.value = false
   })
 
   function moveUp() {
@@ -57,11 +68,17 @@ export function useCommandAutocomplete(text: Ref<string>, projectPath: Ref<strin
 
   function close() {
     selectedIndex.value = -1
+    forceOpen.value = false
+  }
+
+  function openAll() {
+    forceOpen.value = true
+    selectedIndex.value = -1
   }
 
   function resolveBody(cmd: SlashCommand): string {
     return cmd.body.replace(/\$ARGUMENTS/g, '').trim()
   }
 
-  return { isOpen, suggestions, selectedIndex, moveUp, moveDown, selectIndex, close, resolveBody }
+  return { isOpen, suggestions, selectedIndex, moveUp, moveDown, selectIndex, close, openAll, resolveBody }
 }
