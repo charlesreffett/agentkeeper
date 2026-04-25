@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
+import ProjectPicker from '@/components/ProjectPicker.vue'
+import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
 import { useSessionStore } from '@/stores/sessions'
+import { useProjectsStore } from '@/stores/projects'
+import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import type {
   Agency,
   AgencyDraft,
   AgencyScope,
+  RecentProject,
   Role,
 } from '@shared/ipc-contract'
 
@@ -16,6 +21,7 @@ const emit = defineEmits<{
 }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
+const projectsStore = useProjectsStore()
 
 const agencies = ref<Agency[]>([])
 const roles = ref<Role[]>([])
@@ -52,6 +58,10 @@ const runUseWorktree = ref(true)
 const runBranch = ref('')
 const runModel = ref('claude-sonnet-4-6')
 const starting = ref(false)
+const runSelectedProject = ref<RecentProject | null>(null)
+const runPickerOpen = ref(false)
+const runProjectPath = computed(() => runSelectedProject.value?.path ?? props.projectPath)
+const runAc = useCommandAutocomplete(runInitialPrompt, runProjectPath)
 
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-7', label: 'Opus 4.7' },
@@ -110,10 +120,38 @@ function beginRun(a: Agency) {
   runInitialPrompt.value = ''
   runBranch.value = (a.id || 'agency').slice(0, 40)
   runModel.value = 'claude-sonnet-4-6'
+  runSelectedProject.value = projectsStore.projects.find((p) => p.path === props.projectPath) ?? null
 }
 
 function cancelMode() {
   mode.value = 'browse'
+}
+
+function onRunPickerConfirm(project: RecentProject) {
+  runSelectedProject.value = project
+  runPickerOpen.value = false
+}
+
+function onRunPromptKeyDown(event: KeyboardEvent) {
+  if (runAc.isOpen.value) {
+    if (event.key === 'ArrowUp') { event.preventDefault(); runAc.moveUp(); return }
+    if (event.key === 'ArrowDown') { event.preventDefault(); runAc.moveDown(); return }
+    if (event.key === 'Escape') { event.preventDefault(); runAc.close(); return }
+    if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+      const cmd = runAc.selectIndex(runAc.selectedIndex.value)
+      if (cmd) {
+        event.preventDefault()
+        runInitialPrompt.value = runAc.resolveBody(cmd)
+        runAc.close()
+        return
+      }
+      runAc.close()
+    }
+  }
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    event.preventDefault()
+    void runAgency()
+  }
 }
 
 function toggleRole(roleId: string) {
@@ -224,7 +262,7 @@ async function runAgency() {
   message.value = null
   try {
     const instance = await window.orchestral.agencies.start({
-      projectPath: props.projectPath,
+      projectPath: runProjectPath.value,
       agencyId: selected.value.id,
       agencyScope: selected.value.scope,
       initialPrompt: runInitialPrompt.value.trim(),
@@ -566,17 +604,41 @@ watch(
             </div>
 
             <div class="space-y-1.5">
+              <label class="text-sm font-medium">Project</label>
+              <button
+                class="w-full text-left rounded-md border border-input bg-background px-3 py-2 text-sm hover:border-ring transition focus:outline-none focus:border-ring"
+                @click="runPickerOpen = true"
+              >
+                <span v-if="runSelectedProject" class="font-medium">{{ runSelectedProject.name }}</span>
+                <span v-else class="text-muted-foreground">Select a project…</span>
+                <span v-if="runSelectedProject" class="ml-2 text-xs text-muted-foreground font-mono">
+                  {{ runSelectedProject.repo ?? runSelectedProject.path }}
+                </span>
+              </button>
+            </div>
+
+            <div class="space-y-1.5">
               <label class="text-sm font-medium">Initial prompt</label>
               <p class="text-xs text-muted-foreground">
                 Sent to
                 <span class="font-mono">{{ selected.entryPoints.join(', ') }}</span>.
               </p>
-              <textarea
-                v-model="runInitialPrompt"
-                rows="6"
-                placeholder="What do you want the team to work on?"
-                class="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-ring font-sans resize-none"
-              />
+              <div class="relative">
+                <CommandAutocomplete
+                  v-if="runAc.isOpen.value"
+                  :suggestions="runAc.suggestions.value"
+                  :selected-index="runAc.selectedIndex.value"
+                  @select="(cmd) => { runInitialPrompt = runAc.resolveBody(cmd); runAc.close() }"
+                  @close="runAc.close()"
+                />
+                <textarea
+                  v-model="runInitialPrompt"
+                  rows="6"
+                  placeholder="What do you want the team to work on?"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-ring font-sans resize-none"
+                  @keydown="onRunPromptKeyDown"
+                />
+              </div>
             </div>
 
             <div class="space-y-3 rounded-md border border-border bg-muted/20 p-3">
@@ -638,4 +700,11 @@ watch(
       </div>
     </div>
   </dialog>
+
+  <ProjectPicker
+    :open="runPickerOpen"
+    :preselected="runSelectedProject?.path ?? props.projectPath"
+    @confirm="onRunPickerConfirm"
+    @cancel="runPickerOpen = false"
+  />
 </template>
