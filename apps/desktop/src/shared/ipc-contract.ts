@@ -38,7 +38,6 @@ export type {
 
 export interface RemoteSource {
   type: 'github' | 'gitlab' | 'bitbucket'
-  owner: string
   /** owner/repo slug */
   repo: string
   /** git remote name, e.g. "origin" */

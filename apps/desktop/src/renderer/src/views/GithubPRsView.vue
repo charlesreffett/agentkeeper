@@ -31,20 +31,19 @@ async function load() {
 }
 
 async function autoDetectRepos(projectPath: string) {
-  const sources = await window.orchestral.remotes.detect(projectPath)
-  const ghRepos = sources.filter((s) => s.type === 'github').map((s) => s.repo)
-  if (ghRepos.length > 0) {
-    await window.orchestral.github.setConfig({ repos: ghRepos })
-    repos.value = ghRepos
-  }
+  try {
+    const sources = await window.orchestral.remotes.detect(projectPath)
+    const ghRepos = sources.filter((s) => s.type === 'github').map((s) => s.repo)
+    if (ghRepos.length > 0) {
+      await window.orchestral.github.setConfig({ repos: ghRepos })
+      repos.value = ghRepos
+    }
+  } catch { /* silent */ }
 }
 
 onMounted(async () => {
   const cfg = await window.orchestral.github.getConfig()
   repos.value = cfg.repos ?? []
-  if (repos.value.length === 0 && projectsStore.focusedProject?.path) {
-    await autoDetectRepos(projectsStore.focusedProject.path)
-  }
 })
 
 watch(

@@ -4,8 +4,6 @@ import type { RemoteSource } from '../shared/ipc-contract'
 
 const execFileAsync = promisify(execFile)
 
-export type { RemoteSource }
-
 export async function detectRemoteSources(projectPath: string): Promise<RemoteSource[]> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', projectPath, 'remote', '-v'])
@@ -49,8 +47,7 @@ export async function detectRemoteSources(projectPath: string): Promise<RemoteSo
       if (seen.has(key)) continue
       seen.add(key)
 
-      const owner = slug.split('/')[0]!
-      results.push({ type, owner, repo: slug, remote, url })
+      results.push({ type, repo: slug, remote, url })
     }
 
     return results
