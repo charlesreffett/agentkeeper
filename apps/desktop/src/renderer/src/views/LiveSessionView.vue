@@ -202,10 +202,11 @@ async function changeModel(model: string) {
   session.value.model = model
 }
 
-async function changeEffort(effort: string) {
-  if (!session.value) return
-  await window.orchestral.sessions.setEffort(session.value.localId, effort as RoleEffort)
-  session.value.effort = effort as RoleEffort
+async function changeEffort(e: Event) {
+  const val = (e.target as HTMLSelectElement).value
+  if (!val || !session.value) return
+  await window.orchestral.sessions.setEffort(session.value.localId, val as RoleEffort)
+  session.value.effort = val as RoleEffort
 }
 </script>
 
@@ -231,12 +232,13 @@ async function changeEffort(effort: string) {
         </select>
         <span class="text-xs text-muted-foreground">·</span>
         <select
-          :value="session.effort ?? ROLE_EFFORT_VALUES[2]"
+          :value="session.effort ?? ''"
           :disabled="!canEditParams"
           class="text-xs text-muted-foreground bg-transparent border-none outline-none"
           :class="isTerminal ? 'pointer-events-none' : canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
-          @change="changeEffort(($event.target as HTMLSelectElement).value)"
+          @change="changeEffort($event)"
         >
+          <option value="">Default</option>
           <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">{{ e }}</option>
         </select>
         <span

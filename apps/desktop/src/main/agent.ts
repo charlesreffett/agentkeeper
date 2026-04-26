@@ -56,6 +56,7 @@ export interface InternalStartExtras {
 }
 
 const active = new Map<string, ActiveSession>()
+const restartingIds = new Set<string>()
 
 let workItemRegistry: WorkItemRegistryFull | null = null
 
@@ -425,47 +426,53 @@ async function restartIdle(
   localId: string,
   overrides: { model?: string; effort?: RoleEffort },
 ): Promise<void> {
-  const persisted = registry.getSession(localId)
-  if (!persisted) throw new Error(`session ${localId} not found`)
+  if (restartingIds.has(localId)) throw new Error(`Session ${localId} is already restarting`)
+  restartingIds.add(localId)
+  try {
+    const persisted = registry.getSession(localId)
+    if (!persisted) throw new Error(`session ${localId} not found`)
 
-  const s = active.get(localId)
-  const currentStatus = s?.status ?? persisted.status
-  if (currentStatus === 'running' || currentStatus === 'starting') {
-    throw new Error(`cannot change session params while status is ${currentStatus}`)
+    const s = active.get(localId)
+    const currentStatus = s?.status ?? persisted.status
+    if (currentStatus === 'running' || currentStatus === 'starting') {
+      throw new Error(`cannot change session params while status is ${currentStatus}`)
+    }
+    if (
+      currentStatus === 'terminated' ||
+      currentStatus === 'error' ||
+      currentStatus === 'completed'
+    ) {
+      throw new Error(`cannot change session params on a ${currentStatus} session`)
+    }
+
+    if (s) {
+      try { s.input.close() } catch { /* ignore */ }
+      try { s.abortController.abort() } catch { /* ignore */ }
+      if ('model' in overrides) s.model = overrides.model
+      if ('effort' in overrides) s.effort = overrides.effort
+    }
+
+    const newModel = overrides.model ?? persisted.model ?? undefined
+    const newEffort = (overrides.effort ?? persisted.effort) as RoleEffort | undefined
+    registry.updateSession(localId, { model: newModel ?? null, effort: newEffort ?? null })
+
+    await startSession({
+      localId,
+      projectPath: persisted.projectPath,
+      worktreePath: persisted.worktreePath ?? undefined,
+      initialPrompt: persisted.initialPrompt,
+      model: newModel,
+      effort: newEffort,
+      permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
+      resumeSdkSessionId: persisted.sdkSessionId,
+      roleName: persisted.roleName ?? undefined,
+      agencyName: persisted.agencyName ?? undefined,
+      agencyInstanceId: persisted.agencyInstanceId ?? undefined,
+      roleId: persisted.roleId ?? undefined,
+    })
+  } finally {
+    restartingIds.delete(localId)
   }
-  if (
-    currentStatus === 'terminated' ||
-    currentStatus === 'error' ||
-    currentStatus === 'completed'
-  ) {
-    throw new Error(`cannot change session params on a ${currentStatus} session`)
-  }
-
-  if (s) {
-    try { s.input.close() } catch { /* ignore */ }
-    try { s.abortController.abort() } catch { /* ignore */ }
-    if ('model' in overrides) s.model = overrides.model
-    if ('effort' in overrides) s.effort = overrides.effort
-  }
-
-  const newModel = overrides.model ?? persisted.model ?? undefined
-  const newEffort = (overrides.effort ?? persisted.effort) as RoleEffort | undefined
-  registry.updateSession(localId, { model: newModel ?? null, effort: newEffort ?? null })
-
-  await startSession({
-    localId,
-    projectPath: persisted.projectPath,
-    worktreePath: persisted.worktreePath ?? undefined,
-    initialPrompt: persisted.initialPrompt,
-    model: newModel,
-    effort: newEffort,
-    permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
-    resumeSdkSessionId: persisted.sdkSessionId,
-    roleName: persisted.roleName ?? undefined,
-    agencyName: persisted.agencyName ?? undefined,
-    agencyInstanceId: persisted.agencyInstanceId ?? undefined,
-    roleId: persisted.roleId ?? undefined,
-  })
 }
 
 export async function setModel(localId: string, model: string): Promise<void> {
