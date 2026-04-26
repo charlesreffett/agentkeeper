@@ -3,15 +3,29 @@ import { ref, watch } from 'vue'
 import type { SessionTranscript } from '@shared/ipc-contract'
 import Transcript from '@/components/transcript/Transcript.vue'
 import { shortModel } from '@/lib/format'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   projectPath: string
   sessionId: string | null
 }>()
 
+const emit = defineEmits<{
+  resume: [sdkSessionId: string, projectPath: string, firstUserMessage: string]
+}>()
+
 const transcript = ref<SessionTranscript | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+function firstUserMessage(t: SessionTranscript): string {
+  const evt = t.events.find((e) => e.role === 'user' && !e.isMeta)
+  if (!evt) return ''
+  for (const block of evt.content) {
+    if (block.type === 'text') return block.text
+  }
+  return ''
+}
 
 async function load() {
   if (!props.sessionId) {
@@ -75,9 +89,16 @@ watch(
         <span v-if="transcript.gitBranch" class="font-mono">
           {{ transcript.gitBranch }}
         </span>
-        <span v-if="transcript.versions.length" class="ml-auto font-mono">
+        <span v-if="transcript.versions.length" class="font-mono">
           claude {{ transcript.versions[transcript.versions.length - 1] }}
         </span>
+        <Button
+          class="ml-auto"
+          size="sm"
+          @click="emit('resume', transcript.id, transcript.projectPath, firstUserMessage(transcript))"
+        >
+          Resume
+        </Button>
       </div>
       <div class="flex-1 overflow-y-auto">
         <Transcript :events="transcript.events" />

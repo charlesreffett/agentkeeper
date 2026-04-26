@@ -120,6 +120,18 @@ async function onStartSession(params: {
   })
 }
 
+async function onResumeHistorical(sdkSessionId: string, projectPath: string, firstUserMessage: string) {
+  selectedHistoricalId.value = null
+  startError.value = null
+  await sessionStore.resumeFromHistory({
+    sdkSessionId,
+    projectPath,
+    initialPrompt: firstUserMessage || '(continued)',
+    model: settings.value.defaultModel,
+    effort: settings.value.defaultEffort,
+  })
+}
+
 function closeProject() {
   projectStore.clearProject()
   router.push('/')
@@ -205,6 +217,7 @@ onMounted(refreshConfig)
           v-else-if="selectedHistoricalId"
           :project-path="project.path"
           :session-id="selectedHistoricalId"
+          @resume="onResumeHistorical"
         />
         <div
           v-else

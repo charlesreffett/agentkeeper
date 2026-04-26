@@ -3,6 +3,7 @@ import { computed, reactive, ref, toRaw } from 'vue'
 import type {
   LiveSessionStatus,
   PersistedSession,
+  RoleEffort,
   StartSessionParams,
   TranscriptEvent,
 } from '@shared/ipc-contract'
@@ -251,6 +252,52 @@ export const useSessionStore = defineStore('sessions', () => {
     return newId
   }
 
+  async function resumeFromHistory(params: {
+    sdkSessionId: string
+    projectPath: string
+    initialPrompt: string
+    model: string
+    effort: RoleEffort
+  }): Promise<string> {
+    const localId = cryptoRandomId()
+    sessions[localId] = {
+      localId,
+      sdkSessionId: null,
+      projectPath: params.projectPath,
+      worktreePath: null,
+      branch: null,
+      roleName: null,
+      agencyInstanceId: null,
+      agencyName: null,
+      initialPrompt: params.initialPrompt,
+      model: params.model,
+      status: 'idle',
+      events: [],
+      error: null,
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+      resumedFromSdkSessionId: params.sdkSessionId,
+    }
+    currentLiveId.value = localId
+    flushBuffer(localId)
+
+    try {
+      await window.orchestral.sessions.start({
+        localId,
+        projectPath: params.projectPath,
+        initialPrompt: params.initialPrompt,
+        model: params.model,
+        effort: params.effort,
+        resumeSdkSessionId: params.sdkSessionId,
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      sessions[localId]!.status = 'error'
+      sessions[localId]!.error = message
+    }
+    return localId
+  }
+
   // ─── IPC subscriptions — set up once ───────────────────────────────────
 
   window.orchestral.sessions.onEvent((payload) => {
@@ -294,5 +341,6 @@ export const useSessionStore = defineStore('sessions', () => {
     clearFocus,
     registerExternal,
     resume,
+    resumeFromHistory,
   }
 })
