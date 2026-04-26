@@ -57,7 +57,6 @@ function autosize() {
 }
 
 async function send() {
-  if (props.isRunning) return
   const v = text.value.trim()
   if (!v || props.disabled) return
   emit('send', v)
@@ -196,7 +195,6 @@ watch(
                 <Square :size="20" />
               </button>
               <button
-                v-else
                 class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
                 title="Send"
                 :disabled="disabled || !text.trim()"
