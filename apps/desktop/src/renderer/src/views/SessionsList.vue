@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { SessionSummary } from '@shared/ipc-contract'
+import type { AgencyInstance, PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
 import { formatRelativeTime, shortModel } from '@/lib/format'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
@@ -14,6 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectHistorical: [session: SessionSummary]
   selectLive: [session: LiveSession]
+  agencyResumed: [instance: AgencyInstance, entrySessionId: string | null]
 }>()
 
 const store = useSessionStore()
@@ -26,6 +27,15 @@ const liveForProject = computed(() =>
 const historical = ref<SessionSummary[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+const persistedSessions = ref<PersistedSession[]>([])
+const persistedAgencies = ref<PersistedAgency[]>([])
+const resumingId = ref<string | null>(null)
+
+// Persisted standalone sessions (not part of an agency)
+const standalonePersistedSessions = computed(() =>
+  persistedSessions.value.filter((s) => !s.agencyInstanceId),
+)
 
 async function load() {
   loading.value = true
@@ -40,13 +50,74 @@ async function load() {
   }
 }
 
+async function loadPersisted() {
+  try {
+    const [sessions, agencies] = await Promise.all([
+      window.orchestral.sessions.listPersisted(props.projectPath),
+      window.orchestral.agencies.listPersisted(props.projectPath),
+    ])
+    persistedSessions.value = sessions
+    persistedAgencies.value = agencies
+  } catch {
+    // non-fatal
+  }
+}
+
 watch(
   () => [props.projectPath, props.refreshKey],
   () => {
     void load()
+    void loadPersisted()
   },
   { immediate: true },
 )
+
+async function resumeSession(persisted: PersistedSession) {
+  if (resumingId.value) return
+  resumingId.value = persisted.localId
+  try {
+    const newId = await store.resume(persisted)
+    // Focus the new live session
+    store.focus(newId)
+    emit('selectLive', store.getSession(newId)!)
+  } catch {
+    // error visible via session status
+  } finally {
+    resumingId.value = null
+  }
+}
+
+async function resumeAgency(persisted: PersistedAgency) {
+  if (resumingId.value) return
+  resumingId.value = persisted.instanceId
+  try {
+    const instance = await window.orchestral.agencies.resume(persisted.instanceId)
+    // Register all sessions in the store
+    for (const s of instance.sessions) {
+      const persistedRole = persistedSessions.value.find(
+        (p) => p.agencyInstanceId === persisted.instanceId && p.roleId === s.roleId,
+      )
+      store.registerExternal({
+        localId: s.localId,
+        projectPath: persisted.projectPath,
+        worktreePath: persisted.worktreePath,
+        branch: persisted.branch,
+        roleName: s.roleName,
+        agencyInstanceId: instance.instanceId,
+        agencyName: instance.agencyName,
+        initialPrompt: persistedRole?.initialPrompt ?? '',
+        model: persistedRole?.model ?? null,
+      })
+    }
+    const entrySession = instance.sessions.find((s) => s.isEntryPoint)
+    if (entrySession) store.focus(entrySession.localId)
+    emit('agencyResumed', instance, entrySession?.localId ?? null)
+  } catch {
+    // error surfaced via session status
+  } finally {
+    resumingId.value = null
+  }
+}
 
 function liveFirstMessage(s: LiveSession): string {
   return s.initialPrompt.trim().split('\n')[0] ?? '(new session)'
@@ -191,6 +262,72 @@ function liveStatusDot(s: LiveSession): string {
             <span v-if="shortModel(s.model)" class="font-mono">
               {{ shortModel(s.model) }}
             </span>
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Previous sessions (resumable) -->
+    <section
+      v-if="standalonePersistedSessions.length || persistedAgencies.length"
+      class="shrink-0 border-t border-border"
+    >
+      <div class="px-4 py-2 border-b border-border">
+        <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Previous
+        </h2>
+      </div>
+      <ul class="overflow-y-auto max-h-64">
+        <!-- Standalone sessions -->
+        <li
+          v-for="s in standalonePersistedSessions"
+          :key="s.localId"
+          class="border-b border-border/50 px-4 py-3"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-medium truncate leading-snug">
+                {{ s.initialPrompt.split('\n')[0] || '(no prompt)' }}
+              </div>
+              <div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums flex-wrap">
+                <span>{{ formatRelativeTime(s.lastActivityAt) }}</span>
+                <span v-if="s.roleName">· {{ s.roleName }}</span>
+                <span v-if="shortModel(s.model)">· <span class="font-mono">{{ shortModel(s.model) }}</span></span>
+              </div>
+            </div>
+            <button
+              class="shrink-0 text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
+              :disabled="resumingId === s.localId"
+              @click="resumeSession(s)"
+            >
+              {{ resumingId === s.localId ? '…' : 'Resume' }}
+            </button>
+          </div>
+        </li>
+        <!-- Agencies -->
+        <li
+          v-for="a in persistedAgencies"
+          :key="a.instanceId"
+          class="border-b border-border/50 px-4 py-3"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-medium truncate leading-snug flex items-center gap-1.5">
+                <span class="text-muted-foreground">◎</span>
+                {{ a.agencyName }}
+              </div>
+              <div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
+                <span>{{ formatRelativeTime(a.lastActivityAt) }}</span>
+                <span v-if="a.branch">· <span class="font-mono">⎇ {{ a.branch }}</span></span>
+              </div>
+            </div>
+            <button
+              class="shrink-0 text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
+              :disabled="resumingId === a.instanceId"
+              @click="resumeAgency(a)"
+            >
+              {{ resumingId === a.instanceId ? '…' : 'Resume' }}
+            </button>
           </div>
         </li>
       </ul>

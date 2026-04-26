@@ -28,13 +28,14 @@ import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { listSessions, readSession } from './sessions'
-import { cancelSession, sendInput, startSession } from './agent'
+import { cancelSession, resumeSession, sendInput, startSession } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
-import { startAgency } from './orchestrator'
+import { resumeAgency, startAgency } from './orchestrator'
+import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { installSkill, listSkills, previewSkills, removeSkill } from './skills'
 import { listCommands, removeCommand, saveCommand } from './commands'
@@ -554,6 +555,38 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
+
+  // Session registry — persisted sessions + resume
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsListPersisted,
+    (_event, projectPath: string) => sessionRegistry.listSessions(projectPath),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsResume,
+    async (_event, localId: string) => {
+      try {
+        return await resumeSession(localId)
+      } catch (err) {
+        console.error('[ipc] sessions:resume failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesListPersisted,
+    (_event, projectPath: string) => sessionRegistry.listAgencies(projectPath),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesResume,
+    async (_event, instanceId: string) => {
+      try {
+        return await resumeAgency(instanceId)
+      } catch (err) {
+        console.error('[ipc] agencies:resume failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
 
   // Work items (plugin registry)
   ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {

@@ -16,6 +16,7 @@ import {
   startSession,
   waitForNextIdle,
 } from './agent'
+import * as registry from './session-registry'
 
 /**
  * Runtime state for one live run of an agency. Each run is a bundle of
@@ -230,6 +231,19 @@ export async function startAgency(
   }
   instances.set(instanceId, runtime)
 
+  registry.registerAgency({
+    instanceId,
+    agencyId: agency.id,
+    agencyScope: agency.scope,
+    agencyName: agency.name,
+    projectPath: params.projectPath,
+    worktreePath,
+    branch,
+    startedAt: Date.now(),
+    lastActivityAt: Date.now(),
+    roleSessionMap: {},
+  })
+
   const peerList = agency.roles.join(', ')
   const sessionsMeta: AgencyInstanceSession[] = []
 
@@ -279,6 +293,8 @@ export async function startAgency(
           : {}),
         agencyInstanceId: instanceId,
         roleId,
+        roleName: role.name,
+        agencyName: agency.name,
       },
       { mcpServer: mcp },
     )
@@ -302,6 +318,107 @@ export async function startAgency(
     projectPath: params.projectPath,
     worktreePath,
     branch,
+    sessions: sessionsMeta,
+  }
+}
+
+export async function resumeAgency(instanceId: string): Promise<AgencyInstance> {
+  const persisted = registry.getAgency(instanceId)
+  if (!persisted) throw new Error(`No persisted agency found for id "${instanceId}"`)
+
+  const allAgencies = await listAgencies(persisted.projectPath)
+  const agency = allAgencies.find(
+    (a) => a.id === persisted.agencyId && a.scope === persisted.agencyScope,
+  )
+  if (!agency) {
+    throw new Error(
+      `Agency "${persisted.agencyId}" (${persisted.agencyScope}) no longer exists.`,
+    )
+  }
+
+  const allRoles = await listRoles(persisted.projectPath)
+  const rolesById = new Map(allRoles.map((r) => [r.id, r]))
+
+  const runtime: RuntimeAgency = {
+    instanceId,
+    agencyId: agency.id,
+    agencyScope: agency.scope,
+    agencyName: agency.name,
+    projectPath: persisted.projectPath,
+    worktreePath: persisted.worktreePath,
+    branch: persisted.branch,
+    sessionByRole: new Map(),
+    roleBySessionId: new Map(),
+    allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
+  }
+  instances.set(instanceId, runtime)
+
+  const peerList = agency.roles.join(', ')
+  const sessionsMeta: AgencyInstanceSession[] = []
+
+  for (const roleId of agency.roles) {
+    const role = rolesById.get(roleId)
+    if (!role) continue
+
+    const localId = randomUUID()
+    const isEntry = agency.entryPoints.includes(roleId)
+    const contextPreamble = [
+      `You are the "${role.name}" (role id: "${roleId}") in an agency named "${agency.name}".`,
+      `All member roles (by id): ${peerList}.`,
+      ``,
+      `Communication protocol:`,
+      `- Use the mcp__orchestral__send_message tool to contact a peer by role id.`,
+      `- send_message BLOCKS until the peer replies; their response becomes your tool_result.`,
+      `- When another peer addresses YOU via send_message, you'll receive a user turn wrapped in "[message from peer X]" markers. Your plain-text reply is automatically captured and returned to them — DO NOT call send_message back to the peer that addressed you. That would deadlock both of you and the orchestrator will reject it.`,
+      `- If replying to peer X requires input from peer Z, you CAN call send_message(Z) first, then use Z's answer when composing your plain-text reply to X. That's fine as long as Z isn't also waiting on you.`,
+      ``,
+      `Collaborate — don't try to do every role's job yourself.`,
+      isEntry
+        ? `You are an entry point — you receive the initial task from the user.`
+        : `You will receive tasks from peer agents via send_message. Stand by until addressed.`,
+    ].join('\n')
+
+    const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
+    const resumeSdkSessionId = persisted.roleSessionMap[roleId]
+    const mcp = createOrchestratorMcp(localId)
+
+    await startSession(
+      {
+        localId,
+        projectPath: persisted.projectPath,
+        ...(persisted.worktreePath ? { worktreePath: persisted.worktreePath } : {}),
+        initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
+        systemPromptAppend,
+        ...(role.model ? { model: role.model } : {}),
+        ...(role.effort ? { effort: role.effort } : {}),
+        ...(role.allowedTools && role.allowedTools.length
+          ? { allowedTools: role.allowedTools }
+          : {}),
+        agencyInstanceId: instanceId,
+        roleId,
+        roleName: role.name,
+        agencyName: agency.name,
+        ...(resumeSdkSessionId ? { resumeSdkSessionId } : {}),
+      },
+      { mcpServer: mcp },
+    )
+
+    runtime.sessionByRole.set(roleId, localId)
+    runtime.roleBySessionId.set(localId, roleId)
+    sessionToInstance.set(localId, instanceId)
+
+    sessionsMeta.push({ localId, roleId, roleName: role.name, isEntryPoint: isEntry })
+  }
+
+  registry.updateAgency(instanceId, { lastActivityAt: Date.now() })
+
+  return {
+    instanceId,
+    agencyId: agency.id,
+    agencyName: agency.name,
+    projectPath: persisted.projectPath,
+    worktreePath: persisted.worktreePath,
+    branch: persisted.branch,
     sessions: sessionsMeta,
   }
 }

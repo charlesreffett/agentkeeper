@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { shortModel } from '@/lib/format'
+import type { TranscriptEvent } from '@shared/ipc-contract'
 
 const props = defineProps<{
   liveId: string
@@ -15,6 +16,8 @@ const props = defineProps<{
 const store = useSessionStore()
 const session = computed(() => store.getSession(props.liveId))
 const scroller = ref<HTMLElement | null>(null)
+const historicalEvents = ref<TranscriptEvent[]>([])
+const isResumed = computed(() => !!session.value?.resumedFromSdkSessionId)
 
 const isAtBottom = ref(true)
 const hasNewMessages = ref(false)
@@ -73,6 +76,21 @@ watch(
   },
   { immediate: true },
 )
+
+onMounted(async () => {
+  const s = session.value
+  if (s?.resumedFromSdkSessionId) {
+    try {
+      const transcript = await window.orchestral.sessions.read(
+        s.projectPath,
+        s.resumedFromSdkSessionId,
+      )
+      if (transcript) historicalEvents.value = transcript.events
+    } catch {
+      // non-fatal — live events still work
+    }
+  }
+})
 
 function onSend(text: string) {
   void store.send(props.liveId, text)
@@ -198,6 +216,15 @@ const statusDotClass = computed(() => {
           >
             {{ session.error }}
           </div>
+        </div>
+        <Transcript v-if="isResumed && historicalEvents.length" :events="historicalEvents" />
+        <div
+          v-if="isResumed"
+          class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none"
+        >
+          <span class="flex-1 border-t border-border" />
+          <span>— Resumed —</span>
+          <span class="flex-1 border-t border-border" />
         </div>
         <Transcript :events="session.events" />
       </div>

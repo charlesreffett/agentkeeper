@@ -16,6 +16,7 @@ import type {
 import { AsyncQueue } from './async-queue'
 import { secrets, SECRET_KEYS } from './secrets'
 import type { WorkItemRegistryFull } from './plugins'
+import * as registry from './session-registry'
 
 export interface ActiveSession {
   id: string
@@ -28,6 +29,9 @@ export interface ActiveSession {
   abortController: AbortController
   status: LiveSessionStatus
   startedAt: number
+  initialPrompt: string
+  roleName: string | null
+  agencyName: string | null
   /** Agency membership (null if freestanding). */
   agencyInstanceId: string | null
   roleId: string | null
@@ -119,6 +123,32 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             status: session.status,
             sdkSessionId: anyMsg.session_id,
           })
+          const branch = session.worktreePath
+            ? path.basename(session.worktreePath)
+            : null
+          registry.registerSession({
+            localId: session.id,
+            sdkSessionId: anyMsg.session_id,
+            projectPath: session.projectPath,
+            worktreePath: session.worktreePath ?? null,
+            branch,
+            model: session.model ?? null,
+            effort: null,
+            initialPrompt: session.initialPrompt,
+            roleName: session.roleName,
+            roleId: session.roleId,
+            agencyInstanceId: session.agencyInstanceId,
+            agencyName: session.agencyName,
+            startedAt: session.startedAt,
+            lastActivityAt: Date.now(),
+            status: session.status,
+          })
+          if (session.agencyInstanceId && session.roleId) {
+            registry.updateAgency(session.agencyInstanceId, {
+              roleSessionMap: { [session.roleId]: anyMsg.session_id },
+              lastActivityAt: Date.now(),
+            })
+          }
         }
       }
 
@@ -146,6 +176,10 @@ async function consumeStream(session: ActiveSession): Promise<void> {
     console.error(`[agent] session ${session.id} stream error:`, err)
     setStatus(session, 'error', message)
   } finally {
+    registry.updateSession(session.id, {
+      status: session.status,
+      lastActivityAt: Date.now(),
+    })
     active.delete(session.id)
   }
 }
@@ -188,7 +222,10 @@ export async function startSession(
   const id = params.localId ?? randomUUID()
   const controller = new AbortController()
   const input = new AsyncQueue<SDKUserMessage>()
-  input.push(messageFromText(params.initialPrompt))
+  const isResume = !!params.resumeSdkSessionId
+  if (!isResume) {
+    input.push(messageFromText(params.initialPrompt))
+  }
 
   const childEnv: Record<string, string | undefined> = {
     ...process.env,
@@ -204,6 +241,7 @@ export async function startSession(
     cwd,
     ...(params.model ? { model: params.model } : {}),
     ...(params.effort ? { effort: params.effort } : {}),
+    ...(params.resumeSdkSessionId ? { resume: params.resumeSdkSessionId } : {}),
     abortController: controller,
     env: childEnv,
     permissionMode: 'bypassPermissions',
@@ -236,6 +274,9 @@ export async function startSession(
     abortController: controller,
     status: 'starting',
     startedAt: Date.now(),
+    initialPrompt: params.initialPrompt,
+    roleName: params.roleName ?? null,
+    agencyName: params.agencyName ?? null,
     agencyInstanceId: params.agencyInstanceId ?? null,
     roleId: params.roleId ?? null,
     workItemId: params.workItemId ?? null,
@@ -244,8 +285,13 @@ export async function startSession(
   }
 
   active.set(id, session)
-  broadcastStatus({ sessionId: id, status: 'starting' })
-  setStatus(session, 'running')
+  if (isResume) {
+    broadcastStatus({ sessionId: id, status: 'starting' })
+    setStatus(session, 'idle')
+  } else {
+    broadcastStatus({ sessionId: id, status: 'starting' })
+    setStatus(session, 'running')
+  }
 
   void consumeStream(session)
 
@@ -304,6 +350,23 @@ export function waitForNextIdle(
     return Promise.resolve(s.status)
   }
   return new Promise((resolve) => s.idleWaiters.push(resolve))
+}
+
+export async function resumeSession(localId: string): Promise<string> {
+  const persisted = registry.getSession(localId)
+  if (!persisted) throw new Error(`No persisted session found for id "${localId}"`)
+  return startSession({
+    projectPath: persisted.projectPath,
+    worktreePath: persisted.worktreePath ?? undefined,
+    initialPrompt: persisted.initialPrompt,
+    model: persisted.model ?? undefined,
+    effort: (persisted.effort as import('../shared/ipc-contract').RoleEffort) ?? undefined,
+    agencyInstanceId: persisted.agencyInstanceId ?? undefined,
+    roleId: persisted.roleId ?? undefined,
+    roleName: persisted.roleName ?? undefined,
+    agencyName: persisted.agencyName ?? undefined,
+    resumeSdkSessionId: persisted.sdkSessionId,
+  })
 }
 
 export function listActiveSessions(): Array<{

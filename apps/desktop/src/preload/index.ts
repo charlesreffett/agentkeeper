@@ -12,6 +12,8 @@ import {
   type MergeMethod,
   type OrchestralApi,
   type PRFilters,
+  type PersistedAgency,
+  type PersistedSession,
   type ResetRequest,
   type ReviewEvent,
   type RoleDraft,
@@ -118,6 +120,10 @@ const api: OrchestralApi = {
     onEvent: (cb) => onChannel<LiveSessionEvent>(IPC_CHANNELS.sessionEvent, cb),
     onStatus: (cb) =>
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
+    listPersisted: (projectPath: string) =>
+      invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<PersistedSession[]>,
+    resume: (localId: string) =>
+      invoke(IPC_CHANNELS.sessionsResume, localId) as Promise<string>,
   },
   worktrees: {
     list: (projectPath: string) =>
@@ -144,6 +150,10 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id) as Promise<void>,
     start: (params: StartAgencyParams) =>
       invoke(IPC_CHANNELS.agenciesStart, params) as Promise<never>,
+    listPersisted: (projectPath: string) =>
+      invoke(IPC_CHANNELS.agenciesListPersisted, projectPath) as Promise<PersistedAgency[]>,
+    resume: (instanceId: string) =>
+      invoke(IPC_CHANNELS.agenciesResume, instanceId) as Promise<never>,
   },
   skills: {
     list: (projectPath: string) =>

@@ -111,6 +111,38 @@ export type LiveSessionStatus =
   | 'cancelled'
   | 'error'
 
+export interface PersistedSession {
+  localId: string
+  sdkSessionId: string
+  projectPath: string
+  worktreePath: string | null
+  branch: string | null
+  model: string | null
+  effort: string | null
+  initialPrompt: string
+  roleName: string | null
+  roleId: string | null
+  agencyInstanceId: string | null
+  agencyName: string | null
+  startedAt: number
+  lastActivityAt: number
+  status: LiveSessionStatus
+}
+
+export interface PersistedAgency {
+  instanceId: string
+  agencyId: string
+  agencyScope: AgencyScope
+  agencyName: string
+  projectPath: string
+  worktreePath: string | null
+  branch: string | null
+  startedAt: number
+  lastActivityAt: number
+  /** roleId → sdkSessionId, populated as sessions initialise */
+  roleSessionMap: Record<string, string>
+}
+
 export interface StartSessionParams {
   /**
    * Caller-supplied id so the renderer can add the session to its store
@@ -136,6 +168,13 @@ export interface StartSessionParams {
   roleId?: string
   /** Work item to attach as context for the session. */
   workItemId?: string
+  /** Resume an existing SDK session by its session_id. When set, the session
+   *  starts in 'idle' and no initial prompt is pushed to the queue. */
+  resumeSdkSessionId?: string
+  /** Role display name — persisted so the registry can show it without a role lookup. */
+  roleName?: string
+  /** Agency display name — persisted for the same reason. */
+  agencyName?: string
 }
 
 // ─── Worktrees ──────────────────────────────────────────────────────────────
@@ -324,6 +363,8 @@ export interface OrchestralApi {
     onStatus: (
       callback: (update: LiveSessionStatusUpdate) => void,
     ) => () => void
+    listPersisted: (projectPath: string) => Promise<PersistedSession[]>
+    resume: (localId: string) => Promise<string>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -352,6 +393,8 @@ export interface OrchestralApi {
       id: string,
     ) => Promise<void>
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
+    listPersisted: (projectPath: string) => Promise<PersistedAgency[]>
+    resume: (instanceId: string) => Promise<AgencyInstance>
   }
   skills: {
     list: (projectPath: string) => Promise<Skill[]>
@@ -472,4 +515,8 @@ export const IPC_CHANNELS = {
   githubSubmitReview: 'github:prs:review',
   githubMergePR: 'github:prs:merge',
   githubCreatePR: 'github:prs:create',
+  sessionsListPersisted: 'sessions:listPersisted',
+  sessionsResume: 'sessions:resume',
+  agenciesListPersisted: 'agencies:listPersisted',
+  agenciesResume: 'agencies:resume',
 } as const

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, toRaw } from 'vue'
 import type {
   LiveSessionStatus,
+  PersistedSession,
   StartSessionParams,
   TranscriptEvent,
 } from '@shared/ipc-contract'
@@ -29,6 +30,9 @@ export interface LiveSession {
   error: string | null
   startedAt: number
   lastActivityAt: number
+  /** Set when this session was created via resume — the historical transcript
+   *  is loaded from this sdkSessionId's JSONL and shown above live events. */
+  resumedFromSdkSessionId: string | null
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
@@ -125,6 +129,7 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
+      resumedFromSdkSessionId: null,
     }
     currentLiveId.value = localId
 
@@ -206,12 +211,42 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
+      resumedFromSdkSessionId: null,
     }
     flushBuffer(entry.localId)
   }
 
   function clearFocus(): void {
     currentLiveId.value = null
+  }
+
+  async function resume(persisted: PersistedSession): Promise<string> {
+    const newId = await window.orchestral.sessions.resume(persisted.localId)
+    // Register immediately so LiveSessionView can find it. Any broadcasts that
+    // arrived before this (buffered) are flushed here.
+    if (!sessions[newId]) {
+      sessions[newId] = {
+        localId: newId,
+        sdkSessionId: null,
+        projectPath: persisted.projectPath,
+        worktreePath: persisted.worktreePath,
+        branch: persisted.branch,
+        roleName: persisted.roleName,
+        agencyInstanceId: persisted.agencyInstanceId,
+        agencyName: persisted.agencyName,
+        initialPrompt: persisted.initialPrompt,
+        model: persisted.model,
+        status: 'idle',
+        events: [],
+        error: null,
+        startedAt: Date.now(),
+        lastActivityAt: Date.now(),
+        resumedFromSdkSessionId: persisted.sdkSessionId,
+      }
+      flushBuffer(newId)
+    }
+    currentLiveId.value = newId
+    return newId
   }
 
   // ─── IPC subscriptions — set up once ───────────────────────────────────
@@ -256,5 +291,6 @@ export const useSessionStore = defineStore('sessions', () => {
     focus,
     clearFocus,
     registerExternal,
+    resume,
   }
 })
