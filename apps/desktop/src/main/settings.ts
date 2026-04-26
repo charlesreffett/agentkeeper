@@ -11,6 +11,7 @@ const DEFAULTS: AppSettings = {
   defaultEffort: 'medium',
   enterToSend: false,
   sendModifier: 'auto' as const,
+  sessionExpiryDays: 14,
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']

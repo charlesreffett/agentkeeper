@@ -556,7 +556,13 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  // Session registry — persisted sessions + resume
+  // Session registry — persisted sessions + resume + delete + touch
+  // Prune expired entries once at startup using the current setting.
+  {
+    const { sessionExpiryDays } = settingsStore.get()
+    sessionRegistry.pruneExpired(sessionExpiryDays)
+  }
+
   ipcMain.handle(
     IPC_CHANNELS.sessionsListPersisted,
     (_event, projectPath: string) => sessionRegistry.listSessions(projectPath),
@@ -573,6 +579,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     },
   )
   ipcMain.handle(
+    IPC_CHANNELS.sessionsDeletePersisted,
+    (_event, localId: string) => {
+      sessionRegistry.deleteSession(localId)
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsTouchPersisted,
+    (_event, localId: string) => {
+      sessionRegistry.touchSession(localId)
+    },
+  )
+  ipcMain.handle(
     IPC_CHANNELS.agenciesListPersisted,
     (_event, projectPath: string) => sessionRegistry.listAgencies(projectPath),
   )
@@ -585,6 +603,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         console.error('[ipc] agencies:resume failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesDeletePersisted,
+    (_event, instanceId: string) => {
+      sessionRegistry.deleteAgency(instanceId)
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesTouchPersisted,
+    (_event, instanceId: string) => {
+      sessionRegistry.touchAgency(instanceId)
     },
   )
 

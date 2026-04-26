@@ -310,6 +310,8 @@ export interface AppSettings {
   enterToSend: boolean
   /** Which modifier triggers send. 'auto' = platform default (meta on Mac, ctrl elsewhere). */
   sendModifier: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
+  /** Days of inactivity before a persisted session is auto-pruned. null = never expire. */
+  sessionExpiryDays: number | null
 }
 
 export type SecretKeyName = 'anthropicApiKey'
@@ -365,6 +367,8 @@ export interface OrchestralApi {
     ) => () => void
     listPersisted: (projectPath: string) => Promise<PersistedSession[]>
     resume: (localId: string) => Promise<string>
+    deletePersisted: (localId: string) => Promise<void>
+    touchPersisted: (localId: string) => Promise<void>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -395,6 +399,8 @@ export interface OrchestralApi {
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
     listPersisted: (projectPath: string) => Promise<PersistedAgency[]>
     resume: (instanceId: string) => Promise<AgencyInstance>
+    deletePersisted: (instanceId: string) => Promise<void>
+    touchPersisted: (instanceId: string) => Promise<void>
   }
   skills: {
     list: (projectPath: string) => Promise<Skill[]>
@@ -517,6 +523,10 @@ export const IPC_CHANNELS = {
   githubCreatePR: 'github:prs:create',
   sessionsListPersisted: 'sessions:listPersisted',
   sessionsResume: 'sessions:resume',
+  sessionsDeletePersisted: 'sessions:deletePersisted',
+  sessionsTouchPersisted: 'sessions:touchPersisted',
   agenciesListPersisted: 'agencies:listPersisted',
   agenciesResume: 'agencies:resume',
+  agenciesDeletePersisted: 'agencies:deletePersisted',
+  agenciesTouchPersisted: 'agencies:touchPersisted',
 } as const

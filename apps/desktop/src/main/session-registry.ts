@@ -68,9 +68,20 @@ function save(): void {
   fs.renameSync(tmp, p)
 }
 
+const SESSION_CAP = 50
+
 export function registerSession(session: PersistedSession): void {
   const reg = load()
   reg.sessions[session.localId] = session
+  // Cap standalone sessions (agencyInstanceId === null) at 50 per project.
+  const standalone = Object.values(reg.sessions).filter(
+    (s) => s.projectPath === session.projectPath && s.agencyInstanceId === null,
+  )
+  if (standalone.length > SESSION_CAP) {
+    standalone.sort((a, b) => a.lastActivityAt - b.lastActivityAt)
+    const toDelete = standalone.slice(0, standalone.length - SESSION_CAP)
+    for (const s of toDelete) delete reg.sessions[s.localId]
+  }
   save()
 }
 
@@ -96,6 +107,21 @@ export function listSessions(projectPath: string): PersistedSession[] {
 export function registerAgency(agency: PersistedAgency): void {
   const reg = load()
   reg.agencies[agency.instanceId] = agency
+  // Cap agencies at 50 per project.
+  const forProject = Object.values(reg.agencies).filter(
+    (a) => a.projectPath === agency.projectPath,
+  )
+  if (forProject.length > SESSION_CAP) {
+    forProject.sort((a, b) => a.lastActivityAt - b.lastActivityAt)
+    const toDelete = forProject.slice(0, forProject.length - SESSION_CAP)
+    for (const a of toDelete) {
+      // Remove member sessions along with the agency.
+      for (const s of Object.values(reg.sessions)) {
+        if (s.agencyInstanceId === a.instanceId) delete reg.sessions[s.localId]
+      }
+      delete reg.agencies[a.instanceId]
+    }
+  }
   save()
 }
 
@@ -125,4 +151,58 @@ export function listAgencies(projectPath: string): PersistedAgency[] {
   return Object.values(reg.agencies)
     .filter((a) => a.projectPath === projectPath)
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+}
+
+export function deleteSession(localId: string): void {
+  const reg = load()
+  delete reg.sessions[localId]
+  save()
+}
+
+export function deleteAgency(instanceId: string): void {
+  const reg = load()
+  for (const s of Object.values(reg.sessions)) {
+    if (s.agencyInstanceId === instanceId) delete reg.sessions[s.localId]
+  }
+  delete reg.agencies[instanceId]
+  save()
+}
+
+export function touchSession(localId: string): void {
+  const reg = load()
+  const s = reg.sessions[localId]
+  if (!s) return
+  s.lastActivityAt = Date.now()
+  save()
+}
+
+export function touchAgency(instanceId: string): void {
+  const reg = load()
+  const a = reg.agencies[instanceId]
+  if (!a) return
+  a.lastActivityAt = Date.now()
+  save()
+}
+
+/**
+ * Delete sessions and agencies for all projects where
+ * lastActivityAt < (Date.now() - thresholdDays * 86_400_000).
+ * When an agency is pruned its member sessions are removed too.
+ */
+export function pruneExpired(thresholdDays: number | null): void {
+  if (thresholdDays === null) return
+  const reg = load()
+  const cutoff = Date.now() - thresholdDays * 86_400_000
+  for (const a of Object.values(reg.agencies)) {
+    if (a.lastActivityAt < cutoff) {
+      for (const s of Object.values(reg.sessions)) {
+        if (s.agencyInstanceId === a.instanceId) delete reg.sessions[s.localId]
+      }
+      delete reg.agencies[a.instanceId]
+    }
+  }
+  for (const s of Object.values(reg.sessions)) {
+    if (s.lastActivityAt < cutoff) delete reg.sessions[s.localId]
+  }
+  save()
 }

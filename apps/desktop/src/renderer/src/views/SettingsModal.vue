@@ -124,6 +124,7 @@ async function save() {
         defaultEffort: settings.value.defaultEffort,
         enterToSend: settings.value.enterToSend,
         sendModifier: settings.value.sendModifier,
+        sessionExpiryDays: settings.value.sessionExpiryDays,
       })
     }
     message.value = 'Saved.'
@@ -329,8 +330,8 @@ onMounted(() => {
             @focus="capturing = true"
             @blur="capturing = false"
           >
-            <span v-if="capturing" class="text-muted-foreground italic">Press a modifier key…</span>
-            <span v-else>{{ modifierLabel }}</span>
+            <span>{{ modifierLabel }}</span>
+            <span v-if="capturing" class="text-muted-foreground italic ml-2">— press to change</span>
           </div>
           <p class="text-[11px] text-muted-foreground">
             Press ⌘, Ctrl, Alt, or ⇧ Shift to set. Press Esc to reset to system default.
@@ -368,6 +369,31 @@ onMounted(() => {
           />
         </div>
         <p v-if="newRepoError" class="text-xs text-amber-600 dark:text-amber-400">{{ newRepoError }}</p>
+      </div>
+
+      <div v-if="settings" class="space-y-2">
+        <label class="text-sm font-medium">Session history</label>
+        <p class="text-xs text-muted-foreground">
+          Persisted sessions older than this threshold are removed at startup.
+        </p>
+        <select
+          :value="settings.sessionExpiryDays === null ? 'never' : String(settings.sessionExpiryDays)"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          @change="
+            (e) => {
+              const v = (e.target as HTMLSelectElement).value
+              settings!.sessionExpiryDays = v === 'never' ? null : Number(v)
+            }
+          "
+        >
+          <option value="1">1 day</option>
+          <option value="3">3 days</option>
+          <option value="7">7 days</option>
+          <option value="14">14 days (default)</option>
+          <option value="21">21 days</option>
+          <option value="30">30 days</option>
+          <option value="never">Never</option>
+        </select>
       </div>
 
       <div

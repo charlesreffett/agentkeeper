@@ -45,6 +45,7 @@ const settings = ref<AppSettings>({
   defaultEffort: 'medium',
   enterToSend: false,
   sendModifier: 'auto',
+  sessionExpiryDays: 14,
 })
 
 async function refreshConfig() {

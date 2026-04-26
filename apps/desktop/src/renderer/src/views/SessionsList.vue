@@ -31,11 +31,18 @@ const error = ref<string | null>(null)
 const persistedSessions = ref<PersistedSession[]>([])
 const persistedAgencies = ref<PersistedAgency[]>([])
 const resumingId = ref<string | null>(null)
+const expiryDays = ref<number | null>(14)
 
 // Persisted standalone sessions (not part of an agency)
 const standalonePersistedSessions = computed(() =>
   persistedSessions.value.filter((s) => !s.agencyInstanceId),
 )
+
+function daysRemaining(lastActivityAt: number, days: number | null): number | null {
+  if (days === null) return null
+  const expiresAt = lastActivityAt + days * 86_400_000
+  return Math.ceil((expiresAt - Date.now()) / 86_400_000)
+}
 
 async function load() {
   loading.value = true
@@ -52,12 +59,14 @@ async function load() {
 
 async function loadPersisted() {
   try {
-    const [sessions, agencies] = await Promise.all([
+    const [sessions, agencies, settings] = await Promise.all([
       window.orchestral.sessions.listPersisted(props.projectPath),
       window.orchestral.agencies.listPersisted(props.projectPath),
+      window.orchestral.settings.get(),
     ])
     persistedSessions.value = sessions
     persistedAgencies.value = agencies
+    expiryDays.value = settings.sessionExpiryDays
   } catch {
     // non-fatal
   }
@@ -77,7 +86,6 @@ async function resumeSession(persisted: PersistedSession) {
   resumingId.value = persisted.localId
   try {
     const newId = await store.resume(persisted)
-    // Focus the new live session
     store.focus(newId)
     emit('selectLive', store.getSession(newId)!)
   } catch {
@@ -92,7 +100,6 @@ async function resumeAgency(persisted: PersistedAgency) {
   resumingId.value = persisted.instanceId
   try {
     const instance = await window.orchestral.agencies.resume(persisted.instanceId)
-    // Register all sessions in the store
     for (const s of instance.sessions) {
       const persistedRole = persistedSessions.value.find(
         (p) => p.agencyInstanceId === persisted.instanceId && p.roleId === s.roleId,
@@ -117,6 +124,26 @@ async function resumeAgency(persisted: PersistedAgency) {
   } finally {
     resumingId.value = null
   }
+}
+
+async function dismissSession(localId: string) {
+  persistedSessions.value = persistedSessions.value.filter((s) => s.localId !== localId)
+  await window.orchestral.sessions.deletePersisted(localId)
+}
+
+async function touchSession(localId: string) {
+  await window.orchestral.sessions.touchPersisted(localId)
+  await loadPersisted()
+}
+
+async function dismissAgency(instanceId: string) {
+  persistedAgencies.value = persistedAgencies.value.filter((a) => a.instanceId !== instanceId)
+  await window.orchestral.agencies.deletePersisted(instanceId)
+}
+
+async function touchAgency(instanceId: string) {
+  await window.orchestral.agencies.touchPersisted(instanceId)
+  await loadPersisted()
 }
 
 function liveFirstMessage(s: LiveSession): string {
@@ -294,14 +321,37 @@ function liveStatusDot(s: LiveSession): string {
                 <span v-if="s.roleName">· {{ s.roleName }}</span>
                 <span v-if="shortModel(s.model)">· <span class="font-mono">{{ shortModel(s.model) }}</span></span>
               </div>
+              <div
+                v-if="daysRemaining(s.lastActivityAt, expiryDays) !== null && daysRemaining(s.lastActivityAt, expiryDays)! <= 3"
+                class="mt-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
+              >
+                Expires in {{ daysRemaining(s.lastActivityAt, expiryDays) }} day{{ daysRemaining(s.lastActivityAt, expiryDays) === 1 ? '' : 's' }}
+              </div>
             </div>
-            <button
-              class="shrink-0 text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
-              :disabled="resumingId === s.localId"
-              @click="resumeSession(s)"
-            >
-              {{ resumingId === s.localId ? '…' : 'Resume' }}
-            </button>
+            <div class="flex items-center gap-1 shrink-0">
+              <button
+                v-if="daysRemaining(s.lastActivityAt, expiryDays) !== null && daysRemaining(s.lastActivityAt, expiryDays)! <= 3"
+                class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
+                title="Reset expiry"
+                @click.stop="touchSession(s.localId)"
+              >
+                Keep
+              </button>
+              <button
+                class="text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
+                :disabled="resumingId === s.localId"
+                @click="resumeSession(s)"
+              >
+                {{ resumingId === s.localId ? '…' : 'Resume' }}
+              </button>
+              <button
+                class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"
+                title="Remove"
+                @click.stop="dismissSession(s.localId)"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </li>
         <!-- Agencies -->
@@ -320,14 +370,37 @@ function liveStatusDot(s: LiveSession): string {
                 <span>{{ formatRelativeTime(a.lastActivityAt) }}</span>
                 <span v-if="a.branch">· <span class="font-mono">⎇ {{ a.branch }}</span></span>
               </div>
+              <div
+                v-if="daysRemaining(a.lastActivityAt, expiryDays) !== null && daysRemaining(a.lastActivityAt, expiryDays)! <= 3"
+                class="mt-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
+              >
+                Expires in {{ daysRemaining(a.lastActivityAt, expiryDays) }} day{{ daysRemaining(a.lastActivityAt, expiryDays) === 1 ? '' : 's' }}
+              </div>
             </div>
-            <button
-              class="shrink-0 text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
-              :disabled="resumingId === a.instanceId"
-              @click="resumeAgency(a)"
-            >
-              {{ resumingId === a.instanceId ? '…' : 'Resume' }}
-            </button>
+            <div class="flex items-center gap-1 shrink-0">
+              <button
+                v-if="daysRemaining(a.lastActivityAt, expiryDays) !== null && daysRemaining(a.lastActivityAt, expiryDays)! <= 3"
+                class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
+                title="Reset expiry"
+                @click.stop="touchAgency(a.instanceId)"
+              >
+                Keep
+              </button>
+              <button
+                class="text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
+                :disabled="resumingId === a.instanceId"
+                @click="resumeAgency(a)"
+              >
+                {{ resumingId === a.instanceId ? '…' : 'Resume' }}
+              </button>
+              <button
+                class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"
+                title="Remove"
+                @click.stop="dismissAgency(a.instanceId)"
+              >
+                ×
+              </button>
+            </div>
           </div>
         </li>
       </ul>

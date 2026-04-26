@@ -124,6 +124,10 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<PersistedSession[]>,
     resume: (localId: string) =>
       invoke(IPC_CHANNELS.sessionsResume, localId) as Promise<string>,
+    deletePersisted: (localId: string) =>
+      invoke(IPC_CHANNELS.sessionsDeletePersisted, localId) as Promise<void>,
+    touchPersisted: (localId: string) =>
+      invoke(IPC_CHANNELS.sessionsTouchPersisted, localId) as Promise<void>,
   },
   worktrees: {
     list: (projectPath: string) =>
@@ -154,6 +158,10 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.agenciesListPersisted, projectPath) as Promise<PersistedAgency[]>,
     resume: (instanceId: string) =>
       invoke(IPC_CHANNELS.agenciesResume, instanceId) as Promise<never>,
+    deletePersisted: (instanceId: string) =>
+      invoke(IPC_CHANNELS.agenciesDeletePersisted, instanceId) as Promise<void>,
+    touchPersisted: (instanceId: string) =>
+      invoke(IPC_CHANNELS.agenciesTouchPersisted, instanceId) as Promise<void>,
   },
   skills: {
     list: (projectPath: string) =>
