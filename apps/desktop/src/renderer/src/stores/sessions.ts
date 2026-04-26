@@ -36,7 +36,9 @@ export interface LiveSession {
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
-  return { ...toRaw(p) }
+  // JSON round-trip strips Vue reactive Proxies at any depth (e.g. allowedTools
+  // being a reactive array accessed through a role proxy).
+  return JSON.parse(JSON.stringify(toRaw(p))) as StartSessionParams
 }
 
 function cryptoRandomId(): string {

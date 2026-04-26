@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, toRaw, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import ProjectPicker from '@/components/ProjectPicker.vue'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
@@ -142,7 +142,7 @@ function start() {
     effort: effort.value,
     useWorktree: useWorktree.value,
     branch: branch.value.trim(),
-    role: selectedRole.value,
+    role: selectedRole.value ? { ...toRaw(selectedRole.value) } : null,
   })
 }
 
