@@ -1,11 +1,9 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { RecentProject } from '../shared/ipc-contract'
+import { detectRemoteSources } from './git'
 
-const execFileAsync = promisify(execFile)
 const MAX_RECENT = 20
 
 interface StoreData {
@@ -47,17 +45,8 @@ function write(data: StoreData) {
 }
 
 export async function detectGithubRepo(projectPath: string): Promise<string | null> {
-  try {
-    const { stdout } = await execFileAsync('git', ['-C', projectPath, 'remote', 'get-url', 'origin'])
-    const url = stdout.trim()
-    const sshMatch = /git@github\.com:([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url)
-    if (sshMatch) return sshMatch[1]!
-    const httpsMatch = /https:\/\/github\.com\/([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url)
-    if (httpsMatch) return httpsMatch[1]!
-    return null
-  } catch {
-    return null
-  }
+  const sources = await detectRemoteSources(projectPath)
+  return sources.find((s) => s.type === 'github')?.repo ?? null
 }
 
 export const recentProjectsStore = {

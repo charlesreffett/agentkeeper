@@ -30,16 +30,31 @@ async function load() {
   }
 }
 
+async function autoDetectRepos(projectPath: string) {
+  const sources = await window.orchestral.remotes.detect(projectPath)
+  const ghRepos = sources.filter((s) => s.type === 'github').map((s) => s.repo)
+  if (ghRepos.length > 0) {
+    await window.orchestral.github.setConfig({ repos: ghRepos })
+    repos.value = ghRepos
+  }
+}
+
 onMounted(async () => {
   const cfg = await window.orchestral.github.getConfig()
   repos.value = cfg.repos ?? []
+  if (repos.value.length === 0 && projectsStore.focusedProject?.path) {
+    await autoDetectRepos(projectsStore.focusedProject.path)
+  }
 })
 
 watch(
   () => projectsStore.focusedProject,
-  (proj) => {
+  async (proj) => {
     if (proj?.repo) repoFilter.value = proj.repo
     else repoFilter.value = ''
+    if (repos.value.length === 0 && proj?.path) {
+      await autoDetectRepos(proj.path)
+    }
     void load()
   },
   { immediate: true },
@@ -137,9 +152,9 @@ function openSettingsModal() {
       v-else-if="repos.length === 0"
       class="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground text-sm"
     >
-      <span>No repos configured.</span>
+      <span>No GitHub repos detected.</span>
       <button class="text-xs underline hover:text-foreground transition-colors" @click="openSettingsModal">
-        Add one in Settings
+        Configure in Settings
       </button>
     </div>
 

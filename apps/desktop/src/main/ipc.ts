@@ -28,6 +28,7 @@ import {
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
+import { detectRemoteSources } from './git'
 import { listSessions, readSession } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
@@ -491,6 +492,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
+  )
+
+  // Remote sources
+  ipcMain.handle(IPC_CHANNELS.remotesDetect, (_event, projectPath: string) =>
+    detectRemoteSources(projectPath),
   )
 
   // GitHub — config + PR channels

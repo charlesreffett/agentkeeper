@@ -34,6 +34,18 @@ export type {
   ReviewEvent,
 }
 
+// ─── Remote sources ─────────────────────────────────────────────────────────
+
+export interface RemoteSource {
+  type: 'github' | 'gitlab' | 'bitbucket'
+  owner: string
+  /** owner/repo slug */
+  repo: string
+  /** git remote name, e.g. "origin" */
+  remote: string
+  url: string
+}
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 
 export interface RecentProject {
@@ -460,6 +472,9 @@ export interface OrchestralApi {
     transition: (id: string, name: string) => Promise<void>
     create: (params: WorkItemCreateParams) => Promise<WorkItem>
   }
+  remotes: {
+    detect: (projectPath: string) => Promise<RemoteSource[]>
+  }
   github: {
     getConfig: () => Promise<GitHubConfig>
     setConfig: (config: GitHubConfig) => Promise<void>
@@ -539,6 +554,7 @@ export const IPC_CHANNELS = {
   githubSubmitReview: 'github:prs:review',
   githubMergePR: 'github:prs:merge',
   githubCreatePR: 'github:prs:create',
+  remotesDetect: 'remotes:detect',
   sessionsListPersisted: 'sessions:listPersisted',
   sessionsResume: 'sessions:resume',
   sessionsDeletePersisted: 'sessions:deletePersisted',

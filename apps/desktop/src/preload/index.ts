@@ -14,6 +14,7 @@ import {
   type PRFilters,
   type PersistedAgency,
   type PersistedSession,
+  type RemoteSource,
   type ResetRequest,
   type ReviewEvent,
   type RoleDraft,
@@ -259,6 +260,10 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.workItemsTransition, id, name) as Promise<void>,
     create: (params: WorkItemCreateParams) =>
       invoke(IPC_CHANNELS.workItemsCreate, params) as Promise<never>,
+  },
+  remotes: {
+    detect: (projectPath: string) =>
+      invoke(IPC_CHANNELS.remotesDetect, projectPath) as Promise<RemoteSource[]>,
   },
   github: {
     getConfig: () =>
