@@ -187,7 +187,7 @@ watch(
               </button>
               <button
                 v-if="props.isRunning"
-                class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                class="rounded p-1 text-destructive hover:text-destructive/80 hover:bg-destructive/10 transition-colors"
                 title="Stop"
                 @mousedown.prevent
                 @click="emit('stop')"
