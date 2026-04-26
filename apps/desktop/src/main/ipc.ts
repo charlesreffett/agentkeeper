@@ -165,7 +165,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionInput,
     async (_event, sessionId: string, text: string) => {
       try {
-        sendInput(sessionId, text)
+        await sendInput(sessionId, text)
       } catch (err) {
         console.error('[ipc] session:input failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))

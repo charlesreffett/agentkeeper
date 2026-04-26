@@ -34,6 +34,7 @@ function statusTone(s: LiveSession) {
     case 'starting':
       return 'bg-emerald-500 animate-pulse'
     case 'idle':
+    case 'suspended':
       return 'bg-amber-500'
     case 'completed':
     case 'terminated':
@@ -50,6 +51,7 @@ function statusLabel(s: LiveSession) {
     case 'running':
       return 'Working'
     case 'idle':
+    case 'suspended':
       return 'Idle'
     case 'completed':
       return 'Completed'

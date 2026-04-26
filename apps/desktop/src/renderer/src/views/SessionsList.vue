@@ -157,6 +157,7 @@ function liveStatusLabel(s: LiveSession): string {
     case 'running':
       return 'Working'
     case 'idle':
+    case 'suspended':
       return 'Idle'
     case 'completed':
       return 'Completed'
@@ -173,6 +174,7 @@ function liveStatusDot(s: LiveSession): string {
     case 'starting':
       return 'bg-emerald-500 animate-pulse'
     case 'idle':
+    case 'suspended':
       return 'bg-amber-500'
     case 'completed':
     case 'terminated':

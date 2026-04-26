@@ -38,7 +38,7 @@ export interface ActiveSession {
   workItemId: string | null
   /** Full SDK message history for orchestrator routing. */
   events: SDKMessage[]
-  /** Resolvers awaiting next terminal status (idle/completed/error/terminated). */
+  /** Resolvers awaiting next terminal status (idle/suspended/completed/error/terminated). */
   idleWaiters: Array<(status: LiveSessionStatus) => void>
 }
 
@@ -92,6 +92,7 @@ function broadcastStatus(update: LiveSessionStatusUpdate): void {
 
 const TERMINAL_STATUSES: LiveSessionStatus[] = [
   'idle',
+  'suspended',
   'completed',
   'terminated',
   'error',
@@ -155,21 +156,25 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       broadcastEvent({ sessionId: session.id, message: msg })
 
       if (msg.type === 'result') {
-        setStatus(session, 'idle')
+        setStatus(session, 'suspended')
+        try { session.input.close() } catch { /* ignore */ }
+        break
       }
     }
-    setStatus(session, 'completed')
-    if (session.workItemId && workItemRegistry) {
-      const branch = session.worktreePath
-        ? path.basename(session.worktreePath)
-        : path.basename(session.projectPath)
-      const ts = new Date().toISOString()
-      workItemRegistry
-        .addComment(
-          session.workItemId,
-          `🤖 Session completed\n\nBranch: \`${branch}\`\nFinished: ${ts}`,
-        )
-        .catch(() => {})
+    if (session.status !== 'suspended') {
+      setStatus(session, 'completed')
+      if (session.workItemId && workItemRegistry) {
+        const branch = session.worktreePath
+          ? path.basename(session.worktreePath)
+          : path.basename(session.projectPath)
+        const ts = new Date().toISOString()
+        workItemRegistry
+          .addComment(
+            session.workItemId,
+            `🤖 Session completed\n\nBranch: \`${branch}\`\nFinished: ${ts}`,
+          )
+          .catch(() => {})
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -298,9 +303,26 @@ export async function startSession(
   return id
 }
 
-export function sendInput(sessionId: string, text: string): void {
-  const s = active.get(sessionId)
-  if (!s) throw new Error(`session ${sessionId} not found or not active`)
+export async function sendInput(sessionId: string, text: string): Promise<void> {
+  let s = active.get(sessionId)
+  if (!s) {
+    const persisted = registry.getSession(sessionId)
+    if (!persisted?.sdkSessionId) throw new Error(`session ${sessionId} not found`)
+    await startSession({
+      localId: sessionId,
+      projectPath: persisted.projectPath,
+      worktreePath: persisted.worktreePath ?? undefined,
+      initialPrompt: persisted.initialPrompt,
+      model: persisted.model ?? undefined,
+      effort: (persisted.effort as import('../shared/ipc-contract').RoleEffort) ?? undefined,
+      resumeSdkSessionId: persisted.sdkSessionId,
+      roleName: persisted.roleName ?? undefined,
+      agencyName: persisted.agencyName ?? undefined,
+      agencyInstanceId: persisted.agencyInstanceId ?? undefined,
+      roleId: persisted.roleId ?? undefined,
+    })
+    s = active.get(sessionId)!
+  }
   s.input.push(messageFromText(text))
   setStatus(s, 'running')
 }

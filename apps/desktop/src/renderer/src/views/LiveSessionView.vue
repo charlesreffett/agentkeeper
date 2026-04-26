@@ -124,7 +124,10 @@ function onDismiss() {
 }
 
 const canSend = computed(
-  () => session.value?.status === 'idle' || session.value?.status === 'running',
+  () =>
+    session.value?.status === 'idle' ||
+    session.value?.status === 'running' ||
+    session.value?.status === 'suspended',
 )
 
 const isTerminal = computed(
@@ -141,6 +144,7 @@ const statusLabel = computed(() => {
     case 'running':
       return 'Working…'
     case 'idle':
+    case 'suspended':
       return 'Ready for input'
     case 'completed':
       return 'Completed'
@@ -159,6 +163,7 @@ const statusDotClass = computed(() => {
     case 'starting':
       return 'bg-emerald-500 animate-pulse'
     case 'idle':
+    case 'suspended':
       return 'bg-amber-500'
     case 'completed':
     case 'terminated':

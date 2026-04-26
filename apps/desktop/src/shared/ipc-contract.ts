@@ -107,6 +107,7 @@ export type LiveSessionStatus =
   | 'starting'
   | 'running'
   | 'idle'
+  | 'suspended'
   | 'completed'
   | 'terminated'
   | 'error'
