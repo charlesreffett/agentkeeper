@@ -22,6 +22,36 @@ const form = ref<{ id: string; scope: 'project' | 'global'; body: string }>({
 })
 const isNew = ref(false)
 
+const generatePrompt = ref('')
+const generating = ref(false)
+
+function toSlug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)
+}
+
+async function generateCommand() {
+  const p = generatePrompt.value.trim()
+  if (!p) {
+    message.value = 'Describe the command first.'
+    return
+  }
+  generating.value = true
+  message.value = null
+  try {
+    const body = await window.orchestral.commands.generate(p)
+    form.value.body = body
+    // Auto-suggest ID from H1 only if user hasn't typed one yet
+    if (!form.value.id) {
+      const h1Match = body.match(/^#\s+(.+)$/m)
+      if (h1Match) form.value.id = toSlug(h1Match[1]!)
+    }
+  } catch (e) {
+    message.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    generating.value = false
+  }
+}
+
 async function refresh() {
   loading.value = true
   message.value = null
@@ -40,6 +70,8 @@ function beginNew() {
   isNew.value = true
   editing.value = true
   form.value = { id: '', scope: 'project', body: '' }
+  generatePrompt.value = ''
+  message.value = null
 }
 
 function beginEdit(cmd: SlashCommand) {
@@ -200,6 +232,27 @@ watch(
                   <option value="project">Project</option>
                   <option value="global">Global</option>
                 </select>
+              </div>
+            </div>
+
+            <div v-if="isNew" class="space-y-1.5 border border-border rounded-md p-3 bg-muted/20">
+              <label class="text-xs font-medium">Generate with AI</label>
+              <div class="flex gap-2">
+                <textarea
+                  v-model="generatePrompt"
+                  rows="2"
+                  placeholder="Describe what this command should do…"
+                  :disabled="generating || saving"
+                  class="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring resize-none"
+                />
+                <Button
+                  size="sm"
+                  :disabled="generating || saving"
+                  class="self-end"
+                  @click="generateCommand"
+                >
+                  {{ generating ? 'Generating…' : 'Generate' }}
+                </Button>
               </div>
             </div>
 

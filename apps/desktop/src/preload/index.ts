@@ -188,8 +188,19 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.skillsPreview, projectPath, source) as Promise<
         SkillPreview[]
       >,
+    generate: (prompt: string): Promise<string> =>
+      invoke(IPC_CHANNELS.skillsGenerate, prompt) as Promise<string>,
+    save: (
+      projectPath: string,
+      id: string,
+      scope: 'project' | 'global',
+      content: string,
+    ): Promise<Skill> =>
+      invoke(IPC_CHANNELS.skillsSave, projectPath, id, scope, content) as Promise<Skill>,
   },
   commands: {
+    generate: (prompt: string) =>
+      invoke(IPC_CHANNELS.commandsGenerate, prompt) as Promise<string>,
     list: (projectPath: string) =>
       invoke(IPC_CHANNELS.commandsList, projectPath) as Promise<never>,
     save: (

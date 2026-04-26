@@ -414,9 +414,17 @@ export interface OrchestralApi {
     ) => Promise<void>
     remove: (skill: Skill) => Promise<void>
     preview: (projectPath: string, source: string) => Promise<SkillPreview[]>
+    generate: (prompt: string) => Promise<string>
+    save: (
+      projectPath: string,
+      id: string,
+      scope: 'project' | 'global',
+      content: string,
+    ) => Promise<Skill>
   }
   commands: {
     list: (projectPath: string) => Promise<SlashCommand[]>
+    generate: (prompt: string) => Promise<string>
     save: (
       scope: 'project' | 'global',
       projectPath: string,
@@ -497,7 +505,10 @@ export const IPC_CHANNELS = {
   skillsInstall: 'skills:install',
   skillsRemove: 'skills:remove',
   skillsPreview: 'skills:preview',
+  skillsGenerate: 'skills:generate',
+  skillsSave: 'skills:save',
   commandsList: 'commands:list',
+  commandsGenerate: 'commands:generate',
   commandsSave: 'commands:save',
   commandsRemove: 'commands:remove',
   settingsGet: 'settings:get',

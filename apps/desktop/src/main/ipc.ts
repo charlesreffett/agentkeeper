@@ -38,8 +38,8 @@ import { deleteAgency, listAgencies, saveAgency } from './agencies'
 import { resumeAgency, startAgency } from './orchestrator'
 import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
-import { installSkill, listSkills, previewSkills, removeSkill } from './skills'
-import { listCommands, removeCommand, saveCommand } from './commands'
+import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
+import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import type {
   AgencyDraft,
   AgencyScope,
@@ -376,6 +376,28 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+  ipcMain.handle(
+    IPC_CHANNELS.skillsGenerate,
+    async (_event, prompt: string) => {
+      try {
+        return await generateSkillContent(prompt)
+      } catch (err) {
+        console.error('[ipc] skills:generate failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.skillsSave,
+    async (_event, projectPath: string, id: string, scope: 'project' | 'global', content: string) => {
+      try {
+        return await saveSkill(projectPath, id, scope, content)
+      } catch (err) {
+        console.error('[ipc] skills:save failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
 
   // Commands
   ipcMain.handle(
@@ -385,6 +407,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         return await listCommands(projectPath)
       } catch (err) {
         console.error('[ipc] commands:list failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.commandsGenerate,
+    async (_event, prompt: string) => {
+      try {
+        return await generateCommandContent(prompt)
+      } catch (err) {
+        console.error('[ipc] commands:generate failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

@@ -1,7 +1,11 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import Anthropic from '@anthropic-ai/sdk'
 import type { SlashCommand } from '../shared/ipc-contract'
+import { secrets, SECRET_KEYS } from './secrets'
 
 const PROJECT_COMMANDS_DIR = '.claude/commands'
 const GLOBAL_COMMANDS_DIR = '.claude/commands'
@@ -89,5 +93,65 @@ export async function removeCommand(cmd: SlashCommand): Promise<void> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
     if (code !== 'ENOENT') throw err
+  }
+}
+
+const execFileAsync = promisify(execFile)
+
+const COMMAND_GENERATION_SYSTEM = `You generate Claude Code slash command files. Output ONLY the markdown body starting with the H1 heading. No explanation, no code fences, no prose before or after.
+
+Format:
+# Command Title
+
+Description of what this command does and when to use it.
+
+## Instructions
+
+Step-by-step instructions for Claude to follow when this command is invoked.
+Use $ARGUMENTS anywhere the user's input after the slash command should be substituted.
+
+Rules:
+- Start with exactly one H1 heading (becomes the display name)
+- Use $ARGUMENTS where the user's typed input belongs
+- Be specific and actionable
+- Output plain markdown only`
+
+function validateGeneratedCommand(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('#')) {
+    throw new Error('Generation returned unexpected format — try rephrasing the prompt.')
+  }
+  return trimmed
+}
+
+export async function generateCommandContent(prompt: string): Promise<string> {
+  const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
+  const userContent = `Create a Claude Code slash command that does the following: ${prompt}`
+
+  if (apiKey) {
+    const client = new Anthropic({ apiKey })
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      system: COMMAND_GENERATION_SYSTEM,
+      messages: [{ role: 'user', content: userContent }],
+    })
+    const text = response.content.find((b) => b.type === 'text')?.text ?? ''
+    return validateGeneratedCommand(text)
+  }
+
+  // Pro/Max plan path — picks up `claude login` credentials
+  const fullPrompt = `${COMMAND_GENERATION_SYSTEM}\n\n${userContent}`
+  try {
+    const result = await execFileAsync('claude', ['-p', fullPrompt], {
+      cwd: os.homedir(),
+      timeout: 60_000,
+      maxBuffer: 2 * 1024 * 1024,
+    })
+    return validateGeneratedCommand(result.stdout)
+  } catch (err) {
+    throw new Error(
+      err instanceof Error ? err.message : 'claude CLI failed — check your login.',
+    )
   }
 }
