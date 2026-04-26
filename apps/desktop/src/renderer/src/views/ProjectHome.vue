@@ -257,14 +257,6 @@ onMounted(refreshConfig)
       :open="agenciesOpen"
       :project-path="project.path"
       @close="agenciesOpen = false"
-      @started="
-        (_instanceId, entrySessionId) => {
-          if (entrySessionId) {
-            selectedHistoricalId = null
-            sessionStore.focus(entrySessionId)
-          }
-        }
-      "
     />
 
     <SkillsModal

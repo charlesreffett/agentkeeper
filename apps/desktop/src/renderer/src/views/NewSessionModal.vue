@@ -3,10 +3,12 @@ import { computed, nextTick, onMounted, ref, toRaw, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import ProjectPicker from '@/components/ProjectPicker.vue'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
+import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import {
   ROLE_EFFORT_VALUES,
+  type Agency,
   type RecentProject,
   type Role,
   type RoleEffort,
@@ -35,6 +37,7 @@ const emit = defineEmits<{
 }>()
 
 const projectsStore = useProjectsStore()
+const sessionsStore = useSessionStore()
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const prompt = ref('')
@@ -50,6 +53,18 @@ const effortTouched = ref(false)
 
 const roles = ref<Role[]>([])
 const selectedRoleId = ref<string>('')
+
+const agencies = ref<Agency[]>([])
+const selectedAgencyKey = ref<string>('')
+
+const selectedAgency = computed<Agency | null>(() =>
+  selectedAgencyKey.value
+    ? (agencies.value.find((a) => `${a.scope}:${a.id}` === selectedAgencyKey.value) ?? null)
+    : null,
+)
+
+const starting = ref(false)
+const startError = ref<string | null>(null)
 
 const selectedProject = ref<RecentProject | null>(null)
 const pickerOpen = ref(false)
@@ -90,8 +105,22 @@ async function loadRoles() {
   }
 }
 
+async function loadAgencies() {
+  const path = selectedProject.value?.path ?? props.projectPath ?? ''
+  if (!path) {
+    agencies.value = []
+    return
+  }
+  try {
+    agencies.value = await window.orchestral.agencies.list(path)
+  } catch {
+    agencies.value = []
+  }
+}
+
 watch(selectedProject, () => {
   void loadRoles()
+  void loadAgencies()
 })
 
 const suggestedBranch = computed(() => {
@@ -133,17 +162,52 @@ const canStart = computed(() => {
   return true
 })
 
-function start() {
+async function start() {
   if (!canStart.value || !selectedProject.value) return
-  emit('start', {
-    projectPath: selectedProject.value.path,
-    initialPrompt: prompt.value.trim(),
-    model: model.value,
-    effort: effort.value,
-    useWorktree: useWorktree.value,
-    branch: branch.value.trim(),
-    role: selectedRole.value ? { ...toRaw(selectedRole.value) } : null,
-  })
+  startError.value = null
+  if (selectedAgency.value) {
+    starting.value = true
+    try {
+      const instance = await window.orchestral.agencies.start({
+        projectPath: selectedProject.value.path,
+        agencyId: selectedAgency.value.id,
+        agencyScope: selectedAgency.value.scope,
+        initialPrompt: prompt.value.trim(),
+        useWorktree: useWorktree.value,
+        ...(useWorktree.value && branch.value.trim() ? { branch: branch.value.trim() } : {}),
+        model: model.value || undefined,
+      })
+      for (const s of instance.sessions) {
+        const role = roles.value.find((r) => r.id === s.roleId)
+        sessionsStore.registerExternal({
+          localId: s.localId,
+          projectPath: instance.projectPath,
+          worktreePath: instance.worktreePath,
+          branch: instance.branch,
+          roleName: s.roleName,
+          agencyInstanceId: instance.instanceId,
+          agencyName: instance.agencyName,
+          initialPrompt: s.isEntryPoint ? prompt.value.trim() : '(awaiting peers)',
+          model: role?.model ?? model.value,
+        })
+      }
+      emit('close')
+    } catch (e) {
+      startError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      starting.value = false
+    }
+  } else {
+    emit('start', {
+      projectPath: selectedProject.value.path,
+      initialPrompt: prompt.value.trim(),
+      model: model.value,
+      effort: effort.value,
+      useWorktree: useWorktree.value,
+      branch: branch.value.trim(),
+      role: selectedRole.value ? { ...toRaw(selectedRole.value) } : null,
+    })
+  }
 }
 
 function onKeyDown(event: KeyboardEvent) {
@@ -157,7 +221,7 @@ function onKeyDown(event: KeyboardEvent) {
         event.preventDefault()
         prompt.value = ac.resolveBody(cmd)
         ac.close()
-        start()
+        void start()
         return
       }
       ac.close()
@@ -165,7 +229,7 @@ function onKeyDown(event: KeyboardEvent) {
   }
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     event.preventDefault()
-    start()
+    void start()
   }
 }
 
@@ -186,8 +250,10 @@ watch(
       effortTouched.value = false
       useWorktree.value = true
       selectedRoleId.value = ''
+      selectedAgencyKey.value = ''
+      startError.value = null
       selectedProject.value = resolveDefaultProject()
-      await loadRoles()
+      await Promise.all([loadRoles(), loadAgencies()])
       await nextTick()
       dialog.value?.showModal()
       textarea.value?.focus()
@@ -201,7 +267,7 @@ onMounted(() => {
   if (props.open) {
     void nextTick(async () => {
       selectedProject.value = resolveDefaultProject()
-      await loadRoles()
+      await Promise.all([loadRoles(), loadAgencies()])
       dialog.value?.showModal()
       textarea.value?.focus()
     })
@@ -248,7 +314,7 @@ onMounted(() => {
             v-if="ac.isOpen.value"
             :suggestions="ac.suggestions.value"
             :selected-index="ac.selectedIndex.value"
-            @select="(cmd) => { prompt = ac.resolveBody(cmd); ac.close(); start() }"
+            @select="(cmd) => { prompt = ac.resolveBody(cmd); ac.close(); void start() }"
             @close="ac.close()"
           />
           <textarea
@@ -289,8 +355,31 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3">
-        <div class="space-y-1.5">
+      <!-- Agency selector -->
+      <div class="space-y-1.5">
+        <label class="text-sm font-medium">
+          Agency
+          <span class="text-muted-foreground font-normal text-xs">(optional)</span>
+        </label>
+        <select
+          v-model="selectedAgencyKey"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+        >
+          <option value="">None — plain session</option>
+          <option
+            v-for="a in agencies"
+            :key="`${a.scope}:${a.id}`"
+            :value="`${a.scope}:${a.id}`"
+          >
+            {{ a.name }}
+            <template v-if="a.scope === 'global'"> (global)</template>
+          </option>
+        </select>
+      </div>
+
+      <!-- Role + Model row -->
+      <div class="grid gap-3" :class="selectedAgency ? 'grid-cols-1' : 'grid-cols-2'">
+        <div v-if="!selectedAgency" class="space-y-1.5">
           <label class="text-sm font-medium">Role</label>
           <select
             v-model="selectedRoleId"
@@ -303,7 +392,9 @@ onMounted(() => {
           </select>
         </div>
         <div class="space-y-1.5">
-          <label class="text-sm font-medium">Model</label>
+          <label class="text-sm font-medium">
+            {{ selectedAgency ? 'Fallback model' : 'Model' }}
+          </label>
           <select
             v-model="model"
             class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
@@ -314,7 +405,7 @@ onMounted(() => {
           </select>
         </div>
       </div>
-      <p v-if="selectedRole?.description" class="text-xs text-muted-foreground pl-1">
+      <p v-if="selectedRole?.description && !selectedAgency" class="text-xs text-muted-foreground pl-1">
         {{ selectedRole.description }}
       </p>
 
@@ -331,15 +422,22 @@ onMounted(() => {
         </select>
       </div>
 
+      <div
+        v-if="startError"
+        class="text-xs rounded-md bg-muted/40 px-3 py-2 text-destructive"
+      >
+        {{ startError }}
+      </div>
+
       <footer class="flex items-center justify-end gap-2 pt-2">
         <Button variant="ghost" size="sm" @click="emit('close')">Cancel</Button>
         <Button
           size="sm"
-          :disabled="!canStart"
+          :disabled="!canStart || starting"
           :title="!selectedProject ? 'Select a project to start a session' : undefined"
-          @click="start"
+          @click="void start()"
         >
-          Start session
+          {{ starting ? 'Starting…' : selectedAgency ? 'Start agency' : 'Start session' }}
         </Button>
       </footer>
     </div>

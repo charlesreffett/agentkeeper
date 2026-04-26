@@ -1,41 +1,28 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import ProjectPicker from '@/components/ProjectPicker.vue'
-import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
-import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
-import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import type {
   Agency,
   AgencyDraft,
   AgencyScope,
-  RecentProject,
   Role,
 } from '@shared/ipc-contract'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
 const emit = defineEmits<{
   close: []
-  started: [instanceId: string, entrySessionId: string | null]
 }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
-const projectsStore = useProjectsStore()
 
 const agencies = ref<Agency[]>([])
 const roles = ref<Role[]>([])
 const loading = ref(false)
 const message = ref<string | null>(null)
 
-type Mode = 'browse' | 'edit' | 'run'
+type Mode = 'browse' | 'edit'
 const mode = ref<Mode>('browse')
 const selectedId = ref<string | null>(null)
-const selected = computed(() =>
-  selectedId.value
-    ? (agencies.value.find((a) => a.id === selectedId.value) ?? null)
-    : null,
-)
 
 // ─── Editor state ──────────────────────────────────────────────────────────
 const form = ref<AgencyDraft & { scope: AgencyScope }>({
@@ -51,23 +38,6 @@ const form = ref<AgencyDraft & { scope: AgencyScope }>({
 const flowFrom = ref('')
 const flowTo = ref('')
 const saving = ref(false)
-
-// ─── Run state ─────────────────────────────────────────────────────────────
-const runInitialPrompt = ref('')
-const runUseWorktree = ref(true)
-const runBranch = ref('')
-const runModel = ref('claude-sonnet-4-6')
-const starting = ref(false)
-const runSelectedProject = ref<RecentProject | null>(null)
-const runPickerOpen = ref(false)
-const runProjectPath = computed(() => runSelectedProject.value?.path ?? props.projectPath)
-const runAc = useCommandAutocomplete(runInitialPrompt, runProjectPath)
-
-const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-] as const
 
 async function refresh() {
   loading.value = true
@@ -114,44 +84,8 @@ function beginEdit(a: Agency) {
   }
 }
 
-function beginRun(a: Agency) {
-  selectedId.value = a.id
-  mode.value = 'run'
-  runInitialPrompt.value = ''
-  runBranch.value = (a.id || 'agency').slice(0, 40)
-  runModel.value = 'claude-sonnet-4-6'
-  runSelectedProject.value = projectsStore.projects.find((p) => p.path === props.projectPath) ?? null
-}
-
 function cancelMode() {
   mode.value = 'browse'
-}
-
-function onRunPickerConfirm(project: RecentProject) {
-  runSelectedProject.value = project
-  runPickerOpen.value = false
-}
-
-function onRunPromptKeyDown(event: KeyboardEvent) {
-  if (runAc.isOpen.value) {
-    if (event.key === 'ArrowUp') { event.preventDefault(); runAc.moveUp(); return }
-    if (event.key === 'ArrowDown') { event.preventDefault(); runAc.moveDown(); return }
-    if (event.key === 'Escape') { event.preventDefault(); runAc.close(); return }
-    if (event.key === 'Enter' && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
-      const cmd = runAc.selectIndex(runAc.selectedIndex.value)
-      if (cmd) {
-        event.preventDefault()
-        runInitialPrompt.value = runAc.resolveBody(cmd)
-        runAc.close()
-        return
-      }
-      runAc.close()
-    }
-  }
-  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-    event.preventDefault()
-    void runAgency()
-  }
 }
 
 function toggleRole(roleId: string) {
@@ -159,7 +93,6 @@ function toggleRole(roleId: string) {
   if (idx === -1) form.value.roles.push(roleId)
   else {
     form.value.roles.splice(idx, 1)
-    // Also drop from entry points and flows
     form.value.entryPoints = form.value.entryPoints.filter((r) => r !== roleId)
     form.value.flows = form.value.flows.filter(
       ([a, b]) => a !== roleId && b !== roleId,
@@ -248,59 +181,6 @@ async function remove(a: Agency) {
   }
 }
 
-async function runAgency() {
-  if (!selected.value) return
-  if (!runInitialPrompt.value.trim()) {
-    message.value = 'Initial prompt is required.'
-    return
-  }
-  if (runUseWorktree.value && !runBranch.value.trim()) {
-    message.value = 'Branch name is required when using a worktree.'
-    return
-  }
-  starting.value = true
-  message.value = null
-  try {
-    const instance = await window.orchestral.agencies.start({
-      projectPath: runProjectPath.value,
-      agencyId: selected.value.id,
-      agencyScope: selected.value.scope,
-      initialPrompt: runInitialPrompt.value.trim(),
-      useWorktree: runUseWorktree.value,
-      ...(runUseWorktree.value && runBranch.value.trim()
-        ? { branch: runBranch.value.trim() }
-        : {}),
-      model: runModel.value,
-    })
-
-    // Register each spawned session in the renderer store so the sidebar
-    // shows them and their live transcripts flow through as events arrive.
-    const store = useSessionStore()
-    let entrySessionId: string | null = null
-    for (const s of instance.sessions) {
-      const role = roles.value.find((r) => r.id === s.roleId)
-      store.registerExternal({
-        localId: s.localId,
-        projectPath: instance.projectPath,
-        worktreePath: instance.worktreePath,
-        branch: instance.branch,
-        roleName: s.roleName,
-        agencyInstanceId: instance.instanceId,
-        agencyName: instance.agencyName,
-        initialPrompt: s.isEntryPoint ? runInitialPrompt.value : '(awaiting peers)',
-        model: role?.model ?? runModel.value,
-      })
-      if (s.isEntryPoint && !entrySessionId) entrySessionId = s.localId
-    }
-    emit('started', instance.instanceId, entrySessionId)
-    cancelMode()
-  } catch (e) {
-    message.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    starting.value = false
-  }
-}
-
 const availableRoleIds = computed(() => roles.value.map((r) => r.id))
 
 function roleName(id: string) {
@@ -361,7 +241,7 @@ watch(
               :key="`${a.scope}:${a.id}`"
               class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
               :class="selectedId === a.id ? 'bg-accent' : ''"
-              @click="beginRun(a)"
+              @click="selectedId = a.id"
             >
               <div class="text-sm font-medium truncate">{{ a.name }}</div>
               <div class="text-xs text-muted-foreground truncate">
@@ -403,7 +283,7 @@ watch(
             class="h-full flex items-center justify-center text-muted-foreground text-sm p-8 text-center"
           >
             <div>
-              <p>Select an agency to run it, or create a new one.</p>
+              <p>Select an agency to edit it, or create a new one.</p>
               <p class="mt-2 text-xs">
                 An agency is a named bundle of roles that collaborate via
                 <code class="font-mono text-foreground">send_message</code>.
@@ -570,141 +450,8 @@ watch(
               </Button>
             </div>
           </div>
-
-          <!-- Run -->
-          <div v-else-if="mode === 'run' && selected" class="p-6 space-y-4">
-            <div>
-              <h3 class="text-base font-medium">Run "{{ selected.name }}"</h3>
-              <p class="text-xs text-muted-foreground">
-                {{ selected.description }}
-              </p>
-            </div>
-
-            <div class="rounded-md border border-border bg-muted/20 p-3 text-xs space-y-1">
-              <div>
-                <span class="text-muted-foreground">Roles: </span>
-                <span class="font-mono">{{ selected.roles.join(', ') }}</span>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Entry points: </span>
-                <span class="font-mono">
-                  {{ selected.entryPoints.join(', ') }}
-                </span>
-              </div>
-              <div v-if="selected.flows.length">
-                <span class="text-muted-foreground">Flows: </span>
-                <span class="font-mono">
-                  {{ selected.flows.map(([a, b]) => `${a}→${b}`).join(', ') }}
-                </span>
-              </div>
-              <div v-else>
-                <span class="text-muted-foreground">Flows: </span>
-                <span class="text-foreground">any-to-any</span>
-              </div>
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="text-sm font-medium">Project</label>
-              <button
-                class="w-full text-left rounded-md border border-input bg-background px-3 py-2 text-sm hover:border-ring transition focus:outline-none focus:border-ring"
-                @click="runPickerOpen = true"
-              >
-                <span v-if="runSelectedProject" class="font-medium">{{ runSelectedProject.name }}</span>
-                <span v-else class="text-muted-foreground">Select a project…</span>
-                <span v-if="runSelectedProject" class="ml-2 text-xs text-muted-foreground font-mono">
-                  {{ runSelectedProject.repo ?? runSelectedProject.path }}
-                </span>
-              </button>
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="text-sm font-medium">Initial prompt</label>
-              <p class="text-xs text-muted-foreground">
-                Sent to
-                <span class="font-mono">{{ selected.entryPoints.join(', ') }}</span>.
-              </p>
-              <div class="relative">
-                <CommandAutocomplete
-                  v-if="runAc.isOpen.value"
-                  :suggestions="runAc.suggestions.value"
-                  :selected-index="runAc.selectedIndex.value"
-                  @select="(cmd) => { runInitialPrompt = runAc.resolveBody(cmd); runAc.close() }"
-                  @close="runAc.close()"
-                />
-                <textarea
-                  v-model="runInitialPrompt"
-                  rows="6"
-                  placeholder="What do you want the team to work on?"
-                  class="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-ring font-sans resize-none"
-                  @keydown="onRunPromptKeyDown"
-                />
-              </div>
-            </div>
-
-            <div class="space-y-3 rounded-md border border-border bg-muted/20 p-3">
-              <label class="flex items-center gap-2 cursor-pointer select-none">
-                <input
-                  v-model="runUseWorktree"
-                  type="checkbox"
-                  class="size-4 rounded border-input"
-                />
-                <span class="text-sm font-medium">
-                  Create a shared git worktree for this run
-                </span>
-              </label>
-              <p class="text-xs text-muted-foreground leading-relaxed pl-6">
-                All member agents share this worktree since they collaborate on
-                one task. Leave off to run in the project root.
-              </p>
-              <div v-if="runUseWorktree" class="space-y-1.5 pl-6">
-                <label class="text-xs text-muted-foreground">Branch name</label>
-                <input
-                  v-model="runBranch"
-                  type="text"
-                  placeholder="feature-xyz"
-                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-                />
-              </div>
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="text-sm font-medium">Fallback model</label>
-              <p class="text-xs text-muted-foreground">
-                Used for roles that don't specify their own model.
-              </p>
-              <select
-                v-model="runModel"
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-              >
-                <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
-                  {{ m.label }}
-                </option>
-              </select>
-            </div>
-
-            <div
-              v-if="message"
-              class="text-xs rounded-md bg-muted/40 px-3 py-2 text-destructive"
-            >
-              {{ message }}
-            </div>
-
-            <div class="flex items-center justify-end gap-2 pt-2">
-              <Button variant="ghost" size="sm" @click="cancelMode">Cancel</Button>
-              <Button size="sm" :disabled="starting" @click="runAgency">
-                {{ starting ? 'Starting…' : 'Start agency' }}
-              </Button>
-            </div>
-          </div>
         </main>
       </div>
     </div>
   </dialog>
-
-  <ProjectPicker
-    :open="runPickerOpen"
-    :preselected="runSelectedProject?.path ?? props.projectPath"
-    @confirm="onRunPickerConfirm"
-    @cancel="runPickerOpen = false"
-  />
 </template>
