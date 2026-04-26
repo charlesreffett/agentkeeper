@@ -11,6 +11,8 @@ import type {
   LiveSessionEvent,
   LiveSessionStatus,
   LiveSessionStatusUpdate,
+  PermissionMode,
+  RoleEffort,
   StartSessionParams,
 } from '../shared/ipc-contract'
 import { AsyncQueue } from './async-queue'
@@ -24,6 +26,8 @@ export interface ActiveSession {
   projectPath: string
   worktreePath: string | undefined
   model: string | undefined
+  effort: RoleEffort | undefined
+  permissionMode: PermissionMode
   query: Query
   input: AsyncQueue<SDKUserMessage>
   abortController: AbortController
@@ -137,7 +141,8 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             worktreePath: session.worktreePath ?? null,
             branch,
             model: session.model ?? null,
-            effort: null,
+            effort: session.effort ?? null,
+            permissionMode: session.permissionMode,
             initialPrompt: session.initialPrompt,
             roleName: session.roleName,
             roleId: session.roleId,
@@ -159,12 +164,16 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       broadcastEvent({ sessionId: session.id, message: msg })
 
       if (msg.type === 'result') {
-        setStatus(session, 'suspended')
+        // Agency members signal 'idle' so routeMessage's waitForNextIdle
+        // resolves and can capture the reply text, then we still close and
+        // break — the subprocess is re-spawned lazily on the next
+        // send_message call rather than held alive between turns.
+        setStatus(session, session.agencyInstanceId ? 'idle' : 'suspended')
         try { session.input.close() } catch { /* ignore */ }
         break
       }
     }
-    if (session.status !== 'suspended') {
+    if (session.status !== 'suspended' && session.status !== 'idle') {
       setStatus(session, 'completed')
       if (session.workItemId && workItemRegistry) {
         const branch = session.worktreePath
@@ -254,7 +263,7 @@ export async function startSession(
     ...(params.resumeSdkSessionId ? { resume: params.resumeSdkSessionId } : {}),
     abortController: controller,
     env: childEnv,
-    permissionMode: 'bypassPermissions',
+    permissionMode: params.permissionMode ?? 'bypassPermissions',
     settingSources: ['user', 'project'],
   }
   if (systemPromptAppend) {
@@ -279,6 +288,8 @@ export async function startSession(
     projectPath: params.projectPath,
     worktreePath: params.worktreePath,
     model: params.model,
+    effort: params.effort,
+    permissionMode: params.permissionMode ?? 'bypassPermissions',
     query: q,
     input,
     abortController: controller,
@@ -320,7 +331,8 @@ export async function sendInput(sessionId: string, text: string): Promise<void> 
       worktreePath: persisted.worktreePath ?? undefined,
       initialPrompt: persisted.initialPrompt,
       model: persisted.model ?? undefined,
-      effort: (persisted.effort as import('../shared/ipc-contract').RoleEffort) ?? undefined,
+      effort: (persisted.effort as RoleEffort) ?? undefined,
+      permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
       resumeSdkSessionId: persisted.sdkSessionId,
       roleName: persisted.roleName ?? undefined,
       agencyName: persisted.agencyName ?? undefined,
@@ -399,13 +411,69 @@ export async function resumeSession(localId: string): Promise<string> {
     worktreePath: persisted.worktreePath ?? undefined,
     initialPrompt: persisted.initialPrompt,
     model: persisted.model ?? undefined,
-    effort: (persisted.effort as import('../shared/ipc-contract').RoleEffort) ?? undefined,
+    effort: (persisted.effort as RoleEffort) ?? undefined,
+    permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
     agencyInstanceId: persisted.agencyInstanceId ?? undefined,
     roleId: persisted.roleId ?? undefined,
     roleName: persisted.roleName ?? undefined,
     agencyName: persisted.agencyName ?? undefined,
     resumeSdkSessionId: persisted.sdkSessionId,
   })
+}
+
+async function restartIdle(
+  localId: string,
+  overrides: { model?: string; effort?: RoleEffort },
+): Promise<void> {
+  const persisted = registry.getSession(localId)
+  if (!persisted) throw new Error(`session ${localId} not found`)
+
+  const s = active.get(localId)
+  const currentStatus = s?.status ?? persisted.status
+  if (currentStatus === 'running' || currentStatus === 'starting') {
+    throw new Error(`cannot change session params while status is ${currentStatus}`)
+  }
+  if (
+    currentStatus === 'terminated' ||
+    currentStatus === 'error' ||
+    currentStatus === 'completed'
+  ) {
+    throw new Error(`cannot change session params on a ${currentStatus} session`)
+  }
+
+  if (s) {
+    try { s.input.close() } catch { /* ignore */ }
+    try { s.abortController.abort() } catch { /* ignore */ }
+    if ('model' in overrides) s.model = overrides.model
+    if ('effort' in overrides) s.effort = overrides.effort
+  }
+
+  const newModel = overrides.model ?? persisted.model ?? undefined
+  const newEffort = (overrides.effort ?? persisted.effort) as RoleEffort | undefined
+  registry.updateSession(localId, { model: newModel ?? null, effort: newEffort ?? null })
+
+  await startSession({
+    localId,
+    projectPath: persisted.projectPath,
+    worktreePath: persisted.worktreePath ?? undefined,
+    initialPrompt: persisted.initialPrompt,
+    model: newModel,
+    effort: newEffort,
+    permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
+    resumeSdkSessionId: persisted.sdkSessionId,
+    roleName: persisted.roleName ?? undefined,
+    agencyName: persisted.agencyName ?? undefined,
+    agencyInstanceId: persisted.agencyInstanceId ?? undefined,
+    roleId: persisted.roleId ?? undefined,
+  })
+}
+
+export async function setModel(localId: string, model: string): Promise<void> {
+  return restartIdle(localId, { model })
+}
+
+export async function setEffort(localId: string, effort: RoleEffort): Promise<void> {
+  return restartIdle(localId, { effort })
 }
 
 export function listActiveSessions(): Array<{

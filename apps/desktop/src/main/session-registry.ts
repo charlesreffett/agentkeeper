@@ -11,6 +11,7 @@ export interface PersistedSession {
   branch: string | null
   model: string | null
   effort: string | null
+  permissionMode: string | null
   initialPrompt: string
   roleName: string | null
   roleId: string | null

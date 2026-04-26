@@ -114,6 +114,8 @@ export interface SessionTranscript {
 
 // ─── Live sessions (Agent SDK–driven) ───────────────────────────────────────
 
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan'
+
 export type LiveSessionStatus =
   | 'starting'
   | 'running'
@@ -131,6 +133,7 @@ export interface PersistedSession {
   branch: string | null
   model: string | null
   effort: string | null
+  permissionMode: PermissionMode | null
   initialPrompt: string
   roleName: string | null
   roleId: string | null
@@ -172,6 +175,7 @@ export interface StartSessionParams {
   initialPrompt: string
   model?: string
   effort?: RoleEffort
+  permissionMode?: PermissionMode
   /** Role-derived options — appended to the default Claude Code preset. */
   systemPromptAppend?: string
   allowedTools?: string[]
@@ -384,6 +388,8 @@ export interface OrchestralApi {
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
     touchPersisted: (localId: string) => Promise<void>
+    setModel: (localId: string, model: string) => Promise<void>
+    setEffort: (localId: string, effort: RoleEffort) => Promise<void>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -558,6 +564,8 @@ export const IPC_CHANNELS = {
   sessionsResume: 'sessions:resume',
   sessionsDeletePersisted: 'sessions:deletePersisted',
   sessionsTouchPersisted: 'sessions:touchPersisted',
+  sessionsSetModel: 'sessions:setModel',
+  sessionsSetEffort: 'sessions:setEffort',
   agenciesListPersisted: 'agencies:listPersisted',
   agenciesResume: 'agencies:resume',
   agenciesDeletePersisted: 'agencies:deletePersisted',

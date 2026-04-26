@@ -18,6 +18,7 @@ import {
   type ResetRequest,
   type ReviewEvent,
   type RoleDraft,
+  type RoleEffort,
   type RoleScope,
   type SecretKeyName,
   type Skill,
@@ -132,6 +133,10 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.sessionsDeletePersisted, localId) as Promise<void>,
     touchPersisted: (localId: string) =>
       invoke(IPC_CHANNELS.sessionsTouchPersisted, localId) as Promise<void>,
+    setModel: (localId: string, model: string) =>
+      invoke(IPC_CHANNELS.sessionsSetModel, localId, model) as Promise<void>,
+    setEffort: (localId: string, effort: RoleEffort) =>
+      invoke(IPC_CHANNELS.sessionsSetEffort, localId, effort) as Promise<void>,
   },
   worktrees: {
     list: (projectPath: string) =>

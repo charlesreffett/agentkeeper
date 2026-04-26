@@ -30,7 +30,7 @@ import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { detectRemoteSources } from './git'
 import { listSessions, readSession } from './sessions'
-import { interruptSession, terminateSession, resumeSession, sendInput, startSession } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
@@ -45,6 +45,7 @@ import type {
   AgencyDraft,
   AgencyScope,
   ResetRequest,
+  RoleEffort,
   RoleDraft,
   RoleScope,
   Skill,
@@ -639,6 +640,28 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionsTouchPersisted,
     (_event, localId: string) => {
       sessionRegistry.touchSession(localId)
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsSetModel,
+    async (_event, localId: string, model: string) => {
+      try {
+        return await setModel(localId, model)
+      } catch (err) {
+        console.error('[ipc] sessions:setModel failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsSetEffort,
+    async (_event, localId: string, effort: RoleEffort) => {
+      try {
+        return await setEffort(localId, effort)
+      } catch (err) {
+        console.error('[ipc] sessions:setEffort failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
     },
   )
   ipcMain.handle(
