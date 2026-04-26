@@ -13,6 +13,8 @@ const props = defineProps<{
   enterToSend?: boolean
   projectPath?: string
   sendModifier?: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
+  roleName?: string | null
+  agencyName?: string | null
 }>()
 
 const emit = defineEmits<{ send: [text: string] }>()
@@ -112,9 +114,23 @@ function onKeyDown(event: KeyboardEvent) {
 
 const sendHint = computed(() =>
   props.enterToSend
-    ? `Enter to send · ${modLabel.value}+Enter for newline`
+    ? `${modLabel.value}+Enter for newline`
     : `${modLabel.value}+Enter to send`,
 )
+
+const projectName = computed(() => {
+  const path = resolvedProjectPath.value
+  const match = projectsStore.projects.find((p) => p.path === path)
+  return match?.name ?? path.split('/').filter(Boolean).pop() ?? ''
+})
+
+const defaultPlaceholder = computed(() => {
+  const parts: string[] = ['Message']
+  if (projectName.value) parts.push(projectName.value)
+  if (props.agencyName) parts.push(props.agencyName)
+  if (props.roleName) parts.push(props.roleName)
+  return parts.join(' · ')
+})
 
 watch(text, () => {
   void nextTick(autosize)
@@ -148,7 +164,7 @@ watch(
           <textarea
             ref="textarea"
             v-model="text"
-            :placeholder="placeholder ?? `Message — ${sendHint}`"
+            :placeholder="placeholder ?? defaultPlaceholder"
             :disabled="disabled"
             rows="1"
             class="w-full resize-none bg-transparent px-3 py-2.5 text-sm leading-relaxed focus:outline-none disabled:opacity-60 font-sans"

@@ -264,6 +264,9 @@ const statusDotClass = computed(() => {
       :disabled="!canSend"
       :enter-to-send="props.enterToSend"
       :send-modifier="props.sendModifier"
+      :project-path="session.projectPath"
+      :role-name="session.roleName"
+      :agency-name="session.agencyName"
       :placeholder="
         session.status === 'starting'
           ? 'Waiting for session to start…'
