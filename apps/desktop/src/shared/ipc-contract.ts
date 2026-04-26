@@ -108,7 +108,7 @@ export type LiveSessionStatus =
   | 'running'
   | 'idle'
   | 'completed'
-  | 'cancelled'
+  | 'terminated'
   | 'error'
 
 export interface PersistedSession {
@@ -360,7 +360,7 @@ export interface OrchestralApi {
     ) => Promise<SessionTranscript | null>
     start: (params: StartSessionParams) => Promise<string>
     sendInput: (sessionId: string, text: string) => Promise<void>
-    cancel: (sessionId: string) => Promise<void>
+    terminate: (sessionId: string) => Promise<void>
     onEvent: (callback: (event: LiveSessionEvent) => void) => () => void
     onStatus: (
       callback: (update: LiveSessionStatusUpdate) => void,
@@ -477,7 +477,7 @@ export const IPC_CHANNELS = {
   sessionsRead: 'sessions:read',
   sessionStart: 'session:start',
   sessionInput: 'session:input',
-  sessionCancel: 'session:cancel',
+  sessionTerminate: 'session:terminate',
   sessionEvent: 'session:event',
   sessionStatus: 'session:status',
   worktreesList: 'worktrees:list',

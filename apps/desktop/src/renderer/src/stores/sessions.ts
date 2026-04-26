@@ -163,11 +163,11 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   }
 
-  async function cancel(id: string): Promise<void> {
+  async function terminate(id: string): Promise<void> {
     const s = sessions[id]
     if (!s) return
     try {
-      await window.orchestral.sessions.cancel(id)
+      await window.orchestral.sessions.terminate(id)
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)
     }
@@ -335,7 +335,7 @@ export const useSessionStore = defineStore('sessions', () => {
     getSession,
     start,
     send,
-    cancel,
+    terminate,
     dismiss,
     focus,
     clearFocus,

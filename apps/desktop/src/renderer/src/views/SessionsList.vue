@@ -160,8 +160,8 @@ function liveStatusLabel(s: LiveSession): string {
       return 'Idle'
     case 'completed':
       return 'Completed'
-    case 'cancelled':
-      return 'Cancelled'
+    case 'terminated':
+      return 'Terminated'
     case 'error':
       return 'Error'
   }
@@ -175,7 +175,7 @@ function liveStatusDot(s: LiveSession): string {
     case 'idle':
       return 'bg-amber-500'
     case 'completed':
-    case 'cancelled':
+    case 'terminated':
       return 'bg-muted-foreground'
     case 'error':
       return 'bg-destructive'

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { Folder } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import { useSessionStore } from '@/stores/sessions'
+import { useProjectsStore } from '@/stores/projects'
 import { shortModel } from '@/lib/format'
 import type { TranscriptEvent } from '@shared/ipc-contract'
 
@@ -14,7 +16,24 @@ const props = defineProps<{
 }>()
 
 const store = useSessionStore()
+const projectsStore = useProjectsStore()
 const session = computed(() => store.getSession(props.liveId))
+
+const sessionProjectName = computed(() => {
+  const path = session.value?.projectPath ?? ''
+  return (
+    projectsStore.projects.find((p) => p.path === path)?.name ??
+    path.split('/').filter(Boolean).pop() ??
+    ''
+  )
+})
+
+const isProjectMismatch = computed(
+  () =>
+    !!session.value &&
+    !!projectsStore.focusedProject &&
+    session.value.projectPath !== projectsStore.focusedProject.path,
+)
 const scroller = ref<HTMLElement | null>(null)
 const historicalEvents = ref<TranscriptEvent[]>([])
 const isResumed = computed(() => !!session.value?.resumedFromSdkSessionId)
@@ -97,7 +116,7 @@ function onSend(text: string) {
 }
 
 async function onEnd() {
-  await store.cancel(props.liveId)
+  await store.terminate(props.liveId)
 }
 
 function onDismiss() {
@@ -111,7 +130,7 @@ const canSend = computed(
 const isTerminal = computed(
   () =>
     session.value?.status === 'completed' ||
-    session.value?.status === 'cancelled' ||
+    session.value?.status === 'terminated' ||
     session.value?.status === 'error',
 )
 
@@ -125,8 +144,8 @@ const statusLabel = computed(() => {
       return 'Ready for input'
     case 'completed':
       return 'Completed'
-    case 'cancelled':
-      return 'Cancelled'
+    case 'terminated':
+      return 'Terminated'
     case 'error':
       return 'Error'
     default:
@@ -142,7 +161,7 @@ const statusDotClass = computed(() => {
     case 'idle':
       return 'bg-amber-500'
     case 'completed':
-    case 'cancelled':
+    case 'terminated':
       return 'bg-muted-foreground'
     case 'error':
       return 'bg-destructive'
@@ -186,11 +205,21 @@ const statusDotClass = computed(() => {
         >
           · ◎ {{ session.agencyName }}
         </span>
-        <span
-          v-if="session.sdkSessionId"
-          class="text-xs text-muted-foreground font-mono ml-auto"
-        >
-          {{ session.sdkSessionId.slice(0, 8) }}
+        <span class="flex items-center gap-2 ml-auto">
+          <span
+            v-if="isProjectMismatch"
+            class="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground"
+            title="This session belongs to a different project than the one currently focused"
+          >
+            <Folder class="size-3 shrink-0" />
+            {{ sessionProjectName }}
+          </span>
+          <span
+            v-if="session.sdkSessionId"
+            class="text-xs text-muted-foreground font-mono"
+          >
+            {{ session.sdkSessionId.slice(0, 8) }}
+          </span>
         </span>
       </div>
       <div class="flex items-center gap-2">

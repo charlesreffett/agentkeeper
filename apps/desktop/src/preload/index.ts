@@ -116,8 +116,8 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.sessionStart, params) as Promise<string>,
     sendInput: (sessionId: string, text: string) =>
       invoke(IPC_CHANNELS.sessionInput, sessionId, text) as Promise<void>,
-    cancel: (sessionId: string) =>
-      invoke(IPC_CHANNELS.sessionCancel, sessionId) as Promise<void>,
+    terminate: (sessionId: string) =>
+      invoke(IPC_CHANNELS.sessionTerminate, sessionId) as Promise<void>,
     onEvent: (cb) => onChannel<LiveSessionEvent>(IPC_CHANNELS.sessionEvent, cb),
     onStatus: (cb) =>
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),

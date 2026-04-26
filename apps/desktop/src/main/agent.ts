@@ -38,7 +38,7 @@ export interface ActiveSession {
   workItemId: string | null
   /** Full SDK message history for orchestrator routing. */
   events: SDKMessage[]
-  /** Resolvers awaiting next terminal status (idle/completed/error/cancelled). */
+  /** Resolvers awaiting next terminal status (idle/completed/error/terminated). */
   idleWaiters: Array<(status: LiveSessionStatus) => void>
 }
 
@@ -93,7 +93,7 @@ function broadcastStatus(update: LiveSessionStatusUpdate): void {
 const TERMINAL_STATUSES: LiveSessionStatus[] = [
   'idle',
   'completed',
-  'cancelled',
+  'terminated',
   'error',
 ]
 
@@ -305,7 +305,7 @@ export function sendInput(sessionId: string, text: string): void {
   setStatus(s, 'running')
 }
 
-export async function cancelSession(sessionId: string): Promise<void> {
+export async function terminateSession(sessionId: string): Promise<void> {
   const s = active.get(sessionId)
   if (!s) return
   try {
@@ -328,7 +328,7 @@ export async function cancelSession(sessionId: string): Promise<void> {
   } catch {
     /* ignore */
   }
-  setStatus(s, 'cancelled')
+  setStatus(s, 'terminated')
   active.delete(sessionId)
 }
 
