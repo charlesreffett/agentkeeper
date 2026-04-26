@@ -27,8 +27,20 @@ export interface WorkItem {
   status: WorkItemStatus
   statusLabel?: string
   assignee?: string
+  reporter?: string
+  priority?: string
+  storyPoints?: number
   issueType?: string
+  parentRef?: string
   links: WorkItemLink[]
+}
+
+export interface WorkItemCreateParams {
+  summary: string
+  description?: string
+  issueType?: string
+  priority?: string
+  parentRef?: string
 }
 
 export interface Role {
@@ -150,6 +162,7 @@ export interface WorkItemSource {
   addComment?(id: string, body: string): Promise<void>
   getTransitions?(id: string): Promise<IssueTransition[]>
   transition?(id: string, name: string): Promise<void>
+  create?(params: WorkItemCreateParams): Promise<WorkItem>
 }
 
 export interface WorkItemRegistry {

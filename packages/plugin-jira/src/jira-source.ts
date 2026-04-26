@@ -1,6 +1,7 @@
-import type { IssueTransition, WorkItem, WorkItemSource, WorkItemStatus } from '@orchestral/sdk'
+import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemSource, WorkItemStatus } from '@orchestral/sdk'
 import {
   addComment as cliAddComment,
+  createIssue,
   getIssue,
   getIssueTransitions,
   listIssues,
@@ -48,6 +49,15 @@ export class JiraWorkItemSource implements WorkItemSource {
 
   async transition(id: string, name: string): Promise<void> {
     await transitionIssue(id, name)
+  }
+
+  async create(params: WorkItemCreateParams): Promise<WorkItem> {
+    const key = this.projectKey
+    if (!key) throw new Error('Set a project key in Jira settings before creating issues.')
+    const raw = await createIssue(key, params)
+    const item = mapToWorkItem(raw)
+    this.cache.push(item)
+    return item
   }
 
   async refresh(): Promise<void> {

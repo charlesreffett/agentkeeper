@@ -10,7 +10,6 @@ import RolesModal from './RolesModal.vue'
 import AgenciesModal from './AgenciesModal.vue'
 import SkillsModal from './SkillsModal.vue'
 import CommandsModal from './CommandsModal.vue'
-import JiraPanel from './JiraPanel.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectStore } from '@/stores/project'
@@ -38,7 +37,6 @@ const rolesOpen = ref(false)
 const agenciesOpen = ref(false)
 const skillsOpen = ref(false)
 const commandsOpen = ref(false)
-const jiraOpen = ref(false)
 
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
@@ -157,7 +155,6 @@ onMounted(refreshConfig)
       <Button variant="ghost" size="sm" @click="rolesOpen = true">Roles</Button>
       <Button variant="ghost" size="sm" @click="skillsOpen = true">Skills</Button>
       <Button variant="ghost" size="sm" @click="commandsOpen = true">Commands</Button>
-      <Button variant="ghost" size="sm" @click="jiraOpen = true">Jira</Button>
       <Button variant="ghost" size="sm" @click="settingsOpen = true">
         Settings
       </Button>
@@ -269,17 +266,5 @@ onMounted(refreshConfig)
       @close="commandsOpen = false"
     />
 
-    <JiraPanel
-      :open="jiraOpen"
-      :project-path="project.path"
-      @close="jiraOpen = false"
-      @session-started="
-        (localId) => {
-          jiraOpen = false
-          selectedHistoricalId = null
-          sessionStore.focus(localId)
-        }
-      "
-    />
   </div>
 </template>

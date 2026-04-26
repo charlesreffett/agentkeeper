@@ -1,8 +1,8 @@
 // Shared between main, preload, and renderer. Pure types/constants only — no
 // runtime imports from Electron or Node.
 
-import type { IssueTransition, WorkItem, WorkItemStatus } from '@orchestral/sdk'
-export type { IssueTransition, WorkItem, WorkItemStatus }
+import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@orchestral/sdk'
+export type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus }
 import type {
   CheckRun,
   CheckState,
@@ -446,6 +446,7 @@ export interface OrchestralApi {
     updateStatus: (id: string, status: WorkItemStatus) => Promise<void>
     getTransitions: (id: string) => Promise<IssueTransition[]>
     transition: (id: string, name: string) => Promise<void>
+    create: (params: WorkItemCreateParams) => Promise<WorkItem>
   }
   github: {
     getConfig: () => Promise<GitHubConfig>
@@ -507,6 +508,7 @@ export const IPC_CHANNELS = {
   workItemsUpdateStatus: 'workItems:updateStatus',
   workItemsGetTransitions: 'workItems:getTransitions',
   workItemsTransition: 'workItems:transition',
+  workItemsCreate: 'workItems:create',
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',

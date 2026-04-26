@@ -11,6 +11,7 @@ import {
   type ReviewEvent,
   type SecretKeyName,
   type StartSessionParams,
+  type WorkItemCreateParams,
   type WorkItemStatus,
 } from '../shared/ipc-contract'
 import {
@@ -661,6 +662,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         return await registry.transition(id, name)
       } catch (err) {
         console.error('[ipc] workItems:transition failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.workItemsCreate,
+    async (_event, params: WorkItemCreateParams) => {
+      try {
+        return await registry.create(params)
+      } catch (err) {
+        console.error('[ipc] workItems:create failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

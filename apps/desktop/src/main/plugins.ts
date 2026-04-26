@@ -18,6 +18,7 @@ import type {
   UIContributions,
   UISlot,
   WorkItem,
+  WorkItemCreateParams,
   WorkItemRegistry,
   WorkItemSource,
   WorkItemStatus,
@@ -32,6 +33,7 @@ export interface WorkItemRegistryFull extends WorkItemRegistry {
   updateStatus(id: string, status: WorkItemStatus): Promise<void>
   getTransitions(id: string): Promise<IssueTransition[]>
   transition(id: string, name: string): Promise<void>
+  create(params: WorkItemCreateParams): Promise<WorkItem>
 }
 
 class WorkItemRegistryImpl implements WorkItemRegistryFull {
@@ -100,6 +102,13 @@ class WorkItemRegistryImpl implements WorkItemRegistryFull {
       }
     }
     throw new Error(`No registered source owns work item '${id}'`)
+  }
+
+  async create(params: WorkItemCreateParams): Promise<WorkItem> {
+    for (const source of this.sources.values()) {
+      if (source.create) return source.create(params)
+    }
+    throw new Error('No registered source supports creating work items.')
   }
 }
 

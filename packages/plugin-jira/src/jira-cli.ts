@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { IssueTransition, WorkItem, WorkItemStatus } from '@orchestral/sdk'
+import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@orchestral/sdk'
 
 const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
   backlog: 'Backlog',
@@ -28,8 +28,13 @@ export interface RawJiraIssue {
       statusCategory?: { name: string }
     }
     assignee?: { displayName: string }
+    reporter?: { displayName: string }
+    priority?: { name: string }
+    story_points?: number
+    customfield_10016?: number
     issuetype?: { name: string; iconUrl?: string }
     issueType?: { name: string; iconUrl?: string }
+    parent?: { key: string; fields?: { summary?: string } }
   }
 }
 
@@ -85,7 +90,11 @@ export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
   const summary = raw.fields?.summary ?? raw.summary ?? raw.key
   const description = raw.fields?.description ?? raw.description ?? ''
   const assignee = raw.fields?.assignee?.displayName ?? raw.assignee?.displayName
+  const reporter = raw.fields?.reporter?.displayName
+  const priority = raw.fields?.priority?.name
+  const storyPoints = raw.fields?.story_points ?? raw.fields?.customfield_10016
   const issueType = raw.fields?.issuetype?.name ?? raw.fields?.issueType?.name ?? raw.issuetype?.name
+  const parentRef = raw.fields?.parent?.key
   return {
     id: raw.key,
     source: 'jira',
@@ -95,9 +104,25 @@ export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
     status: mapStatus(raw.fields?.status ?? raw.status),
     statusLabel: raw.fields?.status?.name ?? raw.status?.name,
     ...(assignee ? { assignee } : {}),
+    ...(reporter ? { reporter } : {}),
+    ...(priority ? { priority } : {}),
+    ...(storyPoints != null ? { storyPoints } : {}),
     ...(issueType ? { issueType } : {}),
+    ...(parentRef ? { parentRef } : {}),
     links: [],
   }
+}
+
+export async function createIssue(
+  projectKey: string,
+  params: WorkItemCreateParams,
+): Promise<RawJiraIssue> {
+  const args = ['issue', 'create', '--project', projectKey, '--summary', params.summary, '--no-input', '--raw']
+  if (params.description) args.push('--description', params.description)
+  if (params.issueType) args.push('--type', params.issueType)
+  if (params.priority) args.push('--priority', params.priority)
+  const { stdout } = await execFileAsync('jira', args)
+  return JSON.parse(stdout.trim()) as RawJiraIssue
 }
 
 export async function listIssues(projectKey?: string): Promise<RawJiraIssue[]> {

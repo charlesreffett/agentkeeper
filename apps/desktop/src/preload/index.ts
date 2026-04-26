@@ -24,6 +24,7 @@ import {
   type SlashCommand,
   type StartAgencyParams,
   type StartSessionParams,
+  type WorkItemCreateParams,
   type WorkItemStatus,
 } from '../shared/ipc-contract'
 
@@ -243,6 +244,8 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.workItemsGetTransitions, id) as Promise<IssueTransition[]>,
     transition: (id: string, name: string) =>
       invoke(IPC_CHANNELS.workItemsTransition, id, name) as Promise<void>,
+    create: (params: WorkItemCreateParams) =>
+      invoke(IPC_CHANNELS.workItemsCreate, params) as Promise<never>,
   },
   github: {
     getConfig: () =>

@@ -9,6 +9,9 @@ import GithubPRsView from '@/views/GithubPRsView.vue'
 import GithubPRConversationsView from '@/views/GithubPRConversationsView.vue'
 import GithubPRChecksView from '@/views/GithubPRChecksView.vue'
 import GithubPRReviewsView from '@/views/GithubPRReviewsView.vue'
+import JiraLayout from '@/views/JiraLayout.vue'
+import JiraBoardView from '@/views/JiraBoardView.vue'
+import JiraIssueView from '@/views/JiraIssueView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -22,6 +25,15 @@ const router = createRouter({
       },
     },
     { path: '/monitor', component: MonitorView },
+    {
+      path: '/jira',
+      component: JiraLayout,
+      children: [
+        { path: '', redirect: '/jira/board' },
+        { path: 'board', component: JiraBoardView },
+        { path: 'issue/:id', component: JiraIssueView },
+      ],
+    },
     {
       path: '/github',
       component: GithubLayout,
