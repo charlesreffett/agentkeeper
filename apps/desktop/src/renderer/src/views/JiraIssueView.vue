@@ -144,7 +144,7 @@ async function planWithClaude() {
   const planningPrompt = `Analyze this Jira ticket and create a detailed implementation plan.
 Ticket: ${cur.externalRef} — ${cur.title}${cur.body ? '\nDescription:\n' + cur.body : ''}
 
-Write the plan as a markdown file to .orchestral/plans/${cur.externalRef}-plan.md (create the directory if needed).
+Write the plan as a markdown file to .claude/plans/${cur.externalRef}-plan.md (create the directory if needed).
 Structure the plan with: Overview, Acceptance Criteria, Technical Approach, Implementation Steps, and Open Questions.`
   try {
     await sessionStore.start({
