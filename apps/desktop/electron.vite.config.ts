@@ -2,9 +2,20 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'node:path'
 
+// Workspace packages ship .ts source (no build step — see their package.json
+// "build": "tsc --emitDeclarationOnly"). They must be bundled into the
+// main/preload output, NOT externalized, otherwise Node tries to import
+// `src/index.ts` at runtime and fails with ERR_UNKNOWN_FILE_EXTENSION.
+const WORKSPACE_PKGS = [
+  '@orchestral/sdk',
+  '@orchestral/core',
+  '@orchestral/plugin-jira',
+  '@orchestral/plugin-github',
+]
+
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PKGS })],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
@@ -12,7 +23,7 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PKGS })],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },
