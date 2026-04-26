@@ -120,13 +120,13 @@ async function onStartSession(params: {
   })
 }
 
-async function onResumeHistorical(sdkSessionId: string, projectPath: string, firstUserMessage: string) {
+async function onResumeHistorical(sdkSessionId: string, projectPath: string, text: string) {
   selectedHistoricalId.value = null
   startError.value = null
   await sessionStore.resumeFromHistory({
     sdkSessionId,
     projectPath,
-    initialPrompt: firstUserMessage || '(continued)',
+    firstMessage: text,
     model: settings.value.defaultModel,
     effort: settings.value.defaultEffort,
   })
@@ -217,7 +217,7 @@ onMounted(refreshConfig)
           v-else-if="selectedHistoricalId"
           :project-path="project.path"
           :session-id="selectedHistoricalId"
-          @resume="onResumeHistorical"
+          @resume-and-send="onResumeHistorical"
         />
         <div
           v-else

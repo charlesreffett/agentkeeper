@@ -255,7 +255,7 @@ export const useSessionStore = defineStore('sessions', () => {
   async function resumeFromHistory(params: {
     sdkSessionId: string
     projectPath: string
-    initialPrompt: string
+    firstMessage: string
     model: string
     effort: RoleEffort
   }): Promise<string> {
@@ -269,7 +269,7 @@ export const useSessionStore = defineStore('sessions', () => {
       roleName: null,
       agencyInstanceId: null,
       agencyName: null,
-      initialPrompt: params.initialPrompt,
+      initialPrompt: params.firstMessage || '(continued)',
       model: params.model,
       status: 'idle',
       events: [],
@@ -285,11 +285,12 @@ export const useSessionStore = defineStore('sessions', () => {
       await window.orchestral.sessions.start({
         localId,
         projectPath: params.projectPath,
-        initialPrompt: params.initialPrompt,
+        initialPrompt: params.firstMessage || '(continued)',
         model: params.model,
         effort: params.effort,
         resumeSdkSessionId: params.sdkSessionId,
       })
+      await window.orchestral.sessions.sendInput(localId, params.firstMessage)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sessions[localId]!.status = 'error'

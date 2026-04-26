@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { SessionTranscript } from '@shared/ipc-contract'
 import Transcript from '@/components/transcript/Transcript.vue'
+import MessageInput from '@/components/MessageInput.vue'
 import { shortModel } from '@/lib/format'
-import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   projectPath: string
@@ -11,20 +11,27 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  resume: [sdkSessionId: string, projectPath: string, firstUserMessage: string]
+  resumeAndSend: [sdkSessionId: string, projectPath: string, text: string]
 }>()
 
 const transcript = ref<SessionTranscript | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-function firstUserMessage(t: SessionTranscript): string {
-  const evt = t.events.find((e) => e.role === 'user' && !e.isMeta)
-  if (!evt) return ''
-  for (const block of evt.content) {
-    if (block.type === 'text') return block.text
+const firstUserMessage = computed(() => {
+  for (const evt of transcript.value?.events ?? []) {
+    if (evt.role === 'user' && !evt.isMeta) {
+      for (const b of evt.content) {
+        if (b.type === 'text') return b.text.split('\n')[0] ?? ''
+      }
+    }
   }
   return ''
+})
+
+function onSend(text: string) {
+  if (!transcript.value) return
+  emit('resumeAndSend', transcript.value.id, transcript.value.projectPath, text)
 }
 
 async function load() {
@@ -89,20 +96,17 @@ watch(
         <span v-if="transcript.gitBranch" class="font-mono">
           {{ transcript.gitBranch }}
         </span>
-        <span v-if="transcript.versions.length" class="font-mono">
+        <span v-if="transcript.versions.length" class="ml-auto font-mono">
           claude {{ transcript.versions[transcript.versions.length - 1] }}
         </span>
-        <Button
-          class="ml-auto"
-          size="sm"
-          @click="emit('resume', transcript.id, transcript.projectPath, firstUserMessage(transcript))"
-        >
-          Resume
-        </Button>
       </div>
       <div class="flex-1 overflow-y-auto">
         <Transcript :events="transcript.events" />
       </div>
+      <MessageInput
+        :project-path="transcript.projectPath"
+        @send="onSend"
+      />
     </div>
   </div>
 </template>
