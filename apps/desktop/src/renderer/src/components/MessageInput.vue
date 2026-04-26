@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, computed } from 'vue'
-import { Square, SquareSlash, SendHorizontal } from 'lucide-vue-next'
+import { OctagonX, SquareSlash, SendHorizontal } from 'lucide-vue-next'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
@@ -192,7 +192,7 @@ watch(
                 @mousedown.prevent
                 @click="emit('stop')"
               >
-                <Square :size="20" />
+                <OctagonX :size="20" />
               </button>
               <button
                 class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
