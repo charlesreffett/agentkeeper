@@ -48,7 +48,15 @@ function blockComponent(block: ContentBlock) {
 
 <template>
   <div
-    v-if="isToolResultOnly"
+    v-if="event.systemSubtype === 'interrupted'"
+    class="flex items-center gap-3 text-xs text-destructive/60 select-none py-1"
+  >
+    <span class="flex-1 border-t border-destructive/20" />
+    <span>Interrupted</span>
+    <span class="flex-1 border-t border-destructive/20" />
+  </div>
+  <div
+    v-else-if="isToolResultOnly"
     class="pl-4 border-l-2 border-border/60 ml-2 space-y-2"
   >
     <component

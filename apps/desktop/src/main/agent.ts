@@ -40,6 +40,7 @@ export interface ActiveSession {
   events: SDKMessage[]
   /** Resolvers awaiting next terminal status (idle/suspended/completed/error/terminated). */
   idleWaiters: Array<(status: LiveSessionStatus) => void>
+  interrupted: boolean
 }
 
 /** Optional extras orchestrator passes to startSession that aren't in the
@@ -110,6 +111,8 @@ function setStatus(s: ActiveSession, status: LiveSessionStatus, error?: string) 
 async function consumeStream(session: ActiveSession): Promise<void> {
   try {
     for await (const msg of session.query) {
+      if (session.interrupted) break
+
       session.events.push(msg)
 
       if (msg.type === 'system') {
@@ -177,9 +180,11 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       }
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    console.error(`[agent] session ${session.id} stream error:`, err)
-    setStatus(session, 'error', message)
+    if (!session.interrupted) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[agent] session ${session.id} stream error:`, err)
+      setStatus(session, 'error', message)
+    }
   } finally {
     registry.updateSession(session.id, {
       status: session.status,
@@ -287,6 +292,7 @@ export async function startSession(
     workItemId: params.workItemId ?? null,
     events: [],
     idleWaiters: [],
+    interrupted: false,
   }
 
   active.set(id, session)
@@ -330,12 +336,12 @@ export async function sendInput(sessionId: string, text: string): Promise<void> 
 export async function interruptSession(sessionId: string): Promise<void> {
   const s = active.get(sessionId)
   if (!s) return
+  s.interrupted = true
+  setStatus(s, 'suspended')
   try { s.input.close() } catch { /* ignore */ }
   try { await s.query.interrupt() } catch { /* ignore */ }
   try { s.abortController.abort() } catch { /* ignore */ }
   try { s.query.close?.() } catch { /* ignore */ }
-  setStatus(s, 'suspended')
-  active.delete(sessionId)
 }
 
 export async function terminateSession(sessionId: string): Promise<void> {

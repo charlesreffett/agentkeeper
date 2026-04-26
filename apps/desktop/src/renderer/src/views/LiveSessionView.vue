@@ -134,6 +134,8 @@ const canSend = computed(
     session.value?.status === 'suspended',
 )
 
+const wasInterrupted = computed(() => !!session.value?.interruptedAt)
+
 const isTerminal = computed(
   () =>
     session.value?.status === 'completed' ||
@@ -311,7 +313,9 @@ const statusDotClass = computed(() => {
           ? 'Waiting for session to start…'
           : isTerminal
             ? 'Session ended'
-            : undefined
+            : wasInterrupted
+              ? 'Send a message to continue, or end the session'
+              : undefined
       "
       @send="onSend"
       @stop="onStop"

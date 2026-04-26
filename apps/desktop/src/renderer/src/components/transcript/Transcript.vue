@@ -10,7 +10,7 @@ const visibleEvents = computed(() =>
     if (e.isMeta) return false
     if (e.kind === 'other') return false
     if (e.kind === 'summary') return false
-    if (e.kind === 'system') return false
+    if (e.kind === 'system' && e.systemSubtype !== 'interrupted') return false
     // 'progress' events are subagent activity — collapse out for V1 simplicity.
     if (e.kind === 'progress') return false
     if (e.content.length === 0) return false

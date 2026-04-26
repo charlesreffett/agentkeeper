@@ -34,6 +34,7 @@ export interface LiveSession {
   /** Set when this session was created via resume — the historical transcript
    *  is loaded from this sdkSessionId's JSONL and shown above live events. */
   resumedFromSdkSessionId: string | null
+  interruptedAt: number | null
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
@@ -133,6 +134,7 @@ export const useSessionStore = defineStore('sessions', () => {
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: null,
+      interruptedAt: null,
     }
     currentLiveId.value = localId
 
@@ -157,6 +159,7 @@ export const useSessionStore = defineStore('sessions', () => {
     if (!s) return
     try {
       await window.orchestral.sessions.sendInput(id, text)
+      s.interruptedAt = null
       s.lastActivityAt = Date.now()
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)
@@ -168,6 +171,20 @@ export const useSessionStore = defineStore('sessions', () => {
     if (!s) return
     try {
       await window.orchestral.sessions.interrupt(id)
+      s.interruptedAt = Date.now()
+      s.events.push({
+        uuid: crypto.randomUUID(),
+        parentUuid: null,
+        timestamp: new Date().toISOString(),
+        kind: 'system',
+        role: 'system',
+        isMeta: false,
+        isSidechain: false,
+        model: null,
+        content: [{ type: 'text', text: 'Interrupted.' }],
+        parentToolUseId: null,
+        systemSubtype: 'interrupted',
+      })
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)
     }
@@ -225,6 +242,7 @@ export const useSessionStore = defineStore('sessions', () => {
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: null,
+      interruptedAt: null,
     }
     flushBuffer(entry.localId)
   }
@@ -255,6 +273,7 @@ export const useSessionStore = defineStore('sessions', () => {
         startedAt: Date.now(),
         lastActivityAt: Date.now(),
         resumedFromSdkSessionId: persisted.sdkSessionId,
+        interruptedAt: null,
       }
       flushBuffer(newId)
     }
@@ -287,6 +306,7 @@ export const useSessionStore = defineStore('sessions', () => {
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: params.sdkSessionId,
+      interruptedAt: null,
     }
     currentLiveId.value = localId
     flushBuffer(localId)
