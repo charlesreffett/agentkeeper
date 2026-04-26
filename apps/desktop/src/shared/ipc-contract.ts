@@ -307,6 +307,8 @@ export interface LiveSessionStatusUpdate {
 export interface AppSettings {
   defaultModel: string
   defaultEffort: RoleEffort
+  /** When true, new sessions default to creating an isolated git worktree. Default false. */
+  defaultUseWorktree: boolean
   /** When true: Enter sends, modifier+Enter inserts a newline. Default false. */
   enterToSend: boolean
   /** Which modifier triggers send. 'auto' = platform default (meta on Mac, ctrl elsewhere). */

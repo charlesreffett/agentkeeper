@@ -9,6 +9,7 @@ import {
 const DEFAULTS: AppSettings = {
   defaultModel: 'claude-sonnet-4-6',
   defaultEffort: 'medium',
+  defaultUseWorktree: false,
   enterToSend: false,
   sendModifier: 'auto' as const,
   sessionExpiryDays: 14,

@@ -41,6 +41,7 @@ const commandsOpen = ref(false)
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
   defaultEffort: 'medium',
+  defaultUseWorktree: false,
   enterToSend: false,
   sendModifier: 'auto',
   sessionExpiryDays: 14,
@@ -235,6 +236,7 @@ onMounted(refreshConfig)
       :project-path="project.path"
       :default-model="settings.defaultModel"
       :default-effort="settings.defaultEffort"
+      :default-use-worktree="settings.defaultUseWorktree"
       @close="newSessionOpen = false"
       @start="onStartSession"
     />

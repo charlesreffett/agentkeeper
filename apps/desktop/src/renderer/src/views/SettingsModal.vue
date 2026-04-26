@@ -122,6 +122,7 @@ async function save() {
       await window.orchestral.settings.set({
         defaultModel: settings.value.defaultModel,
         defaultEffort: settings.value.defaultEffort,
+        defaultUseWorktree: settings.value.defaultUseWorktree,
         enterToSend: settings.value.enterToSend,
         sendModifier: settings.value.sendModifier,
         sessionExpiryDays: settings.value.sessionExpiryDays,
@@ -295,6 +296,32 @@ onMounted(() => {
             {{ e }}
           </option>
         </select>
+      </div>
+
+      <div v-if="settings" class="space-y-2">
+        <label class="text-sm font-medium">Sessions</label>
+        <label class="flex items-start gap-3 cursor-pointer select-none group">
+          <div class="relative mt-0.5 shrink-0">
+            <input
+              v-model="settings.defaultUseWorktree"
+              type="checkbox"
+              class="sr-only peer"
+            />
+            <div
+              class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors"
+            />
+            <div
+              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4"
+            />
+          </div>
+          <div class="text-xs leading-relaxed">
+            <div class="font-medium text-foreground">Use worktree by default</div>
+            <div class="text-muted-foreground">
+              When on: new sessions default to an isolated git worktree.<br />
+              When off (default): sessions run in the project directory.
+            </div>
+          </div>
+        </label>
       </div>
 
       <div v-if="settings" class="space-y-2">

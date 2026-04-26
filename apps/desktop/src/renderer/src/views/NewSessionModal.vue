@@ -19,6 +19,7 @@ const props = defineProps<{
   projectPath?: string
   defaultModel: string
   defaultEffort: RoleEffort
+  defaultUseWorktree: boolean
 }>()
 
 const emit = defineEmits<{
@@ -44,7 +45,7 @@ const prompt = ref('')
 const model = ref(props.defaultModel)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 
-const useWorktree = ref(true)
+const useWorktree = ref(props.defaultUseWorktree)
 const branch = ref('')
 const branchTouched = ref(false)
 
@@ -248,7 +249,7 @@ watch(
       model.value = props.defaultModel
       effort.value = props.defaultEffort
       effortTouched.value = false
-      useWorktree.value = true
+      useWorktree.value = props.defaultUseWorktree
       selectedRoleId.value = ''
       selectedAgencyKey.value = ''
       startError.value = null
