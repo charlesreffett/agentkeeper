@@ -361,6 +361,7 @@ export interface OrchestralApi {
     ) => Promise<SessionTranscript | null>
     start: (params: StartSessionParams) => Promise<string>
     sendInput: (sessionId: string, text: string) => Promise<void>
+    interrupt: (sessionId: string) => Promise<void>
     terminate: (sessionId: string) => Promise<void>
     onEvent: (callback: (event: LiveSessionEvent) => void) => () => void
     onStatus: (
@@ -478,6 +479,7 @@ export const IPC_CHANNELS = {
   sessionsRead: 'sessions:read',
   sessionStart: 'session:start',
   sessionInput: 'session:input',
+  sessionInterrupt: 'session:interrupt',
   sessionTerminate: 'session:terminate',
   sessionEvent: 'session:event',
   sessionStatus: 'session:status',

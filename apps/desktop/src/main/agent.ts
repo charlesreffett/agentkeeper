@@ -327,6 +327,17 @@ export async function sendInput(sessionId: string, text: string): Promise<void> 
   setStatus(s, 'running')
 }
 
+export async function interruptSession(sessionId: string): Promise<void> {
+  const s = active.get(sessionId)
+  if (!s) return
+  try { s.input.close() } catch { /* ignore */ }
+  try { await s.query.interrupt() } catch { /* ignore */ }
+  try { s.abortController.abort() } catch { /* ignore */ }
+  try { s.query.close?.() } catch { /* ignore */ }
+  setStatus(s, 'suspended')
+  active.delete(sessionId)
+}
+
 export async function terminateSession(sessionId: string): Promise<void> {
   const s = active.get(sessionId)
   if (!s) return

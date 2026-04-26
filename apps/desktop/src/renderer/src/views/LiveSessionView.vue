@@ -115,6 +115,10 @@ function onSend(text: string) {
   void store.send(props.liveId, text)
 }
 
+async function onStop() {
+  await store.interrupt(props.liveId)
+}
+
 async function onEnd() {
   await store.terminate(props.liveId)
 }
@@ -295,7 +299,8 @@ const statusDotClass = computed(() => {
     </div>
 
     <MessageInput
-      :disabled="!canSend"
+      :disabled="isTerminal || session.status === 'starting'"
+      :is-running="session.status === 'running'"
       :enter-to-send="props.enterToSend"
       :send-modifier="props.sendModifier"
       :project-path="session.projectPath"
@@ -304,13 +309,12 @@ const statusDotClass = computed(() => {
       :placeholder="
         session.status === 'starting'
           ? 'Waiting for session to start…'
-          : session.status === 'running'
-            ? 'Model is working — message will queue'
-            : isTerminal
-              ? 'Session ended'
-              : undefined
+          : isTerminal
+            ? 'Session ended'
+            : undefined
       "
       @send="onSend"
+      @stop="onStop"
     />
   </div>
   <div v-else class="h-full flex items-center justify-center text-muted-foreground text-sm">

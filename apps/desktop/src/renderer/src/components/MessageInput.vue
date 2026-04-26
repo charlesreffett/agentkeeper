@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, computed } from 'vue'
-import { SquareSlash, SendHorizontal } from 'lucide-vue-next'
+import { Square, SquareSlash, SendHorizontal } from 'lucide-vue-next'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
 
 const props = defineProps<{
   disabled?: boolean
+  isRunning?: boolean
   placeholder?: string
   autofocus?: boolean
   /** When true: Enter sends; modifier+Enter inserts newline. */
@@ -17,7 +18,7 @@ const props = defineProps<{
   agencyName?: string | null
 }>()
 
-const emit = defineEmits<{ send: [text: string] }>()
+const emit = defineEmits<{ send: [text: string]; stop: [] }>()
 
 const text = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
@@ -56,6 +57,7 @@ function autosize() {
 }
 
 async function send() {
+  if (props.isRunning) return
   const v = text.value.trim()
   if (!v || props.disabled) return
   emit('send', v)
@@ -185,6 +187,16 @@ watch(
                 <SquareSlash :size="20" />
               </button>
               <button
+                v-if="props.isRunning"
+                class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                title="Stop"
+                @mousedown.prevent
+                @click="emit('stop')"
+              >
+                <Square :size="20" />
+              </button>
+              <button
+                v-else
                 class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
                 title="Send"
                 :disabled="disabled || !text.trim()"

@@ -29,7 +29,7 @@ import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { listSessions, readSession } from './sessions'
-import { terminateSession, resumeSession, sendInput, startSession } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
@@ -168,6 +168,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         await sendInput(sessionId, text)
       } catch (err) {
         console.error('[ipc] session:input failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionInterrupt,
+    async (_event, sessionId: string) => {
+      try {
+        await interruptSession(sessionId)
+      } catch (err) {
+        console.error('[ipc] session:interrupt failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
