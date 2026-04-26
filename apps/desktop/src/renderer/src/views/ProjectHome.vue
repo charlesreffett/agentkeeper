@@ -16,6 +16,7 @@ import { useProjectStore } from '@/stores/project'
 import type { LiveSession } from '@/stores/sessions'
 import type {
   AppSettings,
+  PermissionMode,
   Role,
   RoleEffort,
   SessionSummary,
@@ -77,6 +78,7 @@ async function onStartSession(params: {
   initialPrompt: string
   model: string
   effort: RoleEffort
+  permissionMode: PermissionMode
   useWorktree: boolean
   branch: string
   role: Role | null
@@ -116,6 +118,7 @@ async function onStartSession(params: {
       ? { allowedTools: params.role.allowedTools }
       : {}),
     effort: params.effort,
+    permissionMode: params.permissionMode,
     initialPrompt: params.initialPrompt,
     model: params.model,
   })

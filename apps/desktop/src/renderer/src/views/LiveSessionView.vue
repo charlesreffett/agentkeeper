@@ -7,7 +7,7 @@ import MessageInput from '@/components/MessageInput.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { shortModel } from '@/lib/format'
-import type { TranscriptEvent } from '@shared/ipc-contract'
+import { ROLE_EFFORT_VALUES, type PermissionMode, type RoleEffort, type TranscriptEvent } from '@shared/ipc-contract'
 
 const props = defineProps<{
   liveId: string
@@ -180,6 +180,33 @@ const statusDotClass = computed(() => {
       return 'bg-muted-foreground'
   }
 })
+
+const MODEL_OPTIONS = [
+  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
+] as const
+
+const PERM_MODE_LABELS: Record<PermissionMode, string> = {
+  bypassPermissions: 'Bypass',
+  acceptEdits: 'Accept Edits',
+  default: 'Default',
+  plan: 'Plan',
+}
+
+const canEditParams = computed(() => session.value?.status === 'idle')
+
+async function changeModel(model: string) {
+  if (!session.value) return
+  await window.orchestral.sessions.setModel(session.value.localId, model)
+  session.value.model = model
+}
+
+async function changeEffort(effort: string) {
+  if (!session.value) return
+  await window.orchestral.sessions.setEffort(session.value.localId, effort as RoleEffort)
+  session.value.effort = effort as RoleEffort
+}
 </script>
 
 <template>
@@ -192,11 +219,31 @@ const statusDotClass = computed(() => {
           <span class="size-1.5 rounded-full" :class="statusDotClass" />
           <span>{{ statusLabel }}</span>
         </span>
-        <span
-          v-if="shortModel(session.model)"
-          class="text-xs text-muted-foreground font-mono"
+        <span class="text-xs text-muted-foreground">·</span>
+        <select
+          :value="session.model ?? MODEL_OPTIONS[0].value"
+          :disabled="!canEditParams"
+          class="text-xs text-muted-foreground font-mono bg-transparent border-none outline-none"
+          :class="isTerminal ? 'pointer-events-none' : canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
+          @change="changeModel(($event.target as HTMLSelectElement).value)"
         >
-          · {{ shortModel(session.model) }}
+          <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+        </select>
+        <span class="text-xs text-muted-foreground">·</span>
+        <select
+          :value="session.effort ?? ROLE_EFFORT_VALUES[2]"
+          :disabled="!canEditParams"
+          class="text-xs text-muted-foreground bg-transparent border-none outline-none"
+          :class="isTerminal ? 'pointer-events-none' : canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
+          @change="changeEffort(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">{{ e }}</option>
+        </select>
+        <span
+          v-if="session.permissionMode"
+          class="text-xs text-muted-foreground"
+        >
+          · {{ PERM_MODE_LABELS[session.permissionMode] ?? session.permissionMode }}
         </span>
         <span
           v-if="session.branch"

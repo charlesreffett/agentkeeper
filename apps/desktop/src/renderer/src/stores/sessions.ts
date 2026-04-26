@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, toRaw } from 'vue'
 import type {
   LiveSessionStatus,
+  PermissionMode,
   PersistedSession,
   RoleEffort,
   StartSessionParams,
@@ -26,6 +27,8 @@ export interface LiveSession {
   agencyName: string | null
   initialPrompt: string
   model: string | null
+  effort: RoleEffort | null
+  permissionMode: PermissionMode | null
   status: LiveSessionStatus
   events: TranscriptEvent[]
   error: string | null
@@ -128,6 +131,8 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyName: null,
       initialPrompt: plain.initialPrompt,
       model: plain.model ?? null,
+      effort: plain.effort ?? null,
+      permissionMode: plain.permissionMode ?? null,
       status: 'starting',
       events: [],
       error: null,
@@ -224,6 +229,8 @@ export const useSessionStore = defineStore('sessions', () => {
     agencyName?: string | null
     initialPrompt: string
     model?: string | null
+    effort?: RoleEffort | null
+    permissionMode?: PermissionMode | null
   }): void {
     sessions[entry.localId] = {
       localId: entry.localId,
@@ -236,6 +243,8 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyName: entry.agencyName ?? null,
       initialPrompt: entry.initialPrompt,
       model: entry.model ?? null,
+      effort: entry.effort ?? null,
+      permissionMode: entry.permissionMode ?? null,
       status: 'starting',
       events: [],
       error: null,
@@ -267,6 +276,8 @@ export const useSessionStore = defineStore('sessions', () => {
         agencyName: persisted.agencyName,
         initialPrompt: persisted.initialPrompt,
         model: persisted.model,
+        effort: persisted.effort as RoleEffort | null,
+        permissionMode: persisted.permissionMode,
         status: 'idle',
         events: [],
         error: null,
@@ -300,6 +311,8 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyName: null,
       initialPrompt: params.firstMessage || '(continued)',
       model: params.model,
+      effort: params.effort,
+      permissionMode: null,
       status: 'idle',
       events: [],
       error: null,

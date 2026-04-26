@@ -9,6 +9,7 @@ import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import {
   ROLE_EFFORT_VALUES,
   type Agency,
+  type PermissionMode,
   type RecentProject,
   type Role,
   type RoleEffort,
@@ -30,6 +31,7 @@ const emit = defineEmits<{
       initialPrompt: string
       model: string
       effort: RoleEffort
+      permissionMode: PermissionMode
       useWorktree: boolean
       branch: string
       role: Role | null
@@ -51,6 +53,8 @@ const branchTouched = ref(false)
 
 const effort = ref<RoleEffort>(props.defaultEffort)
 const effortTouched = ref(false)
+
+const permissionMode = ref<PermissionMode>('bypassPermissions')
 
 const roles = ref<Role[]>([])
 const selectedRoleId = ref<string>('')
@@ -78,6 +82,13 @@ const MODEL_OPTIONS = [
   { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 ] as const
+
+const PERMISSION_MODE_OPTIONS: { value: PermissionMode; label: string }[] = [
+  { value: 'bypassPermissions', label: 'Bypass (auto-approve all)' },
+  { value: 'acceptEdits',       label: 'Accept Edits' },
+  { value: 'default',           label: 'Default (prompt)' },
+  { value: 'plan',              label: 'Plan only (read-only)' },
+]
 
 const selectedRole = computed<Role | null>(() =>
   selectedRoleId.value
@@ -204,6 +215,7 @@ async function start() {
       initialPrompt: prompt.value.trim(),
       model: model.value,
       effort: effort.value,
+      permissionMode: permissionMode.value,
       useWorktree: useWorktree.value,
       branch: branch.value.trim(),
       role: selectedRole.value ? { ...toRaw(selectedRole.value) } : null,
@@ -249,6 +261,7 @@ watch(
       model.value = props.defaultModel
       effort.value = props.defaultEffort
       effortTouched.value = false
+      permissionMode.value = 'bypassPermissions'
       useWorktree.value = props.defaultUseWorktree
       selectedRoleId.value = ''
       selectedAgencyKey.value = ''
@@ -419,6 +432,18 @@ onMounted(() => {
         >
           <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
             {{ e }}
+          </option>
+        </select>
+      </div>
+
+      <div class="space-y-1.5">
+        <label class="text-sm font-medium">Permissions</label>
+        <select
+          v-model="permissionMode"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+        >
+          <option v-for="p in PERMISSION_MODE_OPTIONS" :key="p.value" :value="p.value">
+            {{ p.label }}
           </option>
         </select>
       </div>
