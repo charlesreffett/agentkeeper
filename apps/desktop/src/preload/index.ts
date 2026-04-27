@@ -6,7 +6,10 @@ import {
   type AppSettings,
   type Attachment,
   type CreatePRParams,
+  type FsEntry,
   type GitHubConfig,
+  type CommitSuggestion,
+  type GitStatus,
   type IssueTransition,
   type LiveSessionEvent,
   type LiveSessionStatusUpdate,
@@ -306,6 +309,26 @@ const api: OrchestralApi = {
   },
   dialog: {
     openFiles: () => invoke(IPC_CHANNELS.dialogOpenFiles) as Promise<Attachment[]>,
+  },
+  git: {
+    getBranch: (projectPath: string) =>
+      invoke(IPC_CHANNELS.gitGetBranch, projectPath) as Promise<string | null>,
+    getStatus: (projectPath: string) =>
+      invoke(IPC_CHANNELS.gitGetStatus, projectPath) as Promise<GitStatus>,
+    stageFiles: (projectPath: string, files: string[]) =>
+      invoke(IPC_CHANNELS.gitStageFiles, projectPath, files) as Promise<void>,
+    unstageFiles: (projectPath: string, files: string[]) =>
+      invoke(IPC_CHANNELS.gitUnstageFiles, projectPath, files) as Promise<void>,
+    commit: (projectPath: string, message: string) =>
+      invoke(IPC_CHANNELS.gitCommit, projectPath, message) as Promise<void>,
+    push: (projectPath: string) =>
+      invoke(IPC_CHANNELS.gitPush, projectPath) as Promise<string>,
+    suggestCommits: (projectPath: string) =>
+      invoke(IPC_CHANNELS.gitSuggestCommits, projectPath) as Promise<CommitSuggestion>,
+  },
+  fs: {
+    listDirectory: (dirPath: string) =>
+      invoke(IPC_CHANNELS.fsListDirectory, dirPath) as Promise<FsEntry[]>,
   },
 }
 

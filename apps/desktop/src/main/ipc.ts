@@ -30,7 +30,8 @@ import {
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
-import { detectRemoteSources } from './git'
+import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
+import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
@@ -46,6 +47,7 @@ import { listCommands, removeCommand, saveCommand, generateCommandContent } from
 import type {
   AgencyDraft,
   AgencyScope,
+  FsEntry,
   PermissionMode,
   ResetRequest,
   RoleEffort,
@@ -746,6 +748,56 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       sessionRegistry.touchAgency(instanceId)
     },
   )
+
+  // Git utilities
+  ipcMain.handle(IPC_CHANNELS.gitGetBranch, (_event, projectPath: string) => {
+    return getBranch(projectPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitGetStatus, (_event, projectPath: string) => {
+    return getStatus(projectPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitStageFiles, (_event, projectPath: string, files: string[]) => {
+    return stageFiles(projectPath, files)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitUnstageFiles, (_event, projectPath: string, files: string[]) => {
+    return unstageFiles(projectPath, files)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitCommit, (_event, projectPath: string, message: string) => {
+    return commit(projectPath, message)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitPush, (_event, projectPath: string) => {
+    return push(projectPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitSuggestCommits, (_event, projectPath: string) => {
+    return suggestCommits(projectPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.fsListDirectory, async (_event, dirPath: string) => {
+    const EXCLUDED = new Set(['.git', 'node_modules', '.DS_Store', 'dist', '.next', 'build'])
+    try {
+      const entries = await fs.readdir(dirPath, { withFileTypes: true })
+      const result: FsEntry[] = entries
+        .filter((e) => !EXCLUDED.has(e.name) && !e.name.startsWith('.'))
+        .map((e) => ({
+          name: e.name,
+          path: `${dirPath}/${e.name}`,
+          isDirectory: e.isDirectory(),
+        }))
+        .sort((a, b) => {
+          if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+          return a.name.localeCompare(b.name)
+        })
+      return result
+    } catch {
+      return []
+    }
+  })
 
   // Work items (plugin registry)
   ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {

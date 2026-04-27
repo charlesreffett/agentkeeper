@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import Sidebar from '@/components/Sidebar.vue'
+import AppLayout from '@/components/AppLayout.vue'
 import { useUIContributionsStore } from '@/stores/uiContributions'
 import { useProjectsStore } from '@/stores/projects'
 
@@ -27,10 +27,5 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="h-screen w-screen bg-background text-foreground overflow-hidden flex">
-    <Sidebar />
-    <div class="flex-1 min-w-0 overflow-hidden">
-      <RouterView />
-    </div>
-  </div>
+  <AppLayout />
 </template>

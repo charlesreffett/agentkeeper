@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, watch, computed } from 'vue'
+import { ref, nextTick, watch, computed, toRaw } from 'vue'
 import { OctagonX, Plus, SquareSlash, SendHorizontal } from 'lucide-vue-next'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
@@ -61,7 +61,7 @@ function autosize() {
 async function send() {
   const v = text.value.trim()
   if ((!v && attachments.value.length === 0) || props.disabled) return
-  emit('send', v, [...attachments.value])
+  emit('send', v, attachments.value.map(toRaw))
   text.value = ''
   attachments.value = []
   await nextTick()

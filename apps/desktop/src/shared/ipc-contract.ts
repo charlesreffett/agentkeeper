@@ -63,6 +63,34 @@ export interface RecentProject {
   lastOpenedAt: number
 }
 
+export interface GitChange {
+  path: string
+  status: string
+}
+
+export interface GitStatus {
+  staged: GitChange[]
+  unstaged: GitChange[]
+  untracked: string[]
+}
+
+export interface CommitGroup {
+  message: string
+  files: string[]
+  explanation: string
+}
+
+export interface CommitSuggestion {
+  overview: string
+  groups: CommitGroup[]
+}
+
+export interface FsEntry {
+  name: string
+  path: string
+  isDirectory: boolean
+}
+
 // ─── Sessions (historical, JSONL-backed) ────────────────────────────────────
 
 export interface SessionSummary {
@@ -523,6 +551,18 @@ export interface OrchestralApi {
   dialog: {
     openFiles: () => Promise<Attachment[]>
   }
+  git: {
+    getBranch: (projectPath: string) => Promise<string | null>
+    getStatus: (projectPath: string) => Promise<GitStatus>
+    stageFiles: (projectPath: string, files: string[]) => Promise<void>
+    unstageFiles: (projectPath: string, files: string[]) => Promise<void>
+    commit: (projectPath: string, message: string) => Promise<void>
+    push: (projectPath: string) => Promise<string>
+    suggestCommits: (projectPath: string) => Promise<CommitSuggestion>
+  }
+  fs: {
+    listDirectory: (dirPath: string) => Promise<FsEntry[]>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -605,4 +645,12 @@ export const IPC_CHANNELS = {
   agenciesDeletePersisted: 'agencies:deletePersisted',
   agenciesTouchPersisted: 'agencies:touchPersisted',
   dialogOpenFiles: 'dialog:openFiles',
+  gitGetBranch: 'git:getBranch',
+  gitGetStatus: 'git:getStatus',
+  gitStageFiles: 'git:stageFiles',
+  gitUnstageFiles: 'git:unstageFiles',
+  gitCommit: 'git:commit',
+  gitPush: 'git:push',
+  gitSuggestCommits: 'git:suggestCommits',
+  fsListDirectory: 'fs:listDirectory',
 } as const
