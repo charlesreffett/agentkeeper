@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
 import type { EventMap } from '@orchestral/sdk'
 import path from 'node:path'
+import fs from 'node:fs/promises'
 import {
   IPC_CHANNELS,
   type AppSettings,
@@ -130,6 +131,34 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!
+  })
+
+  ipcMain.handle(IPC_CHANNELS.dialogOpenFiles, async (): Promise<Attachment[]> => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const result = win
+      ? await dialog.showOpenDialog(win, { properties: ['openFile', 'multiSelections'] })
+      : await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] })
+    if (result.canceled || result.filePaths.length === 0) return []
+    return Promise.all(
+      result.filePaths.map(async (filePath) => {
+        const name = path.basename(filePath)
+        const buf = await fs.readFile(filePath)
+        // Detect MIME from extension — good enough for images and common text files
+        const ext = path.extname(filePath).toLowerCase()
+        const imageExts: Record<string, string> = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.webp': 'image/webp',
+        }
+        const mimeType = imageExts[ext] ?? 'text/plain'
+        const content = mimeType.startsWith('image/')
+          ? buf.toString('base64')
+          : buf.toString('utf-8')
+        return { name, mimeType, content } satisfies Attachment
+      }),
+    )
   })
 
   // Projects (legacy — kept for existing UI)

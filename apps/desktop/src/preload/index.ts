@@ -298,6 +298,9 @@ const api: OrchestralApi = {
     createPR: (params: CreatePRParams) =>
       invoke(IPC_CHANNELS.githubCreatePR, params) as Promise<never>,
   },
+  dialog: {
+    openFiles: () => invoke(IPC_CHANNELS.dialogOpenFiles) as Promise<Attachment[]>,
+  },
 }
 
 contextBridge.exposeInMainWorld('orchestral', api)

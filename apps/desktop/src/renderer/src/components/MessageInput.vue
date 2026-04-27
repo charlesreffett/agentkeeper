@@ -24,7 +24,6 @@ const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; stop
 const text = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const attachments = ref<Attachment[]>([])
-const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const projectsStore = useProjectsStore()
 const resolvedProjectPath = computed(
@@ -151,40 +150,9 @@ watch(
   { immediate: true },
 )
 
-function openFilePicker() {
-  fileInputRef.value?.click()
-}
-
-function readAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      resolve(result.split(',')[1]!)
-    }
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
-}
-
-function readAsText(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsText(file)
-  })
-}
-
-async function onFilesSelected(event: Event) {
-  const input = event.target as HTMLInputElement
-  if (!input.files) return
-  for (const file of Array.from(input.files)) {
-    const isImage = file.type.startsWith('image/')
-    const content = isImage ? await readAsBase64(file) : await readAsText(file)
-    attachments.value.push({ name: file.name, mimeType: file.type || 'text/plain', content })
-  }
-  input.value = ''
+async function openFilePicker() {
+  const picked = await window.orchestral.dialog.openFiles()
+  attachments.value.push(...picked)
 }
 
 function removeAttachment(index: number) {
@@ -278,12 +246,5 @@ function removeAttachment(index: number) {
         </div>
       </div>
     </div>
-    <input
-      ref="fileInputRef"
-      type="file"
-      multiple
-      class="hidden"
-      @change="onFilesSelected"
-    />
   </div>
 </template>

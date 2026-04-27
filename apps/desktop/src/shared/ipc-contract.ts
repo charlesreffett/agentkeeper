@@ -503,6 +503,9 @@ export interface OrchestralApi {
     mergePR: (repo: string, number: number, method: MergeMethod) => Promise<void>
     createPR: (params: CreatePRParams) => Promise<PRSummary>
   }
+  dialog: {
+    openFiles: () => Promise<Attachment[]>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -581,4 +584,5 @@ export const IPC_CHANNELS = {
   agenciesResume: 'agencies:resume',
   agenciesDeletePersisted: 'agencies:deletePersisted',
   agenciesTouchPersisted: 'agencies:touchPersisted',
+  dialogOpenFiles: 'dialog:openFiles',
 } as const
