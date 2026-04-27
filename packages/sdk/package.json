@@ -17,12 +17,15 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc --emitDeclarationOnly --outDir dist"
+    "build": "tsc --emitDeclarationOnly --outDir dist",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.0"
   }
 }
