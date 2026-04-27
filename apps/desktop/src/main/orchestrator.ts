@@ -5,6 +5,7 @@ import type {
   AgencyInstance,
   AgencyInstanceSession,
   AgencyScope,
+  RoleSlot,
   StartAgencyParams,
 } from '../shared/ipc-contract'
 import { listAgencies } from './agencies'
@@ -15,14 +16,37 @@ import {
   sendInput,
   startSession,
   waitForNextIdle,
+  interruptSession,
 } from './agent'
 import * as registry from './session-registry'
 
-/**
- * Runtime state for one live run of an agency. Each run is a bundle of
- * sessions (one per role) that can message each other via the send_message
- * MCP tool the orchestrator injects into every member session.
- */
+interface AgencyRoleRestartParams {
+  systemPromptAppend: string
+  model: string | undefined
+  effort: string | undefined
+  allowedTools: string[] | undefined
+}
+
+interface AgentInstance {
+  localId: string
+  roleId: string
+  instanceIndex: number
+  instanceId: string
+  isOverflow: boolean
+}
+
+interface PendingMessage {
+  content: string
+  resolve: (r: string) => void
+  reject: (e: Error) => void
+}
+
+interface HandoffRecord {
+  instanceIndex: number
+  summary: string
+  timestamp: number
+}
+
 interface RuntimeAgency {
   instanceId: string
   agencyId: string
@@ -31,113 +55,328 @@ interface RuntimeAgency {
   projectPath: string
   worktreePath: string | null
   branch: string | null
-  /** roleId → local sessionId */
-  sessionByRole: Map<string, string>
-  /** local sessionId → roleId */
-  roleBySessionId: Map<string, string>
-  /** Directional allowlist: "fromRoleId->toRoleId" strings. Empty = allow all. */
+  /** roleId → all spawned instances for this role */
+  instancesByRole: Map<string, AgentInstance[]>
+  /** localId → instance */
+  sessionToInstance: Map<string, AgentInstance>
+  /** Sessions currently handling a send_message delivery */
+  busySessions: Set<string>
+  /** Messages waiting for an idle slot by roleId */
+  pendingByRole: Map<string, PendingMessage[]>
+  /** Completed-overflow handoff summaries by roleId */
+  handoffsByRole: Map<string, HandoffRecord[]>
+  /** Config snapshot keyed by roleId */
+  roleSlots: Map<string, RoleSlot>
   allowedFlows: Set<string>
+  restartParamsByRole: Map<string, AgencyRoleRestartParams>
 }
 
 const instances = new Map<string, RuntimeAgency>()
-const sessionToInstance = new Map<string, string>()
-/**
- * Who is each session currently waiting on a reply from?
- * If X has called send_message(Y) and is awaiting Y's idle, waitingFor[X] = Y.
- * Used to detect cycles: if Y tries to call send_message(Z), and Z is
- * transitively waiting on Y (or on anyone in Y's chain), a call would
- * deadlock forever — reject with an informative error instead.
- */
-const waitingFor = new Map<string, string>()
+/** localId → instanceId — global index so createOrchestratorMcp can look up without inst ref */
+const sessionToRuntimeId = new Map<string, string>()
 
-function instanceOfSession(sessionId: string): RuntimeAgency | null {
-  const id = sessionToInstance.get(sessionId)
+function withOrchestraMcp(tools: string[] | null | undefined): string[] | undefined {
+  if (!tools?.length) return undefined
+  return [...new Set([...tools, 'mcp__orchestral__send_message'])]
+}
+
+const waitingFor = new Map<string, Set<string>>()
+
+function runtimeOfSession(sessionId: string): RuntimeAgency | null {
+  const id = sessionToRuntimeId.get(sessionId)
   return id ? (instances.get(id) ?? null) : null
 }
 
+function instanceOfSession(runtime: RuntimeAgency, sessionId: string): AgentInstance | null {
+  return runtime.sessionToInstance.get(sessionId) ?? null
+}
+
 function wouldCycle(from: string, to: string): boolean {
-  // Would `from calls to` create a cycle? i.e., is `to` (transitively)
-  // waiting on `from`?
-  let cursor: string | undefined = to
   const visited = new Set<string>()
-  while (cursor) {
-    if (visited.has(cursor)) return true
+  const queue = [to]
+  while (queue.length > 0) {
+    const cursor = queue.shift()!
+    if (visited.has(cursor)) continue
     visited.add(cursor)
-    const waitsOn = waitingFor.get(cursor)
-    if (waitsOn === from) return true
-    cursor = waitsOn
+    const targets = waitingFor.get(cursor)
+    if (!targets) continue
+    for (const t of targets) {
+      if (t === from) return true
+      queue.push(t)
+    }
   }
   return false
 }
 
-async function routeMessage(
-  fromSessionId: string,
-  toRole: string,
+function addWait(from: string, to: string): void {
+  let set = waitingFor.get(from)
+  if (!set) { set = new Set(); waitingFor.set(from, set) }
+  set.add(to)
+}
+
+function removeWait(from: string, to: string): void {
+  const set = waitingFor.get(from)
+  if (!set) return
+  set.delete(to)
+  if (set.size === 0) waitingFor.delete(from)
+}
+
+function idleInstance(runtime: RuntimeAgency, roleId: string): AgentInstance | null {
+  const list = runtime.instancesByRole.get(roleId) ?? []
+  return list.find((i) => !runtime.busySessions.has(i.localId)) ?? null
+}
+
+async function spawnOverflow(
+  runtime: RuntimeAgency,
+  roleId: string,
+  rolesById: Map<string, { name: string; model: string | null; effort: string | null; allowedTools: string[] | null; systemPrompt: string }>,
+  allInstanceIds: string[],
+): Promise<AgentInstance> {
+  const existing = runtime.instancesByRole.get(roleId) ?? []
+  const nextIndex = existing.length + 1
+  const instanceId = `${roleId}-${nextIndex}`
+  const localId = randomUUID()
+  const role = rolesById.get(roleId)!
+  const restart = runtime.restartParamsByRole.get(roleId)!
+  const slot = runtime.roleSlots.get(roleId)!
+
+  const priorHandoffs = runtime.handoffsByRole.get(roleId) ?? []
+  const handoffLines =
+    priorHandoffs.length > 0
+      ? [
+          '',
+          `Prior work by previous ${role.name} agents:`,
+          ...priorHandoffs.map((h) => `[Instance ${h.instanceIndex}]: ${h.summary}`),
+        ].join('\n')
+      : ''
+
+  const contextPreamble = buildContextPreamble({
+    roleName: role.name,
+    roleId,
+    instanceIndex: nextIndex,
+    totalInstances: slot.max ?? nextIndex,
+    instanceId,
+    agencyName: runtime.agencyName,
+    allInstanceIds,
+    isEntry: false,
+    handoffLines,
+  })
+
+  const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
+
+  const inst: AgentInstance = {
+    localId,
+    roleId,
+    instanceIndex: nextIndex,
+    instanceId,
+    isOverflow: true,
+  }
+
+  // Reserve the slot synchronously before the first await so concurrent
+  // spawnOverflow calls compute distinct nextIndex values and never exceed max.
+  // busySessions keeps idleInstance from routing to this slot until startSession
+  // completes; deliverToInstance re-adds it and manages the lifecycle from there.
+  if (!runtime.instancesByRole.has(roleId)) runtime.instancesByRole.set(roleId, [])
+  runtime.instancesByRole.get(roleId)!.push(inst)
+  runtime.sessionToInstance.set(localId, inst)
+  sessionToRuntimeId.set(localId, runtime.instanceId)
+  runtime.busySessions.add(localId)
+
+  const mcp = createOrchestratorMcp(localId)
+
+  try {
+    await startSession(
+      {
+        localId,
+        projectPath: runtime.projectPath,
+        ...(runtime.worktreePath ? { worktreePath: runtime.worktreePath } : {}),
+        initialPrompt: `Agency "${runtime.agencyName}" overflow agent initialized. Await messages from peers.`,
+        systemPromptAppend,
+        ...(restart.model ? { model: restart.model } : {}),
+        ...(restart.effort ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort } : {}),
+        ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
+        agencyInstanceId: runtime.instanceId,
+        roleId,
+        roleInstanceIndex: nextIndex,
+        roleName: role.name,
+        agencyName: runtime.agencyName,
+      },
+      { mcpServer: mcp },
+    )
+  } catch (err) {
+    // Roll back the reservation so the slot doesn't appear permanently occupied.
+    const list = runtime.instancesByRole.get(roleId)
+    if (list) {
+      const idx = list.indexOf(inst)
+      if (idx >= 0) list.splice(idx, 1)
+    }
+    runtime.sessionToInstance.delete(localId)
+    sessionToRuntimeId.delete(localId)
+    runtime.busySessions.delete(localId)
+    throw err
+  }
+
+  // Release the hold — deliverToInstance will re-add and manage from here.
+  runtime.busySessions.delete(localId)
+
+  return inst
+}
+
+async function requestHandoffAndSuspend(
+  runtime: RuntimeAgency,
+  inst: AgentInstance,
+): Promise<void> {
+  const handoffPrompt = [
+    'You have completed your task. Before suspending, produce a concise handoff summary:',
+    'what you built or changed, key decisions and the reasoning behind them, files modified,',
+    'any caveats or unresolved issues a developer continuing this work should know.',
+    'Be complete enough that another developer can pick this up cold.',
+  ].join(' ')
+
+  let summary = ''
+  try {
+    const target = getActiveSession(inst.localId)
+    if (target) {
+      const beforeCount = target.events.length
+      await sendInput(inst.localId, handoffPrompt)
+      await waitForNextIdle(inst.localId)
+      const newEvents = target.events.slice(beforeCount)
+      const parts: string[] = []
+      for (const msg of newEvents) {
+        const m = msg as unknown as { type?: string; message?: { content?: unknown } }
+        if (m.type !== 'assistant') continue
+        const inner = m.message?.content
+        if (!Array.isArray(inner)) continue
+        for (const block of inner) {
+          if (
+            block &&
+            typeof block === 'object' &&
+            (block as Record<string, unknown>)['type'] === 'text' &&
+            typeof (block as Record<string, unknown>)['text'] === 'string'
+          ) {
+            parts.push((block as Record<string, unknown>)['text'] as string)
+          }
+        }
+      }
+      summary = parts.join('\n\n').trim()
+    }
+  } catch {
+    summary = '(handoff summary unavailable)'
+  }
+
+  const record: HandoffRecord = {
+    instanceIndex: inst.instanceIndex,
+    summary: summary || '(no summary provided)',
+    timestamp: Date.now(),
+  }
+
+  if (!runtime.handoffsByRole.has(inst.roleId)) runtime.handoffsByRole.set(inst.roleId, [])
+  runtime.handoffsByRole.get(inst.roleId)!.push(record)
+
+  registry.updateAgency(runtime.instanceId, {
+    handoffs: { [inst.roleId]: [record] },
+    lastActivityAt: Date.now(),
+  })
+
+  try {
+    await interruptSession(inst.localId)
+  } catch {
+    // already gone
+  }
+}
+
+function drainPendingForRole(runtime: RuntimeAgency, roleId: string): void {
+  const queue = runtime.pendingByRole.get(roleId)
+  if (!queue || queue.length === 0) return
+  const idle = idleInstance(runtime, roleId)
+  if (!idle) return
+  const next = queue.shift()!
+  void deliverToInstance(runtime, idle, next.content).then(next.resolve).catch(next.reject)
+}
+
+async function deliverToInstance(
+  runtime: RuntimeAgency,
+  inst: AgentInstance,
   content: string,
 ): Promise<string> {
-  const inst = instanceOfSession(fromSessionId)
-  if (!inst) return 'Error: sender is not part of an active agency.'
-
-  const fromRole = inst.roleBySessionId.get(fromSessionId)
-  if (!fromRole) return 'Error: sender has no role.'
-
-  if (
-    inst.allowedFlows.size > 0 &&
-    !inst.allowedFlows.has(`${fromRole}->${toRole}`)
-  ) {
-    return `Error: role "${fromRole}" is not permitted to send_message to "${toRole}" in this agency.`
+  runtime.busySessions.add(inst.localId)
+  try {
+    return await injectAndWait(runtime, inst, content)
+  } finally {
+    runtime.busySessions.delete(inst.localId)
+    if (inst.isOverflow) {
+      await requestHandoffAndSuspend(runtime, inst)
+    } else {
+      drainPendingForRole(runtime, inst.roleId)
+    }
   }
+}
 
-  const toSessionId = inst.sessionByRole.get(toRole)
-  if (!toSessionId) return `Error: no active agent with role "${toRole}".`
+async function injectAndWait(
+  runtime: RuntimeAgency,
+  inst: AgentInstance,
+  content: string,
+): Promise<string> {
+  const toSessionId = inst.localId
 
-  if (wouldCycle(fromSessionId, toSessionId)) {
-    return `Error: "${toRole}" is already waiting on your reply (directly or transitively). Calling send_message now would deadlock both of you. Respond with plain text instead — your reply is delivered automatically as the caller's tool_result.`
-  }
-
-  const target = getActiveSession(toSessionId)
+  let target = getActiveSession(toSessionId)
   if (!target) {
-    return `Error: target session for role "${toRole}" is no longer active.`
+    const persisted = registry.getSession(toSessionId)
+    if (!persisted?.sdkSessionId) {
+      return `Error: instance "${inst.instanceId}" has no resolvable session — it may not have initialised yet. Retry in a moment.`
+    }
+    const restart = runtime.restartParamsByRole.get(inst.roleId)
+    if (!restart) {
+      return `Error: instance "${inst.instanceId}" has no restart context in this agency.`
+    }
+    const mcp = createOrchestratorMcp(toSessionId)
+    await startSession(
+      {
+        localId: toSessionId,
+        projectPath: runtime.projectPath,
+        ...(runtime.worktreePath ? { worktreePath: runtime.worktreePath } : {}),
+        initialPrompt: persisted.initialPrompt,
+        resumeSdkSessionId: persisted.sdkSessionId,
+        systemPromptAppend: restart.systemPromptAppend,
+        ...(restart.model ? { model: restart.model } : {}),
+        ...(restart.effort
+          ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort }
+          : {}),
+        ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
+        agencyInstanceId: runtime.instanceId,
+        roleId: inst.roleId,
+        roleInstanceIndex: inst.instanceIndex,
+        roleName: persisted.roleName ?? inst.roleId,
+        agencyName: runtime.agencyName,
+      },
+      { mcpServer: mcp },
+    )
+    target = getActiveSession(toSessionId)!
   }
 
   const beforeCount = target.events.length
 
   try {
-    sendInput(
-      toSessionId,
-      [
-        `[message from peer "${fromRole}"]`,
-        '',
-        content,
-        '',
-        `[end message]`,
-        '',
-        `Respond to "${fromRole}" with plain text. Your reply is captured automatically and returned as their send_message tool_result — DO NOT call send_message back to "${fromRole}" (that would deadlock). If you need a different peer, call send_message to that peer normally.`,
-      ].join('\n'),
-    )
+    await sendInput(toSessionId, content)
   } catch (err) {
     return `Error queuing message: ${err instanceof Error ? err.message : String(err)}`
   }
 
-  waitingFor.set(fromSessionId, toSessionId)
   let status: Awaited<ReturnType<typeof waitForNextIdle>>
   try {
     status = await waitForNextIdle(toSessionId)
-  } finally {
-    waitingFor.delete(fromSessionId)
+  } catch {
+    return `Error: target session "${inst.instanceId}" could not be awaited.`
   }
+
   if (status !== 'idle') {
     return `Error: target session ended with status "${status}" before replying.`
   }
 
-  // Extract assistant text emitted since beforeCount.
   const newEvents = target.events.slice(beforeCount)
   const replies: string[] = []
   for (const msg of newEvents) {
-    const m = msg as unknown as {
-      type?: string
-      message?: { content?: unknown }
-    }
+    const m = msg as unknown as { type?: string; message?: { content?: unknown } }
     if (m.type !== 'assistant') continue
     const inner = m.message?.content
     if (!Array.isArray(inner)) continue
@@ -152,8 +391,188 @@ async function routeMessage(
       }
     }
   }
-  const reply = replies.join('\n\n').trim()
-  return reply || '(peer replied without text content)'
+  return replies.join('\n\n').trim() || '(peer replied without text content)'
+}
+
+async function routeMessage(
+  fromSessionId: string,
+  to: string,
+  content: string,
+): Promise<string> {
+  const runtime = runtimeOfSession(fromSessionId)
+  if (!runtime) return 'Error: sender is not part of an active agency.'
+
+  const fromInst = instanceOfSession(runtime, fromSessionId)
+  if (!fromInst) return 'Error: sender has no instance mapping.'
+
+  const fromRole = fromInst.roleId
+
+  // Resolve the target: either an instance id ("developer-2") or a role id ("developer")
+  const instanceIdPattern = /^(.+)-(\d+)$/
+  const match = instanceIdPattern.exec(to)
+
+  if (match) {
+    // Direct targeting by instance id
+    const targetRoleId = match[1]!
+    const targetIndex = parseInt(match[2]!, 10)
+
+    if (
+      runtime.allowedFlows.size > 0 &&
+      !runtime.allowedFlows.has(`${fromRole}->${targetRoleId}`)
+    ) {
+      return `Error: role "${fromRole}" is not permitted to send_message to "${targetRoleId}" in this agency.`
+    }
+
+    const list = runtime.instancesByRole.get(targetRoleId) ?? []
+    const targetInst = list.find((i) => i.instanceIndex === targetIndex)
+    if (!targetInst) {
+      return `Error: no instance "${to}" found in this agency.`
+    }
+
+    if (targetInst.localId === fromSessionId) {
+      return `Error: cannot send_message to yourself.`
+    }
+
+    if (wouldCycle(fromSessionId, targetInst.localId)) {
+      return `Error: "${to}" is already waiting on your reply (directly or transitively). Calling send_message now would deadlock. Respond with plain text instead.`
+    }
+
+    addWait(fromSessionId, targetInst.localId)
+    try {
+      return await injectAndWait(runtime, targetInst, wrapMessage(fromInst.instanceId, content))
+    } finally {
+      removeWait(fromSessionId, targetInst.localId)
+    }
+  }
+
+  // Role targeting — load-balance across instances of this role
+  const toRole = to
+  if (
+    runtime.allowedFlows.size > 0 &&
+    !runtime.allowedFlows.has(`${fromRole}->${toRole}`)
+  ) {
+    return `Error: role "${fromRole}" is not permitted to send_message to "${toRole}" in this agency.`
+  }
+
+  if (!runtime.instancesByRole.has(toRole)) {
+    return `Error: no role "${toRole}" in this agency.`
+  }
+
+  const findOrSpawnAndDeliver = async (): Promise<string> => {
+    const idle = idleInstance(runtime, toRole)
+    if (idle) {
+      if (idle.localId === fromSessionId) {
+        return 'Error: cannot send_message to yourself.'
+      }
+      if (wouldCycle(fromSessionId, idle.localId)) {
+        return `Error: "${toRole}" is already waiting on your reply (directly or transitively). Calling send_message now would deadlock. Respond with plain text instead.`
+      }
+      addWait(fromSessionId, idle.localId)
+      try {
+        return await deliverToInstance(runtime, idle, wrapMessage(fromInst.instanceId, content))
+      } finally {
+        removeWait(fromSessionId, idle.localId)
+      }
+    }
+
+    // No idle instance — check if we can spawn overflow
+    const slot = runtime.roleSlots.get(toRole)
+    const currentCount = (runtime.instancesByRole.get(toRole) ?? []).length
+    if (slot?.max !== undefined && currentCount < slot.max) {
+      // Collect all current instance ids to rebuild the peer list
+      const allInstanceIds = buildAllInstanceIds(runtime)
+      const rolesById = await buildRolesById(runtime)
+      const newInst = await spawnOverflow(runtime, toRole, rolesById, allInstanceIds)
+      addWait(fromSessionId, newInst.localId)
+      try {
+        return await deliverToInstance(runtime, newInst, wrapMessage(fromInst.instanceId, content))
+      } finally {
+        removeWait(fromSessionId, newInst.localId)
+      }
+    }
+
+    // Enqueue — block until a slot opens
+    return new Promise<string>((resolve, reject) => {
+      if (!runtime.pendingByRole.has(toRole)) runtime.pendingByRole.set(toRole, [])
+      runtime.pendingByRole.get(toRole)!.push({ content: wrapMessage(fromInst.instanceId, content), resolve, reject })
+    })
+  }
+
+  return findOrSpawnAndDeliver()
+}
+
+function wrapMessage(fromInstanceId: string, content: string): string {
+  return [
+    `[message from peer "${fromInstanceId}"]`,
+    '',
+    content,
+    '',
+    `[end message]`,
+    '',
+    `Respond to "${fromInstanceId}" with plain text. Your reply is captured automatically and returned as their send_message tool_result — DO NOT call send_message back to "${fromInstanceId}" (that would deadlock). If you need a different peer, call send_message to that peer normally.`,
+  ].join('\n')
+}
+
+function buildAllInstanceIds(runtime: RuntimeAgency): string[] {
+  const ids: string[] = []
+  for (const instances of runtime.instancesByRole.values()) {
+    for (const inst of instances) ids.push(inst.instanceId)
+  }
+  return ids
+}
+
+async function buildRolesById(
+  runtime: RuntimeAgency,
+): Promise<Map<string, { name: string; model: string | null; effort: string | null; allowedTools: string[] | null; systemPrompt: string }>> {
+  const allRoles = await listRoles(runtime.projectPath)
+  return new Map(allRoles.map((r) => [r.id, r]))
+}
+
+function buildContextPreamble(opts: {
+  roleName: string
+  roleId: string
+  instanceIndex: number
+  totalInstances: number
+  instanceId: string
+  agencyName: string
+  allInstanceIds: string[]
+  isEntry: boolean
+  handoffLines: string
+}): string {
+  const {
+    roleName, roleId, instanceIndex, totalInstances, instanceId,
+    agencyName, allInstanceIds, isEntry, handoffLines,
+  } = opts
+  const instanceNote = totalInstances > 1 ? `, instance ${instanceIndex} of ${totalInstances}` : ''
+  return [
+    `You are the "${roleName}" (role: "${roleId}"${instanceNote}, id: "${instanceId}") in agency "${agencyName}".`,
+    `Current agency members: ${allInstanceIds.join(', ')}.`,
+    ``,
+    `Addressing peers via mcp__orchestral__send_message:`,
+    `- By instance id (e.g. "developer-2"): direct delivery to that specific instance.`,
+    `- By role id (e.g. "developer"): load-balanced delivery — routes to an idle instance of`,
+    `  that role, or spawns a NEW overflow instance if all are busy. Use role-id addressing`,
+    `  whenever you want to fan out work in parallel or delegate to a peer of the same role.`,
+    `  Overflow instances are temporary: they suspend after completing one task.`,
+    ``,
+    `Communication protocol:`,
+    `- send_message BLOCKS until the peer replies; their response becomes your tool_result.`,
+    `- To run sub-tasks in PARALLEL, emit multiple send_message tool calls in the same`,
+    `  response turn before receiving any results — the orchestrator dispatches them`,
+    `  concurrently and returns all results together.`,
+    `- When another peer addresses YOU via send_message, you'll receive a user turn wrapped`,
+    `  in "[message from peer X]" markers. Your plain-text reply is automatically captured`,
+    `  and returned to them — DO NOT call send_message back to the peer that addressed you.`,
+    `  That would deadlock both of you.`,
+    `- If replying to peer X requires input from peer Z, you CAN call send_message(Z) first,`,
+    `  then use Z's answer when composing your plain-text reply to X.`,
+    ``,
+    `Collaborate — don't try to do every role's job yourself.`,
+    isEntry
+      ? `You are an entry point — you receive the initial task from the user.`
+      : `You will receive tasks from peer agents via send_message. Stand by until addressed.`,
+    handoffLines,
+  ].join('\n')
 }
 
 export function createOrchestratorMcp(
@@ -165,9 +584,9 @@ export function createOrchestratorMcp(
     tools: [
       tool(
         'send_message',
-        'Send a message to a peer agent by role id. Waits for their reply and returns it as the tool result. Use this to collaborate with other agents in the same agency.',
+        'Send a message to a peer agent by instance id (e.g. "developer-1") or role id (e.g. "developer" for load-balanced delivery). Waits for their reply and returns it as the tool result.',
         {
-          to: z.string().describe('Target agent role id (e.g. "developer").'),
+          to: z.string().describe('Target agent instance id (e.g. "developer-1") or role id (e.g. "developer").'),
           content: z.string().describe('Message body to send to the peer.'),
         },
         async ({ to, content }) => {
@@ -187,29 +606,23 @@ export async function startAgency(
     (a) => a.id === params.agencyId && a.scope === params.agencyScope,
   )
   if (!agency) {
-    throw new Error(
-      `Agency "${params.agencyId}" (${params.agencyScope}) not found.`,
-    )
+    throw new Error(`Agency "${params.agencyId}" (${params.agencyScope}) not found.`)
   }
   if (agency.roles.length === 0) throw new Error('Agency has no roles.')
-  if (agency.entryPoints.length === 0) {
-    throw new Error('Agency has no entry points.')
-  }
+  if (agency.entryPoints.length === 0) throw new Error('Agency has no entry points.')
 
   const allRoles = await listRoles(params.projectPath)
   const rolesById = new Map(allRoles.map((r) => [r.id, r]))
-  for (const roleId of agency.roles) {
-    if (!rolesById.has(roleId)) {
-      throw new Error(`Role "${roleId}" referenced by agency not found.`)
+  for (const slot of agency.roles) {
+    if (!rolesById.has(slot.roleId)) {
+      throw new Error(`Role "${slot.roleId}" referenced by agency not found.`)
     }
   }
 
   let worktreePath: string | null = null
   let branch: string | null = null
   if (params.useWorktree && params.branch) {
-    const wt = await createWorktree(params.projectPath, {
-      branchRequest: params.branch,
-    })
+    const wt = await createWorktree(params.projectPath, { branchRequest: params.branch })
     worktreePath = wt.path
     branch = wt.branch
   }
@@ -223,11 +636,14 @@ export async function startAgency(
     projectPath: params.projectPath,
     worktreePath,
     branch,
-    sessionByRole: new Map(),
-    roleBySessionId: new Map(),
-    allowedFlows: new Set(
-      agency.flows.map(([from, to]) => `${from}->${to}`),
-    ),
+    instancesByRole: new Map(),
+    sessionToInstance: new Map(),
+    busySessions: new Set(),
+    pendingByRole: new Map(),
+    handoffsByRole: new Map(),
+    roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
+    allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
+    restartParamsByRole: new Map(),
   }
   instances.set(instanceId, runtime)
 
@@ -242,73 +658,129 @@ export async function startAgency(
     startedAt: Date.now(),
     lastActivityAt: Date.now(),
     roleSessionMap: {},
+    handoffs: {},
   })
 
-  const peerList = agency.roles.join(', ')
+  // First pass: determine how many permanent instances each role gets, so we can
+  // build the complete peer-id list for the system prompt preamble.
+  const spawnCounts: Array<{ slot: RoleSlot; count: number }> = agency.roles.map((slot) => {
+    const count =
+      slot.count !== undefined
+        ? slot.count
+        : slot.min !== undefined
+          ? slot.min
+          : 1
+    return { slot, count }
+  })
+
+  const allInstanceIds: string[] = []
+  for (const { slot, count } of spawnCounts) {
+    for (let i = 1; i <= count; i++) {
+      allInstanceIds.push(`${slot.roleId}-${i}`)
+    }
+  }
+
   const sessionsMeta: AgencyInstanceSession[] = []
 
-  for (const roleId of agency.roles) {
-    const role = rolesById.get(roleId)!
-    const localId = randomUUID()
+  for (const { slot, count } of spawnCounts) {
+    const role = rolesById.get(slot.roleId)!
+    const isEntry = agency.entryPoints.includes(slot.roleId)
+    const priorHandoffs = runtime.handoffsByRole.get(slot.roleId) ?? []
+    const handoffLines =
+      priorHandoffs.length > 0
+        ? [
+            '',
+            `Prior work by previous ${role.name} agents:`,
+            ...priorHandoffs.map((h) => `[Instance ${h.instanceIndex}]: ${h.summary}`),
+          ].join('\n')
+        : ''
 
-    const isEntry = agency.entryPoints.includes(roleId)
-    const contextPreamble = [
-      `You are the "${role.name}" (role id: "${roleId}") in an agency named "${agency.name}".`,
-      `All member roles (by id): ${peerList}.`,
-      ``,
-      `Communication protocol:`,
-      `- Use the mcp__orchestral__send_message tool to contact a peer by role id.`,
-      `- send_message BLOCKS until the peer replies; their response becomes your tool_result.`,
-      `- When another peer addresses YOU via send_message, you'll receive a user turn wrapped in "[message from peer X]" markers. Your plain-text reply is automatically captured and returned to them — DO NOT call send_message back to the peer that addressed you. That would deadlock both of you and the orchestrator will reject it.`,
-      `- If replying to peer X requires input from peer Z, you CAN call send_message(Z) first, then use Z's answer when composing your plain-text reply to X. That's fine as long as Z isn't also waiting on you.`,
-      ``,
-      `Collaborate — don't try to do every role's job yourself.`,
-      isEntry
-        ? `You are an entry point — you receive the initial task from the user.`
-        : `You will receive tasks from peer agents via send_message. Stand by until addressed.`,
-    ].join('\n')
+    const totalInstances = slot.max ?? count
 
-    const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
-    const initialPrompt = isEntry
-      ? params.initialPrompt
-      : `Agency "${agency.name}" is initializing. Await messages from peers. If you receive no message, stand by — you don't need to take action until addressed.`
-
-    const mcp = createOrchestratorMcp(localId)
-
-    await startSession(
-      {
-        localId,
-        projectPath: params.projectPath,
-        ...(worktreePath ? { worktreePath } : {}),
-        initialPrompt,
-        ...(role.model
-          ? { model: role.model }
-          : params.model
-            ? { model: params.model }
-            : {}),
-        ...(role.effort ? { effort: role.effort } : {}),
-        systemPromptAppend,
-        ...(role.allowedTools && role.allowedTools.length
-          ? { allowedTools: role.allowedTools }
-          : {}),
-        agencyInstanceId: instanceId,
-        roleId,
+    const resolvedModel = role.model ?? params.model
+    const systemPromptForRole = (instanceIndex: number, instanceId: string) =>
+      buildContextPreamble({
         roleName: role.name,
+        roleId: slot.roleId,
+        instanceIndex,
+        totalInstances,
+        instanceId,
         agencyName: agency.name,
-      },
-      { mcpServer: mcp },
-    )
+        allInstanceIds,
+        isEntry,
+        handoffLines,
+      })
 
-    runtime.sessionByRole.set(roleId, localId)
-    runtime.roleBySessionId.set(localId, roleId)
-    sessionToInstance.set(localId, instanceId)
+    const restartBase: AgencyRoleRestartParams = {
+      systemPromptAppend: '', // will be filled per-instance below
+      model: resolvedModel ?? undefined,
+      effort: role.effort ?? undefined,
+      allowedTools: withOrchestraMcp(role.allowedTools),
+    }
 
-    sessionsMeta.push({
-      localId,
-      roleId,
-      roleName: role.name,
-      isEntryPoint: isEntry,
-    })
+    for (let idx = 1; idx <= count; idx++) {
+      const localId = randomUUID()
+      const instId = `${slot.roleId}-${idx}`
+      const contextPreamble = systemPromptForRole(idx, instId)
+      const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
+
+      const initialPrompt =
+        isEntry && idx === 1
+          ? params.initialPrompt
+          : `Agency "${agency.name}" is initializing. Await messages from peers.`
+
+      const mcp = createOrchestratorMcp(localId)
+
+      await startSession(
+        {
+          localId,
+          projectPath: params.projectPath,
+          ...(worktreePath ? { worktreePath } : {}),
+          initialPrompt,
+          ...(resolvedModel ? { model: resolvedModel } : {}),
+          ...(role.effort ? { effort: role.effort } : {}),
+          systemPromptAppend,
+          ...(withOrchestraMcp(role.allowedTools)
+            ? { allowedTools: withOrchestraMcp(role.allowedTools) }
+            : {}),
+          agencyInstanceId: instanceId,
+          roleId: slot.roleId,
+          roleInstanceIndex: idx,
+          roleName: role.name,
+          agencyName: agency.name,
+        },
+        { mcpServer: mcp },
+      )
+
+      // Store per-instance restart params (the preamble varies per instance)
+      runtime.restartParamsByRole.set(slot.roleId, {
+        ...restartBase,
+        systemPromptAppend,
+      })
+
+      const inst: AgentInstance = {
+        localId,
+        roleId: slot.roleId,
+        instanceIndex: idx,
+        instanceId: instId,
+        isOverflow: false,
+      }
+
+      if (!runtime.instancesByRole.has(slot.roleId)) runtime.instancesByRole.set(slot.roleId, [])
+      runtime.instancesByRole.get(slot.roleId)!.push(inst)
+      runtime.sessionToInstance.set(localId, inst)
+      sessionToRuntimeId.set(localId, instanceId)
+
+      sessionsMeta.push({
+        localId,
+        roleId: slot.roleId,
+        instanceId: instId,
+        instanceIndex: idx,
+        roleName: role.name,
+        isEntryPoint: isEntry,
+        isOverflow: false,
+      })
+    }
   }
 
   return {
@@ -331,13 +803,17 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     (a) => a.id === persisted.agencyId && a.scope === persisted.agencyScope,
   )
   if (!agency) {
-    throw new Error(
-      `Agency "${persisted.agencyId}" (${persisted.agencyScope}) no longer exists.`,
-    )
+    throw new Error(`Agency "${persisted.agencyId}" (${persisted.agencyScope}) no longer exists.`)
   }
 
   const allRoles = await listRoles(persisted.projectPath)
   const rolesById = new Map(allRoles.map((r) => [r.id, r]))
+
+  // Restore handoffs from persisted state
+  const handoffsByRole = new Map<string, HandoffRecord[]>()
+  for (const [roleId, records] of Object.entries(persisted.handoffs ?? {})) {
+    handoffsByRole.set(roleId, records)
+  }
 
   const runtime: RuntimeAgency = {
     instanceId,
@@ -347,67 +823,116 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     projectPath: persisted.projectPath,
     worktreePath: persisted.worktreePath,
     branch: persisted.branch,
-    sessionByRole: new Map(),
-    roleBySessionId: new Map(),
+    instancesByRole: new Map(),
+    sessionToInstance: new Map(),
+    busySessions: new Set(),
+    pendingByRole: new Map(),
+    handoffsByRole,
+    roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
+    restartParamsByRole: new Map(),
   }
   instances.set(instanceId, runtime)
 
-  const peerList = agency.roles.join(', ')
+  // Build the full peer list from persisted roleSessionMap
+  const allInstanceIds: string[] = []
+  for (const [roleId, entries] of Object.entries(persisted.roleSessionMap ?? {})) {
+    for (const entry of entries) {
+      allInstanceIds.push(`${roleId}-${entry.instanceIndex}`)
+    }
+  }
+
   const sessionsMeta: AgencyInstanceSession[] = []
 
-  for (const roleId of agency.roles) {
-    const role = rolesById.get(roleId)
+  for (const slot of agency.roles) {
+    const role = rolesById.get(slot.roleId)
     if (!role) continue
 
-    const localId = randomUUID()
-    const isEntry = agency.entryPoints.includes(roleId)
-    const contextPreamble = [
-      `You are the "${role.name}" (role id: "${roleId}") in an agency named "${agency.name}".`,
-      `All member roles (by id): ${peerList}.`,
-      ``,
-      `Communication protocol:`,
-      `- Use the mcp__orchestral__send_message tool to contact a peer by role id.`,
-      `- send_message BLOCKS until the peer replies; their response becomes your tool_result.`,
-      `- When another peer addresses YOU via send_message, you'll receive a user turn wrapped in "[message from peer X]" markers. Your plain-text reply is automatically captured and returned to them — DO NOT call send_message back to the peer that addressed you. That would deadlock both of you and the orchestrator will reject it.`,
-      `- If replying to peer X requires input from peer Z, you CAN call send_message(Z) first, then use Z's answer when composing your plain-text reply to X. That's fine as long as Z isn't also waiting on you.`,
-      ``,
-      `Collaborate — don't try to do every role's job yourself.`,
-      isEntry
-        ? `You are an entry point — you receive the initial task from the user.`
-        : `You will receive tasks from peer agents via send_message. Stand by until addressed.`,
-    ].join('\n')
+    const isEntry = agency.entryPoints.includes(slot.roleId)
+    const priorHandoffs = handoffsByRole.get(slot.roleId) ?? []
+    const handoffLines =
+      priorHandoffs.length > 0
+        ? [
+            '',
+            `Prior work by previous ${role.name} agents:`,
+            ...priorHandoffs.map((h) => `[Instance ${h.instanceIndex}]: ${h.summary}`),
+          ].join('\n')
+        : ''
 
-    const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
-    const resumeSdkSessionId = persisted.roleSessionMap[roleId]
-    const mcp = createOrchestratorMcp(localId)
+    const entries = persisted.roleSessionMap[slot.roleId] ?? []
+    const totalInstances = slot.max ?? (slot.count ?? 1)
 
-    await startSession(
-      {
-        localId,
-        projectPath: persisted.projectPath,
-        ...(persisted.worktreePath ? { worktreePath: persisted.worktreePath } : {}),
-        initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
-        systemPromptAppend,
-        ...(role.model ? { model: role.model } : {}),
-        ...(role.effort ? { effort: role.effort } : {}),
-        ...(role.allowedTools && role.allowedTools.length
-          ? { allowedTools: role.allowedTools }
-          : {}),
-        agencyInstanceId: instanceId,
-        roleId,
+    for (const entry of entries) {
+      const localId = randomUUID()
+      const instId = `${slot.roleId}-${entry.instanceIndex}`
+
+      const contextPreamble = buildContextPreamble({
         roleName: role.name,
+        roleId: slot.roleId,
+        instanceIndex: entry.instanceIndex,
+        totalInstances,
+        instanceId: instId,
         agencyName: agency.name,
-        ...(resumeSdkSessionId ? { resumeSdkSessionId } : {}),
-      },
-      { mcpServer: mcp },
-    )
+        allInstanceIds,
+        isEntry,
+        handoffLines,
+      })
 
-    runtime.sessionByRole.set(roleId, localId)
-    runtime.roleBySessionId.set(localId, roleId)
-    sessionToInstance.set(localId, instanceId)
+      const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
+      const mcp = createOrchestratorMcp(localId)
 
-    sessionsMeta.push({ localId, roleId, roleName: role.name, isEntryPoint: isEntry })
+      await startSession(
+        {
+          localId,
+          projectPath: persisted.projectPath,
+          ...(persisted.worktreePath ? { worktreePath: persisted.worktreePath } : {}),
+          initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
+          systemPromptAppend,
+          ...(role.model ? { model: role.model } : {}),
+          ...(role.effort ? { effort: role.effort } : {}),
+          ...(withOrchestraMcp(role.allowedTools)
+            ? { allowedTools: withOrchestraMcp(role.allowedTools) }
+            : {}),
+          agencyInstanceId: instanceId,
+          roleId: slot.roleId,
+          roleInstanceIndex: entry.instanceIndex,
+          roleName: role.name,
+          agencyName: agency.name,
+          ...(entry.sdkSessionId ? { resumeSdkSessionId: entry.sdkSessionId } : {}),
+        },
+        { mcpServer: mcp },
+      )
+
+      runtime.restartParamsByRole.set(slot.roleId, {
+        systemPromptAppend,
+        model: role.model ?? undefined,
+        effort: role.effort ?? undefined,
+        allowedTools: withOrchestraMcp(role.allowedTools),
+      })
+
+      const inst: AgentInstance = {
+        localId,
+        roleId: slot.roleId,
+        instanceIndex: entry.instanceIndex,
+        instanceId: instId,
+        isOverflow: false,
+      }
+
+      if (!runtime.instancesByRole.has(slot.roleId)) runtime.instancesByRole.set(slot.roleId, [])
+      runtime.instancesByRole.get(slot.roleId)!.push(inst)
+      runtime.sessionToInstance.set(localId, inst)
+      sessionToRuntimeId.set(localId, instanceId)
+
+      sessionsMeta.push({
+        localId,
+        roleId: slot.roleId,
+        instanceId: instId,
+        instanceIndex: entry.instanceIndex,
+        roleName: role.name,
+        isEntryPoint: isEntry,
+        isOverflow: false,
+      })
+    }
   }
 
   registry.updateAgency(instanceId, { lastActivityAt: Date.now() })
@@ -431,11 +956,14 @@ export function listAgencyInstances(): AgencyInstance[] {
     projectPath: r.projectPath,
     worktreePath: r.worktreePath,
     branch: r.branch,
-    sessions: Array.from(r.sessionByRole.entries()).map(([roleId, localId]) => ({
-      localId,
-      roleId,
-      roleName: roleId,
+    sessions: Array.from(r.sessionToInstance.values()).map((inst) => ({
+      localId: inst.localId,
+      roleId: inst.roleId,
+      instanceId: inst.instanceId,
+      instanceIndex: inst.instanceIndex,
+      roleName: inst.roleId,
       isEntryPoint: false,
+      isOverflow: inst.isOverflow,
     })),
   }))
 }

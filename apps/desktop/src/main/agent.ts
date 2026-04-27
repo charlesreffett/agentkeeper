@@ -40,6 +40,7 @@ export interface ActiveSession {
   /** Agency membership (null if freestanding). */
   agencyInstanceId: string | null
   roleId: string | null
+  roleInstanceIndex: number | null
   workItemId: string | null
   /** Full SDK message history for orchestrator routing. */
   events: SDKMessage[]
@@ -155,8 +156,11 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             status: session.status,
           })
           if (session.agencyInstanceId && session.roleId) {
+            const instanceIndex = session.roleInstanceIndex ?? 1
             registry.updateAgency(session.agencyInstanceId, {
-              roleSessionMap: { [session.roleId]: anyMsg.session_id },
+              roleSessionMap: {
+                [session.roleId]: [{ instanceIndex, sdkSessionId: anyMsg.session_id }],
+              },
               lastActivityAt: Date.now(),
             })
           }
@@ -312,6 +316,7 @@ export async function startSession(
     agencyName: params.agencyName ?? null,
     agencyInstanceId: params.agencyInstanceId ?? null,
     roleId: params.roleId ?? null,
+    roleInstanceIndex: params.roleInstanceIndex ?? null,
     workItemId: params.workItemId ?? null,
     events: [],
     idleWaiters: [],

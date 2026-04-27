@@ -8,6 +8,7 @@ allowedTools:
   - Grep
   - Glob
   - Bash
+  - mcp__orchestral__send_message
 allowedPeers:
   - planner
   - developer

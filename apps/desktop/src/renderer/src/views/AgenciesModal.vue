@@ -6,6 +6,7 @@ import type {
   AgencyDraft,
   AgencyScope,
   Role,
+  RoleSlot,
 } from '@shared/ipc-contract'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
@@ -39,6 +40,13 @@ const flowFrom = ref('')
 const flowTo = ref('')
 const saving = ref(false)
 
+// Multiplicity mode per role in the editor: 'x1' | 'fixed' | 'dynamic'
+const multiplicityMode = ref<Record<string, 'x1' | 'fixed' | 'dynamic'>>({})
+// Extra config for fixed/dynamic modes
+const multiplicityCount = ref<Record<string, number>>({})
+const multiplicityMin = ref<Record<string, number>>({})
+const multiplicityMax = ref<Record<string, number>>({})
+
 async function refresh() {
   loading.value = true
   message.value = null
@@ -67,6 +75,10 @@ function beginNew() {
     notes: '',
     scope: 'project',
   }
+  multiplicityMode.value = {}
+  multiplicityCount.value = {}
+  multiplicityMin.value = {}
+  multiplicityMax.value = {}
 }
 
 function beginEdit(a: Agency) {
@@ -76,32 +88,64 @@ function beginEdit(a: Agency) {
     id: a.id,
     name: a.name,
     description: a.description,
-    roles: [...a.roles],
+    roles: a.roles.map((s) => ({ ...s })),
     flows: a.flows.map((f) => [...f] as [string, string]),
     entryPoints: [...a.entryPoints],
     notes: a.notes,
     scope: a.scope,
   }
+  // Restore multiplicity controls from existing RoleSlots
+  const mMode: Record<string, 'x1' | 'fixed' | 'dynamic'> = {}
+  const mCount: Record<string, number> = {}
+  const mMin: Record<string, number> = {}
+  const mMax: Record<string, number> = {}
+  for (const slot of a.roles) {
+    if (slot.min !== undefined || slot.max !== undefined) {
+      mMode[slot.roleId] = 'dynamic'
+      mMin[slot.roleId] = slot.min ?? 1
+      mMax[slot.roleId] = slot.max ?? 3
+    } else if (slot.count !== undefined && slot.count > 1) {
+      mMode[slot.roleId] = 'fixed'
+      mCount[slot.roleId] = slot.count
+    } else {
+      mMode[slot.roleId] = 'x1'
+    }
+  }
+  multiplicityMode.value = mMode
+  multiplicityCount.value = mCount
+  multiplicityMin.value = mMin
+  multiplicityMax.value = mMax
 }
 
 function cancelMode() {
   mode.value = 'browse'
 }
 
+function roleSelected(roleId: string): boolean {
+  return form.value.roles.some((s) => s.roleId === roleId)
+}
+
 function toggleRole(roleId: string) {
-  const idx = form.value.roles.indexOf(roleId)
-  if (idx === -1) form.value.roles.push(roleId)
-  else {
+  const idx = form.value.roles.findIndex((s) => s.roleId === roleId)
+  if (idx === -1) {
+    form.value.roles.push({ roleId })
+    multiplicityMode.value[roleId] = 'x1'
+    multiplicityCount.value[roleId] = 2
+    multiplicityMin.value[roleId] = 1
+    multiplicityMax.value[roleId] = 3
+  } else {
     form.value.roles.splice(idx, 1)
     form.value.entryPoints = form.value.entryPoints.filter((r) => r !== roleId)
-    form.value.flows = form.value.flows.filter(
-      ([a, b]) => a !== roleId && b !== roleId,
-    )
+    form.value.flows = form.value.flows.filter(([a, b]) => a !== roleId && b !== roleId)
+    delete multiplicityMode.value[roleId]
+    delete multiplicityCount.value[roleId]
+    delete multiplicityMin.value[roleId]
+    delete multiplicityMax.value[roleId]
   }
 }
 
 function toggleEntry(roleId: string) {
-  if (!form.value.roles.includes(roleId)) return
+  if (!roleSelected(roleId)) return
   const idx = form.value.entryPoints.indexOf(roleId)
   if (idx === -1) form.value.entryPoints.push(roleId)
   else form.value.entryPoints.splice(idx, 1)
@@ -124,6 +168,23 @@ function removeFlow(i: number) {
 
 function validId(s: string) {
   return /^[a-z0-9][a-z0-9-]*$/.test(s)
+}
+
+/** Build the final RoleSlot[] from form + multiplicity controls */
+function buildRoleSlots(): RoleSlot[] {
+  return form.value.roles.map((slot) => {
+    const m = multiplicityMode.value[slot.roleId] ?? 'x1'
+    if (m === 'fixed') {
+      const count = Math.max(1, multiplicityCount.value[slot.roleId] ?? 2)
+      return { roleId: slot.roleId, count }
+    }
+    if (m === 'dynamic') {
+      const min = Math.max(1, multiplicityMin.value[slot.roleId] ?? 1)
+      const max = Math.max(min + 1, multiplicityMax.value[slot.roleId] ?? 3)
+      return { roleId: slot.roleId, min, max }
+    }
+    return { roleId: slot.roleId }
+  })
 }
 
 async function save() {
@@ -150,7 +211,7 @@ async function save() {
       id: form.value.id.trim(),
       name: form.value.name.trim(),
       description: form.value.description.trim(),
-      roles: [...form.value.roles],
+      roles: buildRoleSlots(),
       flows: form.value.flows.map((f) => [...f] as [string, string]),
       entryPoints: [...form.value.entryPoints],
       notes: form.value.notes.trim(),
@@ -181,10 +242,20 @@ async function remove(a: Agency) {
   }
 }
 
-const availableRoleIds = computed(() => roles.value.map((r) => r.id))
+const availableRoles = computed(() => roles.value)
+
+const selectedRoleIds = computed(() => form.value.roles.map((s) => s.roleId))
 
 function roleName(id: string) {
   return roles.value.find((r) => r.id === id)?.name ?? id
+}
+
+function roleSlotLabel(slot: RoleSlot): string {
+  if (slot.min !== undefined || slot.max !== undefined) {
+    return `${slot.min ?? 1}–${slot.max ?? '?'}`
+  }
+  if (slot.count !== undefined && slot.count > 1) return `×${slot.count}`
+  return ''
 }
 
 watch(
@@ -337,34 +408,95 @@ watch(
 
             <div class="space-y-2">
               <label class="text-xs font-medium">Roles in this agency</label>
-              <div v-if="availableRoleIds.length === 0" class="text-xs text-muted-foreground">
+              <div v-if="availableRoles.length === 0" class="text-xs text-muted-foreground">
                 No roles found. Create roles first.
               </div>
-              <div v-else class="flex flex-wrap gap-2">
-                <label
-                  v-for="r in roles"
+              <div v-else class="space-y-1.5">
+                <div
+                  v-for="r in availableRoles"
                   :key="r.id"
-                  class="flex items-center gap-1.5 px-2 py-1 rounded border border-input cursor-pointer hover:bg-accent/50 text-xs"
+                  class="flex items-center gap-2 flex-wrap"
                 >
-                  <input
-                    type="checkbox"
-                    :checked="form.roles.includes(r.id)"
-                    class="size-3.5"
-                    @change="toggleRole(r.id)"
-                  />
-                  <span class="font-mono">{{ r.id }}</span>
-                  <span class="text-muted-foreground">· {{ r.name }}</span>
-                </label>
+                  <!-- Checkbox + role label -->
+                  <label
+                    class="flex items-center gap-1.5 px-2 py-1 rounded border border-input cursor-pointer hover:bg-accent/50 text-xs min-w-0"
+                  >
+                    <input
+                      type="checkbox"
+                      :checked="roleSelected(r.id)"
+                      class="size-3.5 shrink-0"
+                      @change="toggleRole(r.id)"
+                    />
+                    <span class="font-mono">{{ r.id }}</span>
+                    <span class="text-muted-foreground">· {{ r.name }}</span>
+                  </label>
+
+                  <!-- Multiplicity controls — only when role is checked -->
+                  <template v-if="roleSelected(r.id)">
+                    <!-- Mode segmented control -->
+                    <div class="flex rounded border border-input overflow-hidden text-[11px] shrink-0">
+                      <button
+                        v-for="opt in [['x1', '×1'], ['fixed', 'Fixed'], ['dynamic', 'Dynamic']] as [string, string][]"
+                        :key="opt[0]"
+                        class="px-2 py-0.5 transition"
+                        :class="
+                          multiplicityMode[r.id] === opt[0]
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-background text-muted-foreground hover:bg-accent/50'
+                        "
+                        type="button"
+                        @click="multiplicityMode[r.id] = opt[0] as 'x1' | 'fixed' | 'dynamic'"
+                      >
+                        {{ opt[1] }}
+                      </button>
+                    </div>
+
+                    <!-- Fixed count spinner -->
+                    <template v-if="multiplicityMode[r.id] === 'fixed'">
+                      <label class="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
+                        Count
+                        <input
+                          v-model.number="multiplicityCount[r.id]"
+                          type="number"
+                          min="1"
+                          class="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-xs focus:outline-none focus:border-ring"
+                        />
+                      </label>
+                    </template>
+
+                    <!-- Dynamic min/max spinners -->
+                    <template v-if="multiplicityMode[r.id] === 'dynamic'">
+                      <label class="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
+                        Min
+                        <input
+                          v-model.number="multiplicityMin[r.id]"
+                          type="number"
+                          min="1"
+                          class="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-xs focus:outline-none focus:border-ring"
+                        />
+                      </label>
+                      <label class="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
+                        Max
+                        <input
+                          v-model.number="multiplicityMax[r.id]"
+                          type="number"
+                          min="2"
+                          class="w-14 rounded border border-input bg-background px-1.5 py-0.5 text-xs focus:outline-none focus:border-ring"
+                        />
+                      </label>
+                    </template>
+                  </template>
+                </div>
               </div>
             </div>
 
-            <div v-if="form.roles.length" class="space-y-2">
+            <div v-if="selectedRoleIds.length" class="space-y-2">
               <label class="text-xs font-medium">
                 Entry points (receive user's initial prompt)
               </label>
               <div class="flex flex-wrap gap-2">
                 <label
-                  v-for="rid in form.roles"
+                  v-for="rid in selectedRoleIds"
                   :key="rid"
                   class="flex items-center gap-1.5 px-2 py-1 rounded border border-input cursor-pointer hover:bg-accent/50 text-xs"
                 >
@@ -379,7 +511,7 @@ watch(
               </div>
             </div>
 
-            <div v-if="form.roles.length" class="space-y-2">
+            <div v-if="selectedRoleIds.length" class="space-y-2">
               <label class="text-xs font-medium">
                 Flows (sender → receiver allowlist)
               </label>
@@ -393,7 +525,7 @@ watch(
                   class="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs font-mono"
                 >
                   <option value="">From…</option>
-                  <option v-for="rid in form.roles" :key="rid" :value="rid">
+                  <option v-for="rid in selectedRoleIds" :key="rid" :value="rid">
                     {{ rid }}
                   </option>
                 </select>
@@ -403,7 +535,7 @@ watch(
                   class="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs font-mono"
                 >
                   <option value="">To…</option>
-                  <option v-for="rid in form.roles" :key="rid" :value="rid">
+                  <option v-for="rid in selectedRoleIds" :key="rid" :value="rid">
                     {{ rid }}
                   </option>
                 </select>

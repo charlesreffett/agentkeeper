@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { Agency, AgencyDraft, AgencyScope } from '../shared/ipc-contract'
+import type { Agency, AgencyDraft, AgencyScope, RoleSlot } from '../shared/ipc-contract'
 
 const PROJECT_DIR = '.orchestral/agencies'
 const GLOBAL_DIR = '.orchestral/agencies'
@@ -44,10 +44,25 @@ function parseAgencyFile(
   const name = typeof parsed['name'] === 'string' ? parsed['name'] : meta.id
   const description =
     typeof parsed['description'] === 'string' ? parsed['description'] : ''
-  const roles = Array.isArray(parsed['roles'])
-    ? (parsed['roles'] as unknown[]).filter(
-        (r): r is string => typeof r === 'string',
-      )
+  const roles: RoleSlot[] = Array.isArray(parsed['roles'])
+    ? (parsed['roles'] as unknown[]).flatMap((r): RoleSlot[] => {
+        if (typeof r === 'string') return [{ roleId: r }]
+        if (r && typeof r === 'object') {
+          const obj = r as Record<string, unknown>
+          if (typeof obj['id'] !== 'string') return []
+          const id = obj['id']
+          if (typeof obj['count'] === 'number') {
+            return [{ roleId: id, count: Math.max(1, Math.floor(obj['count'])) }]
+          }
+          if (typeof obj['min'] === 'number' || typeof obj['max'] === 'number') {
+            const min = typeof obj['min'] === 'number' ? Math.max(1, Math.floor(obj['min'])) : 1
+            const max = typeof obj['max'] === 'number' ? Math.floor(obj['max']) : min + 1
+            return [{ roleId: id, min, max }]
+          }
+          return [{ roleId: id }]
+        }
+        return []
+      })
     : []
   const flowsRaw = Array.isArray(parsed['flows']) ? parsed['flows'] : []
   const flows: Array<[string, string]> = []
@@ -74,11 +89,22 @@ function parseAgencyFile(
   }
 }
 
+function serializeRoleSlot(slot: RoleSlot): string | Record<string, unknown> {
+  if (slot.count !== undefined) {
+    if (slot.count === 1) return slot.roleId
+    return { id: slot.roleId, count: slot.count }
+  }
+  if (slot.min !== undefined || slot.max !== undefined) {
+    return { id: slot.roleId, min: slot.min, max: slot.max }
+  }
+  return slot.roleId
+}
+
 function serializeAgency(a: AgencyDraft): string {
   const fm: Record<string, unknown> = {
     name: a.name,
     description: a.description,
-    roles: a.roles,
+    roles: a.roles.map(serializeRoleSlot),
     flows: a.flows,
     entryPoints: a.entryPoints,
   }

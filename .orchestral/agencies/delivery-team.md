@@ -3,7 +3,9 @@ name: Delivery Team
 description: Planner decomposes, developer implements, reviewer verifies
 roles:
   - planner
-  - developer
+  - id: developer
+    min: 2
+    max: 6
   - reviewer
 flows: []
 entryPoints:

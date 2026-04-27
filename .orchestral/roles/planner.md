@@ -10,6 +10,7 @@ allowedTools:
   - Glob
   - WebFetch
   - WebSearch
+  - mcp__orchestral__send_message
 allowedPeers:
   - developer
   - reviewer
