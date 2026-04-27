@@ -424,7 +424,7 @@ export async function resumeSession(localId: string): Promise<string> {
 
 async function restartIdle(
   localId: string,
-  overrides: { model?: string; effort?: RoleEffort },
+  overrides: { model?: string; effort?: RoleEffort; permissionMode?: PermissionMode },
 ): Promise<void> {
   if (restartingIds.has(localId)) throw new Error(`Session ${localId} is already restarting`)
   restartingIds.add(localId)
@@ -454,7 +454,8 @@ async function restartIdle(
 
     const newModel = overrides.model ?? persisted.model ?? undefined
     const newEffort = (overrides.effort ?? persisted.effort) as RoleEffort | undefined
-    registry.updateSession(localId, { model: newModel ?? null, effort: newEffort ?? null })
+    const newPermissionMode = (overrides.permissionMode ?? persisted.permissionMode ?? undefined) as PermissionMode | undefined
+    registry.updateSession(localId, { model: newModel ?? null, effort: newEffort ?? null, permissionMode: newPermissionMode ?? null })
 
     await startSession({
       localId,
@@ -463,7 +464,7 @@ async function restartIdle(
       initialPrompt: persisted.initialPrompt,
       model: newModel,
       effort: newEffort,
-      permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
+      permissionMode: newPermissionMode,
       resumeSdkSessionId: persisted.sdkSessionId,
       roleName: persisted.roleName ?? undefined,
       agencyName: persisted.agencyName ?? undefined,
@@ -481,6 +482,10 @@ export async function setModel(localId: string, model: string): Promise<void> {
 
 export async function setEffort(localId: string, effort: RoleEffort): Promise<void> {
   return restartIdle(localId, { effort })
+}
+
+export async function setPermissionMode(localId: string, permissionMode: PermissionMode): Promise<void> {
+  return restartIdle(localId, { permissionMode })
 }
 
 export function listActiveSessions(): Array<{

@@ -14,6 +14,7 @@ import {
   type PRFilters,
   type PersistedAgency,
   type PersistedSession,
+  type PermissionMode,
   type RemoteSource,
   type ResetRequest,
   type ReviewEvent,
@@ -137,6 +138,8 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.sessionsSetModel, localId, model) as Promise<void>,
     setEffort: (localId: string, effort: RoleEffort) =>
       invoke(IPC_CHANNELS.sessionsSetEffort, localId, effort) as Promise<void>,
+    setPermissionMode: (localId: string, mode: PermissionMode) =>
+      invoke(IPC_CHANNELS.sessionsSetPermissionMode, localId, mode) as Promise<void>,
   },
   worktrees: {
     list: (projectPath: string) =>

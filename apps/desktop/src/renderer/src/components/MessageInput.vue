@@ -172,8 +172,9 @@ watch(
             @keydown="onKeyDown"
           />
           <div class="flex items-center justify-between px-2 py-1.5 border-t border-border/60">
-            <div class="text-[11px] text-muted-foreground px-1">
-              {{ sendHint }}
+            <div class="flex items-center gap-1.5">
+              <slot name="toolbar-left" />
+              <span class="text-[11px] text-muted-foreground px-1">{{ sendHint }}</span>
             </div>
             <div class="flex items-center gap-2">
               <button

@@ -30,7 +30,7 @@ import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { detectRemoteSources } from './git'
 import { listSessions, readSession } from './sessions'
-import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
@@ -44,6 +44,7 @@ import { listCommands, removeCommand, saveCommand, generateCommandContent } from
 import type {
   AgencyDraft,
   AgencyScope,
+  PermissionMode,
   ResetRequest,
   RoleEffort,
   RoleDraft,
@@ -660,6 +661,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         return await setEffort(localId, effort)
       } catch (err) {
         console.error('[ipc] sessions:setEffort failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsSetPermissionMode,
+    async (_event, localId: string, mode: PermissionMode) => {
+      try {
+        return await setPermissionMode(localId, mode)
+      } catch (err) {
+        console.error('[ipc] sessions:setPermissionMode failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

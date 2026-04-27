@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { Folder } from 'lucide-vue-next'
+import { Brain, Folder, KeyRound } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
 import MessageInput from '@/components/MessageInput.vue'
@@ -208,6 +208,12 @@ async function changeEffort(e: Event) {
   await window.orchestral.sessions.setEffort(session.value.localId, val as RoleEffort)
   session.value.effort = val as RoleEffort
 }
+
+async function changePermissionMode(mode: PermissionMode) {
+  if (!session.value) return
+  await window.orchestral.sessions.setPermissionMode(session.value.localId, mode)
+  session.value.permissionMode = mode
+}
 </script>
 
 <template>
@@ -219,33 +225,6 @@ async function changeEffort(e: Event) {
         <span class="inline-flex items-center gap-1.5 text-xs">
           <span class="size-1.5 rounded-full" :class="statusDotClass" />
           <span>{{ statusLabel }}</span>
-        </span>
-        <span class="text-xs text-muted-foreground">·</span>
-        <select
-          :value="session.model ?? MODEL_OPTIONS[0].value"
-          :disabled="!canEditParams"
-          class="text-xs text-muted-foreground font-mono bg-transparent border-none outline-none"
-          :class="isTerminal ? 'pointer-events-none' : canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
-          @change="changeModel(($event.target as HTMLSelectElement).value)"
-        >
-          <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
-        </select>
-        <span class="text-xs text-muted-foreground">·</span>
-        <select
-          :value="session.effort ?? ''"
-          :disabled="!canEditParams"
-          class="text-xs text-muted-foreground bg-transparent border-none outline-none"
-          :class="isTerminal ? 'pointer-events-none' : canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
-          @change="changeEffort($event)"
-        >
-          <option value="">Default</option>
-          <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">{{ e }}</option>
-        </select>
-        <span
-          v-if="session.permissionMode"
-          class="text-xs text-muted-foreground"
-        >
-          · {{ PERM_MODE_LABELS[session.permissionMode] ?? session.permissionMode }}
         </span>
         <span
           v-if="session.branch"
@@ -368,7 +347,44 @@ async function changeEffort(e: Event) {
       "
       @send="onSend"
       @stop="onStop"
-    />
+    >
+      <template #toolbar-left>
+        <div class="flex items-center gap-0.5">
+          <Brain :size="13" class="text-muted-foreground shrink-0" />
+          <select
+            :value="session.effort ?? ''"
+            :disabled="!canEditParams"
+            class="text-[11px] text-muted-foreground bg-transparent border-none outline-none max-w-[60px]"
+            :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
+            @change="changeEffort($event)"
+          >
+            <option value="">default</option>
+            <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">{{ e }}</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-0.5">
+          <KeyRound :size="13" class="text-muted-foreground shrink-0" />
+          <select
+            :value="session.permissionMode ?? 'bypassPermissions'"
+            :disabled="!canEditParams"
+            class="text-[11px] text-muted-foreground bg-transparent border-none outline-none max-w-[80px]"
+            :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
+            @change="changePermissionMode(($event.target as HTMLSelectElement).value as PermissionMode)"
+          >
+            <option v-for="(label, val) in PERM_MODE_LABELS" :key="val" :value="val">{{ label }}</option>
+          </select>
+        </div>
+        <select
+          :value="session.model ?? MODEL_OPTIONS[0].value"
+          :disabled="!canEditParams"
+          class="text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[72px]"
+          :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
+          @change="changeModel(($event.target as HTMLSelectElement).value)"
+        >
+          <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+        </select>
+      </template>
+    </MessageInput>
   </div>
   <div v-else class="h-full flex items-center justify-center text-muted-foreground text-sm">
     Session not found.

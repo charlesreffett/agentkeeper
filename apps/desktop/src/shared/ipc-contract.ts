@@ -390,6 +390,7 @@ export interface OrchestralApi {
     touchPersisted: (localId: string) => Promise<void>
     setModel: (localId: string, model: string) => Promise<void>
     setEffort: (localId: string, effort: RoleEffort) => Promise<void>
+    setPermissionMode: (localId: string, mode: PermissionMode) => Promise<void>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -566,6 +567,7 @@ export const IPC_CHANNELS = {
   sessionsTouchPersisted: 'sessions:touchPersisted',
   sessionsSetModel: 'sessions:setModel',
   sessionsSetEffort: 'sessions:setEffort',
+  sessionsSetPermissionMode: 'sessions:setPermissionMode',
   agenciesListPersisted: 'agencies:listPersisted',
   agenciesResume: 'agencies:resume',
   agenciesDeletePersisted: 'agencies:deletePersisted',
