@@ -194,7 +194,10 @@ const PERM_MODE_LABELS: Record<PermissionMode, string> = {
   plan: 'Plan',
 }
 
-const canEditParams = computed(() => session.value?.status === 'idle')
+const canEditParams = computed(() => {
+  const s = session.value?.status
+  return s === 'idle' || s === 'suspended'
+})
 
 async function changeModel(model: string) {
   if (!session.value) return
