@@ -4,6 +4,7 @@ import path from 'node:path'
 import {
   IPC_CHANNELS,
   type AppSettings,
+  type Attachment,
   type CreatePRParams,
   type MergeMethod,
   type PRFilters,
@@ -166,9 +167,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionInput,
-    async (_event, sessionId: string, text: string) => {
+    async (_event, sessionId: string, text: string, attachments?: Attachment[]) => {
       try {
-        await sendInput(sessionId, text)
+        await sendInput(sessionId, text, attachments)
       } catch (err) {
         console.error('[ipc] session:input failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))

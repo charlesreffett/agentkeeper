@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, computed } from 'vue'
-import { OctagonX, SquareSlash, SendHorizontal } from 'lucide-vue-next'
+import { OctagonX, Plus, SquareSlash, SendHorizontal } from 'lucide-vue-next'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
+import type { Attachment } from '../../../shared/ipc-contract'
 
 const props = defineProps<{
   disabled?: boolean
@@ -18,10 +19,12 @@ const props = defineProps<{
   agencyName?: string | null
 }>()
 
-const emit = defineEmits<{ send: [text: string]; stop: [] }>()
+const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; stop: [] }>()
 
 const text = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
+const attachments = ref<Attachment[]>([])
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const projectsStore = useProjectsStore()
 const resolvedProjectPath = computed(
@@ -58,9 +61,10 @@ function autosize() {
 
 async function send() {
   const v = text.value.trim()
-  if (!v || props.disabled) return
-  emit('send', v)
+  if ((!v && attachments.value.length === 0) || props.disabled) return
+  emit('send', v, [...attachments.value])
   text.value = ''
+  attachments.value = []
   await nextTick()
   autosize()
 }
@@ -146,6 +150,46 @@ watch(
   },
   { immediate: true },
 )
+
+function openFilePicker() {
+  fileInputRef.value?.click()
+}
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result as string
+      resolve(result.split(',')[1]!)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
+function readAsText(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result as string)
+    reader.onerror = reject
+    reader.readAsText(file)
+  })
+}
+
+async function onFilesSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files) return
+  for (const file of Array.from(input.files)) {
+    const isImage = file.type.startsWith('image/')
+    const content = isImage ? await readAsBase64(file) : await readAsText(file)
+    attachments.value.push({ name: file.name, mimeType: file.type || 'text/plain', content })
+  }
+  input.value = ''
+}
+
+function removeAttachment(index: number) {
+  attachments.value.splice(index, 1)
+}
 </script>
 
 <template>
@@ -162,6 +206,20 @@ watch(
         <div
           class="rounded-lg border border-border bg-background focus-within:border-ring transition"
         >
+          <div v-if="attachments.length > 0" class="flex flex-wrap gap-1 px-3 pt-2">
+            <span
+              v-for="(a, i) in attachments"
+              :key="i"
+              class="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
+            >
+              {{ a.name }}
+              <button
+                type="button"
+                class="text-muted-foreground hover:text-foreground"
+                @click="removeAttachment(i)"
+              >×</button>
+            </span>
+          </div>
           <textarea
             ref="textarea"
             v-model="text"
@@ -173,6 +231,16 @@ watch(
           />
           <div class="flex items-center justify-between px-2 py-1.5 border-t border-border/60">
             <div class="flex items-center gap-1.5">
+              <button
+                type="button"
+                class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                title="Attach file"
+                tabindex="-1"
+                @mousedown.prevent
+                @click="openFilePicker"
+              >
+                <Plus :size="16" />
+              </button>
               <slot name="toolbar-left" />
               <span class="text-[11px] text-muted-foreground px-1">{{ sendHint }}</span>
             </div>
@@ -199,7 +267,7 @@ watch(
                 v-else
                 class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
                 title="Send"
-                :disabled="disabled || !text.trim()"
+                :disabled="disabled || (!text.trim() && attachments.length === 0)"
                 @mousedown.prevent
                 @click="send"
               >
@@ -210,5 +278,12 @@ watch(
         </div>
       </div>
     </div>
+    <input
+      ref="fileInputRef"
+      type="file"
+      multiple
+      class="hidden"
+      @change="onFilesSelected"
+    />
   </div>
 </template>

@@ -7,7 +7,7 @@ import MessageInput from '@/components/MessageInput.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { shortModel } from '@/lib/format'
-import { ROLE_EFFORT_VALUES, type PermissionMode, type RoleEffort, type TranscriptEvent } from '@shared/ipc-contract'
+import { ROLE_EFFORT_VALUES, type Attachment, type PermissionMode, type RoleEffort, type TranscriptEvent } from '@shared/ipc-contract'
 
 const props = defineProps<{
   liveId: string
@@ -111,8 +111,8 @@ onMounted(async () => {
   }
 })
 
-function onSend(text: string) {
-  void store.send(props.liveId, text)
+function onSend(text: string, attachments: Attachment[]) {
+  void store.send(props.liveId, text, attachments)
 }
 
 async function onStop() {

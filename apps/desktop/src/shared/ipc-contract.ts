@@ -34,6 +34,15 @@ export type {
   ReviewEvent,
 }
 
+// ─── Attachments ────────────────────────────────────────────────────────────
+
+export interface Attachment {
+  name: string
+  mimeType: string
+  /** base64 for images; UTF-8 text for everything else */
+  content: string
+}
+
 // ─── Remote sources ─────────────────────────────────────────────────────────
 
 export interface RemoteSource {
@@ -377,7 +386,7 @@ export interface OrchestralApi {
       sessionId: string,
     ) => Promise<SessionTranscript | null>
     start: (params: StartSessionParams) => Promise<string>
-    sendInput: (sessionId: string, text: string) => Promise<void>
+    sendInput: (sessionId: string, text: string, attachments?: Attachment[]) => Promise<void>
     interrupt: (sessionId: string) => Promise<void>
     terminate: (sessionId: string) => Promise<void>
     onEvent: (callback: (event: LiveSessionEvent) => void) => () => void

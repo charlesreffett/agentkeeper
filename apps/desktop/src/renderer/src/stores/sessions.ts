@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, toRaw } from 'vue'
 import type {
+  Attachment,
   LiveSessionStatus,
   PermissionMode,
   PersistedSession,
@@ -159,11 +160,11 @@ export const useSessionStore = defineStore('sessions', () => {
     return localId
   }
 
-  async function send(id: string, text: string): Promise<void> {
+  async function send(id: string, text: string, attachments?: Attachment[]): Promise<void> {
     const s = sessions[id]
     if (!s) return
     try {
-      await window.orchestral.sessions.sendInput(id, text)
+      await window.orchestral.sessions.sendInput(id, text, attachments)
       s.interruptedAt = null
       s.lastActivityAt = Date.now()
     } catch (err) {

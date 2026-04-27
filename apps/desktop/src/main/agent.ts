@@ -8,6 +8,7 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import type {
+  Attachment,
   LiveSessionEvent,
   LiveSessionStatus,
   LiveSessionStatusUpdate,
@@ -204,11 +205,21 @@ async function consumeStream(session: ActiveSession): Promise<void> {
   }
 }
 
-function messageFromText(text: string): SDKUserMessage {
-  return {
-    type: 'user',
-    message: { role: 'user', content: text },
-  } as SDKUserMessage
+function messageFromInput(text: string, attachments?: Attachment[]): SDKUserMessage {
+  if (!attachments || attachments.length === 0) {
+    return { type: 'user', message: { role: 'user', content: text } } as SDKUserMessage
+  }
+  const blocks: unknown[] = attachments.map((a) => {
+    if (a.mimeType.startsWith('image/')) {
+      return {
+        type: 'image',
+        source: { type: 'base64', media_type: a.mimeType, data: a.content },
+      }
+    }
+    return { type: 'text', text: `<file name="${a.name}">\n${a.content}\n</file>` }
+  })
+  if (text.trim()) blocks.push({ type: 'text', text })
+  return { type: 'user', message: { role: 'user', content: blocks } } as SDKUserMessage
 }
 
 export async function startSession(
@@ -244,7 +255,7 @@ export async function startSession(
   const input = new AsyncQueue<SDKUserMessage>()
   const isResume = !!params.resumeSdkSessionId
   if (!isResume) {
-    input.push(messageFromText(params.initialPrompt))
+    input.push(messageFromInput(params.initialPrompt))
   }
 
   const childEnv: Record<string, string | undefined> = {
@@ -321,7 +332,7 @@ export async function startSession(
   return id
 }
 
-export async function sendInput(sessionId: string, text: string): Promise<void> {
+export async function sendInput(sessionId: string, text: string, attachments?: Attachment[]): Promise<void> {
   let s = active.get(sessionId)
   if (!s) {
     const persisted = registry.getSession(sessionId)
@@ -342,7 +353,7 @@ export async function sendInput(sessionId: string, text: string): Promise<void> 
     })
     s = active.get(sessionId)!
   }
-  s.input.push(messageFromText(text))
+  s.input.push(messageFromInput(text, attachments))
   setStatus(s, 'running')
 }
 

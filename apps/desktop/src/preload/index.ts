@@ -4,6 +4,7 @@ import {
   type AgencyDraft,
   type AgencyScope,
   type AppSettings,
+  type Attachment,
   type CreatePRParams,
   type GitHubConfig,
   type IssueTransition,
@@ -117,8 +118,8 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.sessionsRead, projectPath, sessionId) as Promise<never>,
     start: (params: StartSessionParams) =>
       invoke(IPC_CHANNELS.sessionStart, params) as Promise<string>,
-    sendInput: (sessionId: string, text: string) =>
-      invoke(IPC_CHANNELS.sessionInput, sessionId, text) as Promise<void>,
+    sendInput: (sessionId: string, text: string, attachments?: Attachment[]) =>
+      invoke(IPC_CHANNELS.sessionInput, sessionId, text, attachments) as Promise<void>,
     interrupt: (sessionId: string) =>
       invoke(IPC_CHANNELS.sessionInterrupt, sessionId) as Promise<void>,
     terminate: (sessionId: string) =>
