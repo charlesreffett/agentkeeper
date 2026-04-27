@@ -3,7 +3,9 @@ import path from 'node:path'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import Anthropic from '@anthropic-ai/sdk'
 import type { Skill, SkillPreview } from '../shared/ipc-contract'
+import { secrets, SECRET_KEYS } from './secrets'
 
 const execFileAsync = promisify(execFile)
 
@@ -269,4 +271,77 @@ export async function installSkill(
 
 export async function removeSkill(skill: Skill): Promise<void> {
   await fs.rm(skill.path, { recursive: true, force: true })
+}
+
+const SKILL_GENERATION_SYSTEM = `You generate Claude Code skill files. Output ONLY the skill markdown starting with \`---\`. No explanation, no code fences, no prose before or after.
+
+Format:
+---
+name: <kebab-case-id>
+description: <one-line description of what this skill does>
+---
+
+# Title
+
+Instructions to Claude...`
+
+function validateGeneratedSkill(raw: string): string {
+  const text = stripAnsi(raw).trim()
+  if (!text.startsWith('---')) {
+    throw new Error('Generation returned unexpected format — try rephrasing the prompt.')
+  }
+  return text
+}
+
+export async function generateSkillContent(prompt: string): Promise<string> {
+  const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
+  const userContent = `Create a Claude Code skill that does the following: ${prompt}`
+
+  if (apiKey) {
+    // Console API key path — direct SDK call, no subprocess needed.
+    const client = new Anthropic({ apiKey })
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2048,
+      system: SKILL_GENERATION_SYSTEM,
+      messages: [{ role: 'user', content: userContent }],
+    })
+    const text = response.content.find((b) => b.type === 'text')?.text ?? ''
+    return validateGeneratedSkill(text)
+  }
+
+  // Pro/Max plan path — spawn the claude CLI which picks up `claude login`
+  // credentials the same way agent sessions do.
+  const fullPrompt = `${SKILL_GENERATION_SYSTEM}\n\n${userContent}`
+  try {
+    const result = await execFileAsync('claude', ['-p', fullPrompt], {
+      cwd: os.homedir(),
+      timeout: 60000,
+      maxBuffer: 2 * 1024 * 1024,
+      env: { ...process.env },
+    })
+    return validateGeneratedSkill(result.stdout)
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: string }
+    if (e.code === 'ENOENT') {
+      throw new Error('claude CLI not found in PATH — make sure Claude Code is installed.')
+    }
+    const raw = e.stderr?.trim() || e.stdout?.trim() || e.message || 'unknown error'
+    throw new Error(`Skill generation failed: ${stripAnsi(raw).trim()}`)
+  }
+}
+
+export async function saveSkill(
+  projectPath: string,
+  id: string,
+  scope: 'project' | 'global',
+  content: string,
+): Promise<Skill> {
+  const dir = scope === 'project' ? projectSkillsDir(projectPath) : globalSkillsDir()
+  const skillDir = path.join(dir, id)
+  const skillFile = path.join(skillDir, 'SKILL.md')
+  await fs.mkdir(skillDir, { recursive: true })
+  await fs.writeFile(skillFile, content.trimEnd() + '\n', 'utf8')
+  const { name, description, body } = parseFrontmatter(content)
+  return { id, scope, path: skillDir, name: name || id, description, body }
 }

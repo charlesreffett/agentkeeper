@@ -15,6 +15,8 @@ const loading = ref(false)
 const expanded = ref<string | null>(null)
 const message = ref<string | null>(null)
 
+// ── Install tab ──────────────────────────────────────────────────────────────
+
 type Step = 'source' | 'select'
 const step = ref<Step>('source')
 const installSource = ref('')
@@ -23,6 +25,94 @@ const previewing = ref(false)
 const previews = ref<SkillPreview[]>([])
 const selectedIds = ref<string[]>([])
 const installing = ref(false)
+
+// ── Create tab ───────────────────────────────────────────────────────────────
+
+type ModalTab = 'install' | 'create'
+const activeTab = ref<ModalTab>('install')
+
+const createPrompt = ref('')
+const generating = ref(false)
+const createId = ref('')
+const createName = ref('')
+const createDescription = ref('')
+const createBody = ref('')
+const createScope = ref<'project' | 'global'>('project')
+const saving = ref(false)
+
+function toSlug(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+}
+
+async function generateSkill() {
+  const p = createPrompt.value.trim()
+  if (!p) {
+    message.value = 'Describe the skill first.'
+    return
+  }
+  generating.value = true
+  message.value = null
+  try {
+    const raw = await window.orchestral.skills.generate(p)
+    const endIdx = raw.indexOf('\n---', 3)
+    if (endIdx !== -1) {
+      const fm = raw.slice(3, endIdx)
+      const nameMatch = fm.match(/^name:\s*(.+)$/m)
+      const descMatch = fm.match(/^description:\s*(.+)$/m)
+      createName.value = nameMatch ? nameMatch[1]!.trim() : ''
+      createDescription.value = descMatch ? descMatch[1]!.trim() : ''
+      createBody.value = raw.slice(endIdx + 4).replace(/^\r?\n/, '').trimEnd()
+      createId.value = toSlug(createName.value)
+    } else {
+      createBody.value = raw
+    }
+  } catch (e) {
+    message.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    generating.value = false
+  }
+}
+
+async function doSaveSkill() {
+  const id = createId.value.trim()
+  if (!id) {
+    message.value = 'Skill ID is required.'
+    return
+  }
+  if (!createName.value.trim()) {
+    message.value = 'Skill name is required.'
+    return
+  }
+  saving.value = true
+  message.value = null
+  try {
+    const content = [
+      '---',
+      `name: ${createName.value.trim()}`,
+      `description: ${createDescription.value.trim()}`,
+      '---',
+      '',
+      createBody.value.trim(),
+    ].join('\n')
+    await window.orchestral.skills.save(props.projectPath, id, createScope.value, content)
+    createPrompt.value = ''
+    createId.value = ''
+    createName.value = ''
+    createDescription.value = ''
+    createBody.value = ''
+    await refresh()
+  } catch (e) {
+    message.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    saving.value = false
+  }
+}
+
+// ── Shared ───────────────────────────────────────────────────────────────────
 
 async function refresh() {
   loading.value = true
@@ -141,6 +231,7 @@ watch(
   async (isOpen) => {
     if (isOpen) {
       expanded.value = null
+      activeTab.value = 'install'
       resetInstallForm()
       await refresh()
       await nextTick()
@@ -175,7 +266,23 @@ watch(
       </header>
 
       <div class="flex-1 overflow-y-auto min-h-0">
-        <div class="px-6 py-4 border-b border-border space-y-3">
+        <!-- Tab bar -->
+        <div class="px-6 pt-3 flex gap-1 border-b border-border shrink-0">
+          <button
+            v-for="tab in (['install', 'create'] as const)"
+            :key="tab"
+            class="px-3 py-1.5 text-xs rounded-t-md transition-colors"
+            :class="activeTab === tab
+              ? 'bg-card text-foreground border border-border border-b-card -mb-px z-10'
+              : 'text-muted-foreground hover:text-foreground'"
+            @click="activeTab = tab; message = null"
+          >
+            {{ tab === 'install' ? 'Install' : 'Create with AI' }}
+          </button>
+        </div>
+
+        <!-- Install tab -->
+        <div v-if="activeTab === 'install'" class="px-6 py-4 border-b border-border space-y-3">
           <template v-if="step === 'source'">
             <p class="text-xs font-medium">Install skill</p>
             <div class="flex gap-2">
@@ -264,6 +371,87 @@ watch(
               >
                 {{ installing ? 'Installing…' : `Install selected (${selectedIds.length})` }}
               </Button>
+            </div>
+          </template>
+
+          <div
+            v-if="message"
+            class="text-xs rounded-md bg-muted/40 px-3 py-2 text-destructive"
+          >
+            {{ message }}
+          </div>
+        </div>
+
+        <!-- Create with AI tab -->
+        <div v-else class="px-6 py-4 border-b border-border space-y-3">
+          <p class="text-xs font-medium">Generate a skill with AI</p>
+          <textarea
+            v-model="createPrompt"
+            rows="3"
+            placeholder="Describe what this skill should do…"
+            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring resize-none"
+            :disabled="generating || saving"
+          />
+          <div class="flex gap-2">
+            <select
+              v-model="createScope"
+              :disabled="generating || saving"
+              class="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+            >
+              <option value="project">Project</option>
+              <option value="global">Global</option>
+            </select>
+            <Button size="sm" :disabled="generating || saving" @click="generateSkill">
+              {{ generating ? 'Generating…' : 'Generate' }}
+            </Button>
+          </div>
+
+          <!-- Review / edit fields shown after generation -->
+          <template v-if="createName || createBody">
+            <div class="space-y-2 pt-1 border-t border-border">
+              <div class="flex gap-2 pt-2">
+                <div class="flex-1 space-y-1">
+                  <label class="text-[10px] text-muted-foreground uppercase tracking-wide">Name</label>
+                  <input
+                    v-model="createName"
+                    type="text"
+                    :disabled="saving"
+                    class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <label class="text-[10px] text-muted-foreground uppercase tracking-wide">ID (slug)</label>
+                  <input
+                    v-model="createId"
+                    type="text"
+                    :disabled="saving"
+                    class="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring font-mono"
+                  />
+                </div>
+              </div>
+              <div class="space-y-1">
+                <label class="text-[10px] text-muted-foreground uppercase tracking-wide">Description</label>
+                <input
+                  v-model="createDescription"
+                  type="text"
+                  :disabled="saving"
+                  class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                />
+              </div>
+              <div class="space-y-1">
+                <label class="text-[10px] text-muted-foreground uppercase tracking-wide">Body</label>
+                <textarea
+                  v-model="createBody"
+                  rows="8"
+                  :disabled="saving"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring resize-y font-mono"
+                />
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <Button size="sm" :disabled="saving" @click="doSaveSkill">
+                  {{ saving ? 'Saving…' : 'Save skill' }}
+                </Button>
+              </div>
             </div>
           </template>
 
