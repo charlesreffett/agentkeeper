@@ -4,6 +4,16 @@ import type { AgencyInstance, PersistedAgency, PersistedSession, SessionSummary 
 import { formatRelativeTime, shortModel } from '@/lib/format'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 
 const props = defineProps<{
   projectPath: string
@@ -19,7 +29,6 @@ const emit = defineEmits<{
 
 const store = useSessionStore()
 
-// Only show live sessions that belong to this project
 const liveForProject = computed(() =>
   store.liveList.filter((s) => s.projectPath === props.projectPath),
 )
@@ -33,10 +42,30 @@ const persistedAgencies = ref<PersistedAgency[]>([])
 const resumingId = ref<string | null>(null)
 const expiryDays = ref<number | null>(14)
 
-// Persisted standalone sessions (not part of an agency)
 const standalonePersistedSessions = computed(() =>
   persistedSessions.value.filter((s) => !s.agencyInstanceId),
 )
+
+// ─── Confirmation dialog ─────────────────────────────────────────────────────
+
+const confirmOpen = ref(false)
+const confirmTitle = ref('')
+const confirmDescription = ref('')
+const pendingAction = ref<(() => Promise<void>) | null>(null)
+
+function requestConfirm(title: string, description: string, action: () => Promise<void>) {
+  confirmTitle.value = title
+  confirmDescription.value = description
+  pendingAction.value = action
+  confirmOpen.value = true
+}
+
+async function executeConfirmed() {
+  await pendingAction.value?.()
+  pendingAction.value = null
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function daysRemaining(lastActivityAt: number, days: number | null): number | null {
   if (days === null) return null
@@ -80,6 +109,81 @@ watch(
   },
   { immediate: true },
 )
+
+// ─── Live ─────────────────────────────────────────────────────────────────────
+
+function canDismissLive(s: LiveSession): boolean {
+  return s.status === 'terminated' || s.status === 'completed' || s.status === 'error'
+}
+
+function dismissLive(s: LiveSession) {
+  store.dismiss(s.localId)
+}
+
+function liveFirstMessage(s: LiveSession): string {
+  return s.initialPrompt.trim().split('\n')[0] ?? '(new session)'
+}
+
+function liveStatusLabel(s: LiveSession): string {
+  switch (s.status) {
+    case 'starting':
+      return 'Starting'
+    case 'running':
+      return 'Working'
+    case 'idle':
+    case 'suspended':
+      return 'Idle'
+    case 'completed':
+      return 'Completed'
+    case 'terminated':
+      return 'Terminated'
+    case 'error':
+      return 'Error'
+  }
+}
+
+function liveStatusDot(s: LiveSession): string {
+  switch (s.status) {
+    case 'running':
+    case 'starting':
+      return 'bg-emerald-500 animate-pulse'
+    case 'idle':
+    case 'suspended':
+      return 'bg-amber-500'
+    case 'completed':
+    case 'terminated':
+      return 'bg-muted-foreground'
+    case 'error':
+      return 'bg-destructive'
+  }
+}
+
+// ─── Recent (historical JSONL) ────────────────────────────────────────────────
+
+function deleteHistorical(s: SessionSummary) {
+  requestConfirm(
+    'Remove session?',
+    `"${s.firstUserMessage || 'Session'}" will be permanently deleted.`,
+    async () => {
+      historical.value = historical.value.filter((x) => x.id !== s.id)
+      await window.orchestral.sessions.deleteHistorical(props.projectPath, s.id)
+    },
+  )
+}
+
+function confirmRemoveAllHistorical() {
+  const count = historical.value.length
+  requestConfirm(
+    'Remove all recent sessions?',
+    `${count} session transcript${count !== 1 ? 's' : ''} will be permanently deleted.`,
+    async () => {
+      await window.orchestral.sessions.deleteAllHistorical(props.projectPath)
+      historical.value = []
+    },
+  )
+}
+
+// ─── Previous (registry-persisted) ────────────────────────────────────────────
 
 async function resumeSession(persisted: PersistedSession) {
   if (resumingId.value) return
@@ -126,9 +230,39 @@ async function resumeAgency(persisted: PersistedAgency) {
   }
 }
 
-async function dismissSession(localId: string) {
-  persistedSessions.value = persistedSessions.value.filter((s) => s.localId !== localId)
-  await window.orchestral.sessions.deletePersisted(localId)
+function confirmDismissSession(s: PersistedSession) {
+  requestConfirm(
+    'Remove session?',
+    `"${s.initialPrompt.split('\n')[0] || 'Session'}" will be removed from the list.`,
+    async () => {
+      persistedSessions.value = persistedSessions.value.filter((x) => x.localId !== s.localId)
+      await window.orchestral.sessions.deletePersisted(s.localId)
+    },
+  )
+}
+
+function confirmDismissAgency(a: PersistedAgency) {
+  requestConfirm(
+    'Remove agency session?',
+    `"${a.agencyName}" will be removed from the list.`,
+    async () => {
+      persistedAgencies.value = persistedAgencies.value.filter((x) => x.instanceId !== a.instanceId)
+      await window.orchestral.agencies.deletePersisted(a.instanceId)
+    },
+  )
+}
+
+function confirmRemoveAllPersisted() {
+  const count = standalonePersistedSessions.value.length + persistedAgencies.value.length
+  requestConfirm(
+    'Remove all previous sessions?',
+    `${count} session${count !== 1 ? 's' : ''} will be permanently removed.`,
+    async () => {
+      await window.orchestral.sessions.deleteAllPersisted(props.projectPath)
+      persistedSessions.value = []
+      persistedAgencies.value = []
+    },
+  )
 }
 
 async function touchSession(localId: string) {
@@ -136,57 +270,28 @@ async function touchSession(localId: string) {
   await loadPersisted()
 }
 
-async function dismissAgency(instanceId: string) {
-  persistedAgencies.value = persistedAgencies.value.filter((a) => a.instanceId !== instanceId)
-  await window.orchestral.agencies.deletePersisted(instanceId)
-}
-
 async function touchAgency(instanceId: string) {
   await window.orchestral.agencies.touchPersisted(instanceId)
   await loadPersisted()
-}
-
-function liveFirstMessage(s: LiveSession): string {
-  return s.initialPrompt.trim().split('\n')[0] ?? '(new session)'
-}
-
-function liveStatusLabel(s: LiveSession): string {
-  switch (s.status) {
-    case 'starting':
-      return 'Starting'
-    case 'running':
-      return 'Working'
-    case 'idle':
-    case 'suspended':
-      return 'Idle'
-    case 'completed':
-      return 'Completed'
-    case 'terminated':
-      return 'Terminated'
-    case 'error':
-      return 'Error'
-  }
-}
-
-function liveStatusDot(s: LiveSession): string {
-  switch (s.status) {
-    case 'running':
-    case 'starting':
-      return 'bg-emerald-500 animate-pulse'
-    case 'idle':
-    case 'suspended':
-      return 'bg-amber-500'
-    case 'completed':
-    case 'terminated':
-      return 'bg-muted-foreground'
-    case 'error':
-      return 'bg-destructive'
-  }
 }
 </script>
 
 <template>
   <div class="h-full flex flex-col">
+    <!-- Shared confirmation dialog -->
+    <AlertDialog v-model:open="confirmOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{{ confirmTitle }}</AlertDialogTitle>
+          <AlertDialogDescription>{{ confirmDescription }}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction @click="executeConfirmed">Remove</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
     <!-- Live -->
     <section v-if="liveForProject.length" class="shrink-0">
       <div
@@ -214,6 +319,14 @@ function liveStatusDot(s: LiveSession): string {
             <div class="text-sm font-medium truncate leading-snug flex-1 min-w-0">
               {{ liveFirstMessage(s) }}
             </div>
+            <button
+              v-if="canDismissLive(s)"
+              class="text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition shrink-0"
+              title="Dismiss"
+              @click.stop="dismissLive(s)"
+            >
+              ×
+            </button>
           </div>
           <div
             class="mt-1 pl-3.5 flex items-center gap-2 text-xs text-muted-foreground tabular-nums"
@@ -240,7 +353,7 @@ function liveStatusDot(s: LiveSession): string {
       </ul>
     </section>
 
-    <!-- Historical -->
+    <!-- Recent (historical JSONL) -->
     <section class="flex-1 min-h-0 flex flex-col">
       <div
         class="px-4 py-2 border-b border-border flex items-center justify-between shrink-0"
@@ -250,9 +363,18 @@ function liveStatusDot(s: LiveSession): string {
         >
           Recent
         </h2>
-        <span v-if="!loading" class="text-xs text-muted-foreground tabular-nums">
-          {{ historical.length }}
-        </span>
+        <div class="flex items-center gap-3">
+          <button
+            v-if="historical.length > 0"
+            class="text-xs text-muted-foreground hover:text-destructive transition"
+            @click="confirmRemoveAllHistorical"
+          >
+            Remove all
+          </button>
+          <span v-if="!loading" class="text-xs text-muted-foreground tabular-nums">
+            {{ historical.length }}
+          </span>
+        </div>
       </div>
 
       <div v-if="loading" class="p-4 text-sm text-muted-foreground">
@@ -274,37 +396,54 @@ function liveStatusDot(s: LiveSession): string {
         <li
           v-for="s in historical"
           :key="s.id"
-          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
+          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50 group"
           :class="selectedHistoricalId === s.id ? 'bg-accent' : ''"
           @click="emit('selectHistorical', s)"
         >
-          <div class="text-sm font-medium truncate leading-snug">
-            {{ s.firstUserMessage || '(no user message)' }}
-          </div>
-          <div
-            class="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums"
-          >
-            <span>{{ formatRelativeTime(s.lastActivityAt) }}</span>
-            <span>·</span>
-            <span>{{ s.messageCount }} msg</span>
-            <span v-if="shortModel(s.model)">·</span>
-            <span v-if="shortModel(s.model)" class="font-mono">
-              {{ shortModel(s.model) }}
-            </span>
+          <div class="flex items-start gap-2">
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium truncate leading-snug">
+                {{ s.firstUserMessage || '(no user message)' }}
+              </div>
+              <div
+                class="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums"
+              >
+                <span>{{ formatRelativeTime(s.lastActivityAt) }}</span>
+                <span>·</span>
+                <span>{{ s.messageCount }} msg</span>
+                <span v-if="shortModel(s.model)">·</span>
+                <span v-if="shortModel(s.model)" class="font-mono">
+                  {{ shortModel(s.model) }}
+                </span>
+              </div>
+            </div>
+            <button
+              class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition shrink-0 opacity-0 group-hover:opacity-100"
+              title="Remove"
+              @click.stop="deleteHistorical(s)"
+            >
+              ×
+            </button>
           </div>
         </li>
       </ul>
     </section>
 
-    <!-- Previous sessions (resumable) -->
+    <!-- Previous (registry-persisted, resumable) -->
     <section
       v-if="standalonePersistedSessions.length || persistedAgencies.length"
       class="shrink-0 border-t border-border"
     >
-      <div class="px-4 py-2 border-b border-border">
+      <div class="px-4 py-2 border-b border-border flex items-center justify-between">
         <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wide">
           Previous
         </h2>
+        <button
+          class="text-xs text-muted-foreground hover:text-destructive transition"
+          @click="confirmRemoveAllPersisted"
+        >
+          Remove all
+        </button>
       </div>
       <ul class="overflow-y-auto max-h-64">
         <!-- Standalone sessions -->
@@ -349,7 +488,7 @@ function liveStatusDot(s: LiveSession): string {
               <button
                 class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"
                 title="Remove"
-                @click.stop="dismissSession(s.localId)"
+                @click.stop="confirmDismissSession(s)"
               >
                 ×
               </button>
@@ -398,7 +537,7 @@ function liveStatusDot(s: LiveSession): string {
               <button
                 class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"
                 title="Remove"
-                @click.stop="dismissAgency(a.instanceId)"
+                @click.stop="confirmDismissAgency(a)"
               >
                 ×
               </button>

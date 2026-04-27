@@ -153,20 +153,6 @@ export interface PersistedSession {
   status: LiveSessionStatus
 }
 
-export interface PersistedAgency {
-  instanceId: string
-  agencyId: string
-  agencyScope: AgencyScope
-  agencyName: string
-  projectPath: string
-  worktreePath: string | null
-  branch: string | null
-  startedAt: number
-  lastActivityAt: number
-  /** roleId → sdkSessionId, populated as sessions initialise */
-  roleSessionMap: Record<string, string>
-}
-
 export interface StartSessionParams {
   /**
    * Caller-supplied id so the renderer can add the session to its store
@@ -191,6 +177,8 @@ export interface StartSessionParams {
   /** Membership in an agency run, if applicable — tagged by the orchestrator. */
   agencyInstanceId?: string
   roleId?: string
+  /** 1-based instance index within the role — needed to write the correct roleSessionMap entry. */
+  roleInstanceIndex?: number
   /** Work item to attach as context for the session. */
   workItemId?: string
   /** Resume an existing SDK session by its session_id. When set, the session
@@ -270,13 +258,20 @@ export type RoleDraft = Omit<Role, 'scope' | 'path'>
 
 export type AgencyScope = 'project' | 'global'
 
+export interface RoleSlot {
+  roleId: string
+  count?: number   // static — always this many (undefined = 1)
+  min?: number     // dynamic floor
+  max?: number     // dynamic ceiling
+}
+
 export interface Agency {
   id: string
   scope: AgencyScope
   path: string
   name: string
   description: string
-  roles: string[]
+  roles: RoleSlot[]
   flows: Array<[string, string]>
   entryPoints: string[]
   notes: string
@@ -298,9 +293,12 @@ export interface StartAgencyParams {
 
 export interface AgencyInstanceSession {
   localId: string
-  roleId: string
+  roleId: string        // base role id, e.g. "developer"
+  instanceId: string    // qualified: "developer-1", "developer-2", etc.
+  instanceIndex: number // 1-based
   roleName: string
   isEntryPoint: boolean
+  isOverflow: boolean   // true if spawned above the min floor
 }
 
 export interface AgencyInstance {
@@ -311,6 +309,22 @@ export interface AgencyInstance {
   worktreePath: string | null
   branch: string | null
   sessions: AgencyInstanceSession[]
+}
+
+export interface PersistedAgency {
+  instanceId: string
+  agencyId: string
+  agencyScope: AgencyScope
+  agencyName: string
+  projectPath: string
+  worktreePath: string | null
+  branch: string | null
+  startedAt: number
+  lastActivityAt: number
+  /** roleId → array of { instanceIndex, sdkSessionId } */
+  roleSessionMap: Record<string, Array<{ instanceIndex: number; sdkSessionId: string }>>
+  /** roleId → array of handoff summaries from completed overflow agents */
+  handoffs: Record<string, Array<{ instanceIndex: number; summary: string; timestamp: number }>>
 }
 
 /** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
@@ -400,6 +414,9 @@ export interface OrchestralApi {
     setModel: (localId: string, model: string) => Promise<void>
     setEffort: (localId: string, effort: RoleEffort) => Promise<void>
     setPermissionMode: (localId: string, mode: PermissionMode) => Promise<void>
+    deleteHistorical: (projectPath: string, sessionId: string) => Promise<void>
+    deleteAllHistorical: (projectPath: string) => Promise<void>
+    deleteAllPersisted: (projectPath: string) => Promise<void>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -580,6 +597,9 @@ export const IPC_CHANNELS = {
   sessionsSetModel: 'sessions:setModel',
   sessionsSetEffort: 'sessions:setEffort',
   sessionsSetPermissionMode: 'sessions:setPermissionMode',
+  sessionsDeleteHistorical: 'sessions:deleteHistorical',
+  sessionsDeleteAllHistorical: 'sessions:deleteAllHistorical',
+  sessionsDeleteAllPersisted: 'sessions:deleteAllPersisted',
   agenciesListPersisted: 'agencies:listPersisted',
   agenciesResume: 'agencies:resume',
   agenciesDeletePersisted: 'agencies:deletePersisted',

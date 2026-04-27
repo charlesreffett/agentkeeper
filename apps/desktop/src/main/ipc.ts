@@ -31,7 +31,7 @@ import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { detectRemoteSources } from './git'
-import { listSessions, readSession } from './sessions'
+import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode } from './agent'
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
@@ -705,6 +705,19 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsDeleteHistorical,
+    (_event, projectPath: string, sessionId: string) =>
+      deleteHistoricalSession(projectPath, sessionId),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsDeleteAllHistorical,
+    (_event, projectPath: string) => deleteAllHistoricalSessions(projectPath),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsDeleteAllPersisted,
+    (_event, projectPath: string) => sessionRegistry.deleteAllForProject(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.agenciesListPersisted,

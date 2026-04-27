@@ -262,6 +262,33 @@ export async function listSessions(
   return summaries
 }
 
+export async function deleteHistoricalSession(
+  projectPath: string,
+  sessionId: string,
+): Promise<void> {
+  const filePath = path.join(projectDir(projectPath), `${sessionId}.jsonl`)
+  try {
+    await fs.promises.unlink(filePath)
+  } catch {
+    // ignore if already gone
+  }
+}
+
+export async function deleteAllHistoricalSessions(projectPath: string): Promise<void> {
+  const dir = projectDir(projectPath)
+  let entries: string[]
+  try {
+    entries = await fs.promises.readdir(dir)
+  } catch {
+    return
+  }
+  await Promise.all(
+    entries
+      .filter((e) => e.endsWith('.jsonl'))
+      .map((e) => fs.promises.unlink(path.join(dir, e)).catch(() => {})),
+  )
+}
+
 export async function readSession(
   projectPath: string,
   sessionId: string,

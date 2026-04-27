@@ -141,6 +141,12 @@ const api: OrchestralApi = {
       invoke(IPC_CHANNELS.sessionsSetEffort, localId, effort) as Promise<void>,
     setPermissionMode: (localId: string, mode: PermissionMode) =>
       invoke(IPC_CHANNELS.sessionsSetPermissionMode, localId, mode) as Promise<void>,
+    deleteHistorical: (projectPath: string, sessionId: string) =>
+      invoke(IPC_CHANNELS.sessionsDeleteHistorical, projectPath, sessionId) as Promise<void>,
+    deleteAllHistorical: (projectPath: string) =>
+      invoke(IPC_CHANNELS.sessionsDeleteAllHistorical, projectPath) as Promise<void>,
+    deleteAllPersisted: (projectPath: string) =>
+      invoke(IPC_CHANNELS.sessionsDeleteAllPersisted, projectPath) as Promise<void>,
   },
   worktrees: {
     list: (projectPath: string) =>

@@ -1,7 +1,8 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AgencyScope, LiveSessionStatus } from '../shared/ipc-contract'
+import type { LiveSessionStatus, PersistedAgency } from '../shared/ipc-contract'
+export type { PersistedAgency }
 
 export interface PersistedSession {
   localId: string
@@ -20,20 +21,6 @@ export interface PersistedSession {
   startedAt: number
   lastActivityAt: number
   status: LiveSessionStatus
-}
-
-export interface PersistedAgency {
-  instanceId: string
-  agencyId: string
-  agencyScope: AgencyScope
-  agencyName: string
-  projectPath: string
-  worktreePath: string | null
-  branch: string | null
-  startedAt: number
-  lastActivityAt: number
-  /** roleId → sdkSessionId, populated as sessions initialise */
-  roleSessionMap: Record<string, string>
 }
 
 interface Registry {
@@ -128,17 +115,33 @@ export function registerAgency(agency: PersistedAgency): void {
 
 export function updateAgency(
   instanceId: string,
-  partial: Omit<Partial<PersistedAgency>, 'roleSessionMap'> & {
-    roleSessionMap?: Record<string, string>
+  partial: Omit<Partial<PersistedAgency>, 'roleSessionMap' | 'handoffs'> & {
+    roleSessionMap?: Record<string, Array<{ instanceIndex: number; sdkSessionId: string }>>
+    handoffs?: Record<string, Array<{ instanceIndex: number; summary: string; timestamp: number }>>
   },
 ): void {
   const reg = load()
   const existing = reg.agencies[instanceId]
   if (!existing) return
-  const { roleSessionMap, ...rest } = partial
+  const { roleSessionMap, handoffs, ...rest } = partial
   Object.assign(existing, rest)
   if (roleSessionMap) {
-    Object.assign(existing.roleSessionMap, roleSessionMap)
+    for (const [roleId, entries] of Object.entries(roleSessionMap)) {
+      if (!existing.roleSessionMap[roleId]) existing.roleSessionMap[roleId] = []
+      for (const entry of entries) {
+        const already = existing.roleSessionMap[roleId].findIndex(
+          (e) => e.instanceIndex === entry.instanceIndex,
+        )
+        if (already === -1) existing.roleSessionMap[roleId].push(entry)
+        else existing.roleSessionMap[roleId][already] = entry
+      }
+    }
+  }
+  if (handoffs) {
+    for (const [roleId, entries] of Object.entries(handoffs)) {
+      if (!existing.handoffs[roleId]) existing.handoffs[roleId] = []
+      existing.handoffs[roleId].push(...entries)
+    }
   }
   save()
 }
@@ -166,6 +169,22 @@ export function deleteAgency(instanceId: string): void {
     if (s.agencyInstanceId === instanceId) delete reg.sessions[s.localId]
   }
   delete reg.agencies[instanceId]
+  save()
+}
+
+export function deleteAllForProject(projectPath: string): void {
+  const reg = load()
+  for (const a of Object.values(reg.agencies)) {
+    if (a.projectPath === projectPath) {
+      for (const s of Object.values(reg.sessions)) {
+        if (s.agencyInstanceId === a.instanceId) delete reg.sessions[s.localId]
+      }
+      delete reg.agencies[a.instanceId]
+    }
+  }
+  for (const s of Object.values(reg.sessions)) {
+    if (s.projectPath === projectPath) delete reg.sessions[s.localId]
+  }
   save()
 }
 
