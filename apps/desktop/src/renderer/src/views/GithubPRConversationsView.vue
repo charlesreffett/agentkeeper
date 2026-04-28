@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useRouter } from 'vue-router'
 import type { PRComment, PRDetail } from '@shared/github-types'
+import { useSessionStore } from '@/stores/sessions'
+import { useProjectsStore } from '@/stores/projects'
+import { useProjectStore } from '@/stores/project'
 
 const route = useRoute()
 const prNumber = computed(() => Number(route.params.number))
@@ -15,13 +19,22 @@ const newComment = ref('')
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
 
+const router = useRouter()
+const sessionStore = useSessionStore()
+const projectsStore = useProjectsStore()
+const projectStore = useProjectStore()
+
+const sendingCommentId = ref<number | null>(null)
+const sendingAll = ref(false)
+const claudeError = ref<string | null>(null)
+
 async function load() {
   loading.value = true
   error.value = null
   try {
     const [detail, fetched] = await Promise.all([
-      window.orchestral.github.getPR(prRepo.value, prNumber.value),
-      window.orchestral.github.getPRComments(prRepo.value, prNumber.value),
+      window.agentkeeper.github.getPR(prRepo.value, prNumber.value),
+      window.agentkeeper.github.getPRComments(prRepo.value, prNumber.value),
     ])
     pr.value = detail
     comments.value = fetched.slice().sort(
@@ -42,9 +55,9 @@ async function submitComment() {
   submitting.value = true
   submitError.value = null
   try {
-    await window.orchestral.github.addComment(prRepo.value, prNumber.value, body)
+    await window.agentkeeper.github.addComment(prRepo.value, prNumber.value, body)
     newComment.value = ''
-    comments.value = (await window.orchestral.github.getPRComments(prRepo.value, prNumber.value)).slice().sort(
+    comments.value = (await window.agentkeeper.github.getPRComments(prRepo.value, prNumber.value)).slice().sort(
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     )
   } catch (e) {
@@ -68,6 +81,56 @@ function relativeTime(iso: string): string {
 function avatarInitial(author: string): string {
   return author.charAt(0).toUpperCase()
 }
+
+async function sendCommentToClaude(comment: PRComment) {
+  const focused = projectsStore.focusedProject
+  if (!focused) {
+    claudeError.value = 'No focused project — focus a project first.'
+    return
+  }
+  sendingCommentId.value = comment.id
+  claudeError.value = null
+  try {
+    const location = comment.path && comment.line ? `\nFile: ${comment.path}:${comment.line}\n` : ''
+    const prompt = `Address the following comment on PR #${prNumber.value} (${prRepo.value}) by @${comment.author}:${location}\n${comment.body}`
+    const localId = await sessionStore.start({ projectPath: focused.path, initialPrompt: prompt })
+    projectStore.setProject(focused)
+    await router.push('/project')
+    sessionStore.focus(localId)
+  } catch (e) {
+    claudeError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    sendingCommentId.value = null
+  }
+}
+
+async function sendAllToClaude() {
+  const focused = projectsStore.focusedProject
+  if (!focused) {
+    claudeError.value = 'No focused project — focus a project first.'
+    return
+  }
+  if (comments.value.length === 0) return
+  sendingAll.value = true
+  claudeError.value = null
+  try {
+    const commentsList = comments.value
+      .map((c, i) => {
+        const loc = c.path && c.line ? ` on ${c.path}:${c.line}` : ''
+        return `Comment ${i + 1} by @${c.author}${loc}:\n${c.body}`
+      })
+      .join('\n\n---\n\n')
+    const prompt = `Address all reviewer comments on PR #${prNumber.value} (${prRepo.value}):\n\n${commentsList}`
+    const localId = await sessionStore.start({ projectPath: focused.path, initialPrompt: prompt })
+    projectStore.setProject(focused)
+    await router.push('/project')
+    sessionStore.focus(localId)
+  } catch (e) {
+    claudeError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    sendingAll.value = false
+  }
+}
 </script>
 
 <template>
@@ -79,6 +142,19 @@ function avatarInitial(author: string): string {
     <div v-else-if="error" class="text-destructive text-sm p-4">{{ error }}</div>
 
     <div v-else class="flex-1 min-h-0 overflow-auto p-4 space-y-4">
+      <!-- AI actions bar -->
+      <div v-if="comments.length > 0" class="flex items-center justify-between mb-2">
+        <div v-if="claudeError" class="text-destructive text-xs">{{ claudeError }}</div>
+        <div v-else class="flex-1" />
+        <button
+          class="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+          :disabled="sendingAll || !!sendingCommentId"
+          @click="sendAllToClaude"
+        >
+          <span>{{ sendingAll ? 'Starting…' : 'Address all comments with Claude' }}</span>
+        </button>
+      </div>
+
       <!-- PR description -->
       <div v-if="pr?.body" class="rounded border border-border p-4">
         <div class="flex items-center gap-2 mb-3">
@@ -105,6 +181,13 @@ function avatarInitial(author: string): string {
                 v-if="comment.path && comment.line"
                 class="text-xs px-2 py-0.5 rounded bg-muted text-muted-foreground font-mono"
               >{{ comment.path }}:{{ comment.line }}</span>
+              <button
+                class="ml-auto text-xs px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors"
+                :disabled="sendingCommentId === comment.id || sendingAll"
+                @click.stop="sendCommentToClaude(comment)"
+              >
+                {{ sendingCommentId === comment.id ? '…' : 'Send to Claude' }}
+              </button>
             </div>
             <pre class="text-sm text-foreground/80 whitespace-pre-wrap font-sans leading-relaxed">{{ comment.body }}</pre>
           </div>
