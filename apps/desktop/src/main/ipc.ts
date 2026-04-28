@@ -37,7 +37,7 @@ import { interruptSession, terminateSession, resumeSession, sendInput, startSess
 import { SECRET_KEYS, secrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
-import { deleteRole, listRoles, saveRole } from './roles'
+import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
 import { resumeAgency, startAgency } from './orchestrator'
 import * as sessionRegistry from './session-registry'
@@ -312,6 +312,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         return await deleteRole(scope, projectPath, id)
       } catch (err) {
         console.error('[ipc] roles:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.rolesGenerate,
+    async (_event, prompt: string) => {
+      try {
+        const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
+        return await generateRoleContent(prompt, apiKey)
+      } catch (err) {
+        console.error('[ipc] roles:generate failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

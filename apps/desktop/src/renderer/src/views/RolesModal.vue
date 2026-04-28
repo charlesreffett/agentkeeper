@@ -35,6 +35,26 @@ const allowedPeersText = ref('')
 const saving = ref(false)
 const message = ref<string | null>(null)
 
+const generatePrompt = ref('')
+const generating = ref(false)
+const generateError = ref<string | null>(null)
+
+async function generate() {
+  if (!generatePrompt.value.trim()) return
+  generating.value = true
+  generateError.value = null
+  try {
+    const result = await window.agentkeeper.roles.generate(generatePrompt.value.trim())
+    form.value.systemPrompt = result.systemPrompt
+    if (!form.value.name.trim()) form.value.name = result.name
+    if (!form.value.description.trim()) form.value.description = result.description
+  } catch (e) {
+    generateError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    generating.value = false
+  }
+}
+
 const MODEL_OPTIONS = [
   { value: '', label: 'Session default' },
   { value: 'claude-opus-4-7', label: 'Opus 4.7' },
@@ -46,7 +66,7 @@ async function refresh() {
   loading.value = true
   message.value = null
   try {
-    roles.value = await window.orchestral.roles.list(props.projectPath)
+    roles.value = await window.agentkeeper.roles.list(props.projectPath)
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
     roles.value = []
@@ -136,7 +156,7 @@ async function save() {
       allowedPeers: parseCsv(allowedPeersText.value),
       systemPrompt: form.value.systemPrompt.trim(),
     }
-    await window.orchestral.roles.save(form.value.scope, props.projectPath, draft)
+    await window.agentkeeper.roles.save(form.value.scope, props.projectPath, draft)
     await refresh()
     editing.value = false
     emit('saved')
@@ -151,7 +171,7 @@ async function remove(role: Role) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove role "${role.name}" (${role.scope})?`)) return
   try {
-    await window.orchestral.roles.remove(role.scope, props.projectPath, role.id)
+    await window.agentkeeper.roles.remove(role.scope, props.projectPath, role.id)
     await refresh()
     emit('saved')
     if (selectedId.value === role.id) cancelEdit()
@@ -206,9 +226,9 @@ watch(
             class="p-4 text-sm text-muted-foreground leading-relaxed"
           >
             No roles yet. Create one — they live in
-            <code class="font-mono text-foreground">.orchestral/roles/</code>
+            <code class="font-mono text-foreground">.agentkeeper/roles/</code>
             (project) or
-            <code class="font-mono text-foreground">~/.orchestral/roles/</code>
+            <code class="font-mono text-foreground">~/.agentkeeper/roles/</code>
             (global).
           </div>
           <ul v-else>
@@ -330,6 +350,22 @@ watch(
                 Used later when this role is part of an Agency (V3.4) — which
                 peer roles can this one send_message() to.
               </p>
+            </div>
+
+            <div class="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
+              <label class="text-xs font-medium text-muted-foreground">Generate with AI</label>
+              <textarea
+                v-model="generatePrompt"
+                rows="2"
+                placeholder='Describe the role, e.g. "A TypeScript developer who writes tests and reviews PRs"'
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-sans resize-none"
+              />
+              <div class="flex items-center gap-3">
+                <Button size="sm" variant="secondary" :disabled="generating || !generatePrompt.trim()" @click="generate">
+                  {{ generating ? 'Generating…' : 'Generate' }}
+                </Button>
+                <span v-if="generateError" class="text-xs text-destructive">{{ generateError }}</span>
+              </div>
             </div>
 
             <div class="space-y-1.5">

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
+import Anthropic from '@anthropic-ai/sdk'
 import {
   ROLE_EFFORT_VALUES,
   type Role,
@@ -9,8 +10,8 @@ import {
   type RoleScope,
 } from '../shared/ipc-contract'
 
-const PROJECT_ROLES_DIR = '.orchestral/roles'
-const GLOBAL_ROLES_DIR = '.orchestral/roles'
+const PROJECT_ROLES_DIR = '.agentkeeper/roles'
+const GLOBAL_ROLES_DIR = '.agentkeeper/roles'
 
 function projectRolesDir(projectPath: string): string {
   return path.join(projectPath, PROJECT_ROLES_DIR)
@@ -160,5 +161,43 @@ export async function deleteRole(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code
     if (code !== 'ENOENT') throw err
+  }
+}
+
+export async function generateRoleContent(
+  prompt: string,
+  apiKey: string | null,
+): Promise<{ systemPrompt: string; name: string; description: string }> {
+  if (!apiKey) throw new Error('No Anthropic API key configured. Add one in Settings → API Key.')
+
+  const client = new Anthropic({ apiKey })
+  const message = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 1024,
+    messages: [
+      {
+        role: 'user',
+        content: `You are helping configure an AI agent role for AgentKeeper, an Electron app that drives Claude Code sessions.
+
+Generate a role definition for: "${prompt}"
+
+Respond with ONLY a JSON object — no markdown fences, no prose:
+{
+  "name": "<short display name, title case, ≤ 30 chars>",
+  "description": "<one sentence, what this role does, ≤ 120 chars>",
+  "systemPrompt": "<detailed system prompt, 150–400 words, written in second person ('You are…'), covering the role's responsibilities, constraints, and working style>"
+}`,
+      },
+    ],
+  })
+
+  const first = message.content[0]
+  const text = first?.type === 'text' ? first.text : ''
+  const parsed = JSON.parse(text.trim())
+  if (typeof parsed.systemPrompt !== 'string') throw new Error('Unexpected response shape from Claude')
+  return {
+    name: String(parsed.name ?? ''),
+    description: String(parsed.description ?? ''),
+    systemPrompt: String(parsed.systemPrompt),
   }
 }

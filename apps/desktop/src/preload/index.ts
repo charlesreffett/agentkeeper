@@ -25,6 +25,7 @@ import {
   type RoleDraft,
   type RoleEffort,
   type RoleScope,
+  type RolesGenerateResult,
   type SecretKeyName,
   type Skill,
   type SkillPreview,
@@ -168,6 +169,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.rolesSave, scope, projectPath, role) as Promise<never>,
     remove: (scope: RoleScope, projectPath: string, id: string) =>
       invoke(IPC_CHANNELS.rolesRemove, scope, projectPath, id) as Promise<void>,
+    generate: (prompt: string): Promise<RolesGenerateResult> =>
+      invoke(IPC_CHANNELS.rolesGenerate, prompt) as Promise<RolesGenerateResult>,
   },
   agencies: {
     list: (projectPath: string) =>

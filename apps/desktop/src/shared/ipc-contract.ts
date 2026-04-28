@@ -282,6 +282,12 @@ export interface Role {
 
 export type RoleDraft = Omit<Role, 'scope' | 'path'>
 
+export interface RolesGenerateResult {
+  name: string
+  description: string
+  systemPrompt: string
+}
+
 // ─── Agencies ───────────────────────────────────────────────────────────────
 
 export type AgencyScope = 'project' | 'global'
@@ -460,6 +466,7 @@ export interface AgentKeeperApi {
       role: RoleDraft,
     ) => Promise<Role>
     remove: (scope: RoleScope, projectPath: string, id: string) => Promise<void>
+    generate: (prompt: string) => Promise<RolesGenerateResult>
   }
   agencies: {
     list: (projectPath: string) => Promise<Agency[]>
@@ -591,6 +598,7 @@ export const IPC_CHANNELS = {
   rolesList: 'roles:list',
   rolesSave: 'roles:save',
   rolesRemove: 'roles:remove',
+  rolesGenerate: 'roles:generate',
   agenciesList: 'agencies:list',
   agenciesSave: 'agencies:save',
   agenciesRemove: 'agencies:remove',
