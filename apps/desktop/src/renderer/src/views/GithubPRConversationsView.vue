@@ -27,6 +27,7 @@ const projectStore = useProjectStore()
 const sendingCommentId = ref<number | null>(null)
 const sendingAll = ref(false)
 const claudeError = ref<string | null>(null)
+const refreshing = ref(false)
 
 async function load() {
   loading.value = true
@@ -48,6 +49,27 @@ async function load() {
 }
 
 onMounted(load)
+
+// Refresh without blanking the view — keeps current content visible while fetching.
+async function refresh() {
+  refreshing.value = true
+  claudeError.value = null
+  try {
+    const [detail, fetched] = await Promise.all([
+      window.agentkeeper.github.getPR(prRepo.value, prNumber.value),
+      window.agentkeeper.github.getPRComments(prRepo.value, prNumber.value),
+    ])
+    pr.value = detail
+    comments.value = fetched.slice().sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    )
+    error.value = null
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    refreshing.value = false
+  }
+}
 
 async function submitComment() {
   const body = newComment.value.trim()
@@ -139,20 +161,31 @@ async function sendAllToClaude() {
       <div class="animate-pulse text-sm text-muted-foreground">Loading…</div>
     </div>
 
-    <div v-else-if="error" class="text-destructive text-sm p-4">{{ error }}</div>
+    <div v-else-if="error" class="flex items-center gap-3 text-sm p-4">
+      <span class="text-destructive">{{ error }}</span>
+      <button
+        class="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-colors"
+        @click="load"
+      >Retry</button>
+    </div>
 
     <div v-else class="flex-1 min-h-0 overflow-auto p-4 space-y-4">
-      <!-- AI actions bar -->
-      <div v-if="comments.length > 0" class="flex items-center justify-between mb-2">
-        <div v-if="claudeError" class="text-destructive text-xs">{{ claudeError }}</div>
-        <div v-else class="flex-1" />
+      <!-- Actions bar: refresh on the left, AI actions on the right -->
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <button
+            class="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors"
+            :disabled="refreshing"
+            @click="refresh"
+          >{{ refreshing ? 'Refreshing…' : '↻ Refresh' }}</button>
+          <span v-if="claudeError" class="text-destructive text-xs">{{ claudeError }}</span>
+        </div>
         <button
-          class="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+          v-if="comments.length > 0"
+          class="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors"
           :disabled="sendingAll || !!sendingCommentId"
           @click="sendAllToClaude"
-        >
-          <span>{{ sendingAll ? 'Starting…' : 'Address all comments with Claude' }}</span>
-        </button>
+        >{{ sendingAll ? 'Starting…' : 'Address all comments with Claude' }}</button>
       </div>
 
       <!-- PR description -->
