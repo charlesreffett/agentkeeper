@@ -14,7 +14,7 @@ import {
   type LiveSessionEvent,
   type LiveSessionStatusUpdate,
   type MergeMethod,
-  type OrchestralApi,
+  type AgentKeeperApi,
   type PRFilters,
   type PersistedAgency,
   type PersistedSession,
@@ -94,12 +94,14 @@ function onChannel<P>(
   }
 }
 
-const api: OrchestralApi = {
+const api: AgentKeeperApi = {
   projects: {
     add: (projectPath: string) =>
       invoke(IPC_CHANNELS.projectsAdd, projectPath) as Promise<never>,
     remove: (projectPath: string) =>
       invoke(IPC_CHANNELS.projectsRemove, projectPath) as Promise<void>,
+    rename: (oldPath: string, newName: string, renameDir: boolean) =>
+      invoke(IPC_CHANNELS.projectsRename, oldPath, newName, renameDir) as Promise<never>,
     list: () => invoke(IPC_CHANNELS.projectsList) as Promise<never>,
     getFocused: () => invoke(IPC_CHANNELS.projectsGetFocused) as Promise<never>,
     setFocused: (projectPath: string | null) =>
@@ -332,4 +334,4 @@ const api: OrchestralApi = {
   },
 }
 
-contextBridge.exposeInMainWorld('orchestral', api)
+contextBridge.exposeInMainWorld('agentkeeper', api)

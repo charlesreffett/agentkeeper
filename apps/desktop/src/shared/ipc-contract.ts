@@ -1,7 +1,7 @@
 // Shared between main, preload, and renderer. Pure types/constants only — no
 // runtime imports from Electron or Node.
 
-import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@orchestral/sdk'
+import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 export type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus }
 import type {
   CheckRun,
@@ -390,9 +390,9 @@ export type SecretKeyName = 'anthropicApiKey'
 export interface ResetRequest {
   /** settings.json and all stored secrets (keychain API key, etc.). */
   appSettings: boolean
-  /** `~/.orchestral/` role and agency definitions. */
+  /** `~/.agentkeeper/` role and agency definitions. */
   globalDefinitions: boolean
-  /** `<projectPath>/.orchestral/` — set to null to skip. */
+  /** `<projectPath>/.agentkeeper/` — set to null to skip. */
   projectDefinitions: { projectPath: string } | null
 }
 
@@ -403,12 +403,13 @@ export interface ResetResult {
   errors: string[]
 }
 
-// ─── IPC API exposed to renderer as window.orchestral ───────────────────────
+// ─── IPC API exposed to renderer as window.agentkeeper ──────────────────────
 
-export interface OrchestralApi {
+export interface AgentKeeperApi {
   projects: {
     add: (path: string) => Promise<RecentProject>
     remove: (path: string) => Promise<void>
+    rename: (oldPath: string, newName: string, renameDir: boolean) => Promise<RecentProject>
     list: () => Promise<RecentProject[]>
     getFocused: () => Promise<RecentProject | null>
     setFocused: (path: string | null) => Promise<void>
@@ -572,6 +573,7 @@ export const IPC_CHANNELS = {
   projectsGetFocused: 'projects:getFocused',
   projectsSetFocused: 'projects:setFocused',
   projectsPickFolder: 'projects:pickFolder',
+  projectsRename: 'projects:rename',
   projectPick: 'project:pick',
   projectRecentList: 'project:recent:list',
   projectRecentRemove: 'project:recent:remove',

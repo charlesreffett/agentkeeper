@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from 'electron'
-import type { EventMap } from '@orchestral/sdk'
+import type { EventMap } from '@agentkeeper/sdk'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import {
@@ -26,7 +26,7 @@ import {
   listPRs as ghListPRs,
   mergePR as ghMergePR,
   submitReview as ghSubmitReview,
-} from '@orchestral/plugin-github/src/github-cli'
+} from '@agentkeeper/plugin-github/src/github-cli'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
@@ -126,6 +126,14 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(IPC_CHANNELS.projectsSetFocused, (_event, projectPath: string | null) => {
     recentProjectsStore.setFocused(projectPath)
+  })
+  ipcMain.handle(IPC_CHANNELS.projectsRename, (_event, oldPath: string, newName: string, renameDir: boolean) => {
+    try {
+      return recentProjectsStore.rename(oldPath, newName, renameDir)
+    } catch (err) {
+      console.error('[ipc] projects:rename failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
   })
   ipcMain.handle(IPC_CHANNELS.projectsPickFolder, async () => {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { LayoutDashboard, Grid, GitPullRequest, Layers, FolderOpen, Plus } from 'lucide-vue-next'
 import type { Component } from 'vue'
+import type { RecentProject } from '@shared/ipc-contract'
 import { useUIContributionsStore } from '@/stores/uiContributions'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import { useProjectsStore } from '@/stores/projects'
@@ -12,6 +13,55 @@ const route = useRoute()
 const uiStore = useUIContributionsStore()
 const projectsStore = useProjectsStore()
 const { isHealthy: githubHealthy } = usePluginHealth('github')
+
+// ─── Context menu ──────────────────────────────────────────────────────────
+const ctxProject = ref<RecentProject | null>(null)
+const ctxPos = ref({ x: 0, y: 0 })
+const ctxOpen = ref(false)
+
+function openContextMenu(event: MouseEvent, project: RecentProject) {
+  ctxProject.value = project
+  ctxPos.value = { x: event.clientX, y: event.clientY }
+  ctxOpen.value = true
+}
+
+function closeContextMenu() {
+  ctxOpen.value = false
+  ctxProject.value = null
+}
+
+function removeProject(project: RecentProject) {
+  closeContextMenu()
+  void projectsStore.remove(project.path)
+}
+
+// ─── Rename dialog ─────────────────────────────────────────────────────────
+const renameOpen = ref(false)
+const renameTarget = ref<RecentProject | null>(null)
+const renameName = ref('')
+const renameDirFlag = ref(false)
+const renameInput = ref<HTMLInputElement | null>(null)
+
+function openRenameDialog(project: RecentProject) {
+  closeContextMenu()
+  renameTarget.value = project
+  renameName.value = project.name
+  renameDirFlag.value = false
+  renameOpen.value = true
+  nextTick(() => renameInput.value?.select())
+}
+
+function cancelRename() {
+  renameOpen.value = false
+  renameTarget.value = null
+}
+
+async function confirmRename() {
+  if (!renameTarget.value || !renameName.value.trim()) return
+  await projectsStore.rename(renameTarget.value.path, renameName.value.trim(), renameDirFlag.value)
+  renameOpen.value = false
+  renameTarget.value = null
+}
 
 const iconMap: Record<string, Component> = {
   LayoutDashboard,
@@ -127,6 +177,7 @@ function toggleFocus(projectPath: string) {
         "
         :title="project.path"
         @click="toggleFocus(project.path)"
+        @contextmenu.prevent="openContextMenu($event, project)"
       >
         <FolderOpen class="size-3.5 shrink-0" />
         <span class="truncate">{{ project.name }}</span>
@@ -137,4 +188,67 @@ function toggleFocus(projectPath: string) {
       </button>
     </div>
   </nav>
+
+  <Teleport to="body">
+    <!-- Context menu backdrop -->
+    <div
+      v-if="ctxOpen"
+      class="fixed inset-0 z-40"
+      @click="closeContextMenu"
+      @contextmenu.prevent="closeContextMenu"
+    />
+    <!-- Context menu -->
+    <div
+      v-if="ctxOpen && ctxProject"
+      class="fixed z-50 min-w-[130px] rounded-md border border-border bg-popover shadow-md py-1"
+      :style="{ left: ctxPos.x + 'px', top: ctxPos.y + 'px' }"
+    >
+      <button
+        class="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors"
+        @click="openRenameDialog(ctxProject)"
+      >
+        Rename
+      </button>
+      <button
+        class="w-full text-left px-3 py-1.5 text-xs text-destructive hover:bg-muted transition-colors"
+        @click="removeProject(ctxProject)"
+      >
+        Remove
+      </button>
+    </div>
+
+    <!-- Rename dialog -->
+    <div v-if="renameOpen" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="absolute inset-0 bg-black/40" @click="cancelRename" />
+      <div class="relative bg-card border border-border rounded-lg shadow-xl p-4 w-72 flex flex-col gap-3">
+        <div class="text-sm font-medium">Rename project</div>
+        <input
+          ref="renameInput"
+          v-model="renameName"
+          type="text"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          @keydown.enter="confirmRename"
+          @keydown.escape="cancelRename"
+        />
+        <label class="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer select-none">
+          <input v-model="renameDirFlag" type="checkbox" class="size-4 rounded border-input" />
+          Also rename the directory on disk
+        </label>
+        <div class="flex justify-end gap-2">
+          <button
+            class="px-3 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            @click="cancelRename"
+          >
+            Cancel
+          </button>
+          <button
+            class="px-3 py-1.5 rounded text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            @click="confirmRename"
+          >
+            Rename
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>

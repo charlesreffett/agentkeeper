@@ -66,6 +66,22 @@ export const recentProjectsStore = {
       focusedProjectPath: data.focusedProjectPath === targetPath ? null : data.focusedProjectPath,
     })
   },
+  rename(oldPath: string, newName: string, renameDir: boolean): RecentProject {
+    const data = read()
+    const project = data.projects.find((p) => p.path === oldPath)
+    if (!project) throw new Error(`Project not found: ${oldPath}`)
+    let newPath = oldPath
+    if (renameDir) {
+      newPath = path.join(path.dirname(oldPath), newName)
+      fs.renameSync(oldPath, newPath)
+    }
+    const updated: RecentProject = { ...project, path: newPath, name: newName }
+    write({
+      projects: data.projects.map((p) => (p.path === oldPath ? updated : p)),
+      focusedProjectPath: data.focusedProjectPath === oldPath ? newPath : data.focusedProjectPath,
+    })
+    return updated
+  },
   getFocused(): string | null {
     return read().focusedProjectPath
   },
