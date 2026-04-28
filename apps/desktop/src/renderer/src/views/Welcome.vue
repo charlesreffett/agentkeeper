@@ -4,23 +4,25 @@ import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectStore } from '@/stores/project'
+import { useProjectsStore } from '@/stores/projects'
 import type { RecentProject } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
 const projectStore = useProjectStore()
+const projectsStore = useProjectsStore()
 const activeCount = computed(() => sessionStore.liveList.length)
 
 const recent = ref<RecentProject[]>([])
 const loading = ref(true)
 
 async function refresh() {
-  recent.value = await window.orchestral.project.recent.list()
+  recent.value = await window.agentkeeper.project.recent.list()
   loading.value = false
 }
 
 async function pickProject() {
-  const project = await window.orchestral.project.pick()
+  const project = await window.agentkeeper.project.pick()
   if (project) {
     await refresh()
     projectStore.setProject(project)
@@ -35,7 +37,7 @@ function openRecent(project: RecentProject) {
 
 async function removeRecent(path: string, event: Event) {
   event.stopPropagation()
-  await window.orchestral.project.recent.remove(path)
+  await projectsStore.remove(path)
   await refresh()
 }
 
@@ -46,7 +48,7 @@ onMounted(refresh)
   <div class="h-full flex flex-col items-center justify-center p-8">
     <div class="w-full max-w-xl space-y-8">
       <div class="text-center space-y-2">
-        <h1 class="text-4xl font-semibold tracking-tight">Orchestral AI</h1>
+        <h1 class="text-4xl font-semibold tracking-tight">AgentKeeper</h1>
         <p class="text-muted-foreground">Open a project to begin</p>
       </div>
 
