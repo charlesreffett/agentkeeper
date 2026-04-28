@@ -24,6 +24,12 @@ export const secrets = {
   },
 }
 
+export async function requireApiKey(): Promise<string> {
+  const key = await secrets.get(SECRET_KEYS.anthropicApiKey)
+  if (!key) throw new Error('[API_KEY_MISSING] No Anthropic API key configured. Add one in Settings → API Key.')
+  return key
+}
+
 export function createPluginSecrets(pluginId: string): {
   get(key: string): Promise<string | undefined>
   set(key: string, value: string): Promise<void>

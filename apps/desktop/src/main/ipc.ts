@@ -320,8 +320,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.rolesGenerate,
     async (_event, prompt: string) => {
       try {
-        const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
-        return await generateRoleContent(prompt, apiKey)
+        return await generateRoleContent(prompt)
       } catch (err) {
         console.error('[ipc] roles:generate failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))

@@ -9,6 +9,7 @@ import {
   type RoleEffort,
   type RoleScope,
 } from '../shared/ipc-contract'
+import { requireApiKey } from './secrets'
 
 const PROJECT_ROLES_DIR = '.agentkeeper/roles'
 const GLOBAL_ROLES_DIR = '.agentkeeper/roles'
@@ -166,10 +167,8 @@ export async function deleteRole(
 
 export async function generateRoleContent(
   prompt: string,
-  apiKey: string | null,
 ): Promise<{ systemPrompt: string; name: string; description: string }> {
-  if (!apiKey) throw new Error('No Anthropic API key configured. Add one in Settings → API Key.')
-
+  const apiKey = await requireApiKey()
   const client = new Anthropic({ apiKey })
   const message = await client.messages.create({
     model: 'claude-sonnet-4-6',

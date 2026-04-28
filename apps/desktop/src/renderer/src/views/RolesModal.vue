@@ -7,6 +7,8 @@ import {
   type RoleDraft,
   type RoleScope,
 } from '@shared/ipc-contract'
+import { useApiKeyGuard } from '@/composables/useApiKeyGuard'
+import SettingsModal from './SettingsModal.vue'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -39,8 +41,11 @@ const generatePrompt = ref('')
 const generating = ref(false)
 const generateError = ref<string | null>(null)
 
+const { apiKeyMissing, ensureApiKey, handleApiKeyError } = useApiKeyGuard()
+
 async function generate() {
   if (!generatePrompt.value.trim()) return
+  if (!await ensureApiKey()) return
   generating.value = true
   generateError.value = null
   try {
@@ -49,7 +54,9 @@ async function generate() {
     if (!form.value.name.trim()) form.value.name = result.name
     if (!form.value.description.trim()) form.value.description = result.description
   } catch (e) {
-    generateError.value = e instanceof Error ? e.message : String(e)
+    if (!handleApiKeyError(e)) {
+      generateError.value = e instanceof Error ? e.message : String(e)
+    }
   } finally {
     generating.value = false
   }
@@ -418,4 +425,12 @@ watch(
       </div>
     </div>
   </dialog>
+
+  <SettingsModal
+    :open="apiKeyMissing"
+    :project-path="props.projectPath"
+    @close="apiKeyMissing = false"
+    @saved="apiKeyMissing = false"
+    @reset="apiKeyMissing = false"
+  />
 </template>
