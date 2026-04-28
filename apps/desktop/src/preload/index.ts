@@ -5,6 +5,7 @@ import {
   type AgencyScope,
   type AppSettings,
   type Attachment,
+  type ClaudeAuthType,
   type CreatePRParams,
   type FsEntry,
   type GitHubConfig,
@@ -96,6 +97,9 @@ function onChannel<P>(
 }
 
 const api: AgentKeeperApi = {
+  auth: {
+    status: () => invoke(IPC_CHANNELS.authStatus) as Promise<ClaudeAuthType>,
+  },
   projects: {
     add: (projectPath: string) =>
       invoke(IPC_CHANNELS.projectsAdd, projectPath) as Promise<never>,

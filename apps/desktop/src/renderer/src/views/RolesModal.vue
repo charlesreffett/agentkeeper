@@ -7,7 +7,7 @@ import {
   type RoleDraft,
   type RoleScope,
 } from '@shared/ipc-contract'
-import { useApiKeyGuard } from '@/composables/useApiKeyGuard'
+import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import SettingsModal from './SettingsModal.vue'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
@@ -41,11 +41,10 @@ const generatePrompt = ref('')
 const generating = ref(false)
 const generateError = ref<string | null>(null)
 
-const { apiKeyMissing, ensureApiKey, handleApiKeyError } = useApiKeyGuard()
+const { needsApiKey, handleAuthError } = useClaudeAuth()
 
 async function generate() {
   if (!generatePrompt.value.trim()) return
-  if (!await ensureApiKey()) return
   generating.value = true
   generateError.value = null
   try {
@@ -54,7 +53,7 @@ async function generate() {
     if (!form.value.name.trim()) form.value.name = result.name
     if (!form.value.description.trim()) form.value.description = result.description
   } catch (e) {
-    if (!handleApiKeyError(e)) {
+    if (!handleAuthError(e)) {
       generateError.value = e instanceof Error ? e.message : String(e)
     }
   } finally {
@@ -427,10 +426,10 @@ watch(
   </dialog>
 
   <SettingsModal
-    :open="apiKeyMissing"
+    :open="needsApiKey"
     :project-path="props.projectPath"
-    @close="apiKeyMissing = false"
-    @saved="apiKeyMissing = false"
-    @reset="apiKeyMissing = false"
+    @close="needsApiKey = false"
+    @saved="needsApiKey = false"
+    @reset="needsApiKey = false"
   />
 </template>

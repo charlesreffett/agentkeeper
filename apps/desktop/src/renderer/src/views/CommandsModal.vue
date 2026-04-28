@@ -2,11 +2,14 @@
 import { nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import type { SlashCommand } from '@shared/ipc-contract'
+import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import SettingsModal from './SettingsModal.vue'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const dialog = ref<HTMLDialogElement | null>(null)
+const { needsApiKey, handleAuthError } = useClaudeAuth()
 
 const commands = ref<SlashCommand[]>([])
 const loading = ref(false)
@@ -38,7 +41,7 @@ async function generateCommand() {
   generating.value = true
   message.value = null
   try {
-    const body = await window.orchestral.commands.generate(p)
+    const body = await window.agentkeeper.commands.generate(p)
     form.value.body = body
     // Auto-suggest ID from H1 only if user hasn't typed one yet
     if (!form.value.id) {
@@ -46,7 +49,9 @@ async function generateCommand() {
       if (h1Match) form.value.id = toSlug(h1Match[1]!)
     }
   } catch (e) {
-    message.value = e instanceof Error ? e.message : String(e)
+    if (!handleAuthError(e)) {
+      message.value = e instanceof Error ? e.message : String(e)
+    }
   } finally {
     generating.value = false
   }
@@ -56,7 +61,7 @@ async function refresh() {
   loading.value = true
   message.value = null
   try {
-    commands.value = await window.orchestral.commands.list(props.projectPath)
+    commands.value = await window.agentkeeper.commands.list(props.projectPath)
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
     commands.value = []
@@ -103,7 +108,7 @@ async function save() {
   saving.value = true
   message.value = null
   try {
-    await window.orchestral.commands.save(
+    await window.agentkeeper.commands.save(
       form.value.scope,
       props.projectPath,
       id,
@@ -123,7 +128,7 @@ async function remove(cmd: SlashCommand) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove command "/${cmd.id}" (${cmd.scope})?`)) return
   try {
-    await window.orchestral.commands.remove({ ...cmd })
+    await window.agentkeeper.commands.remove({ ...cmd })
     await refresh()
     if (selectedId.value === `${cmd.scope}:${cmd.id}`) cancelEdit()
   } catch (e) {
@@ -307,4 +312,12 @@ watch(
       </div>
     </div>
   </dialog>
+
+  <SettingsModal
+    :open="needsApiKey"
+    :project-path="props.projectPath"
+    @close="needsApiKey = false"
+    @saved="needsApiKey = false"
+    @reset="needsApiKey = false"
+  />
 </template>

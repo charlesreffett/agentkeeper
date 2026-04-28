@@ -3,12 +3,15 @@ import { nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import type { Skill, SkillPreview } from '@shared/ipc-contract'
 import { useProjectsStore } from '@/stores/projects'
+import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import SettingsModal from './SettingsModal.vue'
 
 const props = defineProps<{ open: boolean; projectPath: string }>()
 const emit = defineEmits<{ close: [] }>()
 
 const projectsStore = useProjectsStore()
 const dialog = ref<HTMLDialogElement | null>(null)
+const { needsApiKey, handleAuthError } = useClaudeAuth()
 
 const skills = ref<Skill[]>([])
 const loading = ref(false)
@@ -57,7 +60,7 @@ async function generateSkill() {
   generating.value = true
   message.value = null
   try {
-    const raw = await window.orchestral.skills.generate(p)
+    const raw = await window.agentkeeper.skills.generate(p)
     const endIdx = raw.indexOf('\n---', 3)
     if (endIdx !== -1) {
       const fm = raw.slice(3, endIdx)
@@ -71,7 +74,9 @@ async function generateSkill() {
       createBody.value = raw
     }
   } catch (e) {
-    message.value = e instanceof Error ? e.message : String(e)
+    if (!handleAuthError(e)) {
+      message.value = e instanceof Error ? e.message : String(e)
+    }
   } finally {
     generating.value = false
   }
@@ -98,7 +103,7 @@ async function doSaveSkill() {
       '',
       createBody.value.trim(),
     ].join('\n')
-    await window.orchestral.skills.save(props.projectPath, id, createScope.value, content)
+    await window.agentkeeper.skills.save(props.projectPath, id, createScope.value, content)
     createPrompt.value = ''
     createId.value = ''
     createName.value = ''
@@ -118,7 +123,7 @@ async function refresh() {
   loading.value = true
   message.value = null
   try {
-    skills.value = await window.orchestral.skills.list(projectsStore.focusedProject?.path ?? '')
+    skills.value = await window.agentkeeper.skills.list(projectsStore.focusedProject?.path ?? '')
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
     skills.value = []
@@ -144,7 +149,7 @@ async function startPreview() {
   previewing.value = true
   message.value = null
   try {
-    const result = await window.orchestral.skills.preview(props.projectPath, source)
+    const result = await window.agentkeeper.skills.preview(props.projectPath, source)
     previews.value = result
     selectedIds.value = result.map((p) => p.id)
     step.value = 'select'
@@ -168,7 +173,7 @@ async function doInstall(skillIds?: string[]) {
   }
   console.log('[skills] install →', payload)
   try {
-    await window.orchestral.skills.install(
+    await window.agentkeeper.skills.install(
       props.projectPath,
       source,
       installScope.value,
@@ -213,7 +218,7 @@ async function remove(skill: Skill) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove skill "${skill.name}" (${skill.scope})?`)) return
   try {
-    await window.orchestral.skills.remove({ ...skill })
+    await window.agentkeeper.skills.remove({ ...skill })
     await refresh()
     if (expanded.value === `${skill.scope}:${skill.id}`) expanded.value = null
   } catch (e) {
@@ -531,4 +536,12 @@ watch(
       </div>
     </div>
   </dialog>
+
+  <SettingsModal
+    :open="needsApiKey"
+    :project-path="props.projectPath"
+    @close="needsApiKey = false"
+    @saved="needsApiKey = false"
+    @reset="needsApiKey = false"
+  />
 </template>

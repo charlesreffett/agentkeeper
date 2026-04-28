@@ -24,10 +24,19 @@ export const secrets = {
   },
 }
 
-export async function requireApiKey(): Promise<string> {
+export type ClaudeAuthResolution =
+  | { type: 'api-key'; key: string }
+  | { type: 'cli' }
+
+/**
+ * Determine which auth path to use for a Claude invocation.
+ * Console users get a direct SDK call with their keychain key.
+ * Pro/Max users get the subprocess path which picks up `claude login`.
+ */
+export async function resolveClaudeAuth(): Promise<ClaudeAuthResolution> {
   const key = await secrets.get(SECRET_KEYS.anthropicApiKey)
-  if (!key) throw new Error('[API_KEY_MISSING] No Anthropic API key configured. Add one in Settings → API Key.')
-  return key
+  if (key) return { type: 'api-key', key }
+  return { type: 'cli' }
 }
 
 export function createPluginSecrets(pluginId: string): {

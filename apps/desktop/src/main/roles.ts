@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import Anthropic from '@anthropic-ai/sdk'
 import {
@@ -9,7 +11,16 @@ import {
   type RoleEffort,
   type RoleScope,
 } from '../shared/ipc-contract'
-import { requireApiKey } from './secrets'
+import { resolveClaudeAuth } from './secrets'
+
+const execFileAsync = promisify(execFile)
+
+function stripAnsi(s: string): string {
+  return s
+    .replace(/\x1b\[[\d;?>=!]*[@-~]/g, '')
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b[A-Za-z=>]/g, '')
+}
 
 const PROJECT_ROLES_DIR = '.agentkeeper/roles'
 const GLOBAL_ROLES_DIR = '.agentkeeper/roles'
@@ -165,18 +176,8 @@ export async function deleteRole(
   }
 }
 
-export async function generateRoleContent(
-  prompt: string,
-): Promise<{ systemPrompt: string; name: string; description: string }> {
-  const apiKey = await requireApiKey()
-  const client = new Anthropic({ apiKey })
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    messages: [
-      {
-        role: 'user',
-        content: `You are helping configure an AI agent role for AgentKeeper, an Electron app that drives Claude Code sessions.
+const ROLE_GENERATION_PROMPT = (prompt: string) =>
+  `You are helping configure an AI agent role for AgentKeeper, an Electron app that drives Claude Code sessions.
 
 Generate a role definition for: "${prompt}"
 
@@ -185,18 +186,54 @@ Respond with ONLY a JSON object — no markdown fences, no prose:
   "name": "<short display name, title case, ≤ 30 chars>",
   "description": "<one sentence, what this role does, ≤ 120 chars>",
   "systemPrompt": "<detailed system prompt, 150–400 words, written in second person ('You are…'), covering the role's responsibilities, constraints, and working style>"
-}`,
-      },
-    ],
-  })
+}`
 
-  const first = message.content[0]
-  const text = first?.type === 'text' ? first.text : ''
-  const parsed = JSON.parse(text.trim())
-  if (typeof parsed.systemPrompt !== 'string') throw new Error('Unexpected response shape from Claude')
+function parseRoleGenerationResponse(
+  text: string,
+): { systemPrompt: string; name: string; description: string } {
+  const cleaned = stripAnsi(text).trim()
+  const parsed = JSON.parse(cleaned)
+  if (typeof parsed.systemPrompt !== 'string')
+    throw new Error('Unexpected response shape from Claude')
   return {
     name: String(parsed.name ?? ''),
     description: String(parsed.description ?? ''),
     systemPrompt: String(parsed.systemPrompt),
+  }
+}
+
+export async function generateRoleContent(
+  prompt: string,
+): Promise<{ systemPrompt: string; name: string; description: string }> {
+  const auth = await resolveClaudeAuth()
+  const content = ROLE_GENERATION_PROMPT(prompt)
+
+  if (auth.type === 'api-key') {
+    const client = new Anthropic({ apiKey: auth.key })
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content }],
+    })
+    const first = message.content[0]
+    const text = first?.type === 'text' ? first.text : ''
+    return parseRoleGenerationResponse(text)
+  }
+
+  // Pro/Max path — claude CLI picks up `claude login` credentials
+  try {
+    const result = await execFileAsync('claude', ['-p', content], {
+      cwd: os.homedir(),
+      timeout: 60_000,
+      maxBuffer: 2 * 1024 * 1024,
+      env: { ...process.env },
+    })
+    return parseRoleGenerationResponse(result.stdout)
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: string }
+    if (e.code === 'ENOENT')
+      throw new Error('claude CLI not found — make sure Claude Code is installed.')
+    const raw = e.stderr?.trim() || e.stdout?.trim() || e.message || 'unknown error'
+    throw new Error(`Role generation failed: ${stripAnsi(raw).trim()}`)
   }
 }

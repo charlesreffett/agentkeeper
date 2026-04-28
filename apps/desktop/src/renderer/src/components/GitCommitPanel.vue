@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import type { CommitGroup, CommitSuggestion } from '@shared/ipc-contract'
+import { useClaudeAuth } from '@/composables/useClaudeAuth'
 
 const props = defineProps<{ projectPath: string }>()
 const emit = defineEmits<{ committed: [] }>()
@@ -8,6 +9,8 @@ const emit = defineEmits<{ committed: [] }>()
 // ─── State machine ──────────────────────────────────────────────────────────
 
 type Phase = 'idle' | 'analyzing' | 'reviewing' | 'committing' | 'done' | 'error'
+
+const { handleAuthError } = useClaudeAuth()
 
 const phase = ref<Phase>('idle')
 const errorMessage = ref('')
@@ -42,11 +45,12 @@ async function analyze() {
   phase.value = 'analyzing'
   errorMessage.value = ''
   try {
-    const result = await window.orchestral.git.suggestCommits(props.projectPath)
+    const result = await window.agentkeeper.git.suggestCommits(props.projectPath)
     overview.value = result.overview
     groups.value = toEditable(result)
     phase.value = result.groups.length === 0 ? 'idle' : 'reviewing'
   } catch (err: unknown) {
+    handleAuthError(err)
     errorMessage.value = err instanceof Error ? err.message : String(err)
     phase.value = 'error'
   }
@@ -67,7 +71,7 @@ function activeFiles(group: EditableGroup): string[] {
 
 async function commitAll() {
   phase.value = 'committing'
-  const git = window.orchestral.git
+  const git = window.agentkeeper.git
 
   for (let i = 0; i < groups.value.length; i++) {
     committingIndex.value = i
@@ -94,7 +98,7 @@ async function doPush() {
   pushing.value = true
   pushError.value = ''
   try {
-    pushOutput.value = await window.orchestral.git.push(props.projectPath)
+    pushOutput.value = await window.agentkeeper.git.push(props.projectPath)
   } catch (err: unknown) {
     pushError.value = err instanceof Error ? err.message : String(err)
   } finally {

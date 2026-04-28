@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import Anthropic from '@anthropic-ai/sdk'
 import type { Skill, SkillPreview } from '../shared/ipc-contract'
-import { secrets, SECRET_KEYS } from './secrets'
+import { resolveClaudeAuth } from './secrets'
 
 const execFileAsync = promisify(execFile)
 
@@ -294,12 +294,11 @@ function validateGeneratedSkill(raw: string): string {
 }
 
 export async function generateSkillContent(prompt: string): Promise<string> {
-  const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
+  const auth = await resolveClaudeAuth()
   const userContent = `Create a Claude Code skill that does the following: ${prompt}`
 
-  if (apiKey) {
-    // Console API key path — direct SDK call, no subprocess needed.
-    const client = new Anthropic({ apiKey })
+  if (auth.type === 'api-key') {
+    const client = new Anthropic({ apiKey: auth.key })
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,

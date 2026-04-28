@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { secrets, SECRET_KEYS } from './secrets'
+import { resolveClaudeAuth } from './secrets'
 import { getDiff, getStatus } from './git'
 import type { CommitSuggestion, CommitGroup } from '../shared/ipc-contract'
 
@@ -108,10 +108,10 @@ function parseResponse(text: string, allFiles: string[]): CommitSuggestion {
 // SDK — same binary the sessions use, picks up CLI credentials automatically.
 
 async function callClaude(prompt: string): Promise<string> {
-  const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
+  const auth = await resolveClaudeAuth()
 
-  if (apiKey) {
-    const client = new Anthropic({ apiKey })
+  if (auth.type === 'api-key') {
+    const client = new Anthropic({ apiKey: auth.key })
     const msg = await client.messages.create({
       model: 'claude-sonnet-4-5',
       max_tokens: 2048,
@@ -126,7 +126,7 @@ async function callClaude(prompt: string): Promise<string> {
   // Pro/Max path: spawn the claude subprocess (mirrors agent.ts auth setup)
   const childEnv: Record<string, string | undefined> = {
     ...process.env,
-    CLAUDE_AGENT_SDK_CLIENT_APP: 'orchestral-ai',
+    CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
   }
 
   const q = query({ prompt, options: { env: childEnv } })

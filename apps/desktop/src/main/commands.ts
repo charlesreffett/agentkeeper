@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import Anthropic from '@anthropic-ai/sdk'
 import type { SlashCommand } from '../shared/ipc-contract'
-import { secrets, SECRET_KEYS } from './secrets'
+import { resolveClaudeAuth } from './secrets'
 
 const PROJECT_COMMANDS_DIR = '.claude/commands'
 const GLOBAL_COMMANDS_DIR = '.claude/commands'
@@ -125,11 +125,11 @@ function validateGeneratedCommand(text: string): string {
 }
 
 export async function generateCommandContent(prompt: string): Promise<string> {
-  const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
+  const auth = await resolveClaudeAuth()
   const userContent = `Create a Claude Code slash command that does the following: ${prompt}`
 
-  if (apiKey) {
-    const client = new Anthropic({ apiKey })
+  if (auth.type === 'api-key') {
+    const client = new Anthropic({ apiKey: auth.key })
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 2048,

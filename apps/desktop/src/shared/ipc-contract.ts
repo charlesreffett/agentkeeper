@@ -391,6 +391,8 @@ export interface AppSettings {
 
 export type SecretKeyName = 'anthropicApiKey'
 
+export type ClaudeAuthType = 'api-key' | 'cli'
+
 // ─── Factory reset ──────────────────────────────────────────────────────────
 
 export interface ResetRequest {
@@ -519,6 +521,9 @@ export interface AgentKeeperApi {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
   }
+  auth: {
+    status: () => Promise<ClaudeAuthType>
+  }
   secrets: {
     has: (key: SecretKeyName) => Promise<boolean>
     set: (key: SecretKeyName, value: string) => Promise<void>
@@ -615,6 +620,7 @@ export const IPC_CHANNELS = {
   commandsRemove: 'commands:remove',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
+  authStatus: 'auth:status',
   secretsHas: 'secrets:has',
   secretsSet: 'secrets:set',
   secretsDelete: 'secrets:delete',

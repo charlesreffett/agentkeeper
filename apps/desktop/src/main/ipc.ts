@@ -34,7 +34,7 @@ import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, un
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode } from './agent'
-import { SECRET_KEYS, secrets } from './secrets'
+import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
@@ -504,6 +504,12 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+
+  // Auth
+  ipcMain.handle(IPC_CHANNELS.authStatus, async () => {
+    const auth = await resolveClaudeAuth()
+    return auth.type
+  })
 
   // Secrets
   ipcMain.handle(IPC_CHANNELS.secretsHas, (_event, key: SecretKeyName) =>
