@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, provide, ref, computed } from 'vue'
 import { useRoute, RouterLink, RouterView } from 'vue-router'
 import type { PRDetail, PRState } from '@shared/github-types'
 
@@ -10,16 +10,34 @@ const prRepo = computed(() => String(route.query.repo ?? ''))
 const pr = ref<PRDetail | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const refreshing = ref(false)
+
+// Incremented each time the user hits Refresh — child views watch this to re-fetch.
+const refreshTick = ref(0)
+provide('prRefreshTick', refreshTick)
 
 onMounted(async () => {
   try {
-    pr.value = await window.orchestral.github.getPR(prRepo.value, prNumber.value)
+    pr.value = await window.agentkeeper.github.getPR(prRepo.value, prNumber.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
   }
 })
+
+async function refresh() {
+  refreshing.value = true
+  try {
+    pr.value = await window.agentkeeper.github.getPR(prRepo.value, prNumber.value)
+    error.value = null
+    refreshTick.value++
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    refreshing.value = false
+  }
+}
 
 const stateClass: Record<PRState, string> = {
   open: 'bg-green-500/20 text-green-400',
@@ -65,7 +83,7 @@ const tabs = computed(() => [
         </template>
       </div>
 
-      <nav class="flex gap-1 px-4 pb-0">
+      <nav class="flex items-center gap-1 px-4 pb-0">
         <RouterLink
           v-for="tab in tabs"
           :key="tab.label"
@@ -77,6 +95,11 @@ const tabs = computed(() => [
         >
           {{ tab.label }}
         </RouterLink>
+        <button
+          class="ml-auto self-center text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors"
+          :disabled="refreshing"
+          @click="refresh"
+        >{{ refreshing ? 'Refreshing…' : '↻ Refresh' }}</button>
       </nav>
     </div>
 

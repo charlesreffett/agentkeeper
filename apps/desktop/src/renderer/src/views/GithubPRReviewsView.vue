@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { inject, onMounted, ref, watch, computed } from 'vue'
+import type { Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { PRReview, PRDetail, ReviewEvent } from '@shared/github-types'
 
@@ -20,7 +21,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    pr.value = await window.orchestral.github.getPR(prRepo.value, prNumber.value)
+    pr.value = await window.agentkeeper.github.getPR(prRepo.value, prNumber.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -30,11 +31,14 @@ async function load() {
 
 onMounted(load)
 
+const prRefreshTick = inject<Ref<number>>('prRefreshTick', ref(0))
+watch(prRefreshTick, () => { void load() })
+
 async function submitReview() {
   submitting.value = true
   submitError.value = null
   try {
-    await window.orchestral.github.submitReview(prRepo.value, prNumber.value, reviewEvent.value, reviewBody.value)
+    await window.agentkeeper.github.submitReview(prRepo.value, prNumber.value, reviewEvent.value, reviewBody.value)
     reviewBody.value = ''
     reviewEvent.value = 'COMMENT'
     await load()

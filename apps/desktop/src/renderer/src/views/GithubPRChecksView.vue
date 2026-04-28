@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { inject, onMounted, ref, watch, computed } from 'vue'
+import type { Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { CheckRun, CheckState } from '@shared/github-types'
 
@@ -11,15 +12,22 @@ const checks = ref<CheckRun[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
 
-onMounted(async () => {
+async function load() {
+  loading.value = true
+  error.value = null
   try {
-    checks.value = await window.orchestral.github.getPRChecks(prRepo.value, prNumber.value)
+    checks.value = await window.agentkeeper.github.getPRChecks(prRepo.value, prNumber.value)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
   }
-})
+}
+
+onMounted(load)
+
+const prRefreshTick = inject<Ref<number>>('prRefreshTick', ref(0))
+watch(prRefreshTick, () => { void load() })
 
 function stateOrder(state: CheckState): number {
   switch (state) {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { inject, onMounted, ref, watch, computed } from 'vue'
+import type { Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
 import type { PRComment, PRDetail } from '@shared/github-types'
@@ -27,7 +28,10 @@ const projectStore = useProjectStore()
 const sendingCommentId = ref<number | null>(null)
 const sendingAll = ref(false)
 const claudeError = ref<string | null>(null)
-const refreshing = ref(false)
+
+// Re-fetch when the layout's Refresh button fires.
+const prRefreshTick = inject<Ref<number>>('prRefreshTick', ref(0))
+watch(prRefreshTick, () => { void refresh() })
 
 async function load() {
   loading.value = true
@@ -50,9 +54,8 @@ async function load() {
 
 onMounted(load)
 
-// Refresh without blanking the view — keeps current content visible while fetching.
+// Re-fetch without blanking the view — triggered by the layout's Refresh button.
 async function refresh() {
-  refreshing.value = true
   claudeError.value = null
   try {
     const [detail, fetched] = await Promise.all([
@@ -66,8 +69,6 @@ async function refresh() {
     error.value = null
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    refreshing.value = false
   }
 }
 
@@ -170,16 +171,10 @@ async function sendAllToClaude() {
     </div>
 
     <div v-else class="flex-1 min-h-0 overflow-auto p-4 space-y-4">
-      <!-- Actions bar: refresh on the left, AI actions on the right -->
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <button
-            class="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors"
-            :disabled="refreshing"
-            @click="refresh"
-          >{{ refreshing ? 'Refreshing…' : '↻ Refresh' }}</button>
-          <span v-if="claudeError" class="text-destructive text-xs">{{ claudeError }}</span>
-        </div>
+      <!-- AI actions bar -->
+      <div v-if="comments.length > 0 || claudeError" class="flex items-center justify-between">
+        <span v-if="claudeError" class="text-destructive text-xs">{{ claudeError }}</span>
+        <div v-else class="flex-1" />
         <button
           v-if="comments.length > 0"
           class="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 disabled:opacity-50 transition-colors"
