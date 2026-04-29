@@ -13,7 +13,7 @@ entryPoints:
 ---
 
 Standard three-role team for delivering slices and substantial tasks
-against the orchestral-ai project itself.
+against the agentkeeper project itself.
 
 ## Protocol
 
