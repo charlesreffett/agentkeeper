@@ -64,23 +64,22 @@
       </div>
 
       <div class="flex items-center gap-2 pt-1">
-        <button
+        <Button
           v-if="isDirty"
-          class="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5"
+          variant="ghost"
+          size="sm"
           @click="discard"
         >
           Discard
-        </button>
-        <button
-          class="flex-1 text-xs rounded px-3 py-1.5 transition-colors"
-          :class="isDirty
-            ? 'bg-blue-600 hover:bg-blue-500 text-white'
-            : 'bg-muted text-muted-foreground cursor-not-allowed'"
+        </Button>
+        <Button
+          class="flex-1"
+          size="sm"
           :disabled="!isDirty"
           @click="save"
         >
           Save changes
-        </button>
+        </Button>
       </div>
     </div>
 
@@ -97,18 +96,12 @@
       <template v-else>
         <div class="text-xs text-muted-foreground mb-2">Delete "{{ agency.name }}"? This cannot be undone.</div>
         <div class="flex items-center gap-2">
-          <button
-            class="flex-1 text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-3 py-1.5 transition-colors"
-            @click="confirmDelete = false"
-          >
+          <Button variant="secondary" size="sm" class="flex-1" @click="confirmDelete = false">
             Cancel
-          </button>
-          <button
-            class="flex-1 text-xs bg-red-600 hover:bg-red-500 text-white rounded px-3 py-1.5 transition-colors"
-            @click="doDelete"
-          >
+          </Button>
+          <Button variant="destructive" size="sm" class="flex-1" @click="doDelete">
             Delete
-          </button>
+          </Button>
         </div>
       </template>
     </div>
@@ -117,6 +110,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Button } from '@/components/ui/button'
 import type { Agency } from '../../../../shared/ipc-contract'
 
 const props = defineProps<{
