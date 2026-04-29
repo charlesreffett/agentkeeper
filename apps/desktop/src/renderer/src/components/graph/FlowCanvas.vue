@@ -1,6 +1,7 @@
 <template>
   <div class="w-full h-full">
     <VueFlow
+      id="agency-flow"
       :nodes="vfNodes"
       :edges="vfEdges"
       :node-types="nodeTypes"
@@ -23,7 +24,7 @@
 
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
-import { VueFlow, MarkerType } from '@vue-flow/core'
+import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core'
 import { useLayoutStore } from '@/stores/layout'
 import type {
   Node as VFNode,
@@ -64,6 +65,11 @@ const layoutStore = useLayoutStore()
 const patternColor = computed(() =>
   layoutStore.theme === 'dark' ? '#27272a' : '#d4cfc8'
 )
+
+// Accessed by ID so addEdges can be called from the parent without inject context.
+// useVueFlow('agency-flow') registers the store before <VueFlow id="agency-flow"> mounts;
+// they share the same store instance.
+const { addEdges } = useVueFlow('agency-flow')
 
 // Cast to bypass strict NodeComponent type mismatch — our component satisfies
 // the runtime contract but Vue Flow's generic NodeProps don't align with defineProps<...>
@@ -113,6 +119,11 @@ const vfEdges = computed<VFEdge[]>(() =>
 
 function onConnect(conn: Connection) {
   if (conn.source && conn.target) {
+    // Add to Vue Flow's internal state immediately so the edge renders without
+    // waiting for the async save → store reload → prop update cycle.
+    // defaultEdgeOptions (type, markerEnd, style) are applied automatically.
+    // The `:edges` prop update after the save reconciles the final state.
+    addEdges([{ id: `${conn.source}->${conn.target}`, source: conn.source, target: conn.target }])
     emit('connection', { sourceId: conn.source, targetId: conn.target })
   }
 }
