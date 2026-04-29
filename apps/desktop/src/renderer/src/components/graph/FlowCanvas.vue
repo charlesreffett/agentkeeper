@@ -6,6 +6,7 @@
       :edges="vfEdges"
       :node-types="nodeTypes"
       :fit-view-on-init="fitOnLoad"
+      :delete-key-code="['Backspace', 'Delete']"
       class="bg-background"
       :default-edge-options="defaultEdgeOptions"
       :connect-on-click="false"
