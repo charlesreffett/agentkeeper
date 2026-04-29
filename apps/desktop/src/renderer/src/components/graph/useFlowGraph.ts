@@ -1,0 +1,160 @@
+import { computed, ref, watch } from 'vue'
+import type { Ref } from 'vue'
+import type { Agency, RoleSlot } from '../../../../shared/ipc-contract'
+import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
+
+export function useFlowGraph(
+  agency: Ref<Agency | null>,
+  saveAgency: (draft: Agency) => Promise<void>,
+  deleteAgencyFn: () => Promise<void>,
+) {
+  const selectedNodeId = ref<string | null>(null)
+  const selectedEdgeId = ref<string | null>(null)
+
+  // Layout persistence: reset when agency changes
+  const nodePositions = ref<Record<string, { x: number; y: number }>>({})
+  watch(() => agency.value?.id, () => { nodePositions.value = {} })
+
+  const nodes = computed<GraphNode[]>(() => {
+    if (!agency.value) return []
+    return agency.value.roles.map((slot, index) => ({
+      id: slot.roleId,
+      label: slot.roleId,
+      kind: 'role' as const,
+      isEntryPoint: agency.value!.entryPoints.includes(slot.roleId),
+      anyToAny: agency.value!.flows.length === 0,
+      multiplicityLabel: buildMultiplicityLabel(slot),
+      position: nodePositions.value[slot.roleId] ?? defaultPosition(index, agency.value!.roles.length),
+      meta: { slot },
+    }))
+  })
+
+  const edges = computed<GraphEdge[]>(() => {
+    if (!agency.value) return []
+    const flows = agency.value.flows
+    return flows.map(([src, tgt]) => ({
+      id: `${src}->${tgt}`,
+      source: src,
+      target: tgt,
+      isBidirectional: flows.some(([a, b]) => a === tgt && b === src),
+    }))
+  })
+
+  const flowMode = computed<GraphFlowMode>(() =>
+    (!agency.value || agency.value.flows.length === 0) ? 'any-to-any' : 'explicit'
+  )
+
+  const selectedRoleSlot = computed<RoleSlot | null>(() => {
+    if (!selectedNodeId.value || !agency.value) return null
+    return agency.value.roles.find(r => r.roleId === selectedNodeId.value) ?? null
+  })
+
+  const selectedEdge = computed<GraphEdge | null>(() => {
+    if (!selectedEdgeId.value) return null
+    return edges.value.find(e => e.id === selectedEdgeId.value) ?? null
+  })
+
+  function selectNode(id: string | null) {
+    selectedNodeId.value = id
+    selectedEdgeId.value = null
+  }
+
+  function selectEdge(id: string | null) {
+    selectedEdgeId.value = id
+    selectedNodeId.value = null
+  }
+
+  function clearSelection() {
+    selectedNodeId.value = null
+    selectedEdgeId.value = null
+  }
+
+  function updateNodePosition(nodeId: string, position: { x: number; y: number }) {
+    nodePositions.value = { ...nodePositions.value, [nodeId]: position }
+  }
+
+  async function addConnection(req: GraphConnectionRequest) {
+    if (!agency.value) return
+    if (req.sourceId === req.targetId) return
+    const exists = agency.value.flows.some(([a, b]) => a === req.sourceId && b === req.targetId)
+    if (exists) return
+    const draft = { ...agency.value, flows: [...agency.value.flows, [req.sourceId, req.targetId] as [string, string]] }
+    await saveAgency(draft)
+  }
+
+  async function removeConnection(edgeId: string) {
+    if (!agency.value) return
+    const [src, tgt] = edgeId.split('->')
+    const draft = { ...agency.value, flows: agency.value.flows.filter(([a, b]) => !(a === src && b === tgt)) }
+    await saveAgency(draft)
+    if (selectedEdgeId.value === edgeId) clearSelection()
+  }
+
+  async function flipConnection(edgeId: string) {
+    if (!agency.value) return
+    const [src, tgt] = edgeId.split('->')
+    const without = agency.value.flows.filter(([a, b]) => !(a === src && b === tgt))
+    const alreadyHasReverse = without.some(([a, b]) => a === tgt && b === src)
+    const newFlows = alreadyHasReverse ? without : [...without, [tgt, src] as [string, string]]
+    const draft = { ...agency.value, flows: newFlows }
+    await saveAgency(draft)
+  }
+
+  async function toggleEntryPoint(roleId: string) {
+    if (!agency.value) return
+    const isEntry = agency.value.entryPoints.includes(roleId)
+    const newEntries = isEntry
+      ? agency.value.entryPoints.filter(id => id !== roleId)
+      : [...agency.value.entryPoints, roleId]
+    if (newEntries.length === 0) return  // must have at least one entry point
+    const draft = { ...agency.value, entryPoints: newEntries }
+    await saveAgency(draft)
+  }
+
+  async function updateInstanceCount(
+    roleId: string,
+    mode: 'x1' | 'fixed' | 'dynamic',
+    opts: { count?: number; min?: number; max?: number }
+  ) {
+    if (!agency.value) return
+    const newRoles = agency.value.roles.map(slot => {
+      if (slot.roleId !== roleId) return slot
+      if (mode === 'x1') return { roleId }
+      if (mode === 'fixed') return { roleId, count: opts.count ?? 2 }
+      return { roleId, min: opts.min ?? 1, max: opts.max ?? 3 }
+    })
+    const draft = { ...agency.value, roles: newRoles }
+    await saveAgency(draft)
+  }
+
+  async function deleteAgency() {
+    await deleteAgencyFn()
+  }
+
+  return {
+    nodes, edges, flowMode,
+    selectedNodeId, selectedEdgeId,
+    selectedRoleSlot, selectedEdge,
+    selectNode, selectEdge, clearSelection,
+    updateNodePosition,
+    addConnection, removeConnection, flipConnection,
+    toggleEntryPoint, updateInstanceCount,
+    deleteAgency,
+  }
+}
+
+function buildMultiplicityLabel(slot: RoleSlot): string {
+  if (slot.count !== undefined) return `×${slot.count}`
+  if (slot.min !== undefined && slot.max !== undefined) return `${slot.min}–${slot.max}`
+  return ''
+}
+
+function defaultPosition(index: number, total: number): { x: number; y: number } {
+  // Arrange in a circle
+  const radius = Math.max(120, total * 40)
+  const angle = (2 * Math.PI * index) / total - Math.PI / 2
+  return {
+    x: 300 + radius * Math.cos(angle),
+    y: 200 + radius * Math.sin(angle),
+  }
+}

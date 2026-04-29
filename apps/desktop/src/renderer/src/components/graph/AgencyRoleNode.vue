@@ -1,0 +1,61 @@
+<template>
+  <div
+    class="group relative rounded-lg border-2 px-4 py-3 bg-zinc-900 shadow-md min-w-[120px] cursor-pointer select-none transition-all"
+    :class="[
+      selected ? 'border-blue-500 shadow-blue-500/20' : 'border-zinc-700 hover:border-zinc-500',
+      data.isEntryPoint ? 'ring-2 ring-amber-500/60' : '',
+      data.anyToAny ? 'border-dashed' : '',
+    ]"
+  >
+    <!-- Target handle (invisible, receives connections) -->
+    <Handle type="target" :position="Position.Left" class="!bg-blue-500 !border-blue-700 !w-3 !h-3" />
+
+    <!-- Role label -->
+    <div class="text-sm font-semibold text-zinc-100">{{ data.label }}</div>
+
+    <!-- Badges row -->
+    <div class="mt-1 flex items-center gap-1.5 flex-wrap">
+      <span
+        v-if="data.isEntryPoint"
+        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30"
+      >
+        entry
+      </span>
+      <span
+        v-if="data.multiplicityLabel"
+        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300"
+      >
+        {{ data.multiplicityLabel }}
+      </span>
+      <span
+        v-if="data.anyToAny"
+        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30"
+      >
+        open
+      </span>
+    </div>
+
+    <!-- Source handle: shows on hover as a + button -->
+    <Handle
+      type="source"
+      :position="Position.Right"
+      class="!w-5 !h-5 !rounded-full !bg-blue-600 !border-2 !border-blue-400 !flex !items-center !justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-crosshair !right-[-10px]"
+    >
+      <span class="text-white text-xs font-bold leading-none pointer-events-none">+</span>
+    </Handle>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { Handle, Position } from '@vue-flow/core'
+
+defineProps<{
+  data: {
+    label: string
+    isEntryPoint: boolean
+    anyToAny: boolean
+    multiplicityLabel: string
+  }
+  selected: boolean
+}>()
+</script>

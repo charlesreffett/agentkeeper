@@ -1,0 +1,128 @@
+<template>
+  <div class="w-full h-full">
+    <VueFlow
+      :nodes="vfNodes"
+      :edges="vfEdges"
+      :node-types="nodeTypes"
+      :fit-view-on-init="fitOnLoad"
+      class="bg-zinc-950"
+      :default-edge-options="defaultEdgeOptions"
+      :connect-on-click="false"
+      @connect="onConnect"
+      @node-click="onNodeClick"
+      @edge-click="onEdgeClick"
+      @pane-click="onPaneClick"
+      @node-drag-stop="onNodeDragStop"
+    >
+      <Background pattern-color="#27272a" :gap="20" />
+      <Controls class="!bg-zinc-800 !border-zinc-700" />
+      <AnyToAnyOverlay v-if="flowMode === 'any-to-any'" />
+    </VueFlow>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, markRaw } from 'vue'
+import { VueFlow, MarkerType } from '@vue-flow/core'
+import type {
+  Node as VFNode,
+  Edge as VFEdge,
+  NodeMouseEvent,
+  EdgeMouseEvent,
+  NodeDragEvent,
+  Connection,
+} from '@vue-flow/core'
+import { Background } from '@vue-flow/background'
+import { Controls } from '@vue-flow/controls'
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
+import '@vue-flow/controls/dist/style.css'
+import AgencyRoleNode from './AgencyRoleNode.vue'
+import AnyToAnyOverlay from './AnyToAnyOverlay.vue'
+import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
+
+const props = defineProps<{
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  flowMode: GraphFlowMode
+  selectedNodeId: string | null
+  selectedEdgeId: string | null
+  fitOnLoad?: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'node-click', nodeId: string): void
+  (e: 'edge-click', edgeId: string): void
+  (e: 'connection', payload: GraphConnectionRequest): void
+  (e: 'pane-click'): void
+  (e: 'node-move', nodeId: string, position: { x: number; y: number }): void
+}>()
+
+// Cast to bypass strict NodeComponent type mismatch — our component satisfies
+// the runtime contract but Vue Flow's generic NodeProps don't align with defineProps<...>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const nodeTypes: Record<string, any> = { role: markRaw(AgencyRoleNode) }
+
+const defaultEdgeOptions = {
+  type: 'smoothstep',
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
+  style: { stroke: '#6366f1', strokeWidth: 2 },
+  animated: false,
+}
+
+const vfNodes = computed<VFNode[]>(() =>
+  props.nodes.map(n => ({
+    id: n.id,
+    type: 'role',
+    position: n.position,
+    selected: n.id === props.selectedNodeId,
+    data: {
+      label: n.label,
+      isEntryPoint: n.isEntryPoint,
+      anyToAny: n.anyToAny,
+      multiplicityLabel: n.multiplicityLabel,
+    },
+  }))
+)
+
+const vfEdges = computed<VFEdge[]>(() =>
+  props.edges.map(e => ({
+    id: e.id,
+    source: e.source,
+    target: e.target,
+    selected: e.id === props.selectedEdgeId,
+    markerEnd: e.isBidirectional
+      ? undefined
+      : { type: MarkerType.ArrowClosed, color: '#6366f1' },
+    markerStart: e.isBidirectional
+      ? { type: MarkerType.ArrowClosed, color: '#6366f1' }
+      : undefined,
+    style: {
+      stroke: e.id === props.selectedEdgeId ? '#818cf8' : '#6366f1',
+      strokeWidth: e.id === props.selectedEdgeId ? 3 : 2,
+    },
+  }))
+)
+
+function onConnect(conn: Connection) {
+  if (conn.source && conn.target) {
+    emit('connection', { sourceId: conn.source, targetId: conn.target })
+  }
+}
+
+function onNodeClick({ node }: NodeMouseEvent) {
+  emit('node-click', node.id)
+}
+
+function onEdgeClick({ edge }: EdgeMouseEvent) {
+  emit('edge-click', edge.id)
+}
+
+function onPaneClick() {
+  emit('pane-click')
+}
+
+function onNodeDragStop({ node }: NodeDragEvent) {
+  emit('node-move', node.id, node.position)
+}
+</script>
