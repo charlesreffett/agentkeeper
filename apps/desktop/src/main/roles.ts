@@ -9,6 +9,7 @@ import {
   ROLE_EFFORT_VALUES,
   type Role,
   type RoleEffort,
+  type RolesGenerateResult,
   type RoleScope,
 } from '../shared/ipc-contract'
 import { resolveClaudeAuth } from './secrets'
@@ -179,32 +180,67 @@ export async function deleteRole(
 const ROLE_GENERATION_PROMPT = (prompt: string) =>
   `You are helping configure an AI agent role for AgentKeeper, an Electron app that drives Claude Code sessions.
 
-Generate a role definition for: "${prompt}"
+Generate a complete role definition for: "${prompt}"
 
 Respond with ONLY a JSON object — no markdown fences, no prose:
 {
+  "id": "<lowercase alphanumeric + dashes only, ≤ 30 chars, must match ^[a-z0-9][a-z0-9-]*$>",
   "name": "<short display name, title case, ≤ 30 chars>",
   "description": "<one sentence, what this role does, ≤ 120 chars>",
+  "model": "<one of: claude-opus-4-7 | claude-sonnet-4-6 | claude-haiku-4-5-20251001 — pick the best fit: opus for complex reasoning/planning, sonnet for general dev work, haiku for lightweight tasks>",
+  "effort": "<one of: low | medium | high | xhigh | max — pick based on expected task complexity>",
+  "allowedTools": ["<tool name>", ...],
+  "allowedPeers": ["<role-id>", ...] or [],
   "systemPrompt": "<detailed system prompt, 150–400 words, written in second person ('You are…'), covering the role's responsibilities, constraints, and working style>"
-}`
+}
 
-function parseRoleGenerationResponse(
-  text: string,
-): { systemPrompt: string; name: string; description: string } {
+For allowedTools, choose from: Read, Edit, Write, Bash, Glob, Grep, WebFetch, WebSearch, Agent, TodoWrite, mcp__agentkeeper__send_message.
+Pick only what the role genuinely needs — a reviewer needs Read/Grep/Glob but not Write/Bash; a developer needs most tools.
+For allowedPeers, list the role IDs this role is allowed to send_message() to in an agency. Leave empty [] if this role doesn't need to delegate to peers.`
+
+const VALID_MODELS = new Set(['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'])
+const VALID_EFFORT = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
+const VALID_ID_RE = /^[a-z0-9][a-z0-9-]*$/
+
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 30)
+}
+
+function parseRoleGenerationResponse(text: string): RolesGenerateResult {
   const cleaned = stripAnsi(text).trim()
   const parsed = JSON.parse(cleaned)
   if (typeof parsed.systemPrompt !== 'string')
     throw new Error('Unexpected response shape from Claude')
+
+  const name = String(parsed.name ?? '')
+  const rawId = String(parsed.id ?? '')
+  const id = VALID_ID_RE.test(rawId) ? rawId : slugify(name) || 'new-role'
+  const model = VALID_MODELS.has(parsed.model) ? (parsed.model as string) : 'claude-sonnet-4-6'
+  const effort = VALID_EFFORT.has(parsed.effort) ? (parsed.effort as RoleEffort) : 'medium'
+  const allowedTools = Array.isArray(parsed.allowedTools)
+    ? (parsed.allowedTools as unknown[]).filter((t) => typeof t === 'string').map(String)
+    : null
+  const allowedPeers = Array.isArray(parsed.allowedPeers)
+    ? (parsed.allowedPeers as unknown[]).filter((t) => typeof t === 'string').map(String)
+    : null
+
   return {
-    name: String(parsed.name ?? ''),
+    id,
+    name,
     description: String(parsed.description ?? ''),
+    model,
+    effort,
+    allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : null,
+    allowedPeers: allowedPeers && allowedPeers.length > 0 ? allowedPeers : null,
     systemPrompt: String(parsed.systemPrompt),
   }
 }
 
-export async function generateRoleContent(
-  prompt: string,
-): Promise<{ systemPrompt: string; name: string; description: string }> {
+export async function generateRoleContent(prompt: string): Promise<RolesGenerateResult> {
   const auth = await resolveClaudeAuth()
   const content = ROLE_GENERATION_PROMPT(prompt)
 
@@ -212,7 +248,7 @@ export async function generateRoleContent(
     const client = new Anthropic({ apiKey: auth.key })
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [{ role: 'user', content }],
     })
     const first = message.content[0]

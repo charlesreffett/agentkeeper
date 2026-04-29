@@ -43,15 +43,28 @@ const generateError = ref<string | null>(null)
 
 const { needsApiKey, handleAuthError } = useClaudeAuth()
 
+function resetGenerate() {
+  generatePrompt.value = ''
+  generating.value = false
+  generateError.value = null
+}
+
 async function generate() {
   if (!generatePrompt.value.trim()) return
   generating.value = true
   generateError.value = null
   try {
     const result = await window.agentkeeper.roles.generate(generatePrompt.value.trim())
+    form.value.id = result.id
+    form.value.name = result.name
+    form.value.description = result.description
+    form.value.model = result.model
+    form.value.effort = result.effort
+    form.value.allowedTools = result.allowedTools
+    allowedToolsText.value = result.allowedTools?.join(', ') ?? ''
+    form.value.allowedPeers = result.allowedPeers
+    allowedPeersText.value = result.allowedPeers?.join(', ') ?? ''
     form.value.systemPrompt = result.systemPrompt
-    if (!form.value.name.trim()) form.value.name = result.name
-    if (!form.value.description.trim()) form.value.description = result.description
   } catch (e) {
     if (!handleAuthError(e)) {
       generateError.value = e instanceof Error ? e.message : String(e)
@@ -97,6 +110,7 @@ function beginNew() {
   }
   allowedToolsText.value = ''
   allowedPeersText.value = ''
+  resetGenerate()
 }
 
 function beginEdit(role: Role) {
@@ -115,11 +129,13 @@ function beginEdit(role: Role) {
   }
   allowedToolsText.value = (role.allowedTools ?? []).join(', ')
   allowedPeersText.value = (role.allowedPeers ?? []).join(', ')
+  resetGenerate()
 }
 
 function cancelEdit() {
   editing.value = false
   selectedId.value = null
+  resetGenerate()
 }
 
 function parseCsv(text: string): string[] | null {
@@ -165,6 +181,7 @@ async function save() {
     await window.agentkeeper.roles.save(form.value.scope, props.projectPath, draft)
     await refresh()
     editing.value = false
+    resetGenerate()
     emit('saved')
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)

@@ -283,8 +283,13 @@ export interface Role {
 export type RoleDraft = Omit<Role, 'scope' | 'path'>
 
 export interface RolesGenerateResult {
+  id: string
   name: string
   description: string
+  model: string | null
+  effort: RoleEffort | null
+  allowedTools: string[] | null
+  allowedPeers: string[] | null
   systemPrompt: string
 }
 
@@ -387,6 +392,7 @@ export interface AppSettings {
   sendModifier: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
   /** Days of inactivity before a persisted session is auto-pruned. null = never expire. */
   sessionExpiryDays: number | null
+  theme: 'light' | 'dark'
 }
 
 export type SecretKeyName = 'anthropicApiKey'
