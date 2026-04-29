@@ -113,7 +113,7 @@ watch(
 // ─── Live ─────────────────────────────────────────────────────────────────────
 
 function canDismissLive(s: LiveSession): boolean {
-  return s.status === 'terminated' || s.status === 'completed' || s.status === 'error'
+  return s.isDraft || s.status === 'terminated' || s.status === 'completed' || s.status === 'error'
 }
 
 function dismissLive(s: LiveSession) {
@@ -121,10 +121,12 @@ function dismissLive(s: LiveSession) {
 }
 
 function liveFirstMessage(s: LiveSession): string {
+  if (s.isDraft) return '(New session)'
   return s.initialPrompt.trim().split('\n')[0] ?? '(new session)'
 }
 
 function liveStatusLabel(s: LiveSession): string {
+  if (s.isDraft) return 'Draft'
   switch (s.status) {
     case 'starting':
       return 'Starting'
@@ -143,6 +145,7 @@ function liveStatusLabel(s: LiveSession): string {
 }
 
 function liveStatusDot(s: LiveSession): string {
+  if (s.isDraft) return 'bg-muted-foreground/60'
   switch (s.status) {
     case 'running':
     case 'starting':
@@ -332,8 +335,10 @@ async function touchAgency(instanceId: string) {
             class="mt-1 pl-3.5 flex items-center gap-2 text-xs text-muted-foreground tabular-nums"
           >
             <span>{{ liveStatusLabel(s) }}</span>
-            <span>·</span>
-            <span>{{ s.events.length }} msg</span>
+            <template v-if="!s.isDraft">
+              <span>·</span>
+              <span>{{ s.events.length }} msg</span>
+            </template>
             <span v-if="shortModel(s.model)">·</span>
             <span v-if="shortModel(s.model)" class="font-mono">
               {{ shortModel(s.model) }}

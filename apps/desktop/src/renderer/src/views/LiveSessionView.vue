@@ -4,6 +4,7 @@ import { Brain, Folder, KeyRound } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
 import MessageInput from '@/components/MessageInput.vue'
+import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { shortModel } from '@/lib/format'
@@ -111,7 +112,28 @@ onMounted(async () => {
   }
 })
 
-function onSend(text: string, attachments: Attachment[]) {
+const isDraft = computed(() => !!session.value?.isDraft)
+const promoting = ref(false)
+const promoteError = ref<string | null>(null)
+
+async function onSend(text: string, attachments: Attachment[]) {
+  if (isDraft.value) {
+    if (promoting.value || !text.trim()) return
+    promoting.value = true
+    promoteError.value = null
+    try {
+      const [roles, agencies] = await Promise.all([
+        window.agentkeeper.roles.list(session.value!.projectPath),
+        window.agentkeeper.agencies.list(session.value!.projectPath),
+      ])
+      await store.promoteDraft(props.liveId, text, { roles, agencies })
+    } catch (e) {
+      promoteError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      promoting.value = false
+    }
+    return
+  }
   void store.send(props.liveId, text, attachments)
 }
 
@@ -129,6 +151,7 @@ function onDismiss() {
 
 const canSend = computed(
   () =>
+    isDraft.value ||
     session.value?.status === 'idle' ||
     session.value?.status === 'running' ||
     session.value?.status === 'suspended',
@@ -144,6 +167,7 @@ const isTerminal = computed(
 )
 
 const statusLabel = computed(() => {
+  if (isDraft.value) return promoting.value ? 'Starting…' : 'Draft'
   switch (session.value?.status) {
     case 'starting':
       return 'Starting…'
@@ -164,6 +188,7 @@ const statusLabel = computed(() => {
 })
 
 const statusDotClass = computed(() => {
+  if (isDraft.value) return 'bg-muted-foreground/60'
   switch (session.value?.status) {
     case 'running':
     case 'starting':
@@ -266,7 +291,15 @@ async function changePermissionMode(mode: PermissionMode) {
       </div>
       <div class="flex items-center gap-2">
         <Button
-          v-if="!isTerminal"
+          v-if="isDraft"
+          variant="ghost"
+          size="sm"
+          @click="onDismiss"
+        >
+          Discard
+        </Button>
+        <Button
+          v-else-if="!isTerminal"
           variant="ghost"
           size="sm"
           @click="onEnd"
@@ -281,23 +314,26 @@ async function changePermissionMode(mode: PermissionMode) {
 
     <div class="flex-1 relative min-h-0">
       <div ref="scroller" class="h-full overflow-y-auto" @scroll.passive="onScroll">
-        <div v-if="session.error" class="max-w-4xl mx-auto p-6">
+        <div v-if="session.error || promoteError" class="max-w-4xl mx-auto p-6">
           <div
             class="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
           >
-            {{ session.error }}
+            {{ session.error || promoteError }}
           </div>
         </div>
-        <Transcript v-if="isResumed && historicalEvents.length" :events="historicalEvents" />
-        <div
-          v-if="isResumed"
-          class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none"
-        >
-          <span class="flex-1 border-t border-border" />
-          <span>— Resumed —</span>
-          <span class="flex-1 border-t border-border" />
-        </div>
-        <Transcript :events="session.events" />
+        <DraftSessionPanel v-if="isDraft" :session="session" />
+        <template v-else>
+          <Transcript v-if="isResumed && historicalEvents.length" :events="historicalEvents" />
+          <div
+            v-if="isResumed"
+            class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none"
+          >
+            <span class="flex-1 border-t border-border" />
+            <span>— Resumed —</span>
+            <span class="flex-1 border-t border-border" />
+          </div>
+          <Transcript :events="session.events" />
+        </template>
       </div>
 
       <Transition
@@ -332,26 +368,30 @@ async function changePermissionMode(mode: PermissionMode) {
     </div>
 
     <MessageInput
-      :disabled="isTerminal || session.status === 'starting'"
-      :is-running="session.status === 'running'"
+      :disabled="(!isDraft && (isTerminal || session.status === 'starting')) || promoting"
+      :is-running="!isDraft && session.status === 'running'"
       :enter-to-send="props.enterToSend"
       :send-modifier="props.sendModifier"
       :project-path="session.projectPath"
       :role-name="session.roleName"
       :agency-name="session.agencyName"
       :placeholder="
-        session.status === 'starting'
-          ? 'Waiting for session to start…'
-          : isTerminal
-            ? 'Session ended'
-            : wasInterrupted
-              ? 'Send a message to continue, or end the session'
-              : undefined
+        isDraft
+          ? promoting
+            ? 'Starting…'
+            : 'Type the first message to start the session…'
+          : session.status === 'starting'
+            ? 'Waiting for session to start…'
+            : isTerminal
+              ? 'Session ended'
+              : wasInterrupted
+                ? 'Send a message to continue, or end the session'
+                : undefined
       "
       @send="onSend"
       @stop="onStop"
     >
-      <template #toolbar-left>
+      <template v-if="!isDraft" #toolbar-left>
         <div class="flex items-center gap-0.5">
           <Brain :size="13" class="text-muted-foreground shrink-0" />
           <select

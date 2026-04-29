@@ -4,18 +4,11 @@ import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import SessionsList from './SessionsList.vue'
 import SessionDetail from './SessionDetail.vue'
-import NewSessionModal from './NewSessionModal.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectStore } from '@/stores/project'
 import type { LiveSession } from '@/stores/sessions'
-import type {
-  AppSettings,
-  PermissionMode,
-  Role,
-  RoleEffort,
-  SessionSummary,
-} from '@shared/ipc-contract'
+import type { AppSettings, SessionSummary } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
@@ -26,8 +19,6 @@ const project = computed(() => projectStore.currentProject!)
 
 const selectedHistoricalId = ref<string | null>(null)
 const refreshTrigger = ref(0)
-
-const newSessionOpen = ref(false)
 
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
@@ -59,61 +50,16 @@ function refreshList() {
 
 async function onNewSessionClick() {
   await refreshConfig()
-  newSessionOpen.value = true
+  selectedHistoricalId.value = null
+  sessionStore.createOrFocusDraft({
+    projectPath: project.value.path,
+    defaultModel: settings.value.defaultModel,
+    defaultEffort: settings.value.defaultEffort,
+    defaultUseWorktree: settings.value.defaultUseWorktree,
+  })
 }
 
 const startError = ref<string | null>(null)
-
-async function onStartSession(params: {
-  projectPath: string
-  initialPrompt: string
-  model: string
-  effort: RoleEffort
-  permissionMode: PermissionMode
-  useWorktree: boolean
-  branch: string
-  role: Role | null
-}) {
-  newSessionOpen.value = false
-  selectedHistoricalId.value = null
-  startError.value = null
-
-  let worktreePath: string | undefined
-  let branch: string | undefined
-  if (params.useWorktree && params.branch) {
-    try {
-      const wt = await window.agentkeeper.worktrees.create(
-        params.projectPath,
-        params.branch,
-      )
-      worktreePath = wt.path
-      branch = wt.branch
-    } catch (err) {
-      startError.value =
-        err instanceof Error ? err.message : String(err)
-      return
-    }
-  }
-
-  // `effort` from the dialog already resolved the precedence:
-  //   manual override > role.effort > settings.defaultEffort
-  await sessionStore.start({
-    projectPath: params.projectPath,
-    ...(worktreePath ? { worktreePath } : {}),
-    ...(branch ? { branch } : {}),
-    ...(params.role?.name ? { roleName: params.role.name } : {}),
-    ...(params.role?.systemPrompt
-      ? { systemPromptAppend: params.role.systemPrompt }
-      : {}),
-    ...(params.role?.allowedTools && params.role.allowedTools.length
-      ? { allowedTools: params.role.allowedTools }
-      : {}),
-    effort: params.effort,
-    permissionMode: params.permissionMode,
-    initialPrompt: params.initialPrompt,
-    model: params.model,
-  })
-}
 
 async function onResumeHistorical(sdkSessionId: string, projectPath: string, text: string) {
   selectedHistoricalId.value = null
@@ -215,16 +161,6 @@ onMounted(refreshConfig)
         </div>
       </main>
     </div>
-
-    <NewSessionModal
-      :open="newSessionOpen"
-      :project-path="project.path"
-      :default-model="settings.defaultModel"
-      :default-effort="settings.defaultEffort"
-      :default-use-worktree="settings.defaultUseWorktree"
-      @close="newSessionOpen = false"
-      @start="onStartSession"
-    />
 
   </div>
 </template>

@@ -1,15 +1,29 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, toRaw } from 'vue'
 import type {
+  Agency,
   Attachment,
   LiveSessionStatus,
   PermissionMode,
   PersistedSession,
+  Role,
   RoleEffort,
   StartSessionParams,
   TranscriptEvent,
 } from '@shared/ipc-contract'
 import { sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
+
+/** Renderer-only configuration captured while a session is still a draft. */
+export interface DraftSessionConfig {
+  /** 'scope:id' of selected agency, or '' for none (plain session). */
+  agencyKey: string
+  /** Selected role id, or '' for freeform. Ignored when agencyKey is set. */
+  roleId: string
+  useWorktree: boolean
+  branch: string
+  branchTouched: boolean
+  effortTouched: boolean
+}
 
 export interface LiveSession {
   localId: string
@@ -39,6 +53,9 @@ export interface LiveSession {
    *  is loaded from this sdkSessionId's JSONL and shown above live events. */
   resumedFromSdkSessionId: string | null
   interruptedAt: number | null
+  /** Renderer-only: not yet started in main. The next user message promotes it. */
+  isDraft: boolean
+  draftConfig: DraftSessionConfig | null
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
@@ -141,6 +158,8 @@ export const useSessionStore = defineStore('sessions', () => {
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: null,
       interruptedAt: null,
+      isDraft: false,
+      draftConfig: null,
     }
     currentLiveId.value = localId
 
@@ -253,6 +272,8 @@ export const useSessionStore = defineStore('sessions', () => {
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: null,
       interruptedAt: null,
+      isDraft: false,
+      draftConfig: null,
     }
     flushBuffer(entry.localId)
   }
@@ -286,6 +307,8 @@ export const useSessionStore = defineStore('sessions', () => {
         lastActivityAt: Date.now(),
         resumedFromSdkSessionId: persisted.sdkSessionId,
         interruptedAt: null,
+        isDraft: false,
+        draftConfig: null,
       }
       flushBuffer(newId)
     }
@@ -321,6 +344,8 @@ export const useSessionStore = defineStore('sessions', () => {
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: params.sdkSessionId,
       interruptedAt: null,
+      isDraft: false,
+      draftConfig: null,
     }
     currentLiveId.value = localId
     flushBuffer(localId)
@@ -339,6 +364,151 @@ export const useSessionStore = defineStore('sessions', () => {
       const message = err instanceof Error ? err.message : String(err)
       sessions[localId]!.status = 'error'
       sessions[localId]!.error = message
+    }
+    return localId
+  }
+
+  // ─── Drafts ──────────────────────────────────────────────────────────────
+
+  /** Find an existing draft for the project, or create a new one. Focuses it. */
+  function createOrFocusDraft(params: {
+    projectPath: string
+    defaultModel: string
+    defaultEffort: RoleEffort
+    defaultUseWorktree: boolean
+  }): string {
+    const existing = Object.values(sessions).find(
+      (s) => s.isDraft && s.projectPath === params.projectPath,
+    )
+    if (existing) {
+      currentLiveId.value = existing.localId
+      return existing.localId
+    }
+    const localId = cryptoRandomId()
+    sessions[localId] = {
+      localId,
+      sdkSessionId: null,
+      projectPath: params.projectPath,
+      worktreePath: null,
+      branch: null,
+      roleName: null,
+      agencyInstanceId: null,
+      agencyName: null,
+      initialPrompt: '',
+      model: params.defaultModel,
+      effort: params.defaultEffort,
+      permissionMode: 'bypassPermissions',
+      status: 'idle',
+      events: [],
+      error: null,
+      startedAt: Date.now(),
+      lastActivityAt: Date.now(),
+      resumedFromSdkSessionId: null,
+      interruptedAt: null,
+      isDraft: true,
+      draftConfig: {
+        agencyKey: '',
+        roleId: '',
+        useWorktree: params.defaultUseWorktree,
+        branch: '',
+        branchTouched: false,
+        effortTouched: false,
+      },
+    }
+    currentLiveId.value = localId
+    return localId
+  }
+
+  /**
+   * Promote a draft into a live session by sending its first message.
+   * For agency drafts: dismisses the draft and registers the agency's sessions.
+   * For plain drafts: updates the same entry in-place and starts the SDK session.
+   * Returns the focused session id (entry-point for agencies, the same id otherwise).
+   */
+  async function promoteDraft(
+    localId: string,
+    prompt: string,
+    ctx: { roles: Role[]; agencies: Agency[] },
+  ): Promise<string> {
+    const draft = sessions[localId]
+    if (!draft || !draft.isDraft || !draft.draftConfig) {
+      throw new Error('Not a draft session')
+    }
+    const cfg = draft.draftConfig
+    const projectPath = draft.projectPath
+    const trimmedPrompt = prompt.trim()
+
+    if (cfg.agencyKey) {
+      const agency = ctx.agencies.find((a) => `${a.scope}:${a.id}` === cfg.agencyKey)
+      if (!agency) throw new Error('Selected agency not found')
+      const instance = await window.agentkeeper.agencies.start({
+        projectPath,
+        agencyId: agency.id,
+        agencyScope: agency.scope,
+        initialPrompt: trimmedPrompt,
+        useWorktree: cfg.useWorktree,
+        ...(cfg.useWorktree && cfg.branch.trim() ? { branch: cfg.branch.trim() } : {}),
+        ...(draft.model ? { model: draft.model } : {}),
+      })
+      delete sessions[localId]
+      let entryLocalId: string | null = null
+      for (const s of instance.sessions) {
+        const role = ctx.roles.find((r) => r.id === s.roleId) ?? null
+        registerExternal({
+          localId: s.localId,
+          projectPath: instance.projectPath,
+          worktreePath: instance.worktreePath,
+          branch: instance.branch,
+          roleName: s.roleName,
+          agencyInstanceId: instance.instanceId,
+          agencyName: instance.agencyName,
+          initialPrompt: s.isEntryPoint ? trimmedPrompt : '(awaiting peers)',
+          model: role?.model ?? draft.model,
+        })
+        if (s.isEntryPoint) entryLocalId = s.localId
+      }
+      const focusId = entryLocalId ?? instance.sessions[0]?.localId ?? null
+      if (focusId) currentLiveId.value = focusId
+      return focusId ?? localId
+    }
+
+    let worktreePath: string | undefined
+    let branch: string | undefined
+    if (cfg.useWorktree && cfg.branch.trim()) {
+      const wt = await window.agentkeeper.worktrees.create(projectPath, cfg.branch.trim())
+      worktreePath = wt.path
+      branch = wt.branch
+    }
+
+    const role = cfg.roleId ? (ctx.roles.find((r) => r.id === cfg.roleId) ?? null) : null
+
+    draft.isDraft = false
+    draft.draftConfig = null
+    draft.worktreePath = worktreePath ?? null
+    draft.branch = branch ?? null
+    draft.roleName = role?.name ?? null
+    draft.initialPrompt = trimmedPrompt
+    draft.status = 'starting'
+    draft.lastActivityAt = Date.now()
+
+    const startArgs: StartSessionParams = {
+      localId,
+      projectPath,
+      ...(worktreePath ? { worktreePath } : {}),
+      ...(role?.systemPrompt ? { systemPromptAppend: role.systemPrompt } : {}),
+      ...(role?.allowedTools && role.allowedTools.length ? { allowedTools: role.allowedTools } : {}),
+      initialPrompt: trimmedPrompt,
+      ...(draft.model ? { model: draft.model } : {}),
+      ...(draft.effort ? { effort: draft.effort } : {}),
+      ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
+      ...(role?.name ? { roleName: role.name } : {}),
+    }
+
+    try {
+      await window.agentkeeper.sessions.start(plainParams(startArgs))
+    } catch (err) {
+      draft.status = 'error'
+      draft.error = err instanceof Error ? err.message : String(err)
     }
     return localId
   }
@@ -388,5 +558,7 @@ export const useSessionStore = defineStore('sessions', () => {
     registerExternal,
     resume,
     resumeFromHistory,
+    createOrFocusDraft,
+    promoteDraft,
   }
 })
