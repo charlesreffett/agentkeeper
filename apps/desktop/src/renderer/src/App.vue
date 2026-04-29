@@ -3,12 +3,18 @@ import { onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { useUIContributionsStore } from '@/stores/uiContributions'
 import { useProjectsStore } from '@/stores/projects'
+import { useLayoutStore } from '@/stores/layout'
 
 const uiStore = useUIContributionsStore()
 const projectsStore = useProjectsStore()
+const layoutStore = useLayoutStore()
 
-onMounted(() => {
-  void projectsStore.load()
+onMounted(async () => {
+  const [, settings] = await Promise.all([
+    projectsStore.load(),
+    window.agentkeeper.settings.get(),
+  ])
+  layoutStore.initTheme(settings.theme ?? 'dark')
   uiStore.contribute('sidebar.primary', {
     id: 'jira',
     label: 'Jira',

@@ -6,6 +6,7 @@ import {
   GitBranch,
   Folder,
   Sun,
+  Moon,
   PanelRight,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
@@ -39,7 +40,7 @@ async function loadBranch(path: string | undefined) {
     return
   }
   try {
-    const result = await (window.orchestral as any).git?.getBranch(path)
+    const result = await (window.agentkeeper as any).git?.getBranch(path)
     branch.value = result ?? '—'
   } catch {
     branch.value = '—'
@@ -47,7 +48,7 @@ async function loadBranch(path: string | undefined) {
 }
 
 async function openLocalProject() {
-  const path = await window.orchestral.projects.pickFolder()
+  const path = await window.agentkeeper.projects.pickFolder()
   if (path) {
     await projectsStore.add(path)
     await projectsStore.setFocused(path)
@@ -120,9 +121,17 @@ watch(
 
     <!-- Right side -->
     <div class="ml-auto flex items-center gap-1">
-      <!-- Theme toggle (no-op for now) -->
-      <Button variant="ghost" size="icon" class="h-7 w-7" style="-webkit-app-region: no-drag">
-        <Sun class="h-4 w-4" />
+      <!-- Theme toggle -->
+      <Button
+        variant="ghost"
+        size="icon"
+        class="h-7 w-7"
+        :title="layoutStore.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+        style="-webkit-app-region: no-drag"
+        @click="void layoutStore.toggleTheme()"
+      >
+        <Sun v-if="layoutStore.theme === 'dark'" class="h-4 w-4" />
+        <Moon v-else class="h-4 w-4" />
       </Button>
 
       <!-- Right panel toggle -->

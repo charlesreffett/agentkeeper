@@ -13,9 +13,11 @@ const DEFAULTS: AppSettings = {
   enterToSend: false,
   sendModifier: 'auto' as const,
   sessionExpiryDays: 14,
+  theme: 'dark',
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']
+const THEME_VALUES: AppSettings['theme'][] = ['light', 'dark']
 
 function filePath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -34,6 +36,9 @@ function read(): AppSettings {
     }
     if (!SEND_MODIFIER_VALUES.includes(merged.sendModifier)) {
       merged.sendModifier = DEFAULTS.sendModifier
+    }
+    if (!THEME_VALUES.includes(merged.theme)) {
+      merged.theme = DEFAULTS.theme
     }
     return merged
   } catch {
