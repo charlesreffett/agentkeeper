@@ -55,7 +55,7 @@ async function generate() {
   generateError.value = null
   try {
     const result = await window.agentkeeper.roles.generate(generatePrompt.value.trim())
-    form.value.id = result.id
+    form.value.id = uniqueRoleId(result.id)
     form.value.name = result.name
     form.value.description = result.description
     form.value.model = result.model
@@ -136,6 +136,14 @@ function cancelEdit() {
   editing.value = false
   selectedId.value = null
   resetGenerate()
+}
+
+function uniqueRoleId(base: string): string {
+  const existing = new Set(roles.value.map((r) => r.id))
+  if (!existing.has(base)) return base
+  let n = 2
+  while (existing.has(`${base}-${n}`)) n++
+  return `${base}-${n}`
 }
 
 function parseCsv(text: string): string[] | null {
