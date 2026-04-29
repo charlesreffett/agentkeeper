@@ -1,6 +1,6 @@
 <template>
   <div
-    class="group relative rounded-lg border-2 px-4 py-3 bg-card shadow-md min-w-[120px] cursor-pointer select-none transition-all"
+    class="relative rounded-lg border-2 px-4 py-3 bg-card shadow-md min-w-[120px] cursor-pointer select-none transition-all"
     :class="[
       selected ? 'border-blue-500 shadow-blue-500/20' : 'border-border hover:border-foreground/40',
       data.isEntryPoint ? 'ring-2 ring-amber-500/60' : '',
@@ -35,14 +35,8 @@
       </span>
     </div>
 
-    <!-- Source handle: shows on hover as a + button -->
-    <Handle
-      type="source"
-      :position="Position.Right"
-      class="!w-5 !h-5 !rounded-full !bg-blue-600 !border-2 !border-blue-400 !flex !items-center !justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-crosshair !right-[-10px]"
-    >
-      <span class="text-white text-xs font-bold leading-none pointer-events-none">+</span>
-    </Handle>
+    <!-- Source handle -->
+    <Handle type="source" :position="Position.Right" class="!bg-blue-500 !border-blue-700 !w-3 !h-3" />
   </div>
 </template>
 
