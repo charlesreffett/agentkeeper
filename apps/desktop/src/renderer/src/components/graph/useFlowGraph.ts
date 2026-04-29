@@ -128,7 +128,14 @@ export function useFlowGraph(
     // stale confirmed-only flows that predate other in-flight additions.
     const flows = effectiveFlows.value.map(([a, b]) => [a, b] as [string, string])
     const draft = { ...agency.value, flows }
-    await saveAgency(draft)
+    try {
+      await saveAgency(draft)
+    } catch (err) {
+      console.error('[useFlowGraph] addConnection save failed:', err)
+      pendingFlows.value = pendingFlows.value.filter(
+        ([a, b]) => !(a === req.sourceId && b === req.targetId),
+      )
+    }
   }
 
   async function removeConnection(edgeId: string) {
@@ -145,7 +152,7 @@ export function useFlowGraph(
       pendingRemovals.value = [...pendingRemovals.value, [src, tgt] as [string, string]]
     }
     if (selectedEdgeId.value === edgeId) clearSelection()
-    const draft = { ...agency.value, flows: agency.value.flows.filter(([a, b]) => !(a === src && b === tgt)) }
+    const draft = { ...agency.value, flows: effectiveFlows.value.filter(([a, b]) => !(a === src && b === tgt)) }
     await saveAgency(draft)
   }
 

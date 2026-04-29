@@ -6,16 +6,21 @@ export const useAgenciesStore = defineStore('agencies', () => {
   const agencies = ref<Agency[]>([])
   const roles = ref<Role[]>([])
   const loading = ref(false)
+  let loadGeneration = 0
 
   async function loadAll(projectPath: string): Promise<void> {
+    const gen = ++loadGeneration
     loading.value = true
     try {
-      ;[agencies.value, roles.value] = await Promise.all([
+      const [agenciesList, rolesList] = await Promise.all([
         window.agentkeeper.agencies.list(projectPath),
         window.agentkeeper.roles.list(projectPath),
       ])
+      if (gen !== loadGeneration) return
+      agencies.value = agenciesList
+      roles.value = rolesList
     } finally {
-      loading.value = false
+      if (gen === loadGeneration) loading.value = false
     }
   }
 

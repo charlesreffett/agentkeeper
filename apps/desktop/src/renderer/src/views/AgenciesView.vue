@@ -109,8 +109,16 @@ const selectedAgency = computed<Agency | null>(() => {
 
 async function saveHelper(draft: Agency) {
   const scope = draft.scope
-  const { scope: _s, path: _p, ...agencyDraft } = draft
-  await store.saveAgency(scope, focusedProjectPath.value, agencyDraft)
+  const { scope: _s, path: agencyFilePath, ...agencyDraft } = draft
+  let projectPath = focusedProjectPath.value
+  if (scope === 'project' && !projectPath && agencyFilePath) {
+    // focusedProject may be unset; recover the project root from the agency's file path
+    // agencyFilePath = <projectRoot>/.agentkeeper/agencies/<id>.md
+    const marker = '/.agentkeeper/agencies/'
+    const idx = agencyFilePath.indexOf(marker)
+    if (idx !== -1) projectPath = agencyFilePath.slice(0, idx)
+  }
+  await store.saveAgency(scope, projectPath, agencyDraft)
 }
 
 async function deleteHelper() {
