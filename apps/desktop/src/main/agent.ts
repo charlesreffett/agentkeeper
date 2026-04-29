@@ -332,6 +332,10 @@ export async function startSession(
     setStatus(session, 'running')
   }
 
+  if (!isResume) {
+    broadcastEvent({ sessionId: id, message: messageFromInput(params.initialPrompt) })
+  }
+
   void consumeStream(session)
 
   return id
@@ -358,7 +362,9 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
     })
     s = active.get(sessionId)!
   }
-  s.input.push(messageFromInput(text, attachments))
+  const userMsg = messageFromInput(text, attachments)
+  broadcastEvent({ sessionId: s.id, message: userMsg })
+  s.input.push(userMsg)
   setStatus(s, 'running')
 }
 
