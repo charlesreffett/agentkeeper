@@ -7,8 +7,10 @@
       data.anyToAny ? 'border-dashed' : '',
     ]"
   >
-    <!-- Target handle (invisible, receives connections) -->
-    <Handle type="target" :position="Position.Left" class="!bg-blue-500 !border-blue-700 !w-3 !h-3" />
+    <!-- Target handle — pointer-events-none so drags can only START from source
+         handles. Vue Flow's proximity-based drop detection still registers
+         connections dropped here correctly. -->
+    <Handle type="target" :position="Position.Left" class="!bg-blue-500 !border-blue-700 !w-3 !h-3 !pointer-events-none" />
 
     <!-- Role label -->
     <div class="text-sm font-semibold text-card-foreground">{{ data.label }}</div>
