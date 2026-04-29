@@ -13,20 +13,26 @@ export function useFlowGraph(
 
   // Flows added optimistically before the async save + store-reload confirms them.
   const pendingFlows = ref<Array<[string, string]>>([])
+  // Flows removed optimistically before the async save + store-reload drops them.
+  const pendingRemovals = ref<Array<[string, string]>>([])
 
   // Reset pending and positions when the selected agency changes.
   watch(() => agency.value?.id, () => {
     pendingFlows.value = []
+    pendingRemovals.value = []
     nodePositions.value = {}
   })
 
-  // Once the store confirms a pending flow, drop it from the pending list.
+  // Once the store confirms pending additions/removals, clear the pending lists.
   watch(
     () => agency.value?.flows,
     (confirmed) => {
       if (!confirmed) return
       pendingFlows.value = pendingFlows.value.filter(
         ([src, tgt]) => !confirmed.some(([a, b]) => a === src && b === tgt),
+      )
+      pendingRemovals.value = pendingRemovals.value.filter(
+        ([src, tgt]) => confirmed.some(([a, b]) => a === src && b === tgt),
       )
     },
     { deep: true },
@@ -35,17 +41,20 @@ export function useFlowGraph(
   // Layout persistence: reset when agency changes
   const nodePositions = ref<Record<string, { x: number; y: number }>>({})
 
-  // Merged view: confirmed flows from the store + any not-yet-saved pending flows.
-  const effectiveFlows = computed<Array<[string, string]>>(() => [
-    ...(agency.value?.flows ?? []),
-    ...pendingFlows.value,
-  ])
+  // Merged view: confirmed flows minus pending removals, plus pending additions.
+  const effectiveFlows = computed<Array<[string, string]>>(() => {
+    const base = agency.value?.flows ?? []
+    const withoutRemovals = base.filter(
+      ([a, b]) => !pendingRemovals.value.some(([x, y]) => a === x && b === y),
+    )
+    return [...withoutRemovals, ...pendingFlows.value]
+  })
 
-  // Agency snapshot with pending flows applied — used by panels that need
-  // immediate consistency with the graph canvas.
+  // Agency snapshot with pending additions/removals applied — used by panels
+  // that need immediate consistency with the graph canvas.
   const effectiveAgency = computed<Agency | null>(() => {
     if (!agency.value) return null
-    if (pendingFlows.value.length === 0) return agency.value
+    if (pendingFlows.value.length === 0 && pendingRemovals.value.length === 0) return agency.value
     return { ...agency.value, flows: effectiveFlows.value }
   })
 
@@ -120,10 +129,20 @@ export function useFlowGraph(
 
   async function removeConnection(edgeId: string) {
     if (!agency.value) return
-    const [src, tgt] = edgeId.split('->')
+    const parts = edgeId.split('->')
+    const src = parts[0]
+    const tgt = parts[1]
+    if (!src || !tgt) return
+    // Optimistic: drop from pending additions (if it was just added) and mark
+    // as a pending removal so effectiveFlows hides it immediately.
+    pendingFlows.value = pendingFlows.value.filter(([a, b]) => !(a === src && b === tgt))
+    const alreadyPending = pendingRemovals.value.some(([a, b]) => a === src && b === tgt)
+    if (!alreadyPending) {
+      pendingRemovals.value = [...pendingRemovals.value, [src, tgt] as [string, string]]
+    }
+    if (selectedEdgeId.value === edgeId) clearSelection()
     const draft = { ...agency.value, flows: agency.value.flows.filter(([a, b]) => !(a === src && b === tgt)) }
     await saveAgency(draft)
-    if (selectedEdgeId.value === edgeId) clearSelection()
   }
 
   async function flipConnection(edgeId: string) {

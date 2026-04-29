@@ -10,6 +10,7 @@
       :default-edge-options="defaultEdgeOptions"
       :connect-on-click="false"
       @connect="onConnect"
+      @edges-change="onEdgesChange"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
       @pane-click="onPaneClick"
@@ -31,6 +32,7 @@ import type {
   Edge as VFEdge,
   NodeMouseEvent,
   EdgeMouseEvent,
+  EdgeChange,
   NodeDragEvent,
   Connection,
 } from '@vue-flow/core'
@@ -55,6 +57,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'node-click', nodeId: string): void
   (e: 'edge-click', edgeId: string): void
+  (e: 'edge-remove', edgeId: string): void
   (e: 'connection', payload: GraphConnectionRequest): void
   (e: 'pane-click'): void
   (e: 'node-move', nodeId: string, position: { x: number; y: number }): void
@@ -138,6 +141,14 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
 
 function onPaneClick() {
   emit('pane-click')
+}
+
+function onEdgesChange(changes: EdgeChange[]) {
+  for (const change of changes) {
+    if (change.type === 'remove') {
+      emit('edge-remove', change.id)
+    }
+  }
 }
 
 function onNodeDragStop({ node }: NodeDragEvent) {

@@ -36,6 +36,7 @@
           :fit-on-load="true"
           @node-click="graph.selectNode"
           @edge-click="graph.selectEdge"
+          @edge-remove="graph.removeConnection"
           @pane-click="graph.clearSelection"
           @connection="graph.addConnection"
           @node-move="graph.updateNodePosition"
