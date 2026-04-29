@@ -11,18 +11,53 @@ export function useFlowGraph(
   const selectedNodeId = ref<string | null>(null)
   const selectedEdgeId = ref<string | null>(null)
 
+  // Flows added optimistically before the async save + store-reload confirms them.
+  const pendingFlows = ref<Array<[string, string]>>([])
+
+  // Reset pending and positions when the selected agency changes.
+  watch(() => agency.value?.id, () => {
+    pendingFlows.value = []
+    nodePositions.value = {}
+  })
+
+  // Once the store confirms a pending flow, drop it from the pending list.
+  watch(
+    () => agency.value?.flows,
+    (confirmed) => {
+      if (!confirmed) return
+      pendingFlows.value = pendingFlows.value.filter(
+        ([src, tgt]) => !confirmed.some(([a, b]) => a === src && b === tgt),
+      )
+    },
+    { deep: true },
+  )
+
   // Layout persistence: reset when agency changes
   const nodePositions = ref<Record<string, { x: number; y: number }>>({})
-  watch(() => agency.value?.id, () => { nodePositions.value = {} })
+
+  // Merged view: confirmed flows from the store + any not-yet-saved pending flows.
+  const effectiveFlows = computed<Array<[string, string]>>(() => [
+    ...(agency.value?.flows ?? []),
+    ...pendingFlows.value,
+  ])
+
+  // Agency snapshot with pending flows applied — used by panels that need
+  // immediate consistency with the graph canvas.
+  const effectiveAgency = computed<Agency | null>(() => {
+    if (!agency.value) return null
+    if (pendingFlows.value.length === 0) return agency.value
+    return { ...agency.value, flows: effectiveFlows.value }
+  })
 
   const nodes = computed<GraphNode[]>(() => {
     if (!agency.value) return []
+    const anyToAny = effectiveFlows.value.length === 0
     return agency.value.roles.map((slot, index) => ({
       id: slot.roleId,
       label: slot.roleId,
       kind: 'role' as const,
       isEntryPoint: agency.value!.entryPoints.includes(slot.roleId),
-      anyToAny: agency.value!.flows.length === 0,
+      anyToAny,
       multiplicityLabel: buildMultiplicityLabel(slot),
       position: nodePositions.value[slot.roleId] ?? defaultPosition(index, agency.value!.roles.length),
       meta: { slot },
@@ -30,8 +65,7 @@ export function useFlowGraph(
   })
 
   const edges = computed<GraphEdge[]>(() => {
-    if (!agency.value) return []
-    const flows = agency.value.flows
+    const flows = effectiveFlows.value
     return flows.map(([src, tgt]) => ({
       id: `${src}->${tgt}`,
       source: src,
@@ -41,7 +75,7 @@ export function useFlowGraph(
   })
 
   const flowMode = computed<GraphFlowMode>(() =>
-    (!agency.value || agency.value.flows.length === 0) ? 'any-to-any' : 'explicit'
+    effectiveFlows.value.length === 0 ? 'any-to-any' : 'explicit'
   )
 
   const selectedRoleSlot = computed<RoleSlot | null>(() => {
@@ -76,8 +110,10 @@ export function useFlowGraph(
   async function addConnection(req: GraphConnectionRequest) {
     if (!agency.value) return
     if (req.sourceId === req.targetId) return
-    const exists = agency.value.flows.some(([a, b]) => a === req.sourceId && b === req.targetId)
+    const exists = effectiveFlows.value.some(([a, b]) => a === req.sourceId && b === req.targetId)
     if (exists) return
+    // Optimistic: make the connection visible in the canvas and sidebar immediately.
+    pendingFlows.value = [...pendingFlows.value, [req.sourceId, req.targetId]]
     const draft = { ...agency.value, flows: [...agency.value.flows, [req.sourceId, req.targetId] as [string, string]] }
     await saveAgency(draft)
   }
@@ -133,6 +169,7 @@ export function useFlowGraph(
 
   return {
     nodes, edges, flowMode,
+    effectiveAgency,
     selectedNodeId, selectedEdgeId,
     selectedRoleSlot, selectedEdge,
     selectNode, selectEdge, clearSelection,

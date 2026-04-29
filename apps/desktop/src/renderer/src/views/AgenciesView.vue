@@ -55,7 +55,7 @@
         <RoleInAgencyPanel
           v-else-if="graph.selectedRoleSlot.value"
           :role-slot="graph.selectedRoleSlot.value"
-          :agency="selectedAgency"
+          :agency="graph.effectiveAgency.value ?? selectedAgency"
           @update-count="(mode, opts) => graph.updateInstanceCount(graph.selectedNodeId.value!, mode, opts)"
           @toggle-entry="() => graph.toggleEntryPoint(graph.selectedNodeId.value!)"
           @close="graph.clearSelection"
