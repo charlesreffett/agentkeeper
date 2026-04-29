@@ -50,7 +50,6 @@ export interface Role {
   model?: string
   systemPrompt: string
   allowedTools?: string[]
-  allowedPeers?: string[]
 }
 
 export interface Agency {

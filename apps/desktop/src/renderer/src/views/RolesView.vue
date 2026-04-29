@@ -27,12 +27,10 @@ const form = ref<RoleDraft & { scope: RoleScope }>({
   model: null,
   effort: 'medium',
   allowedTools: null,
-  allowedPeers: null,
   systemPrompt: '',
   scope: 'project',
 })
 const allowedToolsText = ref('')
-const allowedPeersText = ref('')
 const saving = ref(false)
 const message = ref<string | null>(null)
 
@@ -59,8 +57,6 @@ async function generate() {
     form.value.description = result.description
     form.value.allowedTools = result.allowedTools
     allowedToolsText.value = result.allowedTools?.join(', ') ?? ''
-    form.value.allowedPeers = result.allowedPeers
-    allowedPeersText.value = result.allowedPeers?.join(', ') ?? ''
     form.value.systemPrompt = result.systemPrompt
   } catch (e) {
     if (!handleAuthError(e)) {
@@ -101,12 +97,10 @@ function beginNew() {
     model: null,
     effort: 'medium',
     allowedTools: null,
-    allowedPeers: null,
     systemPrompt: '',
     scope: 'project',
   }
   allowedToolsText.value = ''
-  allowedPeersText.value = ''
   resetGenerate()
 }
 
@@ -120,12 +114,10 @@ function beginEdit(role: Role) {
     model: role.model,
     effort: role.effort,
     allowedTools: role.allowedTools,
-    allowedPeers: role.allowedPeers,
     systemPrompt: role.systemPrompt,
     scope: role.scope,
   }
   allowedToolsText.value = (role.allowedTools ?? []).join(', ')
-  allowedPeersText.value = (role.allowedPeers ?? []).join(', ')
   resetGenerate()
 }
 
@@ -180,7 +172,6 @@ async function save() {
       model: form.value.model || null,
       effort: form.value.effort || null,
       allowedTools: parseCsv(allowedToolsText.value),
-      allowedPeers: parseCsv(allowedPeersText.value),
       systemPrompt: form.value.systemPrompt.trim(),
     }
     await window.agentkeeper.roles.save(form.value.scope, projectPath.value, draft)
@@ -355,20 +346,6 @@ onMounted(async () => {
               placeholder="Read, Edit, Write, Bash, Grep"
               class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
             />
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium">Allowed peers (comma-separated)</label>
-            <input
-              v-model="allowedPeersText"
-              type="text"
-              placeholder="pm, qa"
-              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-            />
-            <p class="text-[11px] text-muted-foreground">
-              Used later when this role is part of an Agency (V3.4) — which
-              peer roles can this one send_message() to.
-            </p>
           </div>
 
           <div class="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">

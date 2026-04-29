@@ -276,7 +276,6 @@ export interface Role {
   model: string | null
   effort: RoleEffort | null
   allowedTools: string[] | null
-  allowedPeers: string[] | null
   systemPrompt: string
 }
 
@@ -287,7 +286,6 @@ export interface RolesGenerateResult {
   name: string
   description: string
   allowedTools: string[] | null
-  allowedPeers: string[] | null
   systemPrompt: string
 }
 

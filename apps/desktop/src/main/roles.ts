@@ -77,11 +77,6 @@ function parseRoleFile(
         (t): t is string => typeof t === 'string',
       )
     : null
-  const allowedPeers = Array.isArray(parsed['allowedPeers'])
-    ? (parsed['allowedPeers'] as unknown[]).filter(
-        (t): t is string => typeof t === 'string',
-      )
-    : null
   return {
     id: meta.id,
     scope: meta.scope,
@@ -91,7 +86,6 @@ function parseRoleFile(
     model,
     effort,
     allowedTools,
-    allowedPeers,
     systemPrompt: body.trimEnd(),
   }
 }
@@ -105,8 +99,6 @@ function serializeRole(role: Omit<Role, 'scope' | 'path'>): string {
   if (role.effort) fm['effort'] = role.effort
   if (role.allowedTools && role.allowedTools.length)
     fm['allowedTools'] = role.allowedTools
-  if (role.allowedPeers && role.allowedPeers.length)
-    fm['allowedPeers'] = role.allowedPeers
   return `---\n${stringifyYaml(fm).trimEnd()}\n---\n\n${role.systemPrompt.trim()}\n`
 }
 
@@ -188,13 +180,11 @@ Respond with ONLY a JSON object — no markdown fences, no prose:
   "name": "<short display name, title case, ≤ 30 chars>",
   "description": "<one sentence, what this role does, ≤ 120 chars>",
   "allowedTools": ["<tool name>", ...],
-  "allowedPeers": ["<role-id>", ...] or [],
   "systemPrompt": "<detailed system prompt, 150–400 words, written in second person ('You are…'), covering the role's responsibilities, constraints, and working style>"
 }
 
 For allowedTools, choose from: Read, Edit, Write, Bash, Glob, Grep, WebFetch, WebSearch, Agent, TodoWrite, mcp__agentkeeper__send_message.
-Pick only what the role genuinely needs — a reviewer needs Read/Grep/Glob but not Write/Bash; a developer needs most tools.
-For allowedPeers, list the role IDs this role is allowed to send_message() to in an agency. Leave empty [] if this role doesn't need to delegate to peers.`
+Pick only what the role genuinely needs — a reviewer needs Read/Grep/Glob but not Write/Bash; a developer needs most tools.`
 
 const VALID_ID_RE = /^[a-z0-9][a-z0-9-]*$/
 
@@ -218,16 +208,12 @@ function parseRoleGenerationResponse(text: string): RolesGenerateResult {
   const allowedTools = Array.isArray(parsed.allowedTools)
     ? (parsed.allowedTools as unknown[]).filter((t) => typeof t === 'string').map(String)
     : null
-  const allowedPeers = Array.isArray(parsed.allowedPeers)
-    ? (parsed.allowedPeers as unknown[]).filter((t) => typeof t === 'string').map(String)
-    : null
 
   return {
     id,
     name,
     description: String(parsed.description ?? ''),
     allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : null,
-    allowedPeers: allowedPeers && allowedPeers.length > 0 ? allowedPeers : null,
     systemPrompt: String(parsed.systemPrompt),
   }
 }
