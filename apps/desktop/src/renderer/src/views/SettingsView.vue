@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
+import { useLayoutStore } from '@/stores/layout'
+import { useProjectsStore } from '@/stores/projects'
+
+const layoutStore = useLayoutStore()
+const projectsStore = useProjectsStore()
+const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
 
 const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
 
-const props = defineProps<{ open: boolean; projectPath?: string }>()
-const emit = defineEmits<{ close: []; saved: []; reset: [] }>()
-
-const dialog = ref<HTMLDialogElement | null>(null)
 const apiKeyInput = ref('')
 const keyStored = ref(false)
 const settings = ref<AppSettings | null>(null)
@@ -65,13 +67,13 @@ async function addRepo() {
     return
   }
   githubRepos.value = [...githubRepos.value, val]
-  await window.orchestral.github.setConfig({ repos: githubRepos.value })
+  await window.agentkeeper.github.setConfig({ repos: githubRepos.value })
   newRepoInput.value = ''
 }
 
 async function removeRepo(repo: string) {
   githubRepos.value = githubRepos.value.filter((r) => r !== repo)
-  await window.orchestral.github.setConfig({ repos: githubRepos.value })
+  await window.agentkeeper.github.setConfig({ repos: githubRepos.value })
 }
 
 // Danger-zone state
@@ -84,12 +86,12 @@ const resetMessage = ref<string | null>(null)
 const canReset = computed(
   () =>
     resetAppSettingsSel.value ||
-    (resetProjectSel.value && !!props.projectPath) ||
+    (resetProjectSel.value && !!projectPath.value) ||
     resetGlobalSel.value,
 )
 
 async function refresh() {
-  settings.value = await window.orchestral.settings.get()
+  settings.value = await window.agentkeeper.settings.get()
   // Defensive: if main is running an older build (no defaults for
   // defaultEffort), or the on-disk settings has an invalid value, fall
   // back to 'medium' in the UI so the dropdown never starts blank.
@@ -99,10 +101,10 @@ async function refresh() {
   ) {
     settings.value.defaultEffort = 'medium'
   }
-  keyStored.value = await window.orchestral.secrets.has('anthropicApiKey')
+  keyStored.value = await window.agentkeeper.secrets.has('anthropicApiKey')
   apiKeyInput.value = ''
   message.value = null
-  const ghConfig = await window.orchestral.github.getConfig()
+  const ghConfig = await window.agentkeeper.github.getConfig()
   githubRepos.value = ghConfig.repos ?? []
   newRepoInput.value = ''
   newRepoError.value = null
@@ -113,13 +115,13 @@ async function save() {
   message.value = null
   try {
     if (apiKeyInput.value.trim()) {
-      await window.orchestral.secrets.set(
+      await window.agentkeeper.secrets.set(
         'anthropicApiKey',
         apiKeyInput.value.trim(),
       )
     }
     if (settings.value) {
-      await window.orchestral.settings.set({
+      await window.agentkeeper.settings.set({
         defaultModel: settings.value.defaultModel,
         defaultEffort: settings.value.defaultEffort,
         defaultUseWorktree: settings.value.defaultUseWorktree,
@@ -130,7 +132,6 @@ async function save() {
     }
     message.value = 'Saved.'
     await refresh()
-    emit('saved')
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -139,7 +140,7 @@ async function save() {
 }
 
 async function clearKey() {
-  await window.orchestral.secrets.delete('anthropicApiKey')
+  await window.agentkeeper.secrets.delete('anthropicApiKey')
   await refresh()
 }
 
@@ -147,7 +148,7 @@ async function onReset() {
   if (!canReset.value) return
   const scopes: string[] = []
   if (resetAppSettingsSel.value) scopes.push('app settings')
-  if (resetProjectSel.value && props.projectPath)
+  if (resetProjectSel.value && projectPath.value)
     scopes.push('project definitions')
   if (resetGlobalSel.value) scopes.push('global definitions')
 
@@ -160,12 +161,12 @@ async function onReset() {
   resetting.value = true
   resetMessage.value = null
   try {
-    const result = await window.orchestral.reset.execute({
+    const result = await window.agentkeeper.reset.execute({
       appSettings: resetAppSettingsSel.value,
       globalDefinitions: resetGlobalSel.value,
       projectDefinitions:
-        resetProjectSel.value && props.projectPath
-          ? { projectPath: props.projectPath }
+        resetProjectSel.value && projectPath.value
+          ? { projectPath: projectPath.value }
           : null,
     })
     const cleared: string[] = []
@@ -181,7 +182,6 @@ async function onReset() {
     resetProjectSel.value = false
     resetGlobalSel.value = false
     await refresh()
-    emit('reset')
   } catch (err) {
     resetMessage.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -189,38 +189,12 @@ async function onReset() {
   }
 }
 
-watch(
-  () => props.open,
-  async (isOpen) => {
-    if (isOpen) {
-      resetAppSettingsSel.value = false
-      resetProjectSel.value = false
-      resetGlobalSel.value = false
-      resetMessage.value = null
-      await refresh()
-      await nextTick()
-      dialog.value?.showModal()
-    } else {
-      dialog.value?.close()
-    }
-  },
-)
-
-onMounted(() => {
-  if (props.open) {
-    void refresh().then(() => dialog.value?.showModal())
-  }
-})
+onMounted(refresh)
 </script>
 
 <template>
-  <dialog
-    ref="dialog"
-    class="rounded-lg p-0 bg-card text-foreground border border-border backdrop:bg-black/60 max-w-lg w-full shadow-xl"
-    @close="emit('close')"
-    @cancel="emit('close')"
-  >
-    <div class="p-6 space-y-5">
+  <div class="h-full overflow-y-auto">
+    <div class="p-6 space-y-5 max-w-lg">
       <header class="flex items-center justify-between">
         <h2 class="text-lg font-semibold">Settings</h2>
       </header>
@@ -430,6 +404,34 @@ onMounted(() => {
         {{ message }}
       </div>
 
+      <div class="space-y-2">
+        <label class="text-sm font-medium">Appearance</label>
+        <div class="flex gap-2">
+          <button
+            class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
+            :class="
+              layoutStore.theme === 'light'
+                ? 'border-ring bg-primary text-primary-foreground'
+                : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+            "
+            @click="void layoutStore.setTheme('light')"
+          >
+            Light
+          </button>
+          <button
+            class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
+            :class="
+              layoutStore.theme === 'dark'
+                ? 'border-ring bg-primary text-primary-foreground'
+                : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+            "
+            @click="void layoutStore.setTheme('dark')"
+          >
+            Dark
+          </button>
+        </div>
+      </div>
+
       <details class="group rounded-md border border-destructive/40 bg-destructive/5">
         <summary
           class="cursor-pointer select-none px-3 py-2 text-sm font-medium flex items-center justify-between"
@@ -475,11 +477,11 @@ onMounted(() => {
                   Project role &amp; agency definitions
                 </div>
                 <div class="text-muted-foreground font-mono truncate">
-                  {{ projectPath }}/.orchestral/
+                  {{ projectPath }}/.agentkeeper/
                 </div>
                 <div class="text-muted-foreground mt-0.5">
                   These are usually committed to git — restore with
-                  <code class="font-mono">git checkout .orchestral</code>
+                  <code class="font-mono">git checkout .agentkeeper</code>
                   if you regret it.
                 </div>
               </div>
@@ -496,7 +498,7 @@ onMounted(() => {
                   Global role &amp; agency definitions
                 </div>
                 <div class="text-muted-foreground font-mono">
-                  ~/.orchestral/
+                  ~/.agentkeeper/
                 </div>
               </div>
             </label>
@@ -523,11 +525,10 @@ onMounted(() => {
       </details>
 
       <footer class="flex items-center justify-end gap-2 pt-2">
-        <Button variant="ghost" size="sm" @click="emit('close')">Close</Button>
         <Button size="sm" :disabled="saving" @click="save">
           {{ saving ? 'Saving…' : 'Save' }}
         </Button>
       </footer>
     </div>
-  </dialog>
+  </div>
 </template>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { LayoutDashboard, Grid, GitPullRequest, Layers, FolderOpen, Plus } from 'lucide-vue-next'
+import { LayoutDashboard, Grid, GitPullRequest, Layers, FolderOpen, Plus, Network, Bot, Wand2, Terminal, Settings2 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import type { RecentProject } from '@shared/ipc-contract'
 import { useUIContributionsStore } from '@/stores/uiContributions'
@@ -68,11 +68,24 @@ const iconMap: Record<string, Component> = {
   Grid,
   GitPullRequest,
   Layers,
+  Network,
+  Bot,
+  Wand2,
+  Terminal,
+  Settings2,
 }
 
 const coreItems = [
   { id: 'sessions', label: 'Sessions', icon: 'LayoutDashboard', path: '/project' },
   { id: 'monitor', label: 'Monitor', icon: 'Grid', path: '/monitor' },
+]
+
+const workspaceItems = [
+  { id: 'agencies', label: 'Agencies', icon: 'Network', path: '/agencies' },
+  { id: 'roles', label: 'Roles', icon: 'Bot', path: '/roles' },
+  { id: 'skills', label: 'Skills', icon: 'Wand2', path: '/skills' },
+  { id: 'commands', label: 'Commands', icon: 'Terminal', path: '/commands' },
+  { id: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
 ]
 
 const pluginRoutes: Record<string, string> = {
@@ -144,6 +157,23 @@ function toggleFocus(projectPath: string) {
           class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-amber-500"
         />
       </div>
+      <span class="truncate">{{ item.label }}</span>
+    </button>
+
+    <div class="mx-2 my-1 border-t border-border/50" />
+
+    <button
+      v-for="item in workspaceItems"
+      :key="item.id"
+      class="flex items-center gap-2 py-2 px-3 mx-1 rounded-md text-xs font-medium transition-colors"
+      :class="
+        isActive(item.path)
+          ? 'bg-primary/10 text-primary'
+          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+      "
+      @click="void router.push(item.path)"
+    >
+      <component :is="iconMap[item.icon]" class="size-4 shrink-0" />
       <span class="truncate">{{ item.label }}</span>
     </button>
 

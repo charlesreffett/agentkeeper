@@ -5,11 +5,6 @@ import { Button } from '@/components/ui/button'
 import SessionsList from './SessionsList.vue'
 import SessionDetail from './SessionDetail.vue'
 import NewSessionModal from './NewSessionModal.vue'
-import SettingsModal from './SettingsModal.vue'
-import RolesModal from './RolesModal.vue'
-import AgenciesModal from './AgenciesModal.vue'
-import SkillsModal from './SkillsModal.vue'
-import CommandsModal from './CommandsModal.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectStore } from '@/stores/project'
@@ -33,11 +28,6 @@ const selectedHistoricalId = ref<string | null>(null)
 const refreshTrigger = ref(0)
 
 const newSessionOpen = ref(false)
-const settingsOpen = ref(false)
-const rolesOpen = ref(false)
-const agenciesOpen = ref(false)
-const skillsOpen = ref(false)
-const commandsOpen = ref(false)
 
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
@@ -46,10 +36,11 @@ const settings = ref<AppSettings>({
   enterToSend: false,
   sendModifier: 'auto',
   sessionExpiryDays: 14,
+  theme: 'dark',
 })
 
 async function refreshConfig() {
-  settings.value = await window.orchestral.settings.get()
+  settings.value = await window.agentkeeper.settings.get()
 }
 
 function selectHistorical(session: SessionSummary) {
@@ -91,7 +82,7 @@ async function onStartSession(params: {
   let branch: string | undefined
   if (params.useWorktree && params.branch) {
     try {
-      const wt = await window.orchestral.worktrees.create(
+      const wt = await window.agentkeeper.worktrees.create(
         params.projectPath,
         params.branch,
       )
@@ -165,15 +156,6 @@ onMounted(refreshConfig)
         </div>
       </div>
       <Button size="sm" @click="onNewSessionClick">New session</Button>
-      <Button variant="ghost" size="sm" @click="agenciesOpen = true">
-        Agencies
-      </Button>
-      <Button variant="ghost" size="sm" @click="rolesOpen = true">Roles</Button>
-      <Button variant="ghost" size="sm" @click="skillsOpen = true">Skills</Button>
-      <Button variant="ghost" size="sm" @click="commandsOpen = true">Commands</Button>
-      <Button variant="ghost" size="sm" @click="settingsOpen = true">
-        Settings
-      </Button>
       <Button variant="ghost" size="sm" @click="refreshList">Refresh</Button>
     </header>
 
@@ -242,38 +224,6 @@ onMounted(refreshConfig)
       :default-use-worktree="settings.defaultUseWorktree"
       @close="newSessionOpen = false"
       @start="onStartSession"
-    />
-
-    <SettingsModal
-      :open="settingsOpen"
-      :project-path="project.path"
-      @close="settingsOpen = false"
-      @saved="refreshConfig"
-      @reset="refreshConfig"
-    />
-
-    <RolesModal
-      :open="rolesOpen"
-      :project-path="project.path"
-      @close="rolesOpen = false"
-    />
-
-    <AgenciesModal
-      :open="agenciesOpen"
-      :project-path="project.path"
-      @close="agenciesOpen = false"
-    />
-
-    <SkillsModal
-      :open="skillsOpen"
-      :project-path="project.path"
-      @close="skillsOpen = false"
-    />
-
-    <CommandsModal
-      :open="commandsOpen"
-      :project-path="project.path"
-      @close="commandsOpen = false"
     />
 
   </div>

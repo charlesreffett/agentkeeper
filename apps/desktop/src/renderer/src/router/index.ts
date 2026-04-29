@@ -12,6 +12,11 @@ import GithubPRReviewsView from '@/views/GithubPRReviewsView.vue'
 import JiraLayout from '@/views/JiraLayout.vue'
 import JiraBoardView from '@/views/JiraBoardView.vue'
 import JiraIssueView from '@/views/JiraIssueView.vue'
+import AgenciesView from '@/views/AgenciesView.vue'
+import RolesView from '@/views/RolesView.vue'
+import SkillsView from '@/views/SkillsView.vue'
+import CommandsView from '@/views/CommandsView.vue'
+import SettingsView from '@/views/SettingsView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -25,6 +30,11 @@ const router = createRouter({
       },
     },
     { path: '/monitor', component: MonitorView },
+    { path: '/agencies', component: AgenciesView },
+    { path: '/roles', component: RolesView },
+    { path: '/skills', component: SkillsView },
+    { path: '/commands', component: CommandsView },
+    { path: '/settings', component: SettingsView },
     {
       path: '/jira',
       component: JiraLayout,
