@@ -264,7 +264,7 @@ export async function startSession(
 
   const childEnv: Record<string, string | undefined> = {
     ...process.env,
-    CLAUDE_AGENT_SDK_CLIENT_APP: 'orchestral-ai',
+    CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
   }
   if (apiKey) {
     childEnv['ANTHROPIC_API_KEY'] = apiKey
@@ -293,7 +293,7 @@ export async function startSession(
     options!.allowedTools = params.allowedTools
   }
   if (extras.mcpServer) {
-    options!.mcpServers = { orchestral: extras.mcpServer }
+    options!.mcpServers = { agentkeeper: extras.mcpServer }
   }
 
   const q = query({ prompt: input, options })

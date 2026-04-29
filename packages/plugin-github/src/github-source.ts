@@ -1,4 +1,4 @@
-import type { WorkItem, WorkItemSource, WorkItemStatus } from '@orchestral/sdk'
+import type { WorkItem, WorkItemSource, WorkItemStatus } from '@agentkeeper/sdk'
 import { closeIssue, getIssue, listIssues, reopenIssue } from './github-cli.js'
 import type { GHIssue } from './types.js'
 

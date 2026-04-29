@@ -77,7 +77,7 @@ const sessionToRuntimeId = new Map<string, string>()
 
 function withOrchestraMcp(tools: string[] | null | undefined): string[] | undefined {
   if (!tools?.length) return undefined
-  return [...new Set([...tools, 'mcp__orchestral__send_message'])]
+  return [...new Set([...tools, 'mcp__agentkeeper__send_message'])]
 }
 
 const waitingFor = new Map<string, Set<string>>()
@@ -548,7 +548,7 @@ function buildContextPreamble(opts: {
     `You are the "${roleName}" (role: "${roleId}"${instanceNote}, id: "${instanceId}") in agency "${agencyName}".`,
     `Current agency members: ${allInstanceIds.join(', ')}.`,
     ``,
-    `Addressing peers via mcp__orchestral__send_message:`,
+    `Addressing peers via mcp__agentkeeper__send_message:`,
     `- By instance id (e.g. "developer-2"): direct delivery to that specific instance.`,
     `- By role id (e.g. "developer"): load-balanced delivery — routes to an idle instance of`,
     `  that role, or spawns a NEW overflow instance if all are busy. Use role-id addressing`,
@@ -579,7 +579,7 @@ export function createOrchestratorMcp(
   sessionId: string,
 ): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
-    name: 'orchestral',
+    name: 'agentkeeper',
     version: '1.0.0',
     tools: [
       tool(

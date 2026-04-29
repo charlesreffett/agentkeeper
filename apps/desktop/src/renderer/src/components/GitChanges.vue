@@ -43,7 +43,7 @@ async function load() {
   if (!props.projectPath) return
   loading.value = true
   try {
-    const result = await (window.orchestral as any).git?.getStatus(props.projectPath)
+    const result = await (window.agentkeeper as any).git?.getStatus(props.projectPath)
     if (result) gitStatus.value = result
   } finally {
     loading.value = false

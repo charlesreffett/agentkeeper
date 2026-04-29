@@ -14,5 +14,5 @@ build
 
 # Git worktrees the app creates live in a sibling dir, not inside the repo
 # (see main/worktrees.ts → `<projectPath>--worktrees/`), so nothing to ignore
-# for those. `.orchestral/` holds committed role/agency definitions — DO NOT
+# for those. `.agentkeeper/` holds committed role/agency definitions — DO NOT
 # ignore it.

@@ -151,7 +151,7 @@ export const useSessionStore = defineStore('sessions', () => {
     try {
       // `branch` and `roleName` are renderer-only hints; strip before crossing IPC.
       const { branch: _branch, roleName: _roleName, ...startArgs } = plain
-      await window.orchestral.sessions.start({ ...startArgs, localId })
+      await window.agentkeeper.sessions.start({ ...startArgs, localId })
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sessions[localId]!.status = 'error'
@@ -164,7 +164,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const s = sessions[id]
     if (!s) return
     try {
-      await window.orchestral.sessions.sendInput(id, text, attachments)
+      await window.agentkeeper.sessions.sendInput(id, text, attachments)
       s.interruptedAt = null
       s.lastActivityAt = Date.now()
     } catch (err) {
@@ -176,7 +176,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const s = sessions[id]
     if (!s) return
     try {
-      await window.orchestral.sessions.interrupt(id)
+      await window.agentkeeper.sessions.interrupt(id)
       s.interruptedAt = Date.now()
       s.events.push({
         uuid: crypto.randomUUID(),
@@ -200,7 +200,7 @@ export const useSessionStore = defineStore('sessions', () => {
     const s = sessions[id]
     if (!s) return
     try {
-      await window.orchestral.sessions.terminate(id)
+      await window.agentkeeper.sessions.terminate(id)
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)
     }
@@ -262,7 +262,7 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   async function resume(persisted: PersistedSession): Promise<string> {
-    const newId = await window.orchestral.sessions.resume(persisted.localId)
+    const newId = await window.agentkeeper.sessions.resume(persisted.localId)
     // Register immediately so LiveSessionView can find it. Any broadcasts that
     // arrived before this (buffered) are flushed here.
     if (!sessions[newId]) {
@@ -326,7 +326,7 @@ export const useSessionStore = defineStore('sessions', () => {
     flushBuffer(localId)
 
     try {
-      await window.orchestral.sessions.start({
+      await window.agentkeeper.sessions.start({
         localId,
         projectPath: params.projectPath,
         initialPrompt: params.firstMessage || '(continued)',
@@ -334,7 +334,7 @@ export const useSessionStore = defineStore('sessions', () => {
         effort: params.effort,
         resumeSdkSessionId: params.sdkSessionId,
       })
-      await window.orchestral.sessions.sendInput(localId, params.firstMessage)
+      await window.agentkeeper.sessions.sendInput(localId, params.firstMessage)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sessions[localId]!.status = 'error'
@@ -345,7 +345,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ─── IPC subscriptions — set up once ───────────────────────────────────
 
-  window.orchestral.sessions.onEvent((payload) => {
+  window.agentkeeper.sessions.onEvent((payload) => {
     const evt = sdkMessageToTranscriptEvent(payload.message)
     if (!evt) return
     const s = sessions[payload.sessionId]
@@ -357,7 +357,7 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   })
 
-  window.orchestral.sessions.onStatus((update) => {
+  window.agentkeeper.sessions.onStatus((update) => {
     const s = sessions[update.sessionId]
     if (s) {
       s.status = update.status

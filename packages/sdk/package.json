@@ -1,5 +1,5 @@
 {
-  "name": "@orchestral/sdk",
+  "name": "@agentkeeper/sdk",
   "private": true,
   "version": "0.0.1",
   "type": "module",

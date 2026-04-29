@@ -151,7 +151,7 @@ watch(
 )
 
 async function openFilePicker() {
-  const picked = await window.orchestral.dialog.openFiles()
+  const picked = await window.agentkeeper.dialog.openFiles()
   attachments.value.push(...picked)
 }
 

@@ -7,10 +7,10 @@ import { resolve } from 'node:path'
 // main/preload output, NOT externalized, otherwise Node tries to import
 // `src/index.ts` at runtime and fails with ERR_UNKNOWN_FILE_EXTENSION.
 const WORKSPACE_PKGS = [
-  '@orchestral/sdk',
-  '@orchestral/core',
-  '@orchestral/plugin-jira',
-  '@orchestral/plugin-github',
+  '@agentkeeper/sdk',
+  '@agentkeeper/core',
+  '@agentkeeper/plugin-jira',
+  '@agentkeeper/plugin-github',
 ]
 
 export default defineConfig({

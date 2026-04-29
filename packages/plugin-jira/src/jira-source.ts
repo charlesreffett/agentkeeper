@@ -1,4 +1,4 @@
-import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemSource, WorkItemStatus } from '@orchestral/sdk'
+import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemSource, WorkItemStatus } from '@agentkeeper/sdk'
 import {
   addComment as cliAddComment,
   createIssue,

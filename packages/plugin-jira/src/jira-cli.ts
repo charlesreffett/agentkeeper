@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@orchestral/sdk'
+import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 
 const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
   backlog: 'Backlog',
@@ -143,7 +143,7 @@ export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
 
 export async function getIssueTransitions(id: string): Promise<IssueTransition[]> {
   try {
-    await execFileAsync('jira', ['issue', 'move', id, '__ORCHESTRAL_PROBE__'])
+    await execFileAsync('jira', ['issue', 'move', id, '__JIRA_TRANSITION_PROBE__'])
     return []
   } catch (err: unknown) {
     const output =

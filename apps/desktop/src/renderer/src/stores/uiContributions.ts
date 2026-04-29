@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { reactive } from 'vue'
-import type { UIContribution, UISlot } from '@orchestral/sdk'
+import type { UIContribution, UISlot } from '@agentkeeper/sdk'
 
 export const useUIContributionsStore = defineStore('uiContributions', () => {
   const slots = reactive(new Map<UISlot, UIContribution[]>())

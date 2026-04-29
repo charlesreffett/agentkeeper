@@ -58,7 +58,7 @@ const defaultPrompt = computed(
 
 async function loadRoles(projectPath: string) {
   try {
-    roles.value = await window.orchestral.roles.list(projectPath)
+    roles.value = await window.agentkeeper.roles.list(projectPath)
   } catch {
     roles.value = []
   }
@@ -66,7 +66,7 @@ async function loadRoles(projectPath: string) {
 
 async function loadAgencies(projectPath: string) {
   try {
-    agencies.value = await window.orchestral.agencies.list(projectPath)
+    agencies.value = await window.agentkeeper.agencies.list(projectPath)
   } catch {
     agencies.value = []
   }
@@ -114,7 +114,7 @@ async function startSolo() {
     let worktreePath: string | undefined
     let resolvedBranch: string | undefined
     if (useWorktree.value && branch.value.trim()) {
-      const wt = await window.orchestral.worktrees.create(proj.path, branch.value.trim())
+      const wt = await window.agentkeeper.worktrees.create(proj.path, branch.value.trim())
       worktreePath = wt.path
       resolvedBranch = wt.branch
     }
@@ -151,11 +151,11 @@ async function startAgency() {
     let worktreePath: string | undefined
     let resolvedBranch: string | undefined
     if (agencyUseWorktree.value && agencyBranch.value.trim()) {
-      const wt = await window.orchestral.worktrees.create(proj.path, agencyBranch.value.trim())
+      const wt = await window.agentkeeper.worktrees.create(proj.path, agencyBranch.value.trim())
       worktreePath = wt.path
       resolvedBranch = wt.branch
     }
-    await window.orchestral.agencies.start({
+    await window.agentkeeper.agencies.start({
       projectPath: proj.path,
       agencyId: selectedAgencyId.value,
       agencyScope: ag.scope,

@@ -77,7 +77,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    historical.value = await window.orchestral.sessions.list(props.projectPath)
+    historical.value = await window.agentkeeper.sessions.list(props.projectPath)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     historical.value = []
@@ -89,9 +89,9 @@ async function load() {
 async function loadPersisted() {
   try {
     const [sessions, agencies, settings] = await Promise.all([
-      window.orchestral.sessions.listPersisted(props.projectPath),
-      window.orchestral.agencies.listPersisted(props.projectPath),
-      window.orchestral.settings.get(),
+      window.agentkeeper.sessions.listPersisted(props.projectPath),
+      window.agentkeeper.agencies.listPersisted(props.projectPath),
+      window.agentkeeper.settings.get(),
     ])
     persistedSessions.value = sessions
     persistedAgencies.value = agencies
@@ -166,7 +166,7 @@ function deleteHistorical(s: SessionSummary) {
     `"${s.firstUserMessage || 'Session'}" will be permanently deleted.`,
     async () => {
       historical.value = historical.value.filter((x) => x.id !== s.id)
-      await window.orchestral.sessions.deleteHistorical(props.projectPath, s.id)
+      await window.agentkeeper.sessions.deleteHistorical(props.projectPath, s.id)
     },
   )
 }
@@ -177,7 +177,7 @@ function confirmRemoveAllHistorical() {
     'Remove all recent sessions?',
     `${count} session transcript${count !== 1 ? 's' : ''} will be permanently deleted.`,
     async () => {
-      await window.orchestral.sessions.deleteAllHistorical(props.projectPath)
+      await window.agentkeeper.sessions.deleteAllHistorical(props.projectPath)
       historical.value = []
     },
   )
@@ -203,7 +203,7 @@ async function resumeAgency(persisted: PersistedAgency) {
   if (resumingId.value) return
   resumingId.value = persisted.instanceId
   try {
-    const instance = await window.orchestral.agencies.resume(persisted.instanceId)
+    const instance = await window.agentkeeper.agencies.resume(persisted.instanceId)
     for (const s of instance.sessions) {
       const persistedRole = persistedSessions.value.find(
         (p) => p.agencyInstanceId === persisted.instanceId && p.roleId === s.roleId,
@@ -236,7 +236,7 @@ function confirmDismissSession(s: PersistedSession) {
     `"${s.initialPrompt.split('\n')[0] || 'Session'}" will be removed from the list.`,
     async () => {
       persistedSessions.value = persistedSessions.value.filter((x) => x.localId !== s.localId)
-      await window.orchestral.sessions.deletePersisted(s.localId)
+      await window.agentkeeper.sessions.deletePersisted(s.localId)
     },
   )
 }
@@ -247,7 +247,7 @@ function confirmDismissAgency(a: PersistedAgency) {
     `"${a.agencyName}" will be removed from the list.`,
     async () => {
       persistedAgencies.value = persistedAgencies.value.filter((x) => x.instanceId !== a.instanceId)
-      await window.orchestral.agencies.deletePersisted(a.instanceId)
+      await window.agentkeeper.agencies.deletePersisted(a.instanceId)
     },
   )
 }
@@ -258,7 +258,7 @@ function confirmRemoveAllPersisted() {
     'Remove all previous sessions?',
     `${count} session${count !== 1 ? 's' : ''} will be permanently removed.`,
     async () => {
-      await window.orchestral.sessions.deleteAllPersisted(props.projectPath)
+      await window.agentkeeper.sessions.deleteAllPersisted(props.projectPath)
       persistedSessions.value = []
       persistedAgencies.value = []
     },
@@ -266,12 +266,12 @@ function confirmRemoveAllPersisted() {
 }
 
 async function touchSession(localId: string) {
-  await window.orchestral.sessions.touchPersisted(localId)
+  await window.agentkeeper.sessions.touchPersisted(localId)
   await loadPersisted()
 }
 
 async function touchAgency(instanceId: string) {
-  await window.orchestral.agencies.touchPersisted(instanceId)
+  await window.agentkeeper.agencies.touchPersisted(instanceId)
   await loadPersisted()
 }
 </script>

@@ -111,7 +111,7 @@ async function loadRoles() {
     return
   }
   try {
-    roles.value = await window.orchestral.roles.list(path)
+    roles.value = await window.agentkeeper.roles.list(path)
   } catch {
     roles.value = []
   }
@@ -124,7 +124,7 @@ async function loadAgencies() {
     return
   }
   try {
-    agencies.value = await window.orchestral.agencies.list(path)
+    agencies.value = await window.agentkeeper.agencies.list(path)
   } catch {
     agencies.value = []
   }
@@ -180,7 +180,7 @@ async function start() {
   if (selectedAgency.value) {
     starting.value = true
     try {
-      const instance = await window.orchestral.agencies.start({
+      const instance = await window.agentkeeper.agencies.start({
         projectPath: selectedProject.value.path,
         agencyId: selectedAgency.value.id,
         agencyScope: selectedAgency.value.scope,

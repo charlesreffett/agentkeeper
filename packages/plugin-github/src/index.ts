@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Plugin, PluginContext } from '@orchestral/sdk'
+import type { Plugin, PluginContext } from '@agentkeeper/sdk'
 import { checkCliPresent } from './github-cli.js'
 import { GitHubWorkItemSource } from './github-source.js'
 

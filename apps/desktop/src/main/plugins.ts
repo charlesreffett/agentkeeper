@@ -22,9 +22,9 @@ import type {
   WorkItemRegistry,
   WorkItemSource,
   WorkItemStatus,
-} from '@orchestral/sdk'
-import { jiraPlugin } from '@orchestral/plugin-jira'
-import { githubPlugin } from '@orchestral/plugin-github'
+} from '@agentkeeper/sdk'
+import { jiraPlugin } from '@agentkeeper/plugin-jira'
+import { githubPlugin } from '@agentkeeper/plugin-github'
 import { createPluginSecrets } from './secrets'
 
 export interface WorkItemRegistryFull extends WorkItemRegistry {

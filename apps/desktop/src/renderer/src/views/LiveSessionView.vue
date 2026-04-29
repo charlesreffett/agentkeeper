@@ -100,7 +100,7 @@ onMounted(async () => {
   const s = session.value
   if (s?.resumedFromSdkSessionId) {
     try {
-      const transcript = await window.orchestral.sessions.read(
+      const transcript = await window.agentkeeper.sessions.read(
         s.projectPath,
         s.resumedFromSdkSessionId,
       )
@@ -201,20 +201,20 @@ const canEditParams = computed(() => {
 
 async function changeModel(model: string) {
   if (!session.value) return
-  await window.orchestral.sessions.setModel(session.value.localId, model)
+  await window.agentkeeper.sessions.setModel(session.value.localId, model)
   session.value.model = model
 }
 
 async function changeEffort(e: Event) {
   const val = (e.target as HTMLSelectElement).value
   if (!val || !session.value) return
-  await window.orchestral.sessions.setEffort(session.value.localId, val as RoleEffort)
+  await window.agentkeeper.sessions.setEffort(session.value.localId, val as RoleEffort)
   session.value.effort = val as RoleEffort
 }
 
 async function changePermissionMode(mode: PermissionMode) {
   if (!session.value) return
-  await window.orchestral.sessions.setPermissionMode(session.value.localId, mode)
+  await window.agentkeeper.sessions.setPermissionMode(session.value.localId, mode)
   session.value.permissionMode = mode
 }
 </script>

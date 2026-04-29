@@ -42,7 +42,7 @@ async function load() {
   loading.value = true
   error.value = null
   try {
-    transcript.value = await window.orchestral.sessions.read(
+    transcript.value = await window.agentkeeper.sessions.read(
       props.projectPath,
       props.sessionId,
     )

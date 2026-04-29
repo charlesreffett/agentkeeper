@@ -41,7 +41,7 @@ async function submit() {
   saving.value = true
   saveError.value = null
   try {
-    const item = await window.orchestral.workItems.create({
+    const item = await window.agentkeeper.workItems.create({
       summary: summary.value.trim(),
       issueType: issueType.value || undefined,
       priority: priority.value || undefined,

@@ -1,4 +1,4 @@
-// @orchestral/core
+// @agentkeeper/core
 //
 // Session engine, Role/Agency engine, skills+commands mgmt, project/worktree
 // mgmt, event bus, storage, and the plugin host.

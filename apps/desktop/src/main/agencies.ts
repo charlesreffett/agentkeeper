@@ -4,8 +4,8 @@ import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import type { Agency, AgencyDraft, AgencyScope, RoleSlot } from '../shared/ipc-contract'
 
-const PROJECT_DIR = '.orchestral/agencies'
-const GLOBAL_DIR = '.orchestral/agencies'
+const PROJECT_DIR = '.agentkeeper/agencies'
+const GLOBAL_DIR = '.agentkeeper/agencies'
 
 function projectAgenciesDir(projectPath: string): string {
   return path.join(projectPath, PROJECT_DIR)

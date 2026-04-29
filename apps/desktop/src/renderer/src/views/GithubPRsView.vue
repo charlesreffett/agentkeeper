@@ -22,7 +22,7 @@ async function load() {
     const filters: Record<string, string> = {}
     if (stateFilter.value !== 'all') filters.state = stateFilter.value
     if (repoFilter.value) filters.repo = repoFilter.value
-    allPRs.value = await window.orchestral.github.listPRs(filters)
+    allPRs.value = await window.agentkeeper.github.listPRs(filters)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -32,17 +32,17 @@ async function load() {
 
 async function autoDetectRepos(projectPath: string) {
   try {
-    const sources = await window.orchestral.remotes.detect(projectPath)
+    const sources = await window.agentkeeper.remotes.detect(projectPath)
     const ghRepos = sources.filter((s) => s.type === 'github').map((s) => s.repo)
     if (ghRepos.length > 0) {
-      await window.orchestral.github.setConfig({ repos: ghRepos })
+      await window.agentkeeper.github.setConfig({ repos: ghRepos })
       repos.value = ghRepos
     }
   } catch { /* silent */ }
 }
 
 onMounted(async () => {
-  const cfg = await window.orchestral.github.getConfig()
+  const cfg = await window.agentkeeper.github.getConfig()
   repos.value = cfg.repos ?? []
 })
 
@@ -108,7 +108,7 @@ const reviewLabel: Record<NonNullable<ReviewDecision>, string> = {
 
 function openSettingsModal() {
   // Emit to parent via a custom event on the window so the app shell can open settings
-  window.dispatchEvent(new CustomEvent('orchestral:open-settings'))
+  window.dispatchEvent(new CustomEvent('agentkeeper:open-settings'))
 }
 </script>
 

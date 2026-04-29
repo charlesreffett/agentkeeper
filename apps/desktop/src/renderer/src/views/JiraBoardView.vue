@@ -127,7 +127,7 @@ function assigneeInitials(name: string | undefined): string {
 async function load() {
   loading.value = true
   try {
-    const all = await window.orchestral.workItems.list()
+    const all = await window.agentkeeper.workItems.list()
     allItems.value = all.filter((i) => i.source === 'jira')
   } catch {
     // cliMissing handled by health composable
@@ -143,7 +143,7 @@ function onCreated(item: WorkItem) {
 let unsub: (() => void) | null = null
 onMounted(() => {
   void load()
-  unsub = window.orchestral.plugins.onEvent((event) => {
+  unsub = window.agentkeeper.plugins.onEvent((event) => {
     if (event === 'plugin.healthy') void load()
   })
 })

@@ -14,7 +14,7 @@ const entries = ref<Entry[]>([])
 
 async function load() {
   if (!props.rootPath) return
-  const result = await (window.orchestral as any).fs?.listDirectory(props.rootPath)
+  const result = await (window.agentkeeper as any).fs?.listDirectory(props.rootPath)
   if (result) entries.value = result
 }
 

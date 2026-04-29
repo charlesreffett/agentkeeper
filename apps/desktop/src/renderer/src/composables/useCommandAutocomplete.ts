@@ -12,7 +12,7 @@ export function useCommandAutocomplete(text: Ref<string>, projectPath: Ref<strin
     async (path) => {
       if (!path) return
       try {
-        allCommands.value = await window.orchestral.commands.list(path)
+        allCommands.value = await window.agentkeeper.commands.list(path)
       } catch {
         allCommands.value = []
       }

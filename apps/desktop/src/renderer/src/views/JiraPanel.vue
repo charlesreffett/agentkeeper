@@ -62,7 +62,7 @@ async function loadIssues() {
   loading.value = true
   cliMissing.value = false
   try {
-    const all = await window.orchestral.workItems.list()
+    const all = await window.agentkeeper.workItems.list()
     items.value = all.filter((i) => i.source === 'jira')
   } catch {
     cliMissing.value = true
@@ -103,7 +103,7 @@ function onSessionStarted(localId: string) {
 
 let unsub: (() => void) | null = null
 onMounted(() => {
-  unsub = window.orchestral.plugins.onEvent((event) => {
+  unsub = window.agentkeeper.plugins.onEvent((event) => {
     if (event === 'plugin.healthy') {
       cliMissing.value = false
       void loadIssues()

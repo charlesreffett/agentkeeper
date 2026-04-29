@@ -1,4 +1,4 @@
-# Orchestral-AI
+# AgentKeeper
 
 Cross-platform Electron desktop app that drives the Claude Agent SDK from a
 GUI, replacing the terminal `claude` workflow. End goal: Jira → worktree →
@@ -20,16 +20,16 @@ monitor grid, GitHub PR views, project registry with focus model.
 ```
 apps/desktop/               Electron shell (main + preload + Vue renderer)
 apps/desktop/src/main/      Node — agent driver, IPC, git worktrees, secrets
-apps/desktop/src/preload/   contextBridge — exposes typed `window.orchestral`
+apps/desktop/src/preload/   contextBridge — exposes typed `window.agentkeeper`
 apps/desktop/src/renderer/  Vue app (views, components, composables, stores)
 apps/desktop/src/shared/    IPC contract types — pure, no runtime imports
 packages/core/              Session engine / Role-Agency engine (stub so far)
-packages/sdk/               @orchestral/sdk — plugin contract (types-only)
+packages/sdk/               @agentkeeper/sdk — plugin contract (types-only)
 packages/plugin-github/     GitHub plugin (shipped V6)
 packages/plugin-*/          Future bundled plugins (V5: Jira)
 ```
 
-**Plugin wall:** plugins import ONLY from `@orchestral/sdk`, never from
+**Plugin wall:** plugins import ONLY from `@agentkeeper/sdk`, never from
 core. That boundary is enforced by convention now, by the loader later.
 
 ## Vocabulary
@@ -39,9 +39,9 @@ core. That boundary is enforced by convention now, by the loader later.
 - **Role** — reusable agent config; markdown file with YAML frontmatter
 - **Agency** — named bundle of Roles with a routing topology
 
-Roles live at `.orchestral/roles/<id>.md` (project) or
-`~/.orchestral/roles/<id>.md` (global). Agencies at
-`.orchestral/agencies/<id>.md`. Project scope wins on id collision.
+Roles live at `.agentkeeper/roles/<id>.md` (project) or
+`~/.agentkeeper/roles/<id>.md` (global). Agencies at
+`.agentkeeper/agencies/<id>.md`. Project scope wins on id collision.
 
 ## Vertical slices
 
@@ -113,7 +113,7 @@ developer, reviewer) is the default — user tasks enter the planner, which
 delegates to the developer, consulting the reviewer on substantial work.
 Fresh worktree per task keeps runs isolated.
 
-Inter-agent messaging via `mcp__orchestral__send_message(to, content)`.
+Inter-agent messaging via `mcp__agentkeeper__send_message(to, content)`.
 The orchestrator blocks the caller until the target idles; the target's
 plain-text reply is returned as the caller's tool_result. Calling
 `send_message` back at the peer that addressed you is a cycle and will be
@@ -138,7 +138,7 @@ rejected — reply with plain text, which is auto-captured.
   deferred until the SDK's own path diverges from what V1 reads.
 - Don't push or force-push without explicit instruction.
 - Don't edit from the `planner` role — it's tool-restricted for a reason.
-- Don't reach into `packages/core` from a plugin. Only `@orchestral/sdk`.
+- Don't reach into `packages/core` from a plugin. Only `@agentkeeper/sdk`.
 - Don't write comments that describe WHAT code does — only non-obvious
   WHY. No file-level docstrings.
 - Don't add backwards-compat shims for code that isn't shipped yet.

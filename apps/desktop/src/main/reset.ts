@@ -26,11 +26,11 @@ async function resetAppSettings(): Promise<void> {
 }
 
 async function resetProjectDefinitions(projectPath: string): Promise<void> {
-  await removeSafely(path.join(projectPath, '.orchestral'))
+  await removeSafely(path.join(projectPath, '.agentkeeper'))
 }
 
 async function resetGlobalDefinitions(): Promise<void> {
-  await removeSafely(path.join(os.homedir(), '.orchestral'))
+  await removeSafely(path.join(os.homedir(), '.agentkeeper'))
 }
 
 export async function executeReset(request: ResetRequest): Promise<ResetResult> {

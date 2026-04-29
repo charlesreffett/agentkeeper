@@ -1,5 +1,5 @@
 {
-  "name": "@orchestral/core",
+  "name": "@agentkeeper/core",
   "private": true,
   "version": "0.0.1",
   "type": "module",
@@ -16,7 +16,7 @@
     "build": "tsc --emitDeclarationOnly --outDir dist"
   },
   "dependencies": {
-    "@orchestral/sdk": "workspace:*"
+    "@agentkeeper/sdk": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3"

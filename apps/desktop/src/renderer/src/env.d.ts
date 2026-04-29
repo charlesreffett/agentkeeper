@@ -1,10 +1,10 @@
 /// <reference types="vite/client" />
 
-import type { OrchestralApi } from '../../shared/ipc-contract'
+import type { AgentKeeperApi } from '../../shared/ipc-contract'
 
 declare global {
   interface Window {
-    orchestral: OrchestralApi
+    agentkeeper: AgentKeeperApi
   }
 }
 

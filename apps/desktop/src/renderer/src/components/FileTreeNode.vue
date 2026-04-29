@@ -17,7 +17,7 @@ async function toggle() {
   if (!props.entry.isDirectory) return
   expanded.value = !expanded.value
   if (expanded.value && children.value.length === 0) {
-    const result = await (window.orchestral as any).fs?.listDirectory(props.entry.path)
+    const result = await (window.agentkeeper as any).fs?.listDirectory(props.entry.path)
     if (result) children.value = result
   }
 }

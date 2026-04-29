@@ -18,7 +18,7 @@ watch(
       saveError.value = null
       projectKey.value = ''
       try {
-        const cfg = (await window.orchestral.plugins.getConfig('jira')) as
+        const cfg = (await window.agentkeeper.plugins.getConfig('jira')) as
           | Record<string, unknown>
           | null
           | undefined
@@ -40,7 +40,7 @@ async function save() {
   saving.value = true
   saveError.value = null
   try {
-    await window.orchestral.plugins.setConfig('jira', {
+    await window.agentkeeper.plugins.setConfig('jira', {
       projectKey: projectKey.value.trim() || undefined,
     })
     emit('saved')

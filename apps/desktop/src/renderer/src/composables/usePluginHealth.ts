@@ -6,7 +6,7 @@ export function usePluginHealth(pluginId: string): { isHealthy: Ref<boolean> } {
   let cleanup: (() => void) | null = null
 
   onMounted(() => {
-    cleanup = window.orchestral.plugins.onEvent((event, payload) => {
+    cleanup = window.agentkeeper.plugins.onEvent((event, payload) => {
       const p = payload as { pluginId?: string }
       if (p?.pluginId !== pluginId) return
       if (event === 'plugin.unhealthy') isHealthy.value = false

@@ -46,7 +46,7 @@ const statusClass: Record<WorkItemStatus, string> = {
 async function loadTransitions(id: string) {
   transitionsLoading.value = true
   try {
-    availableTransitions.value = await window.orchestral.workItems.getTransitions(id)
+    availableTransitions.value = await window.agentkeeper.workItems.getTransitions(id)
   } catch {
     availableTransitions.value = []
   } finally {
@@ -56,7 +56,7 @@ async function loadTransitions(id: string) {
 
 onMounted(async () => {
   try {
-    item.value = (await window.orchestral.workItems.get(props.id)) ?? null
+    item.value = (await window.agentkeeper.workItems.get(props.id)) ?? null
     if (item.value) await loadTransitions(item.value.id)
   } finally {
     loading.value = false
@@ -85,8 +85,8 @@ async function applyTransition(transitionName: string) {
   statusError.value = null
   statusUpdating.value = transitionName
   try {
-    await window.orchestral.workItems.transition(item.value.id, transitionName)
-    const refreshed = await window.orchestral.workItems.get(item.value.id)
+    await window.agentkeeper.workItems.transition(item.value.id, transitionName)
+    const refreshed = await window.agentkeeper.workItems.get(item.value.id)
     if (refreshed) {
       item.value = refreshed
       await loadTransitions(item.value.id)
@@ -103,8 +103,8 @@ async function setStatus(newStatus: WorkItemStatus) {
   statusError.value = null
   statusUpdating.value = newStatus
   try {
-    await window.orchestral.workItems.updateStatus(item.value.id, newStatus)
-    const refreshed = await window.orchestral.workItems.get(item.value.id)
+    await window.agentkeeper.workItems.updateStatus(item.value.id, newStatus)
+    const refreshed = await window.agentkeeper.workItems.get(item.value.id)
     if (refreshed) {
       item.value = refreshed
       await loadTransitions(item.value.id)
