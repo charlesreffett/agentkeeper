@@ -4,25 +4,28 @@
 
 @layer base {
   :root {
-    --background: 40 33% 98%;
-    --foreground: 240 10% 3.9%;
-    --card: 38 28% 96%;
-    --card-foreground: 240 10% 3.9%;
-    --popover: 40 33% 98%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 240 5.9% 10%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 38 20% 93%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 38 18% 92%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 38 20% 92%;
-    --accent-foreground: 240 5.9% 10%;
+    /* Warm cream page — noticeably off-white without being yellow */
+    --background: 40 25% 95%;
+    /* Warm near-black — slightly amber-tinted for softness */
+    --foreground: 30 8% 12%;
+    /* Cards sit lighter than the page, giving a floating surface feel */
+    --card: 38 30% 99%;
+    --card-foreground: 30 8% 12%;
+    --popover: 38 30% 99%;
+    --popover-foreground: 30 8% 12%;
+    --primary: 30 8% 12%;
+    --primary-foreground: 38 25% 98%;
+    --secondary: 38 18% 91%;
+    --secondary-foreground: 30 8% 12%;
+    --muted: 38 15% 91%;
+    --muted-foreground: 30 6% 46%;
+    --accent: 38 18% 91%;
+    --accent-foreground: 30 8% 12%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 38 15% 89%;
-    --input: 38 15% 89%;
-    --ring: 240 5.9% 10%;
+    --border: 38 12% 86%;
+    --input: 38 12% 86%;
+    --ring: 30 8% 12%;
     --radius: 0.5rem;
   }
 
