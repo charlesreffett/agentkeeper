@@ -2,21 +2,21 @@
   <div class="p-4 flex flex-col gap-4">
     <!-- Header -->
     <div class="flex items-center justify-between">
-      <h2 class="text-sm font-semibold text-zinc-200">Agency</h2>
+      <h2 class="text-sm font-semibold text-foreground">Agency</h2>
     </div>
 
     <!-- Metadata (read-only) -->
     <div class="space-y-3">
       <div>
-        <div class="text-[10px] font-medium text-zinc-500 uppercase tracking-wide mb-0.5">ID</div>
-        <div class="text-xs text-zinc-400 font-mono">{{ agency.id }}</div>
+        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">ID</div>
+        <div class="text-xs text-muted-foreground font-mono">{{ agency.id }}</div>
       </div>
       <div>
-        <div class="text-[10px] font-medium text-zinc-500 uppercase tracking-wide mb-0.5">Scope</div>
-        <span class="text-xs px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 font-mono">{{ agency.scope }}</span>
+        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Scope</div>
+        <span class="text-xs px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground font-mono">{{ agency.scope }}</span>
       </div>
       <div>
-        <div class="text-[10px] font-medium text-zinc-500 uppercase tracking-wide mb-0.5">Entry points</div>
+        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Entry points</div>
         <div class="flex flex-wrap gap-1 mt-1">
           <span
             v-for="ep in agency.entryPoints"
@@ -28,45 +28,45 @@
         </div>
       </div>
       <div>
-        <div class="text-[10px] font-medium text-zinc-500 uppercase tracking-wide mb-0.5">Flows</div>
-        <div class="text-xs text-zinc-400">
+        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Flows</div>
+        <div class="text-xs text-muted-foreground">
           {{ agency.flows.length === 0 ? 'Any-to-any' : `${agency.flows.length} explicit flow${agency.flows.length === 1 ? '' : 's'}` }}
         </div>
       </div>
     </div>
 
     <!-- Editable fields -->
-    <div class="space-y-3 border-t border-zinc-800 pt-3">
+    <div class="space-y-3 border-t border-border pt-3">
       <div class="space-y-1">
-        <label class="text-xs font-medium text-zinc-400">Name</label>
+        <label class="text-xs font-medium text-muted-foreground">Name</label>
         <input
           v-model="form.name"
           type="text"
-          class="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+          class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
         />
         <div v-if="nameError" class="text-xs text-red-400">{{ nameError }}</div>
       </div>
       <div class="space-y-1">
-        <label class="text-xs font-medium text-zinc-400">Description</label>
+        <label class="text-xs font-medium text-muted-foreground">Description</label>
         <input
           v-model="form.description"
           type="text"
-          class="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+          class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
         />
       </div>
       <div class="space-y-1">
-        <label class="text-xs font-medium text-zinc-400">Notes</label>
+        <label class="text-xs font-medium text-muted-foreground">Notes</label>
         <textarea
           v-model="form.notes"
           rows="3"
-          class="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-zinc-500 resize-none leading-relaxed"
+          class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:border-foreground/40 resize-none leading-relaxed"
         />
       </div>
 
       <div class="flex items-center gap-2 pt-1">
         <button
           v-if="isDirty"
-          class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors px-2 py-1.5"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1.5"
           @click="discard"
         >
           Discard
@@ -75,7 +75,7 @@
           class="flex-1 text-xs rounded px-3 py-1.5 transition-colors"
           :class="isDirty
             ? 'bg-blue-600 hover:bg-blue-500 text-white'
-            : 'bg-zinc-800 text-zinc-600 cursor-not-allowed'"
+            : 'bg-muted text-muted-foreground cursor-not-allowed'"
           :disabled="!isDirty"
           @click="save"
         >
@@ -85,7 +85,7 @@
     </div>
 
     <!-- Delete section -->
-    <div class="mt-auto pt-4 border-t border-zinc-800">
+    <div class="mt-auto pt-4 border-t border-border">
       <template v-if="!confirmDelete">
         <button
           class="w-full text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded px-3 py-1.5 transition-colors text-left"
@@ -95,10 +95,10 @@
         </button>
       </template>
       <template v-else>
-        <div class="text-xs text-zinc-400 mb-2">Delete "{{ agency.name }}"? This cannot be undone.</div>
+        <div class="text-xs text-muted-foreground mb-2">Delete "{{ agency.name }}"? This cannot be undone.</div>
         <div class="flex items-center gap-2">
           <button
-            class="flex-1 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded px-3 py-1.5 transition-colors"
+            class="flex-1 text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-3 py-1.5 transition-colors"
             @click="confirmDelete = false"
           >
             Cancel

@@ -1,14 +1,14 @@
 <template>
-  <div class="h-full flex flex-col overflow-hidden bg-zinc-950">
+  <div class="h-full flex flex-col overflow-hidden bg-background">
     <!-- Header -->
-    <header class="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
-      <h1 class="text-sm font-semibold text-zinc-200">Agencies</h1>
+    <header class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+      <h1 class="text-sm font-semibold text-foreground">Agencies</h1>
     </header>
 
     <!-- Three-panel body -->
     <div class="flex flex-1 overflow-hidden">
       <!-- Left sidebar: agency list -->
-      <aside class="w-60 shrink-0 border-r border-zinc-800 overflow-y-auto">
+      <aside class="w-60 shrink-0 border-r border-border overflow-y-auto">
         <AgencyList
           :agencies="store.agencies"
           :selected-id="selectedAgencyId"
@@ -22,7 +22,7 @@
       <main class="flex-1 relative overflow-hidden">
         <div
           v-if="!selectedAgency"
-          class="flex h-full items-center justify-center text-zinc-600 text-sm"
+          class="flex h-full items-center justify-center text-muted-foreground text-sm"
         >
           Select an agency to view its graph
         </div>
@@ -43,7 +43,7 @@
       </main>
 
       <!-- Right sidebar: context panel -->
-      <aside v-if="selectedAgency" class="w-72 shrink-0 border-l border-zinc-800 overflow-y-auto">
+      <aside v-if="selectedAgency" class="w-72 shrink-0 border-l border-border overflow-y-auto">
         <ConnectionPanel
           v-if="graph.selectedEdge.value"
           :edge="graph.selectedEdge.value"

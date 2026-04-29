@@ -2,9 +2,9 @@
   <div class="p-4 flex flex-col gap-4">
     <!-- Header -->
     <div class="flex items-center justify-between">
-      <h2 class="text-sm font-semibold text-zinc-200">Connection</h2>
+      <h2 class="text-sm font-semibold text-foreground">Connection</h2>
       <button
-        class="text-zinc-500 hover:text-zinc-200 transition-colors text-lg leading-none"
+        class="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
         @click="emit('close')"
         title="Close"
       >
@@ -14,19 +14,19 @@
 
     <!-- Direction display -->
     <div class="flex items-center gap-2 font-mono text-sm">
-      <span class="text-zinc-300">{{ edge.source }}</span>
-      <span class="text-zinc-500">{{ edge.isBidirectional ? '↔' : '→' }}</span>
-      <span class="text-zinc-300">{{ edge.target }}</span>
+      <span class="text-foreground">{{ edge.source }}</span>
+      <span class="text-muted-foreground">{{ edge.isBidirectional ? '↔' : '→' }}</span>
+      <span class="text-foreground">{{ edge.target }}</span>
     </div>
 
-    <div v-if="edge.isBidirectional" class="text-[10px] text-zinc-500">
+    <div v-if="edge.isBidirectional" class="text-[10px] text-muted-foreground">
       Bidirectional — both directions exist
     </div>
 
     <!-- Actions -->
     <div class="space-y-2">
       <button
-        class="w-full text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded px-3 py-1.5 transition-colors text-left flex items-center gap-2"
+        class="w-full text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-3 py-1.5 transition-colors text-left flex items-center gap-2"
         @click="emit('flip')"
       >
         <span>⇄</span>

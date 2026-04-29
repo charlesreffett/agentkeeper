@@ -5,7 +5,7 @@
       :edges="vfEdges"
       :node-types="nodeTypes"
       :fit-view-on-init="fitOnLoad"
-      class="bg-zinc-950"
+      class="bg-background"
       :default-edge-options="defaultEdgeOptions"
       :connect-on-click="false"
       @connect="onConnect"
@@ -14,8 +14,8 @@
       @pane-click="onPaneClick"
       @node-drag-stop="onNodeDragStop"
     >
-      <Background pattern-color="#27272a" :gap="20" />
-      <Controls class="!bg-zinc-800 !border-zinc-700" />
+      <Background :pattern-color="patternColor" :gap="20" />
+      <Controls class="!bg-muted !border-border" />
       <AnyToAnyOverlay v-if="flowMode === 'any-to-any'" />
     </VueFlow>
   </div>
@@ -24,6 +24,7 @@
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
 import { VueFlow, MarkerType } from '@vue-flow/core'
+import { useLayoutStore } from '@/stores/layout'
 import type {
   Node as VFNode,
   Edge as VFEdge,
@@ -57,6 +58,12 @@ const emit = defineEmits<{
   (e: 'pane-click'): void
   (e: 'node-move', nodeId: string, position: { x: number; y: number }): void
 }>()
+
+const layoutStore = useLayoutStore()
+
+const patternColor = computed(() =>
+  layoutStore.theme === 'dark' ? '#27272a' : '#d4cfc8'
+)
 
 // Cast to bypass strict NodeComponent type mismatch — our component satisfies
 // the runtime contract but Vue Flow's generic NodeProps don't align with defineProps<...>

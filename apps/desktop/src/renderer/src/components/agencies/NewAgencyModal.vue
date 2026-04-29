@@ -1,11 +1,11 @@
 <template>
   <!-- Fixed overlay -->
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-    <div class="w-full max-w-lg bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl overflow-y-auto max-h-[90vh]">
-      <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-        <h2 class="text-sm font-semibold text-zinc-200">New agency</h2>
+    <div class="w-full max-w-lg bg-card border border-border rounded-lg shadow-xl overflow-y-auto max-h-[90vh]">
+      <div class="flex items-center justify-between px-5 py-4 border-b border-border">
+        <h2 class="text-sm font-semibold text-foreground">New agency</h2>
         <button
-          class="text-zinc-500 hover:text-zinc-200 transition-colors text-lg leading-none"
+          class="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
           @click="emit('cancel')"
         >
           ×
@@ -16,19 +16,19 @@
         <!-- ID + Scope -->
         <div class="grid grid-cols-2 gap-3">
           <div class="space-y-1">
-            <label class="text-xs font-medium text-zinc-400">ID (kebab-case)</label>
+            <label class="text-xs font-medium text-muted-foreground">ID (kebab-case)</label>
             <input
               v-model="form.id"
               type="text"
               placeholder="delivery-team"
-              class="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 font-mono focus:outline-none focus:border-zinc-500"
+              class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/40"
             />
           </div>
           <div class="space-y-1">
-            <label class="text-xs font-medium text-zinc-400">Scope</label>
+            <label class="text-xs font-medium text-muted-foreground">Scope</label>
             <select
               v-model="form.scope"
-              class="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+              class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
             >
               <option value="project">Project</option>
               <option value="global">Global</option>
@@ -38,37 +38,37 @@
 
         <!-- Name -->
         <div class="space-y-1">
-          <label class="text-xs font-medium text-zinc-400">Name</label>
+          <label class="text-xs font-medium text-muted-foreground">Name</label>
           <input
             v-model="form.name"
             type="text"
             placeholder="Delivery Team"
-            class="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+            class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
           />
         </div>
 
         <!-- Description -->
         <div class="space-y-1">
-          <label class="text-xs font-medium text-zinc-400">Description</label>
+          <label class="text-xs font-medium text-muted-foreground">Description</label>
           <input
             v-model="form.description"
             type="text"
             placeholder="PM plans, Dev implements, QA reviews"
-            class="w-full rounded border border-zinc-700 bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-200 focus:outline-none focus:border-zinc-500"
+            class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
           />
         </div>
 
         <!-- Roles -->
         <div class="space-y-2">
-          <label class="text-xs font-medium text-zinc-400">Roles</label>
-          <div v-if="allRoles.length === 0" class="text-xs text-zinc-500">
+          <label class="text-xs font-medium text-muted-foreground">Roles</label>
+          <div v-if="allRoles.length === 0" class="text-xs text-muted-foreground">
             No roles available. Create roles first.
           </div>
           <div v-else class="space-y-1.5 max-h-48 overflow-y-auto">
             <label
               v-for="r in allRoles"
               :key="r.id"
-              class="flex items-center gap-2 px-2 py-1.5 rounded border border-zinc-700 cursor-pointer hover:bg-zinc-800 transition-colors"
+              class="flex items-center gap-2 px-2 py-1.5 rounded border border-border cursor-pointer hover:bg-muted transition-colors"
             >
               <input
                 type="checkbox"
@@ -76,20 +76,20 @@
                 class="w-3.5 h-3.5 shrink-0"
                 @change="toggleRole(r.id)"
               />
-              <span class="text-xs font-mono text-zinc-300">{{ r.id }}</span>
-              <span class="text-xs text-zinc-500">{{ r.name }}</span>
+              <span class="text-xs font-mono text-foreground">{{ r.id }}</span>
+              <span class="text-xs text-muted-foreground">{{ r.name }}</span>
             </label>
           </div>
         </div>
 
         <!-- Entry points -->
         <div v-if="selectedRoleIds.length > 0" class="space-y-2">
-          <label class="text-xs font-medium text-zinc-400">Entry points</label>
+          <label class="text-xs font-medium text-muted-foreground">Entry points</label>
           <div class="flex flex-wrap gap-2">
             <label
               v-for="rid in selectedRoleIds"
               :key="rid"
-              class="flex items-center gap-1.5 px-2 py-1 rounded border border-zinc-700 cursor-pointer hover:bg-zinc-800 text-xs"
+              class="flex items-center gap-1.5 px-2 py-1 rounded border border-border cursor-pointer hover:bg-muted text-xs"
             >
               <input
                 type="checkbox"
@@ -97,7 +97,7 @@
                 class="w-3.5 h-3.5"
                 @change="toggleEntry(rid)"
               />
-              <span class="font-mono text-zinc-300">{{ rid }}</span>
+              <span class="font-mono text-foreground">{{ rid }}</span>
             </label>
           </div>
         </div>
@@ -109,9 +109,9 @@
       </div>
 
       <!-- Footer -->
-      <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-zinc-800">
+      <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
         <button
-          class="text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded px-4 py-1.5 transition-colors"
+          class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-4 py-1.5 transition-colors"
           @click="emit('cancel')"
         >
           Cancel

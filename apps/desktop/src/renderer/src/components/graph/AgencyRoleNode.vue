@@ -1,8 +1,8 @@
 <template>
   <div
-    class="group relative rounded-lg border-2 px-4 py-3 bg-zinc-900 shadow-md min-w-[120px] cursor-pointer select-none transition-all"
+    class="group relative rounded-lg border-2 px-4 py-3 bg-card shadow-md min-w-[120px] cursor-pointer select-none transition-all"
     :class="[
-      selected ? 'border-blue-500 shadow-blue-500/20' : 'border-zinc-700 hover:border-zinc-500',
+      selected ? 'border-blue-500 shadow-blue-500/20' : 'border-border hover:border-foreground/40',
       data.isEntryPoint ? 'ring-2 ring-amber-500/60' : '',
       data.anyToAny ? 'border-dashed' : '',
     ]"
@@ -11,7 +11,7 @@
     <Handle type="target" :position="Position.Left" class="!bg-blue-500 !border-blue-700 !w-3 !h-3" />
 
     <!-- Role label -->
-    <div class="text-sm font-semibold text-zinc-100">{{ data.label }}</div>
+    <div class="text-sm font-semibold text-card-foreground">{{ data.label }}</div>
 
     <!-- Badges row -->
     <div class="mt-1 flex items-center gap-1.5 flex-wrap">
@@ -23,7 +23,7 @@
       </span>
       <span
         v-if="data.multiplicityLabel"
-        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300"
+        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground"
       >
         {{ data.multiplicityLabel }}
       </span>
