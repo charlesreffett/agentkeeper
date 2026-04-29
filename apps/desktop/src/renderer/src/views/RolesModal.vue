@@ -58,8 +58,6 @@ async function generate() {
     form.value.id = uniqueRoleId(result.id)
     form.value.name = result.name
     form.value.description = result.description
-    form.value.model = result.model
-    form.value.effort = result.effort
     form.value.allowedTools = result.allowedTools
     allowedToolsText.value = result.allowedTools?.join(', ') ?? ''
     form.value.allowedPeers = result.allowedPeers

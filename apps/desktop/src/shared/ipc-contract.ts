@@ -286,8 +286,6 @@ export interface RolesGenerateResult {
   id: string
   name: string
   description: string
-  model: string | null
-  effort: RoleEffort | null
   allowedTools: string[] | null
   allowedPeers: string[] | null
   systemPrompt: string

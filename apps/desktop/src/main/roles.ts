@@ -187,8 +187,6 @@ Respond with ONLY a JSON object — no markdown fences, no prose:
   "id": "<lowercase alphanumeric + dashes only, ≤ 30 chars, must match ^[a-z0-9][a-z0-9-]*$>",
   "name": "<short display name, title case, ≤ 30 chars>",
   "description": "<one sentence, what this role does, ≤ 120 chars>",
-  "model": "<one of: claude-opus-4-7 | claude-sonnet-4-6 | claude-haiku-4-5-20251001 — pick the best fit: opus for complex reasoning/planning, sonnet for general dev work, haiku for lightweight tasks>",
-  "effort": "<one of: low | medium | high | xhigh | max — pick based on expected task complexity>",
   "allowedTools": ["<tool name>", ...],
   "allowedPeers": ["<role-id>", ...] or [],
   "systemPrompt": "<detailed system prompt, 150–400 words, written in second person ('You are…'), covering the role's responsibilities, constraints, and working style>"
@@ -198,8 +196,6 @@ For allowedTools, choose from: Read, Edit, Write, Bash, Glob, Grep, WebFetch, We
 Pick only what the role genuinely needs — a reviewer needs Read/Grep/Glob but not Write/Bash; a developer needs most tools.
 For allowedPeers, list the role IDs this role is allowed to send_message() to in an agency. Leave empty [] if this role doesn't need to delegate to peers.`
 
-const VALID_MODELS = new Set(['claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'])
-const VALID_EFFORT = new Set(['low', 'medium', 'high', 'xhigh', 'max'])
 const VALID_ID_RE = /^[a-z0-9][a-z0-9-]*$/
 
 function slugify(name: string): string {
@@ -219,8 +215,6 @@ function parseRoleGenerationResponse(text: string): RolesGenerateResult {
   const name = String(parsed.name ?? '')
   const rawId = String(parsed.id ?? '')
   const id = VALID_ID_RE.test(rawId) ? rawId : slugify(name) || 'new-role'
-  const model = VALID_MODELS.has(parsed.model) ? (parsed.model as string) : 'claude-sonnet-4-6'
-  const effort = VALID_EFFORT.has(parsed.effort) ? (parsed.effort as RoleEffort) : 'medium'
   const allowedTools = Array.isArray(parsed.allowedTools)
     ? (parsed.allowedTools as unknown[]).filter((t) => typeof t === 'string').map(String)
     : null
@@ -232,8 +226,6 @@ function parseRoleGenerationResponse(text: string): RolesGenerateResult {
     id,
     name,
     description: String(parsed.description ?? ''),
-    model,
-    effort,
     allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : null,
     allowedPeers: allowedPeers && allowedPeers.length > 0 ? allowedPeers : null,
     systemPrompt: String(parsed.systemPrompt),
