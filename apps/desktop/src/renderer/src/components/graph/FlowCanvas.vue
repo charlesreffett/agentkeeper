@@ -9,7 +9,7 @@
       :delete-key-code="['Backspace', 'Delete']"
       class="bg-background"
       :default-edge-options="defaultEdgeOptions"
-      :connection-mode="ConnectionMode.Strict"
+      :is-valid-connection="(conn) => conn.source !== conn.target"
       :connect-on-click="false"
       @connect="onConnect"
       @edges-change="onEdgesChange"
@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
-import { VueFlow, MarkerType, useVueFlow, ConnectionMode } from '@vue-flow/core'
+import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core'
 import { useLayoutStore } from '@/stores/layout'
 import type {
   Node as VFNode,
