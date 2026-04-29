@@ -121,9 +121,13 @@ export function useFlowGraph(
     if (req.sourceId === req.targetId) return
     const exists = effectiveFlows.value.some(([a, b]) => a === req.sourceId && b === req.targetId)
     if (exists) return
-    // Optimistic: make the connection visible in the canvas and sidebar immediately.
+    // Optimistic update: edge appears immediately via vfEdges / pendingFlows.
     pendingFlows.value = [...pendingFlows.value, [req.sourceId, req.targetId]]
-    const draft = { ...agency.value, flows: [...agency.value.flows, [req.sourceId, req.targetId] as [string, string]] }
+    // Build draft from effectiveFlows (confirmed minus removals plus pending) so
+    // rapid successive connections don't drop each other, and so we never save
+    // stale confirmed-only flows that predate other in-flight additions.
+    const flows = effectiveFlows.value.map(([a, b]) => [a, b] as [string, string])
+    const draft = { ...agency.value, flows }
     await saveAgency(draft)
   }
 
