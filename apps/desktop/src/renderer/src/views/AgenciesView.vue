@@ -118,7 +118,10 @@ async function saveHelper(draft: Agency) {
     const idx = agencyFilePath.indexOf(marker)
     if (idx !== -1) projectPath = agencyFilePath.slice(0, idx)
   }
-  await store.saveAgency(scope, projectPath, agencyDraft)
+  // Deep-unwrap reactive proxies — contextBridge structured-clone fails on
+  // Vue proxy arrays (roles, entryPoints) that survive a top-level spread.
+  const plainDraft = JSON.parse(JSON.stringify(agencyDraft)) as typeof agencyDraft
+  await store.saveAgency(scope, projectPath, plainDraft)
 }
 
 async function deleteHelper() {
