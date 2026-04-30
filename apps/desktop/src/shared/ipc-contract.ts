@@ -247,7 +247,7 @@ export interface Skill {
 
 export interface SlashCommand {
   id: string
-  scope: 'project' | 'global'
+  scope: 'project' | 'global' | 'agent'
   path: string
   name: string
   body: string

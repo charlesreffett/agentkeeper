@@ -78,6 +78,7 @@ function beginNew() {
 }
 
 function beginEdit(cmd: SlashCommand) {
+  if (cmd.scope === 'agent') return
   selectedId.value = `${cmd.scope}:${cmd.id}`
   isNew.value = false
   editing.value = true

@@ -25,7 +25,8 @@ const emit = defineEmits<{
         @mousedown.prevent="emit('select', cmd)"
       >
         <span class="font-mono text-xs text-primary shrink-0">/{{ cmd.id }}</span>
-        <span class="text-muted-foreground truncate">{{ cmd.name }}</span>
+        <span class="text-muted-foreground truncate flex-1">{{ cmd.name }}</span>
+        <span v-if="cmd.scope === 'agent'" class="text-[10px] text-muted-foreground/60 shrink-0 italic">built-in</span>
       </li>
     </ul>
     <div

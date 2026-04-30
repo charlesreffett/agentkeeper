@@ -7,6 +7,18 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { SlashCommand } from '../shared/ipc-contract'
 import { resolveClaudeAuth } from './secrets'
 
+const AGENT_COMMANDS: SlashCommand[] = [
+  { id: 'clear',   scope: 'agent', path: '', name: 'Clear conversation history',  body: '/clear' },
+  { id: 'compact', scope: 'agent', path: '', name: 'Compact conversation',         body: '/compact' },
+  { id: 'help',    scope: 'agent', path: '', name: 'Show help',                    body: '/help' },
+  { id: 'cost',    scope: 'agent', path: '', name: 'Show token usage and cost',    body: '/cost' },
+  { id: 'doctor',  scope: 'agent', path: '', name: 'Check configuration health',  body: '/doctor' },
+  { id: 'model',   scope: 'agent', path: '', name: 'Switch model',                body: '/model' },
+  { id: 'review',  scope: 'agent', path: '', name: 'Run code review',             body: '/review' },
+  { id: 'init',    scope: 'agent', path: '', name: 'Initialize CLAUDE.md',        body: '/init' },
+  { id: 'vim',     scope: 'agent', path: '', name: 'Toggle vim mode',             body: '/vim' },
+]
+
 const PROJECT_COMMANDS_DIR = '.claude/commands'
 const GLOBAL_COMMANDS_DIR = '.claude/commands'
 
@@ -64,7 +76,7 @@ export async function listCommands(projectPath: string): Promise<SlashCommand[]>
     listScope('project', projectPath),
     listScope('global', projectPath),
   ])
-  return [...project, ...global]
+  return [...project, ...global, ...AGENT_COMMANDS]
 }
 
 export async function saveCommand(
