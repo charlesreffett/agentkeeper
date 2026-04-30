@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
+import { Toaster } from '@/components/ui/sonner'
 import { useUIContributionsStore } from '@/stores/uiContributions'
 import { useProjectsStore } from '@/stores/projects'
 import { useLayoutStore } from '@/stores/layout'
@@ -34,4 +35,5 @@ onMounted(async () => {
 
 <template>
   <AppLayout />
+  <Toaster :theme="layoutStore.theme" />
 </template>
