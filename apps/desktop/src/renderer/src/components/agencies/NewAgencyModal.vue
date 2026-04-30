@@ -110,18 +110,12 @@
 
       <!-- Footer -->
       <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
-        <button
-          class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-4 py-1.5 transition-colors"
-          @click="emit('cancel')"
-        >
+        <Button variant="secondary" size="sm" @click="emit('cancel')">
           Cancel
-        </button>
-        <button
-          class="text-xs bg-blue-600 hover:bg-blue-500 text-white rounded px-4 py-1.5 transition-colors"
-          @click="handleSave"
-        >
+        </Button>
+        <Button size="sm" @click="handleSave">
           Create
-        </button>
+        </Button>
       </div>
     </div>
   </div>
@@ -129,6 +123,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { Button } from '@/components/ui/button'
 import type { Role, AgencyDraft, AgencyScope } from '../../../../shared/ipc-contract'
 
 const props = defineProps<{
