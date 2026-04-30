@@ -5,12 +5,14 @@
       :nodes="vfNodes"
       :edges="vfEdges"
       :node-types="nodeTypes"
+      :edge-types="edgeTypes"
       :fit-view-on-init="fitOnLoad"
-      :delete-key-code="['Backspace', 'Delete']"
+      :delete-key-code="null"
       class="bg-background"
       :default-edge-options="defaultEdgeOptions"
       :is-valid-connection="(conn) => conn.source !== conn.target"
       :connect-on-click="false"
+      :connection-line-component="FloatingConnectionLine"
       @connect="onConnect"
       @edges-change="onEdgesChange"
       @node-click="onNodeClick"
@@ -44,6 +46,8 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import AgencyRoleNode from './AgencyRoleNode.vue'
+import FloatingEdge from './FloatingEdge.vue'
+import FloatingConnectionLine from './FloatingConnectionLine.vue'
 import AnyToAnyOverlay from './AnyToAnyOverlay.vue'
 import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
 
@@ -81,11 +85,13 @@ useVueFlow('agency-flow')
 // the runtime contract but Vue Flow's generic NodeProps don't align with defineProps<...>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const nodeTypes: Record<string, any> = { role: markRaw(AgencyRoleNode) }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const edgeTypes: Record<string, any> = { floating: markRaw(FloatingEdge) }
 
 const defaultEdgeOptions = {
-  type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#6366f1' },
-  style: { stroke: '#6366f1', strokeWidth: 2 },
+  type: 'floating',
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#38bdf8' },
+  style: { stroke: '#38bdf8', strokeWidth: 2 },
   animated: false,
 }
 
@@ -105,22 +111,24 @@ const vfNodes = computed<VFNode[]>(() =>
 )
 
 const vfEdges = computed<VFEdge[]>(() =>
-  props.edges.map(e => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    selected: e.id === props.selectedEdgeId,
-    markerEnd: e.isBidirectional
-      ? undefined
-      : { type: MarkerType.ArrowClosed, color: '#6366f1' },
-    markerStart: e.isBidirectional
-      ? { type: MarkerType.ArrowClosed, color: '#6366f1' }
-      : undefined,
-    style: {
-      stroke: e.id === props.selectedEdgeId ? '#818cf8' : '#6366f1',
-      strokeWidth: e.id === props.selectedEdgeId ? 3 : 2,
-    },
-  }))
+  props.edges.map(e => {
+    const isSelected = e.id === props.selectedEdgeId
+    // Bidirectional edges use indigo; directed edges use sky (target/incoming colour)
+    const baseColor = e.isBidirectional ? '#818cf8' : '#38bdf8'
+    const selectedColor = e.isBidirectional ? '#a5b4fc' : '#7dd3fc'
+    const stroke = isSelected ? selectedColor : baseColor
+    return {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      selected: isSelected,
+      markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
+      markerStart: e.isBidirectional
+        ? { type: MarkerType.ArrowClosed, color: stroke }
+        : undefined,
+      style: { stroke, strokeWidth: isSelected ? 3 : 2 },
+    }
+  })
 )
 
 function onConnect(conn: Connection) {

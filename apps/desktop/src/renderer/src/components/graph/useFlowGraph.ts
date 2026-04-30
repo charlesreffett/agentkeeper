@@ -1,5 +1,6 @@
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Ref } from 'vue'
+import { toast } from 'vue-sonner'
 import type { Agency, RoleSlot } from '../../../../shared/ipc-contract'
 import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
 
@@ -15,11 +16,14 @@ export function useFlowGraph(
   const pendingFlows = ref<Array<[string, string]>>([])
   // Flows removed optimistically before the async save + store-reload drops them.
   const pendingRemovals = ref<Array<[string, string]>>([])
+  // Roles removed optimistically before the async save + store-reload drops them.
+  const pendingRoleRemovals = ref<Set<string>>(new Set())
 
   // Reset pending and positions when the selected agency changes.
   watch(() => agency.value?.id, () => {
     pendingFlows.value = []
     pendingRemovals.value = []
+    pendingRoleRemovals.value = new Set()
     nodePositions.value = {}
   })
 
@@ -38,16 +42,36 @@ export function useFlowGraph(
     { deep: true },
   )
 
+  // Drop confirmed role removals from pending once the saved agency reflects them.
+  watch(
+    () => agency.value?.roles,
+    (confirmed) => {
+      if (!confirmed) return
+      const stillPresent = new Set(confirmed.map(r => r.roleId))
+      const next = new Set<string>()
+      for (const id of pendingRoleRemovals.value) {
+        if (stillPresent.has(id)) next.add(id)
+      }
+      pendingRoleRemovals.value = next
+    },
+    { deep: true },
+  )
+
   // Layout persistence: reset when agency changes
   const nodePositions = ref<Record<string, { x: number; y: number }>>({})
 
-  // Merged view: confirmed flows minus pending removals, plus pending additions.
+  // Merged view: confirmed flows minus pending removals, plus pending additions,
+  // minus any flow referencing a role that is pending removal.
   const effectiveFlows = computed<Array<[string, string]>>(() => {
     const base = agency.value?.flows ?? []
     const withoutRemovals = base.filter(
       ([a, b]) => !pendingRemovals.value.some(([x, y]) => a === x && b === y),
     )
-    return [...withoutRemovals, ...pendingFlows.value]
+    const merged = [...withoutRemovals, ...pendingFlows.value]
+    if (pendingRoleRemovals.value.size === 0) return merged
+    return merged.filter(
+      ([a, b]) => !pendingRoleRemovals.value.has(a) && !pendingRoleRemovals.value.has(b),
+    )
   })
 
   // Agency snapshot with pending additions/removals applied — used by panels
@@ -58,17 +82,22 @@ export function useFlowGraph(
     return { ...agency.value, flows: effectiveFlows.value }
   })
 
+  const effectiveRoles = computed<RoleSlot[]>(() =>
+    (agency.value?.roles ?? []).filter(r => !pendingRoleRemovals.value.has(r.roleId))
+  )
+
   const nodes = computed<GraphNode[]>(() => {
     if (!agency.value) return []
     const anyToAny = effectiveFlows.value.length === 0
-    return agency.value.roles.map((slot, index) => ({
+    const roles = effectiveRoles.value
+    return roles.map((slot, index) => ({
       id: slot.roleId,
       label: slot.roleId,
       kind: 'role' as const,
       isEntryPoint: agency.value!.entryPoints.includes(slot.roleId),
       anyToAny,
       multiplicityLabel: buildMultiplicityLabel(slot),
-      position: nodePositions.value[slot.roleId] ?? defaultPosition(index, agency.value!.roles.length),
+      position: nodePositions.value[slot.roleId] ?? defaultPosition(index, roles.length),
       meta: { slot },
     }))
   })
@@ -166,6 +195,44 @@ export function useFlowGraph(
     await saveAgency(draft)
   }
 
+  async function removeRole(roleId: string) {
+    if (!agency.value) return
+    if (!agency.value.roles.some(r => r.roleId === roleId)) return
+
+    const isOnlyEntryPoint =
+      agency.value.entryPoints.includes(roleId) &&
+      agency.value.entryPoints.length === 1
+
+    if (isOnlyEntryPoint) {
+      toast.error('Cannot remove entry point', {
+        description: 'Mark another role as the entry point before removing this one.',
+      })
+      return
+    }
+
+    // Optimistic: mark removed and prune pending flows referencing the role.
+    pendingRoleRemovals.value = new Set([...pendingRoleRemovals.value, roleId])
+    pendingFlows.value = pendingFlows.value.filter(
+      ([a, b]) => a !== roleId && b !== roleId,
+    )
+    if (selectedNodeId.value === roleId) clearSelection()
+
+    const newRoles = agency.value.roles.filter(r => r.roleId !== roleId)
+    const newFlows = (agency.value.flows ?? []).filter(
+      ([a, b]) => a !== roleId && b !== roleId,
+    )
+    const newEntries = agency.value.entryPoints.filter(id => id !== roleId)
+    const draft = { ...agency.value, roles: newRoles, flows: newFlows, entryPoints: newEntries }
+    try {
+      await saveAgency(draft)
+    } catch (err) {
+      console.error('[useFlowGraph] removeRole save failed:', err)
+      const next = new Set(pendingRoleRemovals.value)
+      next.delete(roleId)
+      pendingRoleRemovals.value = next
+    }
+  }
+
   async function toggleEntryPoint(roleId: string) {
     if (!agency.value) return
     const isEntry = agency.value.entryPoints.includes(roleId)
@@ -199,6 +266,22 @@ export function useFlowGraph(
     await deleteAgencyFn()
   }
 
+  function onWindowKeyDown(e: KeyboardEvent) {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    const tag = (e.target as HTMLElement | null)?.tagName
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement | null)?.isContentEditable) return
+    if (selectedNodeId.value) {
+      e.preventDefault()
+      removeRole(selectedNodeId.value)
+    } else if (selectedEdgeId.value) {
+      e.preventDefault()
+      removeConnection(selectedEdgeId.value)
+    }
+  }
+
+  onMounted(() => window.addEventListener('keydown', onWindowKeyDown))
+  onUnmounted(() => window.removeEventListener('keydown', onWindowKeyDown))
+
   return {
     nodes, edges, flowMode,
     effectiveAgency,
@@ -208,6 +291,7 @@ export function useFlowGraph(
     updateNodePosition,
     addConnection, removeConnection, flipConnection,
     toggleEntryPoint, updateInstanceCount,
+    removeRole,
     deleteAgency,
   }
 }

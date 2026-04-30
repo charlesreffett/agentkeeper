@@ -7,7 +7,7 @@
       data.anyToAny ? 'border-dashed' : '',
     ]"
   >
-    <Handle type="target" :position="Position.Left" class="!bg-blue-500 !border-blue-700 !w-4 !h-4" />
+    <Handle type="target" :position="Position.Left" class="!bg-sky-400 !border-sky-600 !w-4 !h-4" />
 
     <!-- Role label -->
     <div class="text-sm font-semibold text-card-foreground">{{ data.label }}</div>
@@ -35,7 +35,7 @@
     </div>
 
     <!-- Source handle -->
-    <Handle type="source" :position="Position.Right" class="!bg-blue-500 !border-blue-700 !w-4 !h-4" />
+    <Handle type="source" :position="Position.Right" class="!bg-amber-400 !border-amber-600 !w-4 !h-4" />
   </div>
 </template>
 
