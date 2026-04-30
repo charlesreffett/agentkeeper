@@ -1,4 +1,8 @@
 import { app, BrowserWindow, shell } from 'electron'
+// DEV ONLY: enable CDP for agent-browser testing
+if (process.env['NODE_ENV'] !== 'production') {
+  app.commandLine.appendSwitch('remote-debugging-port', '9223')
+}
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
