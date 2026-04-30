@@ -55,6 +55,14 @@
           min="1"
           class="w-16 rounded border border-border bg-muted px-2 py-1 text-xs text-foreground focus:outline-none focus:border-foreground/40"
         />
+        <button
+          v-if="fixedCount > 1"
+          class="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          @click="fixedCount = 1"
+          title="Reset to 1"
+        >
+          ×1
+        </button>
       </div>
 
       <div v-if="mode === 'dynamic'" class="flex items-center gap-3">
@@ -78,12 +86,22 @@
         </label>
       </div>
 
-      <button
-        class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-3 py-1.5 transition-colors"
-        @click="applyCount"
-      >
-        Apply
-      </button>
+      <div class="flex items-center gap-2">
+        <button
+          class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-3 py-1.5 transition-colors"
+          @click="applyCount"
+        >
+          Apply
+        </button>
+        <button
+          v-if="isDirty"
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          @click="syncFromSlot"
+          title="Revert to saved"
+        >
+          Reset
+        </button>
+      </div>
     </div>
 
     <!-- Connections -->
@@ -130,40 +148,48 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'update-count', mode: 'x1' | 'fixed' | 'dynamic', opts: { count?: number; min?: number; max?: number }): void
+  (e: 'update-count', mode: 'fixed' | 'dynamic', opts: { count?: number; min?: number; max?: number }): void
   (e: 'toggle-entry'): void
   (e: 'close'): void
   (e: 'select-edge', edgeId: string): void
 }>()
 
 const instanceModes = [
-  { value: 'x1' as const, label: '×1' },
   { value: 'fixed' as const, label: 'Fixed' },
   { value: 'dynamic' as const, label: 'Dynamic' },
 ]
 
-const mode = ref<'x1' | 'fixed' | 'dynamic'>('x1')
-const fixedCount = ref(2)
+const mode = ref<'fixed' | 'dynamic'>('fixed')
+const fixedCount = ref(1)
 const dynMin = ref(1)
-const dynMax = ref(3)
+const dynMax = ref(2)
 
 function syncFromSlot() {
   const s = props.roleSlot
   if (s.min !== undefined || s.max !== undefined) {
     mode.value = 'dynamic'
     dynMin.value = s.min ?? 1
-    dynMax.value = s.max ?? 3
-  } else if (s.count !== undefined && s.count > 1) {
-    mode.value = 'fixed'
-    fixedCount.value = s.count
+    dynMax.value = s.max ?? 2
   } else {
-    mode.value = 'x1'
+    mode.value = 'fixed'
+    fixedCount.value = s.count ?? 1
   }
 }
 
 watch(() => props.roleSlot.roleId, syncFromSlot, { immediate: true })
 
 const isEntry = computed(() => props.agency.entryPoints.includes(props.roleSlot.roleId))
+
+const isDirty = computed(() => {
+  const s = props.roleSlot
+  const savedDynamic = s.min !== undefined || s.max !== undefined
+  if (mode.value === 'dynamic') {
+    if (!savedDynamic) return true
+    return dynMin.value !== (s.min ?? 1) || dynMax.value !== (s.max ?? 2)
+  }
+  if (savedDynamic) return true
+  return fixedCount.value !== (s.count ?? 1)
+})
 
 const incoming = computed(() =>
   props.agency.flows
@@ -178,9 +204,7 @@ const outgoing = computed(() =>
 )
 
 function applyCount() {
-  if (mode.value === 'x1') {
-    emit('update-count', 'x1', {})
-  } else if (mode.value === 'fixed') {
+  if (mode.value === 'fixed') {
     emit('update-count', 'fixed', { count: Math.max(1, fixedCount.value) })
   } else {
     const min = Math.max(1, dynMin.value)

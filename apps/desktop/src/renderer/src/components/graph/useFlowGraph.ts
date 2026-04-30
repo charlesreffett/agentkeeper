@@ -179,15 +179,17 @@ export function useFlowGraph(
 
   async function updateInstanceCount(
     roleId: string,
-    mode: 'x1' | 'fixed' | 'dynamic',
+    mode: 'fixed' | 'dynamic',
     opts: { count?: number; min?: number; max?: number }
   ) {
     if (!agency.value) return
     const newRoles = agency.value.roles.map(slot => {
       if (slot.roleId !== roleId) return slot
-      if (mode === 'x1') return { roleId }
-      if (mode === 'fixed') return { roleId, count: opts.count ?? 2 }
-      return { roleId, min: opts.min ?? 1, max: opts.max ?? 3 }
+      if (mode === 'fixed') {
+        const count = opts.count ?? 1
+        return count <= 1 ? { roleId } : { roleId, count }
+      }
+      return { roleId, min: opts.min ?? 1, max: opts.max ?? 2 }
     })
     const draft = { ...agency.value, roles: newRoles }
     await saveAgency(draft)
