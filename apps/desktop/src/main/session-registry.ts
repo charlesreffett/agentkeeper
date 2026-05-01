@@ -196,6 +196,10 @@ export function touchSession(localId: string): void {
   save()
 }
 
+export function listSessionsByAgency(agencyInstanceId: string): PersistedSession[] {
+  return Object.values(load().sessions).filter((s) => s.agencyInstanceId === agencyInstanceId)
+}
+
 export function touchAgency(instanceId: string): void {
   const reg = load()
   const a = reg.agencies[instanceId]

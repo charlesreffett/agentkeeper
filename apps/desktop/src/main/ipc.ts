@@ -39,7 +39,7 @@ import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
-import { resumeAgency, startAgency } from './orchestrator'
+import { isAgencyRuntimeActive, resumeAgency, startAgency } from './orchestrator'
 import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
@@ -208,6 +208,13 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionInput,
     async (_event, sessionId: string, text: string, attachments?: Attachment[]) => {
       try {
+        // If this session belongs to an agency whose runtime was lost (e.g. after
+        // an app restart), rebuild it before delivering the message so the MCP
+        // send_message tool and peer routing are available from the first turn.
+        const persisted = sessionRegistry.getSession(sessionId)
+        if (persisted?.agencyInstanceId && !isAgencyRuntimeActive(persisted.agencyInstanceId)) {
+          await resumeAgency(persisted.agencyInstanceId)
+        }
         await sendInput(sessionId, text, attachments)
       } catch (err) {
         console.error('[ipc] session:input failed:', err)

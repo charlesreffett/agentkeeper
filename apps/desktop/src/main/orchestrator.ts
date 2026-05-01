@@ -19,6 +19,7 @@ import {
   interruptSession,
 } from './agent'
 import * as registry from './session-registry'
+import type { PersistedSession } from './session-registry'
 
 interface AgencyRoleRestartParams {
   systemPromptAppend: string
@@ -795,6 +796,12 @@ export async function startAgency(
 }
 
 export async function resumeAgency(instanceId: string): Promise<AgencyInstance> {
+  // Guard against concurrent resume calls for the same instance.
+  if (instances.has(instanceId)) {
+    const existing = listAgencyInstances().find((a) => a.instanceId === instanceId)
+    if (existing) return existing
+  }
+
   const persisted = registry.getAgency(instanceId)
   if (!persisted) throw new Error(`No persisted agency found for id "${instanceId}"`)
 
@@ -808,6 +815,14 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
 
   const allRoles = await listRoles(persisted.projectPath)
   const rolesById = new Map(allRoles.map((r) => [r.id, r]))
+
+  // Build a lookup of sdkSessionId → localId so resumed sessions keep the
+  // same localId the renderer already knows about. Without this, the runtime
+  // would assign new UUIDs and the renderer's session references would break.
+  const memberSessions: PersistedSession[] = registry.listSessionsByAgency(instanceId)
+  const sdkToLocalId = new Map<string, string>(
+    memberSessions.map((s) => [s.sdkSessionId, s.localId]),
+  )
 
   // Restore handoffs from persisted state
   const handoffsByRole = new Map<string, HandoffRecord[]>()
@@ -863,7 +878,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     const totalInstances = slot.max ?? (slot.count ?? 1)
 
     for (const entry of entries) {
-      const localId = randomUUID()
+      const localId = sdkToLocalId.get(entry.sdkSessionId) ?? randomUUID()
       const instId = `${slot.roleId}-${entry.instanceIndex}`
 
       const contextPreamble = buildContextPreamble({
@@ -946,6 +961,10 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     branch: persisted.branch,
     sessions: sessionsMeta,
   }
+}
+
+export function isAgencyRuntimeActive(instanceId: string): boolean {
+  return instances.has(instanceId)
 }
 
 export function listAgencyInstances(): AgencyInstance[] {
