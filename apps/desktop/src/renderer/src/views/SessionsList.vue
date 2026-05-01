@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { AgencyInstance, PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
+import type { PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
 import { formatRelativeTime, shortModel } from '@/lib/format'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
@@ -24,7 +24,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   selectHistorical: [session: SessionSummary]
   selectLive: [session: LiveSession]
-  agencyResumed: [instance: AgencyInstance, entrySessionId: string | null]
 }>()
 
 const store = useSessionStore()
@@ -39,7 +38,6 @@ const error = ref<string | null>(null)
 
 const persistedSessions = ref<PersistedSession[]>([])
 const persistedAgencies = ref<PersistedAgency[]>([])
-const resumingId = ref<string | null>(null)
 const expiryDays = ref<number | null>(14)
 
 const standalonePersistedSessions = computed(() =>
@@ -188,49 +186,16 @@ function confirmRemoveAllHistorical() {
 
 // ─── Previous (registry-persisted) ────────────────────────────────────────────
 
-async function resumeSession(persisted: PersistedSession) {
-  if (resumingId.value) return
-  resumingId.value = persisted.localId
-  try {
-    const newId = await store.resume(persisted)
-    store.focus(newId)
-    emit('selectLive', store.getSession(newId)!)
-  } catch {
-    // error visible via session status
-  } finally {
-    resumingId.value = null
-  }
+function openSession(s: PersistedSession) {
+  const localId = store.openPersisted(s)
+  emit('selectLive', store.getSession(localId)!)
 }
 
-async function resumeAgency(persisted: PersistedAgency) {
-  if (resumingId.value) return
-  resumingId.value = persisted.instanceId
-  try {
-    const instance = await window.agentkeeper.agencies.resume(persisted.instanceId)
-    for (const s of instance.sessions) {
-      const persistedRole = persistedSessions.value.find(
-        (p) => p.agencyInstanceId === persisted.instanceId && p.roleId === s.roleId,
-      )
-      store.registerExternal({
-        localId: s.localId,
-        projectPath: persisted.projectPath,
-        worktreePath: persisted.worktreePath,
-        branch: persisted.branch,
-        roleName: s.roleName,
-        agencyInstanceId: instance.instanceId,
-        agencyName: instance.agencyName,
-        initialPrompt: persistedRole?.initialPrompt ?? '',
-        model: persistedRole?.model ?? null,
-      })
-    }
-    const entrySession = instance.sessions.find((s) => s.isEntryPoint)
-    if (entrySession) store.focus(entrySession.localId)
-    emit('agencyResumed', instance, entrySession?.localId ?? null)
-  } catch {
-    // error surfaced via session status
-  } finally {
-    resumingId.value = null
-  }
+function openAgency(a: PersistedAgency) {
+  const members = persistedSessions.value.filter((s) => s.agencyInstanceId === a.instanceId)
+  const localId = store.openPersistedAgency(a, members)
+  const session = store.getSession(localId)
+  if (session) emit('selectLive', session)
 }
 
 function confirmDismissSession(s: PersistedSession) {
@@ -455,7 +420,8 @@ async function touchAgency(instanceId: string) {
         <li
           v-for="s in standalonePersistedSessions"
           :key="s.localId"
-          class="border-b border-border/50 px-4 py-3"
+          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
+          @click="openSession(s)"
         >
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0 flex-1">
@@ -484,13 +450,6 @@ async function touchAgency(instanceId: string) {
                 Keep
               </button>
               <button
-                class="text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
-                :disabled="resumingId === s.localId"
-                @click="resumeSession(s)"
-              >
-                {{ resumingId === s.localId ? '…' : 'Resume' }}
-              </button>
-              <button
                 class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"
                 title="Remove"
                 @click.stop="confirmDismissSession(s)"
@@ -504,7 +463,8 @@ async function touchAgency(instanceId: string) {
         <li
           v-for="a in persistedAgencies"
           :key="a.instanceId"
-          class="border-b border-border/50 px-4 py-3"
+          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
+          @click="openAgency(a)"
         >
           <div class="flex items-start justify-between gap-2">
             <div class="min-w-0 flex-1">
@@ -531,13 +491,6 @@ async function touchAgency(instanceId: string) {
                 @click.stop="touchAgency(a.instanceId)"
               >
                 Keep
-              </button>
-              <button
-                class="text-xs px-2 py-1 rounded border border-border hover:bg-accent transition disabled:opacity-50"
-                :disabled="resumingId === a.instanceId"
-                @click="resumeAgency(a)"
-              >
-                {{ resumingId === a.instanceId ? '…' : 'Resume' }}
               </button>
               <button
                 class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"

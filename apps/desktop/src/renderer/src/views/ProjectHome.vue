@@ -128,14 +128,6 @@ onMounted(refreshConfig)
           :refresh-key="refreshTrigger"
           @select-historical="selectHistorical"
           @select-live="selectLive"
-          @agency-resumed="
-            (_instance, entrySessionId) => {
-              if (entrySessionId) {
-                selectedHistoricalId = null
-                sessionStore.focus(entrySessionId)
-              }
-            }
-          "
         />
       </aside>
       <main class="flex-1 min-w-0 overflow-hidden">

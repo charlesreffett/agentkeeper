@@ -5,6 +5,7 @@ import type {
   Attachment,
   LiveSessionStatus,
   PermissionMode,
+  PersistedAgency,
   PersistedSession,
   Role,
   RoleEffort,
@@ -282,13 +283,11 @@ export const useSessionStore = defineStore('sessions', () => {
     currentLiveId.value = null
   }
 
-  async function resume(persisted: PersistedSession): Promise<string> {
-    const newId = await window.agentkeeper.sessions.resume(persisted.localId)
-    // Register immediately so LiveSessionView can find it. Any broadcasts that
-    // arrived before this (buffered) are flushed here.
-    if (!sessions[newId]) {
-      sessions[newId] = {
-        localId: newId,
+  function openPersisted(persisted: PersistedSession): string {
+    const localId = persisted.localId
+    if (!sessions[localId]) {
+      sessions[localId] = {
+        localId,
         sdkSessionId: null,
         projectPath: persisted.projectPath,
         worktreePath: persisted.worktreePath,
@@ -303,17 +302,57 @@ export const useSessionStore = defineStore('sessions', () => {
         status: 'idle',
         events: [],
         error: null,
-        startedAt: Date.now(),
-        lastActivityAt: Date.now(),
+        startedAt: persisted.startedAt,
+        lastActivityAt: persisted.lastActivityAt,
         resumedFromSdkSessionId: persisted.sdkSessionId,
         interruptedAt: null,
         isDraft: false,
         draftConfig: null,
       }
-      flushBuffer(newId)
+      flushBuffer(localId)
     }
-    currentLiveId.value = newId
-    return newId
+    currentLiveId.value = localId
+    return localId
+  }
+
+  function openPersistedAgency(
+    agency: PersistedAgency,
+    memberSessions: PersistedSession[],
+  ): string {
+    for (const s of memberSessions) {
+      if (!sessions[s.localId]) {
+        sessions[s.localId] = {
+          localId: s.localId,
+          sdkSessionId: null,
+          projectPath: s.projectPath,
+          worktreePath: s.worktreePath,
+          branch: s.branch,
+          roleName: s.roleName,
+          agencyInstanceId: s.agencyInstanceId,
+          agencyName: s.agencyName,
+          initialPrompt: s.initialPrompt,
+          model: s.model,
+          effort: s.effort as RoleEffort | null,
+          permissionMode: s.permissionMode,
+          status: 'idle',
+          events: [],
+          error: null,
+          startedAt: s.startedAt,
+          lastActivityAt: s.lastActivityAt,
+          resumedFromSdkSessionId: s.sdkSessionId,
+          interruptedAt: null,
+          isDraft: false,
+          draftConfig: null,
+        }
+        flushBuffer(s.localId)
+      }
+    }
+    // Entry session = the one with the user's actual task (not an agency init placeholder).
+    // The orchestrator uses "Agency ... is initializing..." / "Agency ... resumed..." for non-entry.
+    const entry =
+      memberSessions.find((s) => !s.initialPrompt.startsWith('Agency "')) ?? memberSessions[0]
+    if (entry) currentLiveId.value = entry.localId
+    return entry?.localId ?? ''
   }
 
   async function resumeFromHistory(params: {
@@ -556,7 +595,8 @@ export const useSessionStore = defineStore('sessions', () => {
     focus,
     clearFocus,
     registerExternal,
-    resume,
+    openPersisted,
+    openPersistedAgency,
     resumeFromHistory,
     createOrFocusDraft,
     promoteDraft,
