@@ -158,6 +158,36 @@ async function openFilePicker() {
 function removeAttachment(index: number) {
   attachments.value.splice(index, 1)
 }
+
+function handlePaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  const imageItems: DataTransferItem[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item && item.kind === 'file' && item.type.startsWith('image/')) {
+      imageItems.push(item)
+    }
+  }
+  if (imageItems.length === 0) return
+  event.preventDefault()
+  for (const item of imageItems) {
+    const file = item.getAsFile()
+    if (!file) continue
+    const mimeType = file.type || 'image/png'
+    const ext = mimeType.split('/')[1] ?? 'png'
+    const name = `pasted-image-${Date.now()}.${ext}`
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const base64 = dataUrl.split(',')[1]
+      if (base64) {
+        attachments.value.push({ name, mimeType, content: base64 })
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+}
 </script>
 
 <template>
@@ -196,6 +226,7 @@ function removeAttachment(index: number) {
             rows="1"
             class="w-full resize-none bg-transparent px-3 py-2.5 text-sm leading-relaxed focus:outline-none disabled:opacity-60 font-sans"
             @keydown="onKeyDown"
+            @paste="handlePaste"
           />
           <div class="flex items-center justify-between px-2 py-1.5 border-t border-border/60">
             <div class="flex items-center gap-1.5">
