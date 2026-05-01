@@ -33,7 +33,7 @@ import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
-import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive } from './agent'
 import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
@@ -688,6 +688,19 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionsResume,
     async (_event, localId: string) => {
       try {
+        const persisted = sessionRegistry.getSession(localId)
+        if (persisted?.agencyInstanceId) {
+          if (!isAgencyRuntimeActive(persisted.agencyInstanceId)) {
+            await resumeAgency(persisted.agencyInstanceId)
+          }
+          // resumeAgency reuses the original localId when the sdkSessionId lookup
+          // succeeds. Return it so the renderer navigates to the same session entry
+          // it already knows about (resumedFromSdkSessionId is set by store.resume).
+          if (isSessionActive(localId)) return localId
+          // Edge case: agency runtime active but this session's sdkSessionId wasn't
+          // in roleSessionMap (stale registry). Fall through to resumeSession so the
+          // user isn't left with a dead session view.
+        }
         return await resumeSession(localId)
       } catch (err) {
         console.error('[ipc] sessions:resume failed:', err)
