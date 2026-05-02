@@ -191,6 +191,11 @@ async function handlePaste(event: ClipboardEvent) {
   }))
   await Promise.all(promises)
 }
+
+defineExpose({
+  getText: () => text.value,
+  setText: (v: string) => { text.value = v },
+})
 </script>
 
 <template>

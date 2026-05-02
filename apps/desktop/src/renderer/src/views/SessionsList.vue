@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { Pencil } from 'lucide-vue-next'
 import type { PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
 import { formatRelativeTime, shortModel } from '@/lib/format'
 import { useSessionStore } from '@/stores/sessions'
@@ -284,6 +285,12 @@ async function touchAgency(instanceId: string) {
         >
           <div class="flex items-center gap-2">
             <span class="size-1.5 rounded-full shrink-0" :class="liveStatusDot(s)" />
+            <Pencil
+              v-if="s.draftMessage"
+              :size="11"
+              class="text-amber-500 shrink-0"
+              title="Has unsent message"
+            />
             <div class="text-sm font-medium truncate leading-snug flex-1 min-w-0">
               {{ liveFirstMessage(s) }}
             </div>

@@ -57,6 +57,7 @@ export interface LiveSession {
   /** Renderer-only: not yet started in main. The next user message promotes it. */
   isDraft: boolean
   draftConfig: DraftSessionConfig | null
+  draftMessage: string
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
@@ -161,6 +162,7 @@ export const useSessionStore = defineStore('sessions', () => {
       interruptedAt: null,
       isDraft: false,
       draftConfig: null,
+      draftMessage: '',
     }
     currentLiveId.value = localId
 
@@ -275,6 +277,7 @@ export const useSessionStore = defineStore('sessions', () => {
       interruptedAt: null,
       isDraft: false,
       draftConfig: null,
+      draftMessage: '',
     }
     flushBuffer(entry.localId)
   }
@@ -308,6 +311,7 @@ export const useSessionStore = defineStore('sessions', () => {
         interruptedAt: null,
         isDraft: false,
         draftConfig: null,
+        draftMessage: '',
       }
       flushBuffer(localId)
     }
@@ -343,6 +347,7 @@ export const useSessionStore = defineStore('sessions', () => {
           interruptedAt: null,
           isDraft: false,
           draftConfig: null,
+          draftMessage: '',
         }
         flushBuffer(s.localId)
       }
@@ -385,6 +390,7 @@ export const useSessionStore = defineStore('sessions', () => {
       interruptedAt: null,
       isDraft: false,
       draftConfig: null,
+      draftMessage: '',
     }
     currentLiveId.value = localId
     flushBuffer(localId)
@@ -453,9 +459,15 @@ export const useSessionStore = defineStore('sessions', () => {
         branchTouched: false,
         effortTouched: false,
       },
+      draftMessage: '',
     }
     currentLiveId.value = localId
     return localId
+  }
+
+  function setDraftMessage(localId: string, text: string): void {
+    const s = sessions[localId]
+    if (s) s.draftMessage = text
   }
 
   /**
@@ -599,6 +611,7 @@ export const useSessionStore = defineStore('sessions', () => {
     openPersistedAgency,
     resumeFromHistory,
     createOrFocusDraft,
+    setDraftMessage,
     promoteDraft,
   }
 })

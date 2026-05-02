@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Brain, Folder, KeyRound } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import Transcript from '@/components/transcript/Transcript.vue'
@@ -18,6 +18,7 @@ const props = defineProps<{
 
 const store = useSessionStore()
 const projectsStore = useProjectsStore()
+const messageInputRef = ref<InstanceType<typeof MessageInput> | null>(null)
 const session = computed(() => store.getSession(props.liveId))
 
 const sessionProjectName = computed(() => {
@@ -96,6 +97,25 @@ watch(
   },
   { immediate: true },
 )
+
+watch(
+  () => props.liveId,
+  (newId, oldId) => {
+    if (oldId && messageInputRef.value) {
+      store.setDraftMessage(oldId, messageInputRef.value.getText())
+    }
+    void nextTick(() => {
+      const s = store.getSession(newId)
+      messageInputRef.value?.setText(s?.draftMessage ?? '')
+    })
+  },
+)
+
+onBeforeUnmount(() => {
+  if (messageInputRef.value) {
+    store.setDraftMessage(props.liveId, messageInputRef.value.getText())
+  }
+})
 
 onMounted(async () => {
   const s = session.value
@@ -368,6 +388,7 @@ async function changePermissionMode(mode: PermissionMode) {
     </div>
 
     <MessageInput
+      ref="messageInputRef"
       :disabled="(!isDraft && (isTerminal || session.status === 'starting')) || promoting"
       :is-running="!isDraft && session.status === 'running'"
       :enter-to-send="props.enterToSend"
