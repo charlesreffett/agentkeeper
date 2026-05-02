@@ -8,15 +8,22 @@ import type { SlashCommand } from '../shared/ipc-contract'
 import { resolveClaudeAuth } from './secrets'
 
 const AGENT_COMMANDS: SlashCommand[] = [
-  { id: 'clear',   scope: 'agent', path: '', name: 'Clear conversation history',  body: '/clear' },
-  { id: 'compact', scope: 'agent', path: '', name: 'Compact conversation',         body: '/compact' },
-  { id: 'help',    scope: 'agent', path: '', name: 'Show help',                    body: '/help' },
-  { id: 'cost',    scope: 'agent', path: '', name: 'Show token usage and cost',    body: '/cost' },
-  { id: 'doctor',  scope: 'agent', path: '', name: 'Check configuration health',  body: '/doctor' },
-  { id: 'model',   scope: 'agent', path: '', name: 'Switch model',                body: '/model' },
-  { id: 'review',  scope: 'agent', path: '', name: 'Run code review',             body: '/review' },
-  { id: 'init',    scope: 'agent', path: '', name: 'Initialize CLAUDE.md',        body: '/init' },
-  { id: 'vim',     scope: 'agent', path: '', name: 'Toggle vim mode',             body: '/vim' },
+  { id: 'bug',           scope: 'agent', path: '', name: 'Open a bug report',                    body: '/bug' },
+  { id: 'clear',         scope: 'agent', path: '', name: 'Clear conversation history',            body: '/clear' },
+  { id: 'compact',       scope: 'agent', path: '', name: 'Compact conversation',                  body: '/compact $ARGUMENTS' },
+  { id: 'config',        scope: 'agent', path: '', name: 'Open Claude Code settings',             body: '/config' },
+  { id: 'cost',          scope: 'agent', path: '', name: 'Show token usage and cost',             body: '/cost' },
+  { id: 'doctor',        scope: 'agent', path: '', name: 'Check configuration health',            body: '/doctor' },
+  { id: 'help',          scope: 'agent', path: '', name: 'Show help',                             body: '/help' },
+  { id: 'logout',        scope: 'agent', path: '', name: 'Log out of Claude',                     body: '/logout' },
+  { id: 'memory',        scope: 'agent', path: '', name: 'View and manage memory',                body: '/memory' },
+  { id: 'mcp',           scope: 'agent', path: '', name: 'List MCP servers and tools',            body: '/mcp' },
+  { id: 'model',         scope: 'agent', path: '', name: 'Switch the active model',               body: '/model $ARGUMENTS' },
+  { id: 'pr_comments',   scope: 'agent', path: '', name: 'Show PR comments for the current branch', body: '/pr_comments' },
+  { id: 'release-notes', scope: 'agent', path: '', name: 'Show release notes',                    body: '/release-notes' },
+  { id: 'status',        scope: 'agent', path: '', name: 'Show agent status',                     body: '/status' },
+  { id: 'terminal-setup',scope: 'agent', path: '', name: 'Set up terminal integration',           body: '/terminal-setup' },
+  { id: 'vim',           scope: 'agent', path: '', name: 'Toggle vim keybindings',                body: '/vim' },
 ]
 
 const PROJECT_COMMANDS_DIR = '.claude/commands'

@@ -12,6 +12,7 @@ const { handleAuthError } = useClaudeAuth()
 const commands = ref<SlashCommand[]>([])
 const loading = ref(false)
 const selectedId = ref<string | null>(null)
+const selectedAgent = ref<SlashCommand | null>(null)
 const editing = ref(false)
 const message = ref<string | null>(null)
 const saving = ref(false)
@@ -70,6 +71,7 @@ async function refresh() {
 
 function beginNew() {
   selectedId.value = null
+  selectedAgent.value = null
   isNew.value = true
   editing.value = true
   form.value = { id: '', scope: 'project', body: '' }
@@ -78,7 +80,13 @@ function beginNew() {
 }
 
 function beginEdit(cmd: SlashCommand) {
-  if (cmd.scope === 'agent') return
+  if (cmd.scope === 'agent') {
+    selectedAgent.value = cmd
+    editing.value = false
+    selectedId.value = null
+    return
+  }
+  selectedAgent.value = null
   selectedId.value = `${cmd.scope}:${cmd.id}`
   isNew.value = false
   editing.value = true
@@ -88,6 +96,7 @@ function beginEdit(cmd: SlashCommand) {
 function cancelEdit() {
   editing.value = false
   selectedId.value = null
+  selectedAgent.value = null
 }
 
 function validId(s: string): boolean {
@@ -140,6 +149,7 @@ watch(
   async () => {
     editing.value = false
     selectedId.value = null
+    selectedAgent.value = null
     await refresh()
   },
 )
@@ -147,6 +157,7 @@ watch(
 onMounted(async () => {
   editing.value = false
   selectedId.value = null
+  selectedAgent.value = null
   await refresh()
 })
 </script>
@@ -182,7 +193,7 @@ onMounted(async () => {
             v-for="cmd in commands"
             :key="`${cmd.scope}:${cmd.id}`"
             class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
-            :class="selectedId === `${cmd.scope}:${cmd.id}` ? 'bg-accent' : ''"
+            :class="(selectedId === `${cmd.scope}:${cmd.id}` || (selectedAgent?.id === cmd.id && cmd.scope === 'agent')) ? 'bg-accent' : ''"
             @click="beginEdit(cmd)"
           >
             <div class="text-sm font-medium truncate font-mono">/{{ cmd.id }}</div>
@@ -202,10 +213,21 @@ onMounted(async () => {
 
       <main class="flex-1 overflow-y-auto min-w-0">
         <div
-          v-if="!editing"
+          v-if="!editing && !selectedAgent"
           class="h-full flex items-center justify-center text-muted-foreground text-sm p-8"
         >
           Select a command to edit, or create a new one.
+        </div>
+        <div v-else-if="selectedAgent" class="p-6 space-y-4">
+          <div class="flex items-center gap-3">
+            <h1 class="text-xl font-semibold font-mono">/{{ selectedAgent.id }}</h1>
+            <span class="px-2 py-0.5 rounded text-[11px] bg-muted text-muted-foreground font-medium">Built-in — read only</span>
+          </div>
+          <p class="text-sm text-muted-foreground">{{ selectedAgent.name }}</p>
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium">Syntax</label>
+            <pre class="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm font-mono whitespace-pre-wrap">{{ selectedAgent.body }}</pre>
+          </div>
         </div>
         <div v-else class="p-6 space-y-4">
           <div class="grid grid-cols-2 gap-3">
