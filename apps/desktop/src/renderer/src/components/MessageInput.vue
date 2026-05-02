@@ -159,7 +159,7 @@ function removeAttachment(index: number) {
   attachments.value.splice(index, 1)
 }
 
-function handlePaste(event: ClipboardEvent) {
+async function handlePaste(event: ClipboardEvent) {
   const items = event.clipboardData?.items
   if (!items) return
   const imageItems: DataTransferItem[] = []
@@ -171,9 +171,9 @@ function handlePaste(event: ClipboardEvent) {
   }
   if (imageItems.length === 0) return
   event.preventDefault()
-  for (const item of imageItems) {
+  const promises = imageItems.map((item) => new Promise<void>((resolve) => {
     const file = item.getAsFile()
-    if (!file) continue
+    if (!file) { resolve(); return }
     const mimeType = file.type || 'image/png'
     const ext = mimeType.split('/')[1] ?? 'png'
     const name = `pasted-image-${Date.now()}.${ext}`
@@ -184,9 +184,12 @@ function handlePaste(event: ClipboardEvent) {
       if (base64) {
         attachments.value.push({ name, mimeType, content: base64 })
       }
+      resolve()
     }
+    reader.onerror = () => resolve()
     reader.readAsDataURL(file)
-  }
+  }))
+  await Promise.all(promises)
 }
 </script>
 
