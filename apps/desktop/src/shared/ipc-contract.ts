@@ -157,6 +157,7 @@ export type LiveSessionStatus =
   | 'starting'
   | 'running'
   | 'idle'
+  | 'blocked'
   | 'suspended'
   | 'completed'
   | 'terminated'
@@ -179,6 +180,8 @@ export interface PersistedSession {
   startedAt: number
   lastActivityAt: number
   status: LiveSessionStatus
+  workItemKey: string | null
+  workItemTitle: string | null
 }
 
 export interface StartSessionParams {
@@ -209,6 +212,10 @@ export interface StartSessionParams {
   roleInstanceIndex?: number
   /** Work item to attach as context for the session. */
   workItemId?: string
+  /** Display key for the linked work item, e.g. "CORE-482", "MOB-631". */
+  workItemKey?: string | null
+  /** Human-readable title of the linked work item. */
+  workItemTitle?: string | null
   /** Resume an existing SDK session by its session_id. When set, the session
    *  starts in 'idle' and no initial prompt is pushed to the queue. */
   resumeSdkSessionId?: string
@@ -247,7 +254,7 @@ export interface Skill {
 
 export interface SlashCommand {
   id: string
-  scope: 'project' | 'global' | 'agent'
+  scope: 'project' | 'global'
   path: string
   name: string
   body: string
@@ -324,6 +331,8 @@ export interface StartAgencyParams {
   useWorktree: boolean
   branch?: string
   model?: string
+  workItemKey?: string | null
+  workItemTitle?: string | null
 }
 
 export interface AgencyInstanceSession {
@@ -351,6 +360,12 @@ export interface PersistedAgency {
   agencyId: string
   agencyScope: AgencyScope
   agencyName: string
+  /** Work-item title (e.g. Jira issue summary), preferred for display. */
+  workItemTitle: string | null
+  /** Raw initial prompt sent to the entry-point role. */
+  initialPrompt: string
+  /** AI-generated short title derived from initialPrompt; null until generated. */
+  title: string | null
   projectPath: string
   worktreePath: string | null
   branch: string | null
@@ -411,6 +426,48 @@ export interface ResetResult {
   globalDefinitionsCleared: boolean
   projectDefinitionsCleared: boolean
   errors: string[]
+}
+
+// ─── Plans ──────────────────────────────────────────────────────────────────
+
+export type PlanStatus = 'planned' | 'drafting' | 'running' | 'complete'
+export type PlanStepStatus = 'pending' | 'running' | 'complete' | 'failed' | 'skipped' | 'replanning'
+export type PlanAgentType = 'explorer' | 'main' | 'qa' | 'doc' | string
+
+export interface PlanStep {
+  id: number
+  title: string
+  /** Brief one-liner shown collapsed and in SUMMARY when expanded. */
+  summary?: string
+  /** Detailed instructions shown under FULL INSTRUCTIONS when expanded. */
+  instructions?: string
+  /** File paths in scope for this step. */
+  filesInScope?: string[]
+  model: string
+  estimatedMinutes: number
+  /** Actual elapsed minutes — set after the step completes. */
+  actualMinutes?: number
+  agent: PlanAgentType
+  parallel: boolean
+  status: PlanStepStatus
+}
+
+export interface Plan {
+  filename: string
+  filePath: string
+  /** Short identifier shown as PL-01, PL-02 etc. Derived from list position if absent. */
+  planRef?: string
+  title: string
+  /** The original prompt that triggered planning. */
+  prompt?: string
+  externalRef: string
+  workItemId: string
+  status: PlanStatus
+  estimatedMinutes: number
+  createdAt: string
+  updatedAt: string
+  sessionIds: string[]
+  steps: PlanStep[]
 }
 
 // ─── IPC API exposed to renderer as window.agentkeeper ──────────────────────
@@ -578,6 +635,10 @@ export interface AgentKeeperApi {
   fs: {
     listDirectory: (dirPath: string) => Promise<FsEntry[]>
   }
+  plans: {
+    list: (projectPath: string) => Promise<Plan[]>
+    get: (projectPath: string, filename: string) => Promise<Plan | null>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -671,4 +732,6 @@ export const IPC_CHANNELS = {
   gitPush: 'git:push',
   gitSuggestCommits: 'git:suggestCommits',
   fsListDirectory: 'fs:listDirectory',
+  plansList: 'plans:list',
+  plansGet: 'plans:get',
 } as const

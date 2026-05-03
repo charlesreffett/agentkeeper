@@ -147,13 +147,10 @@ const allSessions = computed((): SessionCardData[] => {
       return !members.some((s) => liveIds.has(s.localId))
     })
     .map((a) => {
-      const members = persistedSessions.value.filter((s) => s.agencyInstanceId === a.instanceId)
-      const workItemTitle = members.find((s) => s.workItemTitle)?.workItemTitle
-      const initialPrompt = members[0]?.initialPrompt
       const name = pathToProjectName(a.projectPath)
       return {
         id: a.instanceId,
-        title: workItemTitle ?? initialPrompt ?? a.agencyName,
+        title: a.workItemTitle ?? a.title ?? a.agencyName,
         status: 'inactive' as const,
         source: 'agency' as const,
         projectPath: a.projectPath,
@@ -163,7 +160,7 @@ const allSessions = computed((): SessionCardData[] => {
         branch: a.branch,
         lastActivityAt: a.lastActivityAt,
         workItemKey: null,
-        workItemTitle: null,
+        workItemTitle: a.workItemTitle ?? null,
         subAgentCount: 0,
         messageCount: null,
         events: [],

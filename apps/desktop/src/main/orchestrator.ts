@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk'
+import Anthropic from '@anthropic-ai/sdk'
+import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import type {
   AgencyInstance,
@@ -20,6 +21,7 @@ import {
 } from './agent'
 import * as registry from './session-registry'
 import type { PersistedSession } from './session-registry'
+import { resolveClaudeAuth } from './secrets'
 
 interface AgencyRoleRestartParams {
   systemPromptAppend: string
@@ -599,6 +601,44 @@ export function createOrchestratorMcp(
   })
 }
 
+async function generateAndPersistTitle(instanceId: string, prompt: string): Promise<void> {
+  const instruction = `Summarize the following task as a concise title of at most 8 words. Output only the title, no punctuation, no quotes.\n\n${prompt}`
+  try {
+    const auth = await resolveClaudeAuth()
+    let title: string
+    if (auth.type === 'api-key') {
+      const client = new Anthropic({ apiKey: auth.key })
+      const msg = await client.messages.create({
+        model: 'claude-haiku-4-5',
+        max_tokens: 32,
+        messages: [{ role: 'user', content: instruction }],
+      })
+      title = msg.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('')
+        .trim()
+    } else {
+      const childEnv: Record<string, string | undefined> = {
+        ...process.env,
+        CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
+      }
+      const q = query({ prompt: instruction, options: { env: childEnv } })
+      let result = ''
+      for await (const event of q) {
+        if (event.type === 'result' && event.subtype === 'success') {
+          result = event.result
+          break
+        }
+      }
+      title = result.trim()
+    }
+    if (title) registry.updateAgency(instanceId, { title })
+  } catch {
+    // non-fatal — card will fall back to agencyName
+  }
+}
+
 export async function startAgency(
   params: StartAgencyParams,
 ): Promise<AgencyInstance> {
@@ -653,6 +693,9 @@ export async function startAgency(
     agencyId: agency.id,
     agencyScope: agency.scope,
     agencyName: agency.name,
+    workItemTitle: params.workItemTitle ?? null,
+    initialPrompt: params.initialPrompt,
+    title: null,
     projectPath: params.projectPath,
     worktreePath,
     branch,
@@ -661,6 +704,8 @@ export async function startAgency(
     roleSessionMap: {},
     handoffs: {},
   })
+
+  void generateAndPersistTitle(instanceId, params.initialPrompt)
 
   // First pass: determine how many permanent instances each role gets, so we can
   // build the complete peer-id list for the system prompt preamble.
