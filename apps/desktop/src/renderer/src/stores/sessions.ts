@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, reactive, ref, toRaw } from 'vue'
+import { computed, reactive, ref, toRaw, watch } from 'vue'
 import type {
   Agency,
   Attachment,
@@ -86,6 +86,21 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   const usageLog = reactive<UsageEntry[]>([])
+
+  try {
+    const stored = localStorage.getItem('agentkeeper:usageLog')
+    if (stored) {
+      const parsed = JSON.parse(stored) as UsageEntry[]
+      const cutoff = Date.now() - 25 * 60 * 60 * 1000
+      usageLog.push(...parsed.filter((e) => e.timestamp >= cutoff))
+    }
+  } catch {
+    // corrupt localStorage — start empty
+  }
+
+  watch(usageLog, (val) => localStorage.setItem('agentkeeper:usageLog', JSON.stringify(val)), {
+    deep: true,
+  })
 
   // reactive() dict so sub-property mutations trigger updates
   const sessions = reactive<Record<string, LiveSession>>({})
