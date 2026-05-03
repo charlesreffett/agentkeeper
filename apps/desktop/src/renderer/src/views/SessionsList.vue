@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Pencil } from 'lucide-vue-next'
 import type { PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
-import { formatRelativeTime, shortModel } from '@/lib/format'
+import { formatRelativeTime } from '@/lib/format'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
+import SessionListItem from '@/components/SessionListItem.vue'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -138,6 +138,8 @@ function liveStatusLabel(s: LiveSession): string {
       return 'Completed'
     case 'terminated':
       return 'Terminated'
+    case 'blocked':
+      return 'Waiting'
     case 'error':
       return 'Error'
   }
@@ -155,9 +157,34 @@ function liveStatusDot(s: LiveSession): string {
     case 'completed':
     case 'terminated':
       return 'bg-muted-foreground'
+    case 'blocked':
+      return 'bg-amber-500'
     case 'error':
       return 'bg-destructive'
   }
+}
+
+// ─── Draft-message cross-reference ───────────────────────────────────────────
+// Persisted sessions record both localId and sdkSessionId, letting us map a
+// historical JSONL id (= sdkSessionId) back to the localId that keyed the
+// localStorage draft entry.
+
+const persistedBySdkId = computed(() => {
+  const map = new Map<string, string>()
+  for (const s of persistedSessions.value) {
+    map.set(s.sdkSessionId, s.localId)
+  }
+  return map
+})
+
+function historicalDraftMessage(s: SessionSummary): string {
+  const localId = persistedBySdkId.value.get(s.id)
+  if (!localId) return ''
+  return localStorage.getItem(`agentkeeper:draft:${localId}`) ?? ''
+}
+
+function persistedDraftMessage(s: PersistedSession): string {
+  return localStorage.getItem(`agentkeeper:draft:${s.localId}`) ?? ''
 }
 
 // ─── Recent (historical JSONL) ────────────────────────────────────────────────
@@ -243,6 +270,130 @@ async function touchAgency(instanceId: string) {
   await window.agentkeeper.agencies.touchPersisted(instanceId)
   await loadPersisted()
 }
+
+// ─── Selection ────────────────────────────────────────────────────────────────
+
+const selectionMode = ref(false)
+const selectedHistorical = ref(new Set<string>())
+const selectedPersisted = ref(new Set<string>())
+const selectedAgencies = ref(new Set<string>())
+const selectedLive = ref(new Set<string>())
+
+const dismissableLive = computed(() => liveForProject.value.filter(canDismissLive))
+
+const totalSelected = computed(
+  () =>
+    selectedHistorical.value.size +
+    selectedPersisted.value.size +
+    selectedAgencies.value.size +
+    selectedLive.value.size,
+)
+
+const allHistoricalSelected = computed(
+  () =>
+    historical.value.length > 0 &&
+    historical.value.every((s) => selectedHistorical.value.has(s.id)),
+)
+
+const allPersistedSelected = computed(
+  () =>
+    standalonePersistedSessions.value.length > 0 &&
+    standalonePersistedSessions.value.every((s) => selectedPersisted.value.has(s.localId)) &&
+    persistedAgencies.value.every((a) => selectedAgencies.value.has(a.instanceId)),
+)
+
+const allLiveSelected = computed(
+  () =>
+    dismissableLive.value.length > 0 &&
+    dismissableLive.value.every((s) => selectedLive.value.has(s.localId)),
+)
+
+function toggleHistorical(id: string) {
+  const s = new Set(selectedHistorical.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedHistorical.value = s
+}
+
+function togglePersisted(id: string) {
+  const s = new Set(selectedPersisted.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedPersisted.value = s
+}
+
+function toggleAgency(id: string) {
+  const s = new Set(selectedAgencies.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedAgencies.value = s
+}
+
+function toggleLive(id: string) {
+  const s = new Set(selectedLive.value)
+  s.has(id) ? s.delete(id) : s.add(id)
+  selectedLive.value = s
+}
+
+function toggleAllHistorical() {
+  if (allHistoricalSelected.value) selectedHistorical.value = new Set()
+  else selectedHistorical.value = new Set(historical.value.map((s) => s.id))
+}
+
+function toggleAllPersisted() {
+  if (allPersistedSelected.value) {
+    selectedPersisted.value = new Set()
+    selectedAgencies.value = new Set()
+  } else {
+    selectedPersisted.value = new Set(standalonePersistedSessions.value.map((s) => s.localId))
+    selectedAgencies.value = new Set(persistedAgencies.value.map((a) => a.instanceId))
+  }
+}
+
+function toggleAllLive() {
+  if (allLiveSelected.value) selectedLive.value = new Set()
+  else selectedLive.value = new Set(dismissableLive.value.map((s) => s.localId))
+}
+
+function selectAll() {
+  selectedHistorical.value = new Set(historical.value.map((s) => s.id))
+  selectedPersisted.value = new Set(standalonePersistedSessions.value.map((s) => s.localId))
+  selectedAgencies.value = new Set(persistedAgencies.value.map((a) => a.instanceId))
+  selectedLive.value = new Set(dismissableLive.value.map((s) => s.localId))
+}
+
+function exitSelectionMode() {
+  selectionMode.value = false
+  selectedHistorical.value = new Set()
+  selectedPersisted.value = new Set()
+  selectedAgencies.value = new Set()
+  selectedLive.value = new Set()
+}
+
+async function deleteSelected() {
+  const total = totalSelected.value
+  requestConfirm(
+    `Remove ${total} session${total !== 1 ? 's' : ''}?`,
+    'Selected sessions will be permanently removed.',
+    async () => {
+      for (const id of selectedHistorical.value) {
+        historical.value = historical.value.filter((s) => s.id !== id)
+        await window.agentkeeper.sessions.deleteHistorical(props.projectPath, id)
+      }
+      for (const localId of selectedPersisted.value) {
+        persistedSessions.value = persistedSessions.value.filter((s) => s.localId !== localId)
+        await window.agentkeeper.sessions.deletePersisted(localId)
+      }
+      for (const instanceId of selectedAgencies.value) {
+        persistedAgencies.value = persistedAgencies.value.filter(
+          (a) => a.instanceId !== instanceId,
+        )
+        await window.agentkeeper.agencies.deletePersisted(instanceId)
+      }
+      for (const localId of selectedLive.value) {
+        store.dismiss(localId)
+      }
+      exitSelectionMode()
+    },
+  )
+}
 </script>
 
 <template>
@@ -261,72 +412,76 @@ async function touchAgency(instanceId: string) {
       </AlertDialogContent>
     </AlertDialog>
 
+    <!-- Selection toolbar -->
+    <div
+      v-if="selectionMode"
+      class="shrink-0 px-4 py-2 border-b border-border bg-accent/30 flex items-center gap-3"
+    >
+      <span class="text-xs text-muted-foreground flex-1">{{ totalSelected }} selected</span>
+      <button
+        class="text-xs text-muted-foreground hover:text-foreground transition"
+        @click="selectAll"
+      >
+        Select all
+      </button>
+      <button
+        class="text-xs text-destructive hover:underline transition disabled:opacity-40"
+        :disabled="totalSelected === 0"
+        @click="deleteSelected"
+      >
+        Delete
+      </button>
+      <button
+        class="text-xs text-muted-foreground hover:text-foreground transition"
+        @click="exitSelectionMode"
+      >
+        Cancel
+      </button>
+    </div>
+
     <!-- Live -->
     <section v-if="liveForProject.length" class="shrink-0">
-      <div
-        class="px-4 py-2 border-b border-border flex items-center justify-between"
-      >
-        <h2
-          class="text-xs font-medium text-muted-foreground uppercase tracking-wide"
-        >
-          Live
-        </h2>
-        <span class="text-xs text-muted-foreground tabular-nums">
-          {{ liveForProject.length }}
-        </span>
+      <div class="px-4 py-2 border-b border-border flex items-center justify-between">
+        <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Live</h2>
+        <div class="flex items-center gap-2">
+          <input
+            v-if="selectionMode && dismissableLive.length > 0"
+            type="checkbox"
+            :checked="allLiveSelected"
+            class="size-3 accent-primary cursor-pointer shrink-0"
+            @change="toggleAllLive"
+          />
+          <button
+            v-if="!selectionMode"
+            class="text-xs text-muted-foreground hover:text-foreground transition"
+            @click="selectionMode = true"
+          >
+            Select
+          </button>
+          <span class="text-xs text-muted-foreground tabular-nums">{{ liveForProject.length }}</span>
+        </div>
       </div>
       <ul>
-        <li
+        <SessionListItem
           v-for="s in liveForProject"
           :key="s.localId"
-          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
-          :class="store.currentLiveId === s.localId ? 'bg-accent' : ''"
-          @click="emit('selectLive', s)"
-        >
-          <div class="flex items-center gap-2">
-            <span class="size-1.5 rounded-full shrink-0" :class="liveStatusDot(s)" />
-            <Pencil
-              v-if="s.draftMessage"
-              :size="11"
-              class="text-amber-500 shrink-0"
-              title="Has unsent message"
-            />
-            <div class="text-sm font-medium truncate leading-snug flex-1 min-w-0">
-              {{ liveFirstMessage(s) }}
-            </div>
-            <button
-              v-if="canDismissLive(s)"
-              class="text-xs px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition shrink-0"
-              title="Dismiss"
-              @click.stop="dismissLive(s)"
-            >
-              ×
-            </button>
-          </div>
-          <div
-            class="mt-1 pl-3.5 flex items-center gap-2 text-xs text-muted-foreground tabular-nums"
-          >
-            <span>{{ liveStatusLabel(s) }}</span>
-            <template v-if="!s.isDraft">
-              <span>·</span>
-              <span>{{ s.events.length }} msg</span>
-            </template>
-            <span v-if="shortModel(s.model)">·</span>
-            <span v-if="shortModel(s.model)" class="font-mono">
-              {{ shortModel(s.model) }}
-            </span>
-          </div>
-          <div
-            v-if="s.branch || s.roleName || s.agencyName"
-            class="mt-1 pl-3.5 text-[10px] text-muted-foreground truncate flex gap-2 flex-wrap"
-          >
-            <span v-if="s.agencyName" class="text-foreground/80">
-              ◎ {{ s.agencyName }}
-            </span>
-            <span v-if="s.branch" class="font-mono">⎇ {{ s.branch }}</span>
-            <span v-if="s.roleName">{{ s.roleName }}</span>
-          </div>
-        </li>
+          :title="liveFirstMessage(s)"
+          :status-dot="liveStatusDot(s)"
+          :status-label="liveStatusLabel(s)"
+          :draft-message="s.draftMessage"
+          :message-count="s.isDraft ? null : s.events.length"
+          :model="s.model"
+          :branch="s.branch"
+          :role-name="s.roleName"
+          :agency-name="s.agencyName"
+          :is-selected="store.currentLiveId === s.localId"
+          :can-dismiss="canDismissLive(s)"
+          :show-checkbox="selectionMode && canDismissLive(s)"
+          :checked="selectedLive.has(s.localId)"
+          @click="selectionMode ? undefined : emit('selectLive', s)"
+          @dismiss="dismissLive(s)"
+          @toggle="toggleLive(s.localId)"
+        />
       </ul>
     </section>
 
@@ -335,14 +490,24 @@ async function touchAgency(instanceId: string) {
       <div
         class="px-4 py-2 border-b border-border flex items-center justify-between shrink-0"
       >
-        <h2
-          class="text-xs font-medium text-muted-foreground uppercase tracking-wide"
-        >
-          Recent
-        </h2>
+        <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Recent</h2>
         <div class="flex items-center gap-3">
+          <input
+            v-if="selectionMode && historical.length > 0"
+            type="checkbox"
+            :checked="allHistoricalSelected"
+            class="size-3 accent-primary cursor-pointer shrink-0"
+            @change="toggleAllHistorical"
+          />
           <button
-            v-if="historical.length > 0"
+            v-if="!selectionMode && historical.length > 0"
+            class="text-xs text-muted-foreground hover:text-foreground transition"
+            @click="selectionMode = true"
+          >
+            Select
+          </button>
+          <button
+            v-if="!selectionMode && historical.length > 0"
             class="text-xs text-muted-foreground hover:text-destructive transition"
             @click="confirmRemoveAllHistorical"
           >
@@ -354,14 +519,8 @@ async function touchAgency(instanceId: string) {
         </div>
       </div>
 
-      <div v-if="loading" class="p-4 text-sm text-muted-foreground">
-        Loading…
-      </div>
-
-      <div v-else-if="error" class="p-4 text-sm text-destructive">
-        {{ error }}
-      </div>
-
+      <div v-if="loading" class="p-4 text-sm text-muted-foreground">Loading…</div>
+      <div v-else-if="error" class="p-4 text-sm text-destructive">{{ error }}</div>
       <div
         v-else-if="historical.length === 0"
         class="p-4 text-sm text-muted-foreground leading-relaxed"
@@ -370,39 +529,25 @@ async function touchAgency(instanceId: string) {
       </div>
 
       <ul v-else class="overflow-y-auto">
-        <li
+        <SessionListItem
           v-for="s in historical"
           :key="s.id"
-          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50 group"
-          :class="selectedHistoricalId === s.id ? 'bg-accent' : ''"
-          @click="emit('selectHistorical', s)"
-        >
-          <div class="flex items-start gap-2">
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium truncate leading-snug">
-                {{ s.firstUserMessage || '(no user message)' }}
-              </div>
-              <div
-                class="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums"
-              >
-                <span>{{ formatRelativeTime(s.lastActivityAt) }}</span>
-                <span>·</span>
-                <span>{{ s.messageCount }} msg</span>
-                <span v-if="shortModel(s.model)">·</span>
-                <span v-if="shortModel(s.model)" class="font-mono">
-                  {{ shortModel(s.model) }}
-                </span>
-              </div>
-            </div>
-            <button
-              class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition shrink-0 opacity-0 group-hover:opacity-100"
-              title="Remove"
-              @click.stop="deleteHistorical(s)"
-            >
-              ×
-            </button>
-          </div>
-        </li>
+          :title="s.firstUserMessage || '(no user message)'"
+          status-dot="bg-muted-foreground/40"
+          status-label="Inactive"
+          :draft-message="historicalDraftMessage(s)"
+          :message-count="s.messageCount"
+          :model="s.model"
+          :branch="s.gitBranch"
+          :last-activity-at="s.lastActivityAt"
+          :is-selected="selectedHistoricalId === s.id"
+          :show-checkbox="selectionMode"
+          :checked="selectedHistorical.has(s.id)"
+          can-dismiss
+          @click="selectionMode ? undefined : emit('selectHistorical', s)"
+          @dismiss="deleteHistorical(s)"
+          @toggle="toggleHistorical(s.id)"
+        />
       </ul>
     </section>
 
@@ -412,103 +557,119 @@ async function touchAgency(instanceId: string) {
       class="shrink-0 border-t border-border"
     >
       <div class="px-4 py-2 border-b border-border flex items-center justify-between">
-        <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Previous
-        </h2>
-        <button
-          class="text-xs text-muted-foreground hover:text-destructive transition"
-          @click="confirmRemoveAllPersisted"
-        >
-          Remove all
-        </button>
+        <h2 class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Previous</h2>
+        <div class="flex items-center gap-2">
+          <input
+            v-if="selectionMode"
+            type="checkbox"
+            :checked="allPersistedSelected"
+            class="size-3 accent-primary cursor-pointer shrink-0"
+            @change="toggleAllPersisted"
+          />
+          <button
+            v-if="!selectionMode"
+            class="text-xs text-muted-foreground hover:text-foreground transition"
+            @click="selectionMode = true"
+          >
+            Select
+          </button>
+          <button
+            v-if="!selectionMode"
+            class="text-xs text-muted-foreground hover:text-destructive transition"
+            @click="confirmRemoveAllPersisted"
+          >
+            Remove all
+          </button>
+        </div>
       </div>
       <ul class="overflow-y-auto max-h-64">
         <!-- Standalone sessions -->
-        <li
+        <SessionListItem
           v-for="s in standalonePersistedSessions"
           :key="s.localId"
-          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
-          @click="openSession(s)"
+          :title="s.initialPrompt.split('\n')[0] || '(no prompt)'"
+          status-dot="bg-muted-foreground/40"
+          status-label="Inactive"
+          :draft-message="persistedDraftMessage(s)"
+          :model="s.model"
+          :branch="s.branch"
+          :role-name="s.roleName"
+          :last-activity-at="s.lastActivityAt"
+          :show-checkbox="selectionMode"
+          :checked="selectedPersisted.has(s.localId)"
+          can-dismiss
+          @click="selectionMode ? undefined : openSession(s)"
+          @dismiss="confirmDismissSession(s)"
+          @toggle="togglePersisted(s.localId)"
         >
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-medium truncate leading-snug">
-                {{ s.initialPrompt.split('\n')[0] || '(no prompt)' }}
-              </div>
-              <div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums flex-wrap">
-                <span>{{ formatRelativeTime(s.lastActivityAt) }}</span>
-                <span v-if="s.roleName">· {{ s.roleName }}</span>
-                <span v-if="shortModel(s.model)">· <span class="font-mono">{{ shortModel(s.model) }}</span></span>
-              </div>
-              <div
-                v-if="daysRemaining(s.lastActivityAt, expiryDays) !== null && daysRemaining(s.lastActivityAt, expiryDays)! <= 3"
-                class="mt-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
-              >
-                Expires in {{ daysRemaining(s.lastActivityAt, expiryDays) }} day{{ daysRemaining(s.lastActivityAt, expiryDays) === 1 ? '' : 's' }}
-              </div>
-            </div>
-            <div class="flex items-center gap-1 shrink-0">
-              <button
-                v-if="daysRemaining(s.lastActivityAt, expiryDays) !== null && daysRemaining(s.lastActivityAt, expiryDays)! <= 3"
-                class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
-                title="Reset expiry"
-                @click.stop="touchSession(s.localId)"
-              >
-                Keep
-              </button>
-              <button
-                class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"
-                title="Remove"
-                @click.stop="confirmDismissSession(s)"
-              >
-                ×
-              </button>
-            </div>
+          <template #actions>
+            <button
+              v-if="
+                daysRemaining(s.lastActivityAt, expiryDays) !== null &&
+                daysRemaining(s.lastActivityAt, expiryDays)! <= 3
+              "
+              class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition shrink-0"
+              title="Reset expiry"
+              @click.stop="touchSession(s.localId)"
+            >
+              Keep
+            </button>
+          </template>
+          <div
+            v-if="
+              daysRemaining(s.lastActivityAt, expiryDays) !== null &&
+              daysRemaining(s.lastActivityAt, expiryDays)! <= 3
+            "
+            class="mt-1 pl-3.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
+          >
+            Expires in {{ daysRemaining(s.lastActivityAt, expiryDays) }} day{{
+              daysRemaining(s.lastActivityAt, expiryDays) === 1 ? '' : 's'
+            }}
           </div>
-        </li>
+        </SessionListItem>
+
         <!-- Agencies -->
-        <li
+        <SessionListItem
           v-for="a in persistedAgencies"
           :key="a.instanceId"
-          class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
-          @click="openAgency(a)"
+          title-prefix="◎"
+          :title="a.agencyName"
+          status-dot="bg-muted-foreground/40"
+          status-label="Inactive"
+          :branch="a.branch"
+          :last-activity-at="a.lastActivityAt"
+          :show-checkbox="selectionMode"
+          :checked="selectedAgencies.has(a.instanceId)"
+          can-dismiss
+          @click="selectionMode ? undefined : openAgency(a)"
+          @dismiss="confirmDismissAgency(a)"
+          @toggle="toggleAgency(a.instanceId)"
         >
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0 flex-1">
-              <div class="text-sm font-medium truncate leading-snug flex items-center gap-1.5">
-                <span class="text-muted-foreground">◎</span>
-                {{ a.agencyName }}
-              </div>
-              <div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground tabular-nums">
-                <span>{{ formatRelativeTime(a.lastActivityAt) }}</span>
-                <span v-if="a.branch">· <span class="font-mono">⎇ {{ a.branch }}</span></span>
-              </div>
-              <div
-                v-if="daysRemaining(a.lastActivityAt, expiryDays) !== null && daysRemaining(a.lastActivityAt, expiryDays)! <= 3"
-                class="mt-1 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
-              >
-                Expires in {{ daysRemaining(a.lastActivityAt, expiryDays) }} day{{ daysRemaining(a.lastActivityAt, expiryDays) === 1 ? '' : 's' }}
-              </div>
-            </div>
-            <div class="flex items-center gap-1 shrink-0">
-              <button
-                v-if="daysRemaining(a.lastActivityAt, expiryDays) !== null && daysRemaining(a.lastActivityAt, expiryDays)! <= 3"
-                class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition"
-                title="Reset expiry"
-                @click.stop="touchAgency(a.instanceId)"
-              >
-                Keep
-              </button>
-              <button
-                class="text-xs px-1.5 py-1 rounded border border-border text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/40 transition"
-                title="Remove"
-                @click.stop="confirmDismissAgency(a)"
-              >
-                ×
-              </button>
-            </div>
+          <template #actions>
+            <button
+              v-if="
+                daysRemaining(a.lastActivityAt, expiryDays) !== null &&
+                daysRemaining(a.lastActivityAt, expiryDays)! <= 3
+              "
+              class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition shrink-0"
+              title="Reset expiry"
+              @click.stop="touchAgency(a.instanceId)"
+            >
+              Keep
+            </button>
+          </template>
+          <div
+            v-if="
+              daysRemaining(a.lastActivityAt, expiryDays) !== null &&
+              daysRemaining(a.lastActivityAt, expiryDays)! <= 3
+            "
+            class="mt-1 pl-3.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
+          >
+            Expires in {{ daysRemaining(a.lastActivityAt, expiryDays) }} day{{
+              daysRemaining(a.lastActivityAt, expiryDays) === 1 ? '' : 's'
+            }}
           </div>
-        </li>
+        </SessionListItem>
       </ul>
     </section>
   </div>
