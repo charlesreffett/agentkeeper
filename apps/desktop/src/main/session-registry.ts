@@ -21,6 +21,9 @@ export interface PersistedSession {
   startedAt: number
   lastActivityAt: number
   status: LiveSessionStatus
+  workItemKey: string | null
+  workItemTitle: string | null
+  title: string | null
 }
 
 interface Registry {
@@ -90,6 +93,12 @@ export function listSessions(projectPath: string): PersistedSession[] {
   return Object.values(reg.sessions)
     .filter((s) => s.projectPath === projectPath)
     .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+    .map((s) => ({
+      ...s,
+      workItemKey: s.workItemKey ?? null,
+      workItemTitle: s.workItemTitle ?? null,
+      title: s.title ?? null,
+    }))
 }
 
 export function registerAgency(agency: PersistedAgency): void {

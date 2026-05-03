@@ -43,6 +43,7 @@ export interface LiveSession {
   agencyName: string | null
   initialPrompt: string
   agencyPrompt: string | null
+  title: string | null
   model: string | null
   effort: RoleEffort | null
   permissionMode: PermissionMode | null
@@ -163,6 +164,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyName: null,
       initialPrompt: plain.initialPrompt,
       agencyPrompt: null,
+      title: null,
       model: plain.model ?? null,
       effort: plain.effort ?? null,
       permissionMode: plain.permissionMode ?? null,
@@ -284,6 +286,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyName: entry.agencyName ?? null,
       initialPrompt: entry.initialPrompt,
       agencyPrompt: entry.agencyPrompt ?? null,
+      title: null,
       model: entry.model ?? null,
       effort: entry.effort ?? null,
       permissionMode: entry.permissionMode ?? null,
@@ -321,6 +324,7 @@ export const useSessionStore = defineStore('sessions', () => {
         agencyName: persisted.agencyName,
         initialPrompt: persisted.initialPrompt,
         agencyPrompt: null,
+        title: persisted.title ?? null,
         model: persisted.model,
         effort: persisted.effort as RoleEffort | null,
         permissionMode: persisted.permissionMode,
@@ -360,6 +364,7 @@ export const useSessionStore = defineStore('sessions', () => {
           agencyName: s.agencyName,
           initialPrompt: s.initialPrompt,
           agencyPrompt: null,
+          title: s.title ?? null,
           model: s.model,
           effort: s.effort as RoleEffort | null,
           permissionMode: s.permissionMode,
@@ -406,6 +411,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyName: null,
       initialPrompt: params.firstMessage || '(continued)',
       agencyPrompt: null,
+      title: null,
       model: params.model,
       effort: params.effort,
       permissionMode: null,
@@ -471,6 +477,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyName: null,
       initialPrompt: '',
       agencyPrompt: null,
+      title: null,
       model: params.defaultModel,
       effort: params.defaultEffort,
       permissionMode: 'bypassPermissions',
@@ -696,20 +703,23 @@ export const useSessionStore = defineStore('sessions', () => {
   window.agentkeeper.sessions.onStatus((update) => {
     const s = sessions[update.sessionId]
     if (s) {
-      // 'blocked' is renderer-derived — only clear it when the session resumes or ends,
-      // not when the SDK reports idle (agent finished its turn while still awaiting input)
-      const preserveBlocked =
-        s.status === 'blocked' &&
-        (update.status === 'idle' || update.status === 'starting')
-      if (!preserveBlocked) {
-        s.status = update.status
+      if (update.status != null) {
+        // 'blocked' is renderer-derived — only clear it when the session resumes or ends,
+        // not when the SDK reports idle (agent finished its turn while still awaiting input)
+        const preserveBlocked =
+          s.status === 'blocked' &&
+          (update.status === 'idle' || update.status === 'starting')
+        if (!preserveBlocked) {
+          s.status = update.status
+        }
       }
       if (update.sdkSessionId) s.sdkSessionId = update.sdkSessionId
       if (update.error) s.error = update.error
+      if (update.title) s.title = update.title
       s.lastActivityAt = Date.now()
     } else {
       const buf = ensureBuffer(update.sessionId)
-      buf.status = update.status
+      if (update.status != null) buf.status = update.status
       if (update.sdkSessionId) buf.sdkSessionId = update.sdkSessionId
       if (update.error) buf.error = update.error
     }

@@ -13,6 +13,7 @@ import { listAgencies } from './agencies'
 import { listRoles } from './roles'
 import { createWorktree } from './worktrees'
 import {
+  broadcastStatus,
   getActiveSession,
   sendInput,
   startSession,
@@ -601,41 +602,56 @@ export function createOrchestratorMcp(
   })
 }
 
-async function generateAndPersistTitle(instanceId: string, prompt: string): Promise<void> {
+async function generateTitle(prompt: string): Promise<string> {
   const instruction = `Summarize the following task as a concise title of at most 8 words. Output only the title, no punctuation, no quotes.\n\n${prompt}`
-  try {
-    const auth = await resolveClaudeAuth()
-    let title: string
-    if (auth.type === 'api-key') {
-      const client = new Anthropic({ apiKey: auth.key })
-      const msg = await client.messages.create({
-        model: 'claude-haiku-4-5',
-        max_tokens: 32,
-        messages: [{ role: 'user', content: instruction }],
-      })
-      title = msg.content
-        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-        .map((b) => b.text)
-        .join('')
-        .trim()
-    } else {
-      const childEnv: Record<string, string | undefined> = {
-        ...process.env,
-        CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
-      }
-      const q = query({ prompt: instruction, options: { env: childEnv } })
-      let result = ''
-      for await (const event of q) {
-        if (event.type === 'result' && event.subtype === 'success') {
-          result = event.result
-          break
-        }
-      }
-      title = result.trim()
+  const auth = await resolveClaudeAuth()
+  if (auth.type === 'api-key') {
+    const client = new Anthropic({ apiKey: auth.key })
+    const msg = await client.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 32,
+      messages: [{ role: 'user', content: instruction }],
+    })
+    return msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('')
+      .trim()
+  } else {
+    const childEnv: Record<string, string | undefined> = {
+      ...process.env,
+      CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
     }
+    const q = query({ prompt: instruction, options: { env: childEnv } })
+    let result = ''
+    for await (const event of q) {
+      if (event.type === 'result' && event.subtype === 'success') {
+        result = event.result
+        break
+      }
+    }
+    return result.trim()
+  }
+}
+
+async function generateAndPersistTitle(instanceId: string, prompt: string): Promise<void> {
+  try {
+    const title = await generateTitle(prompt)
     if (title) registry.updateAgency(instanceId, { title })
   } catch {
     // non-fatal — card will fall back to agencyName
+  }
+}
+
+export async function generateAndPersistSessionTitle(localId: string, prompt: string): Promise<void> {
+  try {
+    const title = await generateTitle(prompt)
+    if (title) {
+      registry.updateSession(localId, { title })
+      broadcastStatus({ sessionId: localId, title })
+    }
+  } catch {
+    // non-fatal — card will fall back to initialPrompt
   }
 }
 

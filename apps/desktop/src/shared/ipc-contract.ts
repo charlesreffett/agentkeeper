@@ -182,6 +182,7 @@ export interface PersistedSession {
   status: LiveSessionStatus
   workItemKey: string | null
   workItemTitle: string | null
+  title: string | null
 }
 
 export interface StartSessionParams {
@@ -385,9 +386,10 @@ export interface LiveSessionEvent {
 
 export interface LiveSessionStatusUpdate {
   sessionId: string
-  status: LiveSessionStatus
+  status?: LiveSessionStatus
   sdkSessionId?: string
   error?: string
+  title?: string
 }
 
 // ─── Settings & secrets ─────────────────────────────────────────────────────

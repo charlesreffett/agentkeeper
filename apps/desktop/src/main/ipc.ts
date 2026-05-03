@@ -39,11 +39,12 @@ import { settingsStore } from './settings'
 import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
-import { isAgencyRuntimeActive, resumeAgency, startAgency } from './orchestrator'
+import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, startAgency } from './orchestrator'
 import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
+import { listPlans, getPlan } from './plans'
 import type {
   AgencyDraft,
   AgencyScope,
@@ -197,7 +198,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionStart,
     async (_event, params: StartSessionParams) => {
       try {
-        return await startSession(params)
+        const result = await startSession(params)
+        if (params.localId && params.initialPrompt) {
+          void generateAndPersistSessionTitle(params.localId, params.initialPrompt)
+        }
+        return result
       } catch (err) {
         console.error('[ipc] session:start failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -843,6 +848,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       return []
     }
   })
+
+  // Plans
+  ipcMain.handle(IPC_CHANNELS.plansList, (_e, projectPath: string) => listPlans(projectPath))
+  ipcMain.handle(IPC_CHANNELS.plansGet, (_e, projectPath: string, filename: string) => getPlan(projectPath, filename))
 
   // Work items (plugin registry)
   ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {

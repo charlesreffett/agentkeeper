@@ -42,6 +42,8 @@ export interface ActiveSession {
   roleId: string | null
   roleInstanceIndex: number | null
   workItemId: string | null
+  workItemKey: string | null
+  workItemTitle: string | null
   /** Full SDK message history for orchestrator routing. */
   events: SDKMessage[]
   /** Resolvers awaiting next terminal status (idle/suspended/completed/error/terminated). */
@@ -91,7 +93,7 @@ function broadcastEvent(event: LiveSessionEvent): void {
   }
 }
 
-function broadcastStatus(update: LiveSessionStatusUpdate): void {
+export function broadcastStatus(update: LiveSessionStatusUpdate): void {
   const payload = toPlain(update)
   for (const wc of webContents.getAllWebContents()) {
     if (!wc.isDestroyed()) wc.send('session:status', payload)
@@ -154,6 +156,9 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             startedAt: session.startedAt,
             lastActivityAt: Date.now(),
             status: session.status,
+            workItemKey: session.workItemKey,
+            workItemTitle: session.workItemTitle,
+            title: null,
           })
           if (session.agencyInstanceId && session.roleId) {
             const instanceIndex = session.roleInstanceIndex ?? 1
@@ -318,6 +323,8 @@ export async function startSession(
     roleId: params.roleId ?? null,
     roleInstanceIndex: params.roleInstanceIndex ?? null,
     workItemId: params.workItemId ?? null,
+    workItemKey: params.workItemKey ?? null,
+    workItemTitle: params.workItemTitle ?? null,
     events: [],
     idleWaiters: [],
     interrupted: false,
