@@ -101,7 +101,7 @@ const allSessions = computed((): SessionCardData[] => {
     const name = pathToProjectName(s.projectPath)
     return {
       id: s.localId,
-      title: s.workItemTitle ?? s.initialPrompt,
+      title: s.workItemTitle ?? s.agencyPrompt ?? s.initialPrompt,
       status: s.status,
       source: 'live' as const,
       projectPath: s.projectPath,

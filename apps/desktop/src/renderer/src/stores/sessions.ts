@@ -42,6 +42,7 @@ export interface LiveSession {
   /** Agency display name. */
   agencyName: string | null
   initialPrompt: string
+  agencyPrompt: string | null
   model: string | null
   effort: RoleEffort | null
   permissionMode: PermissionMode | null
@@ -54,6 +55,8 @@ export interface LiveSession {
    *  is loaded from this sdkSessionId's JSONL and shown above live events. */
   resumedFromSdkSessionId: string | null
   interruptedAt: number | null
+  workItemKey: string | null
+  workItemTitle: string | null
   /** Renderer-only: not yet started in main. The next user message promotes it. */
   isDraft: boolean
   draftConfig: DraftSessionConfig | null
@@ -74,6 +77,15 @@ function cryptoRandomId(): string {
 }
 
 export const useSessionStore = defineStore('sessions', () => {
+  interface UsageEntry {
+    sessionId: string
+    tokens: number
+    costUsd: number
+    timestamp: number
+  }
+
+  const usageLog = reactive<UsageEntry[]>([])
+
   // reactive() dict so sub-property mutations trigger updates
   const sessions = reactive<Record<string, LiveSession>>({})
   const currentLiveId = ref<string | null>(null)
@@ -150,6 +162,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyInstanceId: null,
       agencyName: null,
       initialPrompt: plain.initialPrompt,
+      agencyPrompt: null,
       model: plain.model ?? null,
       effort: plain.effort ?? null,
       permissionMode: plain.permissionMode ?? null,
@@ -160,9 +173,11 @@ export const useSessionStore = defineStore('sessions', () => {
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: null,
       interruptedAt: null,
+      workItemKey: plain.workItemKey ?? null,
+      workItemTitle: plain.workItemTitle ?? null,
       isDraft: false,
       draftConfig: null,
-      draftMessage: '',
+      draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
     }
     currentLiveId.value = localId
 
@@ -251,9 +266,12 @@ export const useSessionStore = defineStore('sessions', () => {
     agencyInstanceId?: string | null
     agencyName?: string | null
     initialPrompt: string
+    agencyPrompt?: string | null
     model?: string | null
     effort?: RoleEffort | null
     permissionMode?: PermissionMode | null
+    workItemKey?: string | null
+    workItemTitle?: string | null
   }): void {
     sessions[entry.localId] = {
       localId: entry.localId,
@@ -265,6 +283,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyInstanceId: entry.agencyInstanceId ?? null,
       agencyName: entry.agencyName ?? null,
       initialPrompt: entry.initialPrompt,
+      agencyPrompt: entry.agencyPrompt ?? null,
       model: entry.model ?? null,
       effort: entry.effort ?? null,
       permissionMode: entry.permissionMode ?? null,
@@ -275,9 +294,11 @@ export const useSessionStore = defineStore('sessions', () => {
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: null,
       interruptedAt: null,
+      workItemKey: entry.workItemKey ?? null,
+      workItemTitle: entry.workItemTitle ?? null,
       isDraft: false,
       draftConfig: null,
-      draftMessage: '',
+      draftMessage: localStorage.getItem(`agentkeeper:draft:${entry.localId}`) ?? '',
     }
     flushBuffer(entry.localId)
   }
@@ -299,6 +320,7 @@ export const useSessionStore = defineStore('sessions', () => {
         agencyInstanceId: persisted.agencyInstanceId,
         agencyName: persisted.agencyName,
         initialPrompt: persisted.initialPrompt,
+        agencyPrompt: null,
         model: persisted.model,
         effort: persisted.effort as RoleEffort | null,
         permissionMode: persisted.permissionMode,
@@ -309,9 +331,11 @@ export const useSessionStore = defineStore('sessions', () => {
         lastActivityAt: persisted.lastActivityAt,
         resumedFromSdkSessionId: persisted.sdkSessionId,
         interruptedAt: null,
+        workItemKey: persisted.workItemKey,
+        workItemTitle: persisted.workItemTitle,
         isDraft: false,
         draftConfig: null,
-        draftMessage: '',
+        draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
       }
       flushBuffer(localId)
     }
@@ -335,6 +359,7 @@ export const useSessionStore = defineStore('sessions', () => {
           agencyInstanceId: s.agencyInstanceId,
           agencyName: s.agencyName,
           initialPrompt: s.initialPrompt,
+          agencyPrompt: null,
           model: s.model,
           effort: s.effort as RoleEffort | null,
           permissionMode: s.permissionMode,
@@ -345,9 +370,11 @@ export const useSessionStore = defineStore('sessions', () => {
           lastActivityAt: s.lastActivityAt,
           resumedFromSdkSessionId: s.sdkSessionId,
           interruptedAt: null,
+          workItemKey: s.workItemKey,
+          workItemTitle: s.workItemTitle,
           isDraft: false,
           draftConfig: null,
-          draftMessage: '',
+          draftMessage: localStorage.getItem(`agentkeeper:draft:${s.localId}`) ?? '',
         }
         flushBuffer(s.localId)
       }
@@ -378,6 +405,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyInstanceId: null,
       agencyName: null,
       initialPrompt: params.firstMessage || '(continued)',
+      agencyPrompt: null,
       model: params.model,
       effort: params.effort,
       permissionMode: null,
@@ -388,9 +416,11 @@ export const useSessionStore = defineStore('sessions', () => {
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: params.sdkSessionId,
       interruptedAt: null,
+      workItemKey: null,
+      workItemTitle: null,
       isDraft: false,
       draftConfig: null,
-      draftMessage: '',
+      draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
     }
     currentLiveId.value = localId
     flushBuffer(localId)
@@ -440,6 +470,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyInstanceId: null,
       agencyName: null,
       initialPrompt: '',
+      agencyPrompt: null,
       model: params.defaultModel,
       effort: params.defaultEffort,
       permissionMode: 'bypassPermissions',
@@ -450,6 +481,8 @@ export const useSessionStore = defineStore('sessions', () => {
       lastActivityAt: Date.now(),
       resumedFromSdkSessionId: null,
       interruptedAt: null,
+      workItemKey: null,
+      workItemTitle: null,
       isDraft: true,
       draftConfig: {
         agencyKey: '',
@@ -459,7 +492,7 @@ export const useSessionStore = defineStore('sessions', () => {
         branchTouched: false,
         effortTouched: false,
       },
-      draftMessage: '',
+      draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
     }
     currentLiveId.value = localId
     return localId
@@ -467,7 +500,15 @@ export const useSessionStore = defineStore('sessions', () => {
 
   function setDraftMessage(localId: string, text: string): void {
     const s = sessions[localId]
-    if (s) s.draftMessage = text
+    if (!s) return
+    s.draftMessage = text
+    // Persist so the draft survives an app restart.
+    const key = `agentkeeper:draft:${localId}`
+    if (text) {
+      localStorage.setItem(key, text)
+    } else {
+      localStorage.removeItem(key)
+    }
   }
 
   /**
@@ -514,6 +555,7 @@ export const useSessionStore = defineStore('sessions', () => {
           agencyInstanceId: instance.instanceId,
           agencyName: instance.agencyName,
           initialPrompt: s.isEntryPoint ? trimmedPrompt : '(awaiting peers)',
+          agencyPrompt: trimmedPrompt,
           model: role?.model ?? draft.model,
         })
         if (s.isEntryPoint) entryLocalId = s.localId
@@ -564,15 +606,88 @@ export const useSessionStore = defineStore('sessions', () => {
     return localId
   }
 
+  // ─── Derived state for global Sessions page ──────────────────────────────
+
+  const visibleSessions = computed<LiveSession[]>(() => {
+    const seenAgencies = new Set<string>()
+    const result: LiveSession[] = []
+
+    const sorted = Object.values(sessions).sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+
+    for (const s of sorted) {
+      if (s.isDraft) continue
+      if (s.status === 'completed' || s.status === 'terminated') continue
+      if (s.agencyInstanceId) {
+        if (s.initialPrompt.startsWith('Agency "')) continue
+        if (seenAgencies.has(s.agencyInstanceId)) continue
+        seenAgencies.add(s.agencyInstanceId)
+      }
+      result.push(s)
+    }
+
+    return result
+  })
+
+  const statusCounts = computed(() => {
+    const counts = { running: 0, blocked: 0, idle: 0 }
+    for (const s of visibleSessions.value) {
+      if (s.status === 'running' || s.status === 'starting') counts.running++
+      else if (s.status === 'blocked') counts.blocked++
+      else counts.idle++
+    }
+    return counts
+  })
+
+  function subAgentCount(session: LiveSession): number {
+    if (!session.agencyInstanceId) return 1
+    return Object.values(sessions).filter(
+      (s) => s.agencyInstanceId === session.agencyInstanceId,
+    ).length
+  }
+
+  const tokenStats = computed(() => {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000
+    let tokens = 0
+    let costUsd = 0
+    for (const e of usageLog) {
+      if (e.timestamp < cutoff) continue
+      tokens += e.tokens
+      costUsd += e.costUsd
+    }
+    return { tokens24h: tokens, costUsd24h: costUsd }
+  })
+
   // ─── IPC subscriptions — set up once ───────────────────────────────────
 
   window.agentkeeper.sessions.onEvent((payload) => {
+    const raw = payload.message as Record<string, unknown>
+
+    // Extract token usage from SDK result messages
+    if (raw['type'] === 'result') {
+      const usage = raw['usage'] as { input_tokens?: number; output_tokens?: number } | undefined
+      const tokens = (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
+      const costUsd = typeof raw['cost_usd'] === 'number' ? raw['cost_usd'] : 0
+      if (tokens > 0 || costUsd > 0) {
+        usageLog.push({ sessionId: payload.sessionId, tokens, costUsd, timestamp: Date.now() })
+        // Prune entries older than 25h to keep memory bounded
+        const cutoff = Date.now() - 25 * 60 * 60 * 1000
+        const firstValid = usageLog.findIndex((e) => e.timestamp >= cutoff)
+        if (firstValid > 0) usageLog.splice(0, firstValid)
+      }
+    }
+
     const evt = sdkMessageToTranscriptEvent(payload.message)
     if (!evt) return
     const s = sessions[payload.sessionId]
     if (s) {
       s.events.push(evt)
       s.lastActivityAt = Date.now()
+      if (evt.role === 'assistant') {
+        const hasAskUser = evt.content.some(
+          (b) => b.type === 'tool_use' && b.name.toLowerCase().replace(/[_-]/g, '') === 'askuser',
+        )
+        if (hasAskUser) s.status = 'blocked'
+      }
     } else {
       ensureBuffer(payload.sessionId).events.push(evt)
     }
@@ -581,7 +696,14 @@ export const useSessionStore = defineStore('sessions', () => {
   window.agentkeeper.sessions.onStatus((update) => {
     const s = sessions[update.sessionId]
     if (s) {
-      s.status = update.status
+      // 'blocked' is renderer-derived — only clear it when the session resumes or ends,
+      // not when the SDK reports idle (agent finished its turn while still awaiting input)
+      const preserveBlocked =
+        s.status === 'blocked' &&
+        (update.status === 'idle' || update.status === 'starting')
+      if (!preserveBlocked) {
+        s.status = update.status
+      }
       if (update.sdkSessionId) s.sdkSessionId = update.sdkSessionId
       if (update.error) s.error = update.error
       s.lastActivityAt = Date.now()
@@ -613,5 +735,9 @@ export const useSessionStore = defineStore('sessions', () => {
     createOrFocusDraft,
     setDraftMessage,
     promoteDraft,
+    visibleSessions,
+    statusCounts,
+    subAgentCount,
+    tokenStats,
   }
 })
