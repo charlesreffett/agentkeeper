@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { projectColor } from '@/lib/projectColor'
@@ -33,6 +33,28 @@ const agentSparkline = useTimeSeries(() => subAgentStats.value.total, { interval
 
 const tokenStats = computed(() => sessionStore.tokenStats)
 const tokenSparkline = computed(() => tokenStats.value.dailyHistory.map((d) => d.tokens))
+
+const hoveredDayIndex = ref<number | null>(null)
+
+function formatDateKey(key: string): string {
+  const [y, m, d] = key.split('-').map(Number) as [number, number, number]
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+const displayDay = computed(() => {
+  if (hoveredDayIndex.value === null) return null
+  return tokenStats.value.dailyHistory[hoveredDayIndex.value] ?? null
+})
+
+const displayLabel = computed(() => {
+  if (!displayDay.value) return 'Today'
+  const today = new Date()
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  return displayDay.value.date === todayKey ? 'Today' : formatDateKey(displayDay.value.date)
+})
+
+const displayTokens = computed(() => displayDay.value?.tokens ?? tokenStats.value.tokensToday)
+const displayCost = computed(() => displayDay.value?.costUsd ?? tokenStats.value.costUsdToday)
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -88,16 +110,23 @@ const projectSegments = computed(() => {
       <SparklineChart :data="agentSparkline" color="#a855f7" :height="36" class="mt-auto" />
     </div>
 
-    <!-- Card 3: Tokens Today -->
+    <!-- Card 3: Tokens -->
     <div class="rounded-xl border bg-card p-4 flex flex-col gap-2">
       <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-        Tokens · Today
+        Tokens · {{ displayLabel }}
       </span>
       <div class="flex items-baseline gap-1.5">
-        <span class="text-3xl font-bold leading-none">{{ formatTokens(tokenStats.tokensToday) }}</span>
-        <span class="text-sm text-muted-foreground">{{ formatCost(tokenStats.costUsdToday) }}</span>
+        <span class="text-3xl font-bold leading-none">{{ formatTokens(displayTokens) }}</span>
+        <span class="text-sm text-muted-foreground">{{ formatCost(displayCost) }}</span>
       </div>
-      <SparklineChart :data="tokenSparkline" color="#f59e0b" :height="36" class="mt-auto" />
+      <SparklineChart
+        :data="tokenSparkline"
+        :hovered-index="hoveredDayIndex"
+        color="#f59e0b"
+        :height="36"
+        class="mt-auto"
+        @hover="hoveredDayIndex = $event"
+      />
     </div>
 
     <!-- Card 4: By Project -->

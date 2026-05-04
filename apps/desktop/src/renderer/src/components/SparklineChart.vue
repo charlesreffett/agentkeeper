@@ -6,12 +6,45 @@ interface Props {
   color?: string
   height?: number
   width?: number
+  hoveredIndex?: number | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
   color: '#6366f1',
   height: 40,
   width: 120,
+  hoveredIndex: null,
+})
+
+const emit = defineEmits<{ hover: [index: number | null] }>()
+
+function onMouseMove(e: MouseEvent) {
+  const el = e.currentTarget as SVGElement
+  const rect = el.getBoundingClientRect()
+  const fraction = (e.clientX - rect.left) / rect.width
+  const idx = Math.max(0, Math.min(props.data.length - 1, Math.round(fraction * (props.data.length - 1))))
+  emit('hover', idx)
+}
+
+function onMouseLeave() {
+  emit('hover', null)
+}
+
+const hoverPoint = computed(() => {
+  const idx = props.hoveredIndex
+  if (idx == null || props.data.length === 0) return null
+  const pts = props.data
+  const w = props.width
+  const h = props.height
+  const pad = 2
+  const min = Math.min(...pts)
+  const max = Math.max(...pts)
+  const range = max - min || 1
+  const x = (idx / Math.max(pts.length - 1, 1)) * w
+  const y = pts.length === 1
+    ? h - pad
+    : pad + ((1 - (pts[idx]! - min) / range) * (h - pad * 2))
+  return { x, y }
 })
 
 const _uid = getCurrentInstance()?.uid ?? Math.random().toString(36).slice(2)
@@ -67,6 +100,9 @@ const fillPath = computed(() => {
     :height="height"
     preserveAspectRatio="none"
     class="overflow-visible"
+    @mousemove="onMouseMove"
+    @mouseleave="onMouseLeave"
+    style="cursor: crosshair;"
   >
     <defs>
       <linearGradient :id="`sg-${_uid}`" x1="0" y1="0" x2="0" y2="1">
@@ -86,5 +122,21 @@ const fillPath = computed(() => {
       stroke-linecap="round"
       stroke-linejoin="round"
     />
+    <template v-if="hoverPoint">
+      <line
+        :x1="hoverPoint.x" :y1="0"
+        :x2="hoverPoint.x" :y2="height"
+        :stroke="color"
+        stroke-width="1"
+        stroke-opacity="0.4"
+        stroke-dasharray="2 2"
+      />
+      <circle
+        :cx="hoverPoint.x"
+        :cy="hoverPoint.y"
+        r="2.5"
+        :fill="color"
+      />
+    </template>
   </svg>
 </template>
