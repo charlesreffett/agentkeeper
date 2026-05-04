@@ -64,8 +64,10 @@ function onScroll() {
 
 async function scrollToBottom() {
   await nextTick()
-  const el = scroller.value
-  if (el) el.scrollTop = el.scrollHeight
+  requestAnimationFrame(() => {
+    const el = scroller.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
 }
 
 function goToNewMessages() {
@@ -154,6 +156,9 @@ async function onSend(text: string, attachments: Attachment[]) {
     }
     return
   }
+  // Clear the persisted draft the moment the message is sent so a stale
+  // draft can't reappear if the app is closed before the next session switch.
+  store.setDraftMessage(props.liveId, '')
   void store.send(props.liveId, text, attachments)
 }
 
