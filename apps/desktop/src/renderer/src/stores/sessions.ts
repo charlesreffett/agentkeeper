@@ -78,29 +78,49 @@ function cryptoRandomId(): string {
 }
 
 export const useSessionStore = defineStore('sessions', () => {
-  interface UsageEntry {
-    sessionId: string
+  interface DayUsage {
     tokens: number
     costUsd: number
-    timestamp: number
   }
 
-  const usageLog = reactive<UsageEntry[]>([])
+  function localDateKey(date = new Date()): string {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  }
 
-  try {
-    const stored = localStorage.getItem('agentkeeper:usageLog')
-    if (stored) {
-      const parsed = JSON.parse(stored) as UsageEntry[]
-      const cutoff = Date.now() - 25 * 60 * 60 * 1000
-      usageLog.push(...parsed.filter((e) => e.timestamp >= cutoff))
+  const dailyUsage = reactive<Record<string, DayUsage>>({})
+
+  // Authoritative counts pushed from main at the end of each query turn.
+  const activeAgentCount = ref(0)
+  const runningSessionCount = ref(0)
+
+  // One-time migration from old usageLog format
+  const oldLog = localStorage.getItem('agentkeeper:usageLog')
+  if (oldLog && !localStorage.getItem('agentkeeper:dailyUsage')) {
+    try {
+      const entries = JSON.parse(oldLog) as Array<{ tokens: number; costUsd: number; timestamp: number }>
+      for (const e of entries) {
+        const key = localDateKey(new Date(e.timestamp))
+        if (!dailyUsage[key]) dailyUsage[key] = { tokens: 0, costUsd: 0 }
+        dailyUsage[key].tokens += e.tokens
+        dailyUsage[key].costUsd += e.costUsd
+      }
+      localStorage.removeItem('agentkeeper:usageLog')
+      localStorage.setItem('agentkeeper:dailyUsage', JSON.stringify(toRaw(dailyUsage)))
+    } catch { /* ignore corrupt data */ }
+  } else {
+    const saved = localStorage.getItem('agentkeeper:dailyUsage')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as Record<string, DayUsage>
+        const cutoff = new Date()
+        cutoff.setDate(cutoff.getDate() - 31)
+        const cutoffKey = localDateKey(cutoff)
+        for (const [k, v] of Object.entries(parsed)) {
+          if (k >= cutoffKey) dailyUsage[k] = v
+        }
+      } catch { /* ignore corrupt data */ }
     }
-  } catch {
-    // corrupt localStorage — start empty
   }
-
-  watch(usageLog, (val) => localStorage.setItem('agentkeeper:usageLog', JSON.stringify(val)), {
-    deep: true,
-  })
 
   // reactive() dict so sub-property mutations trigger updates
   const sessions = reactive<Record<string, LiveSession>>({})
@@ -668,36 +688,26 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   const tokenStats = computed(() => {
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000
-    let tokens = 0
-    let costUsd = 0
-    for (const e of usageLog) {
-      if (e.timestamp < cutoff) continue
-      tokens += e.tokens
-      costUsd += e.costUsd
+    const todayKey = localDateKey()
+    const today = dailyUsage[todayKey] ?? { tokens: 0, costUsd: 0 }
+    const now = new Date()
+    const history: Array<{ date: string; tokens: number; costUsd: number }> = []
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now)
+      d.setDate(d.getDate() - i)
+      const key = localDateKey(d)
+      history.push({ date: key, tokens: dailyUsage[key]?.tokens ?? 0, costUsd: dailyUsage[key]?.costUsd ?? 0 })
     }
-    return { tokens24h: tokens, costUsd24h: costUsd }
+    return {
+      tokensToday: today.tokens,
+      costUsdToday: today.costUsd,
+      dailyHistory: history,
+    }
   })
 
   // ─── IPC subscriptions — set up once ───────────────────────────────────
 
   window.agentkeeper.sessions.onEvent((payload) => {
-    const raw = payload.message as Record<string, unknown>
-
-    // Extract token usage from SDK result messages
-    if (raw['type'] === 'result') {
-      const usage = raw['usage'] as { input_tokens?: number; output_tokens?: number } | undefined
-      const tokens = (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
-      const costUsd = typeof raw['cost_usd'] === 'number' ? raw['cost_usd'] : 0
-      if (tokens > 0 || costUsd > 0) {
-        usageLog.push({ sessionId: payload.sessionId, tokens, costUsd, timestamp: Date.now() })
-        // Prune entries older than 25h to keep memory bounded
-        const cutoff = Date.now() - 25 * 60 * 60 * 1000
-        const firstValid = usageLog.findIndex((e) => e.timestamp >= cutoff)
-        if (firstValid > 0) usageLog.splice(0, firstValid)
-      }
-    }
-
     const evt = sdkMessageToTranscriptEvent(payload.message)
     if (!evt) return
     const s = sessions[payload.sessionId]
@@ -712,6 +722,21 @@ export const useSessionStore = defineStore('sessions', () => {
       }
     } else {
       ensureBuffer(payload.sessionId).events.push(evt)
+    }
+  })
+
+  window.agentkeeper.sessions.onStats((stats) => {
+    activeAgentCount.value = stats.activeSessionCount
+    runningSessionCount.value = stats.runningSessionCount
+    const u = stats.turnUsage
+    const tokens = u.inputTokens + u.outputTokens
+    const costUsd = u.totalCostUsd
+    if (tokens > 0 || costUsd > 0) {
+      const key = localDateKey()
+      if (!dailyUsage[key]) dailyUsage[key] = { tokens: 0, costUsd: 0 }
+      dailyUsage[key].tokens += tokens
+      dailyUsage[key].costUsd += costUsd
+      localStorage.setItem('agentkeeper:dailyUsage', JSON.stringify(toRaw(dailyUsage)))
     }
   })
 
@@ -764,5 +789,7 @@ export const useSessionStore = defineStore('sessions', () => {
     statusCounts,
     subAgentCount,
     tokenStats,
+    activeAgentCount,
+    runningSessionCount,
   }
 })
