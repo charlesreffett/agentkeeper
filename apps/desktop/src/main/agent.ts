@@ -10,6 +10,7 @@ import {
 import type {
   Attachment,
   LiveSessionEvent,
+  LiveSessionStats,
   LiveSessionStatus,
   LiveSessionStatusUpdate,
   PermissionMode,
@@ -100,6 +101,13 @@ export function broadcastStatus(update: LiveSessionStatusUpdate): void {
   }
 }
 
+function broadcastStats(stats: LiveSessionStats): void {
+  const payload = toPlain(stats)
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) wc.send('session:stats', payload)
+  }
+}
+
 const TERMINAL_STATUSES: LiveSessionStatus[] = [
   'idle',
   'suspended',
@@ -175,6 +183,30 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       broadcastEvent({ sessionId: session.id, message: msg })
 
       if (msg.type === 'result') {
+        const resultMsg = msg as unknown as {
+          usage?: {
+            input_tokens?: number
+            output_tokens?: number
+            cache_read_input_tokens?: number
+            cache_creation_input_tokens?: number
+          }
+          total_cost_usd?: number
+        }
+        const u = resultMsg.usage ?? {}
+        broadcastStats({
+          activeSessionCount: active.size,
+          runningSessionCount: Array.from(active.values()).filter(
+            (s) => s.status === 'running' || s.status === 'starting',
+          ).length,
+          turnUsage: {
+            sessionId: session.id,
+            inputTokens: u.input_tokens ?? 0,
+            outputTokens: u.output_tokens ?? 0,
+            cacheReadInputTokens: u.cache_read_input_tokens ?? 0,
+            cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0,
+            totalCostUsd: resultMsg.total_cost_usd ?? 0,
+          },
+        })
         // Agency members signal 'idle' so routeMessage's waitForNextIdle
         // resolves and can capture the reply text, then we still close and
         // break — the subprocess is re-spawned lazily on the next
