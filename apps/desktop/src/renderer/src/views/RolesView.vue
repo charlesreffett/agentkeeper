@@ -216,18 +216,24 @@ onMounted(async () => {
 <template>
   <div class="h-full flex flex-col overflow-hidden">
     <header
-      class="px-6 py-3 border-b border-border flex items-center justify-between shrink-0"
+      class="px-6 py-3 border-b border-border flex items-center shrink-0"
     >
       <h2 class="text-lg font-semibold">Roles</h2>
-      <div class="flex items-center gap-2">
-        <Button size="sm" @click="beginNew">New role</Button>
-      </div>
     </header>
 
     <div class="flex min-h-0 flex-1">
       <aside
         class="w-64 border-r border-border shrink-0 overflow-y-auto bg-card/30"
       >
+        <div class="px-3 py-2 border-b border-border">
+          <button
+            class="w-full text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-secondary rounded px-3 py-1.5 transition-colors text-left flex items-center gap-1.5"
+            @click="beginNew"
+          >
+            <span class="text-base leading-none">+</span>
+            New role
+          </button>
+        </div>
         <div v-if="loading" class="p-4 text-sm text-muted-foreground">
           Loading…
         </div>

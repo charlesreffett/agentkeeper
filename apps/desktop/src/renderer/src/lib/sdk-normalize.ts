@@ -59,6 +59,7 @@ export function sdkMessageToTranscriptEvent(raw: unknown): TranscriptEvent | nul
 
   const messageWrapper = m['message'] as Record<string, unknown> | undefined
   const content = normalizeContent(messageWrapper?.['content'])
+    .filter((b) => !(b.type === 'text' && !b.text.trim()))
   if (content.length === 0) return null
 
   const model =

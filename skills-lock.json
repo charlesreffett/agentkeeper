@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "8de16d25507b51d530a287e642c2641fe600ad78d836599575960b4d74ddf5fd"
     },
+    "comark": {
+      "source": "comark.dev",
+      "sourceType": "well-known",
+      "computedHash": "cdf5c0c24f176ece30e05f59fe4f01d14d385a16cfbc56084d8cc19416edc568"
+    },
     "frontend-design": {
       "source": "anthropics/skills",
       "sourceType": "github",

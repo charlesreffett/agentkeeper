@@ -4,8 +4,7 @@ description: Planner decomposes, developer implements, reviewer verifies
 roles:
   - planner
   - id: developer
-    min: 2
-    max: 6
+    count: 3
   - reviewer
 flows: []
 entryPoints:

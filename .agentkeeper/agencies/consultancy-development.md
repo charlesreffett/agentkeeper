@@ -16,6 +16,14 @@ flows:
     - tester
   - - developer
     - reviewer
+  - - developer
+    - po
+  - - po
+    - developer
+  - - reviewer
+    - developer
+  - - tester
+    - developer
 entryPoints:
   - pm
   - po

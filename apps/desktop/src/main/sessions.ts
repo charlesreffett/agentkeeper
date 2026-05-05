@@ -104,7 +104,9 @@ function normalizeEvent(raw: unknown): TranscriptEvent | null {
 
   if (type === 'user' || type === 'assistant') {
     const msg = r['message'] as Record<string, unknown> | undefined
-    content = normalizeContent(msg?.['content'])
+    content = normalizeContent(msg?.['content']).filter(
+      (b) => !(b.type === 'text' && !b.text.trim()),
+    )
     model = typeof msg?.['model'] === 'string' ? (msg['model'] as string) : null
     role = type
   } else if (type === 'system') {
@@ -115,7 +117,9 @@ function normalizeEvent(raw: unknown): TranscriptEvent | null {
     const data = r['data'] as Record<string, unknown> | undefined
     const wrapper = data?.['message'] as Record<string, unknown> | undefined
     const inner = wrapper?.['message'] as Record<string, unknown> | undefined
-    content = normalizeContent(inner?.['content'])
+    content = normalizeContent(inner?.['content']).filter(
+      (b) => !(b.type === 'text' && !b.text.trim()),
+    )
     model = typeof inner?.['model'] === 'string' ? (inner['model'] as string) : null
     role = 'assistant'
   } else if (type === 'summary') {
