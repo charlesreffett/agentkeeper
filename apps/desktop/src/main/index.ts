@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { activatePlugins } from './plugins'
 import { setWorkItemRegistry } from './agent'
+import { init as initPricing } from './pricing'
+import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -47,7 +49,11 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+app.on('before-quit', () => flushCostLedger())
+
 app.whenReady().then(async () => {
+  initPricing(app.getPath('userData'))
+  initCostLedger(app.getPath('userData'))
   const registry = await activatePlugins(app)
   setWorkItemRegistry(registry)
   registerIpcHandlers(registry)

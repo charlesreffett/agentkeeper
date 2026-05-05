@@ -7,6 +7,8 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
+import * as costLedger from './cost-ledger'
+import { calculateCost } from './pricing'
 import type {
   Attachment,
   LiveSessionEvent,
@@ -50,6 +52,7 @@ export interface ActiveSession {
   /** Resolvers awaiting next terminal status (idle/suspended/completed/error/terminated). */
   idleWaiters: Array<(status: LiveSessionStatus) => void>
   interrupted: boolean
+  turnCount: number
 }
 
 /** Optional extras orchestrator passes to startSession that aren't in the
@@ -207,6 +210,34 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             totalCostUsd: resultMsg.total_cost_usd ?? 0,
           },
         })
+        const turnKey = `${session.id}:turn:${session.turnCount}`
+        session.turnCount++
+        if (!costLedger.hasEntry(turnKey)) {
+          const sdkCost = resultMsg.total_cost_usd ?? 0
+          const costUsd = sdkCost > 0
+            ? sdkCost
+            : calculateCost(
+                {
+                  inputTokens: u.input_tokens ?? 0,
+                  outputTokens: u.output_tokens ?? 0,
+                  cacheReadTokens: u.cache_read_input_tokens ?? 0,
+                  cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
+                },
+                session.model ?? '',
+              )
+          const _now = new Date()
+          costLedger.recordEntry({
+            key: turnKey,
+            date: `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`,
+            model: session.model ?? 'unknown',
+            inputTokens: u.input_tokens ?? 0,
+            outputTokens: u.output_tokens ?? 0,
+            cacheReadTokens: u.cache_read_input_tokens ?? 0,
+            cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
+            costUsd,
+            recordedAt: new Date().toISOString(),
+          })
+        }
         // Agency members signal 'idle' so routeMessage's waitForNextIdle
         // resolves and can capture the reply text, then we still close and
         // break — the subprocess is re-spawned lazily on the next
@@ -360,6 +391,7 @@ export async function startSession(
     events: [],
     idleWaiters: [],
     interrupted: false,
+    turnCount: 0,
   }
 
   active.set(id, session)
