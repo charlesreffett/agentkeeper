@@ -36,8 +36,38 @@ export function init(userDataPath: string): void {
     const raw = fs.readFileSync(path.join(userDataPath, LEDGER_FILE), 'utf8')
     const parsed = JSON.parse(raw) as LedgerData
     _ledger = { entries: parsed.entries ?? {} }
+    migrateUtcDates()
   } catch {
     _ledger = { entries: {} }
+  }
+}
+
+// Entries written before the UTC→local fix stored dates in UTC. Re-derive
+// local date from recordedAt so historical data appears under the right day.
+function localDateFromIso(iso: string): string {
+  const d = new Date(iso)
+  return (
+    String(d.getFullYear()) +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0')
+  )
+}
+
+function migrateUtcDates(): void {
+  let changed = false
+  for (const entry of Object.values(_ledger.entries)) {
+    if (!entry.recordedAt) continue
+    const local = localDateFromIso(entry.recordedAt)
+    if (entry.date !== local) {
+      entry.date = local
+      changed = true
+    }
+  }
+  if (changed) {
+    _dirty = true
+    flush()
   }
 }
 
