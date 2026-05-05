@@ -13,9 +13,11 @@ import {
   type GitStatus,
   type IssueTransition,
   type LiveSessionEvent,
+  type LiveSessionStats,
   type LiveSessionStatusUpdate,
   type MergeMethod,
   type AgentKeeperApi,
+  type Plan,
   type PRFilters,
   type PersistedAgency,
   type PersistedSession,
@@ -137,6 +139,7 @@ const api: AgentKeeperApi = {
     onEvent: (cb) => onChannel<LiveSessionEvent>(IPC_CHANNELS.sessionEvent, cb),
     onStatus: (cb) =>
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
+    onStats: (cb) => onChannel<LiveSessionStats>(IPC_CHANNELS.sessionStats, cb),
     listPersisted: (projectPath: string) =>
       invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<PersistedSession[]>,
     resume: (localId: string) =>
@@ -338,6 +341,12 @@ const api: AgentKeeperApi = {
   fs: {
     listDirectory: (dirPath: string) =>
       invoke(IPC_CHANNELS.fsListDirectory, dirPath) as Promise<FsEntry[]>,
+  },
+  plans: {
+    list: (projectPath: string) =>
+      invoke(IPC_CHANNELS.plansList, projectPath) as Promise<Plan[]>,
+    get: (projectPath: string, filename: string) =>
+      invoke(IPC_CHANNELS.plansGet, projectPath, filename) as Promise<Plan | null>,
   },
 }
 

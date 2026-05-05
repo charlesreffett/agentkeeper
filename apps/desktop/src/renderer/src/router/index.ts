@@ -12,16 +12,22 @@ import GithubPRReviewsView from '@/views/GithubPRReviewsView.vue'
 import JiraLayout from '@/views/JiraLayout.vue'
 import JiraBoardView from '@/views/JiraBoardView.vue'
 import JiraIssueView from '@/views/JiraIssueView.vue'
+import PlannerListView from '@/views/PlannerListView.vue'
+import PlannerDetailView from '@/views/PlannerDetailView.vue'
 import AgenciesView from '@/views/AgenciesView.vue'
 import RolesView from '@/views/RolesView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import CommandsView from '@/views/CommandsView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+import SessionsView from '@/views/SessionsView.vue'
+import SessionDetailView from '@/views/SessionDetailView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', component: Welcome },
+    { path: '/sessions', component: SessionsView },
+    { path: '/sessions/:id', component: SessionDetailView },
     {
       path: '/project',
       component: ProjectHome,
@@ -30,6 +36,8 @@ const router = createRouter({
       },
     },
     { path: '/monitor', component: MonitorView },
+    { path: '/planner', component: PlannerListView },
+    { path: '/planner/:filename', component: PlannerDetailView },
     { path: '/agencies', component: AgenciesView },
     { path: '/roles', component: RolesView },
     { path: '/skills', component: SkillsView },

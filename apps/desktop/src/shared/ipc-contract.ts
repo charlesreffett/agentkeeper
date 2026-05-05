@@ -392,6 +392,23 @@ export interface LiveSessionStatusUpdate {
   title?: string
 }
 
+/** Pushed from main to renderer once per query turn, when a result message arrives. */
+export interface LiveSessionStats {
+  /** Total sessions currently in the in-memory active Map. */
+  activeSessionCount: number
+  /** Sessions with status 'running' or 'starting'. */
+  runningSessionCount: number
+  /** Token + cost usage for the completed turn. */
+  turnUsage: {
+    sessionId: string
+    inputTokens: number
+    outputTokens: number
+    cacheReadInputTokens: number
+    cacheCreationInputTokens: number
+    totalCostUsd: number
+  }
+}
+
 // ─── Settings & secrets ─────────────────────────────────────────────────────
 
 export interface AppSettings {
@@ -505,6 +522,7 @@ export interface AgentKeeperApi {
     onStatus: (
       callback: (update: LiveSessionStatusUpdate) => void,
     ) => () => void
+    onStats: (callback: (stats: LiveSessionStats) => void) => () => void
     listPersisted: (projectPath: string) => Promise<PersistedSession[]>
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
@@ -662,6 +680,7 @@ export const IPC_CHANNELS = {
   sessionTerminate: 'session:terminate',
   sessionEvent: 'session:event',
   sessionStatus: 'session:status',
+  sessionStats: 'session:stats',
   worktreesList: 'worktrees:list',
   worktreesCreate: 'worktrees:create',
   worktreesRemove: 'worktrees:remove',

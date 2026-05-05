@@ -141,11 +141,42 @@ async function planWithClaude() {
   }
   planRunning.value = true
   const cur = item.value
+  const now = new Date().toISOString()
   const planningPrompt = `Analyze this Jira ticket and create a detailed implementation plan.
 Ticket: ${cur.externalRef} — ${cur.title}${cur.body ? '\nDescription:\n' + cur.body : ''}
 
-Write the plan as a markdown file to .claude/plans/${cur.externalRef}-plan.md (create the directory if needed).
-Structure the plan with: Overview, Acceptance Criteria, Technical Approach, Implementation Steps, and Open Questions.`
+Create the directory .agentkeeper/plans/ if needed, then write the plan to .agentkeeper/plans/${cur.externalRef}-plan.json.
+
+The file must contain valid JSON with this exact structure:
+{
+  "title": "${cur.externalRef}: ${cur.title}",
+  "externalRef": "${cur.externalRef}",
+  "workItemId": "${cur.id}",
+  "status": "planned",
+  "createdAt": "${now}",
+  "updatedAt": "${now}",
+  "sessionIds": [],
+  "estimatedMinutes": <sum of all step estimatedMinutes>,
+  "steps": [
+    {
+      "id": 1,
+      "title": "concise actionable step title",
+      "model": "claude-haiku-4-5",
+      "estimatedMinutes": 10,
+      "agent": "explorer",
+      "parallel": false,
+      "status": "pending"
+    }
+  ]
+}
+
+Guidance for each step:
+- model: "claude-haiku-4-5" for fast reads/audits/simple tasks, "claude-sonnet-4-5" for implementation/refactoring, "claude-opus-4-5" for complex architecture or test strategy
+- agent: "explorer" for codebase analysis, "main" for implementation, "qa" for testing/verification, "doc" for documentation
+- parallel: true if this step can safely run concurrently with adjacent steps
+- estimatedMinutes: realistic estimate based on complexity
+
+Aim for 4-8 focused, concrete steps. Make each step title specific and actionable.`
   try {
     await sessionStore.start({
       projectPath: focusedProject.path,

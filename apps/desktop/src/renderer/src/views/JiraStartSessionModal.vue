@@ -121,6 +121,8 @@ async function startSolo() {
     await sessionStore.start({
       projectPath: proj.path,
       workItemId: props.item.id,
+      workItemKey: props.item.externalRef ?? null,
+      workItemTitle: props.item.title ?? null,
       initialPrompt: prompt.value.trim(),
       model: model.value,
       effort: effort.value,
@@ -162,6 +164,8 @@ async function startAgency() {
       initialPrompt: agencyPrompt.value.trim(),
       useWorktree: agencyUseWorktree.value,
       branch: resolvedBranch,
+      workItemKey: props.item.externalRef ?? null,
+      workItemTitle: props.item.title ?? null,
     })
     activityStore.addEntry(props.item.id, 'claude', 'Claude opened agency session')
     emit('started')

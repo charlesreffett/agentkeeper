@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { LayoutDashboard, Grid, GitPullRequest, Layers, FolderOpen, Plus, Network, Bot, Wand2, Terminal, Settings2 } from 'lucide-vue-next'
+import { LayoutDashboard, Grid, GitPullRequest, Layers, FolderOpen, Plus, Network, Bot, Wand2, Terminal, Settings2, Map } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import type { RecentProject } from '@shared/ipc-contract'
 import { useUIContributionsStore } from '@/stores/uiContributions'
@@ -68,16 +68,20 @@ const iconMap: Record<string, Component> = {
   Grid,
   GitPullRequest,
   Layers,
+  FolderOpen,
   Network,
   Bot,
   Wand2,
   Terminal,
   Settings2,
+  Map,
 }
 
 const coreItems = [
-  { id: 'sessions', label: 'Sessions', icon: 'LayoutDashboard', path: '/project' },
+  { id: 'sessions', label: 'Sessions', icon: 'LayoutDashboard', path: '/sessions' },
   { id: 'monitor', label: 'Monitor', icon: 'Grid', path: '/monitor' },
+  { id: 'planner', label: 'Planner', icon: 'Map', path: '/planner' },
+  { id: 'projects', label: 'Projects', icon: 'FolderOpen', path: '/project' },
 ]
 
 const workspaceItems = [
