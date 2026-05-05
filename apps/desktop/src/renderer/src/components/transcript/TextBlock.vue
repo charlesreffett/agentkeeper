@@ -7,6 +7,11 @@ defineProps<{ block: Extract<ContentBlock, { type: 'text' }> }>()
 
 <template>
   <div class="prose prose-sm dark:prose-invert max-w-none select-text text-sm">
-    <Comark>{{ block.text }}</Comark>
+    <Suspense>
+      <Comark :markdown="block.text" />
+      <template #fallback>
+        <span class="whitespace-pre-wrap break-words">{{ block.text }}</span>
+      </template>
+    </Suspense>
   </div>
 </template>
