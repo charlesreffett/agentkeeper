@@ -17,6 +17,7 @@
     "@agentkeeper/sdk": "workspace:*",
     "@anthropic-ai/claude-agent-sdk": "^0.2.117",
     "@anthropic-ai/sdk": "^0.81.0",
+    "@comark/vue": "^0.3.1",
     "@vue-flow/background": "^1.3.2",
     "@vue-flow/controls": "^1.1.2",
     "@vue-flow/core": "^1.41.2",
@@ -31,6 +32,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@tailwindcss/typography": "^0.5.19",
     "@vitejs/plugin-vue": "^5.1.4",
     "@vue/tsconfig": "^0.5.1",
     "autoprefixer": "^10.4.20",
