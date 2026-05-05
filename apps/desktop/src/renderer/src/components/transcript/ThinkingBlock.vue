@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ContentBlock } from '@shared/ipc-contract'
+import { Comark } from '@comark/vue'
 
 defineProps<{ block: Extract<ContentBlock, { type: 'thinking' }> }>()
 </script>
@@ -12,8 +13,13 @@ defineProps<{ block: Extract<ContentBlock, { type: 'thinking' }> }>()
     <summary class="cursor-pointer select-none hover:text-foreground transition">
       Thinking
     </summary>
-    <div class="mt-2 whitespace-pre-wrap break-words select-text">
-      {{ block.thinking }}
+    <div class="mt-2 select-text prose prose-xs dark:prose-invert max-w-none">
+      <Suspense>
+        <Comark :markdown="block.thinking" />
+        <template #fallback>
+          <span class="whitespace-pre-wrap break-words">{{ block.thinking }}</span>
+        </template>
+      </Suspense>
     </div>
   </details>
 </template>
