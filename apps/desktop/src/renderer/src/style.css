@@ -75,3 +75,9 @@
     user-select: text;
   }
 }
+
+/* Shiki dual-theme: light uses --shiki-light vars, dark uses --shiki-dark vars */
+.shiki span { color: var(--shiki-light); }
+.dark .shiki span { color: var(--shiki-dark); }
+.shiki { background-color: var(--shiki-light-bg); }
+.dark .shiki { background-color: var(--shiki-dark-bg); }
