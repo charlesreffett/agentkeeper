@@ -10,14 +10,8 @@ import DonutChart from '@/components/DonutChart.vue'
 const sessionStore = useSessionStore()
 const projectsStore = useProjectsStore()
 
-// Prefer authoritative counts from main; fall back to renderer-derived values
-// before the first result message arrives (e.g. on fresh load).
-const runningCount = computed(
-  () => sessionStore.runningSessionCount || sessionStore.statusCounts.running,
-)
-const totalCount = computed(
-  () => sessionStore.activeAgentCount || sessionStore.visibleSessions.length,
-)
+const runningCount = computed(() => sessionStore.statusCounts.running)
+const totalCount = computed(() => sessionStore.visibleSessions.length)
 const activeSparkline = useTimeSeries(() => runningCount.value, { intervalMs: 30_000 })
 
 const subAgentStats = computed(() => {
@@ -63,7 +57,7 @@ function formatTokens(n: number): string {
 }
 
 function formatCost(usd: number): string {
-  return `$${usd.toFixed(2)}`
+  return `$${usd.toFixed(2)} est.`
 }
 
 const projectSegments = computed(() => {
