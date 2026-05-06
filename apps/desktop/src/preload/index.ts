@@ -7,6 +7,8 @@ import {
   type Attachment,
   type ClaudeAuthType,
   type CreatePRParams,
+  type DayTotal,
+  type LegacyDayEntry,
   type FsEntry,
   type GitHubConfig,
   type CommitSuggestion,
@@ -22,6 +24,7 @@ import {
   type PersistedAgency,
   type PersistedSession,
   type PermissionMode,
+  type PricingMeta,
   type RemoteSource,
   type ResetRequest,
   type ReviewEvent,
@@ -347,6 +350,16 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.plansList, projectPath) as Promise<Plan[]>,
     get: (projectPath: string, filename: string) =>
       invoke(IPC_CHANNELS.plansGet, projectPath, filename) as Promise<Plan | null>,
+  },
+  costs: {
+    getDailySummary: () =>
+      invoke(IPC_CHANNELS.costsGetDailySummary) as Promise<DayTotal[]>,
+    addLegacy: (entries: Array<LegacyDayEntry>) =>
+      invoke(IPC_CHANNELS.costsAddLegacy, entries) as Promise<void>,
+  },
+  pricing: {
+    getMeta: () => invoke(IPC_CHANNELS.pricingGetMeta) as Promise<PricingMeta>,
+    refresh: () => invoke(IPC_CHANNELS.pricingRefresh) as Promise<PricingMeta>,
   },
 }
 

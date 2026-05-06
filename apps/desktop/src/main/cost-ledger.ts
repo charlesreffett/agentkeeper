@@ -118,3 +118,24 @@ export function getDailySummary(): DayTotal[] {
   }
   return Object.values(days).sort((a, b) => a.date.localeCompare(b.date))
 }
+
+// Bulk-import legacy per-day totals that were stored in the renderer's localStorage
+// before the ledger was introduced. Key prefix "legacy:" prevents collision with
+// turn-based keys and the hasEntry guard prevents double-import.
+export function addLegacyEntry(date: string, tokens: number, costUsd: number): void {
+  const key = `legacy:${date}`
+  if (hasEntry(key)) return
+  _ledger.entries[key] = {
+    key,
+    date,
+    model: 'legacy-import',
+    inputTokens: tokens,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    costUsd,
+    recordedAt: new Date().toISOString(),
+  }
+  _dirty = true
+  flush()
+}

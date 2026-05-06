@@ -93,34 +93,43 @@ export const useSessionStore = defineStore('sessions', () => {
   const activeAgentCount = ref(0)
   const runningSessionCount = ref(0)
 
-  // One-time migration from old usageLog format
-  const oldLog = localStorage.getItem('agentkeeper:usageLog')
-  if (oldLog && !localStorage.getItem('agentkeeper:dailyUsage')) {
-    try {
-      const entries = JSON.parse(oldLog) as Array<{ tokens: number; costUsd: number; timestamp: number }>
-      for (const e of entries) {
-        const key = localDateKey(new Date(e.timestamp))
-        if (!dailyUsage[key]) dailyUsage[key] = { tokens: 0, costUsd: 0 }
-        dailyUsage[key].tokens += e.tokens
-        dailyUsage[key].costUsd += e.costUsd
-      }
-      localStorage.removeItem('agentkeeper:usageLog')
-      localStorage.setItem('agentkeeper:dailyUsage', JSON.stringify(toRaw(dailyUsage)))
-    } catch { /* ignore corrupt data */ }
-  } else {
-    const saved = localStorage.getItem('agentkeeper:dailyUsage')
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as Record<string, DayUsage>
-        const cutoff = new Date()
-        cutoff.setDate(cutoff.getDate() - 31)
-        const cutoffKey = localDateKey(cutoff)
-        for (const [k, v] of Object.entries(parsed)) {
-          if (k >= cutoffKey) dailyUsage[k] = v
-        }
-      } catch { /* ignore corrupt data */ }
+  // Load persisted daily costs from main-process ledger on startup.
+  // This runs async; until it resolves dailyUsage starts empty (then fills in).
+  void window.agentkeeper.costs.getDailySummary().then(async (rows) => {
+    for (const row of rows) {
+      dailyUsage[row.date] = { tokens: row.tokens, costUsd: row.costUsd }
     }
-  }
+
+    // One-time migration: import per-day totals that were stored in localStorage
+    // by the pre-ledger code (removed in commit 05e8021). localStorage stops
+    // updating at renderer hot-reload; ledger starts at main-process restart —
+    // the two windows are mutually exclusive so adding them is safe.
+    if (!localStorage.getItem('agentkeeper:legacyImported')) {
+      const legacy = localStorage.getItem('agentkeeper:dailyUsage')
+      if (legacy) {
+        try {
+          const parsed = JSON.parse(legacy) as Record<string, DayUsage>
+          const toImport: Array<{ date: string; tokens: number; costUsd: number }> = []
+          for (const [date, v] of Object.entries(parsed)) {
+            if (v.tokens > 0) {
+              toImport.push({ date, tokens: v.tokens, costUsd: v.costUsd })
+              if (!dailyUsage[date]) {
+                dailyUsage[date] = { tokens: v.tokens, costUsd: v.costUsd }
+              } else {
+                dailyUsage[date]!.tokens += v.tokens
+                dailyUsage[date]!.costUsd += v.costUsd
+              }
+            }
+          }
+          if (toImport.length > 0) {
+            await window.agentkeeper.costs.addLegacy(toImport)
+          }
+          localStorage.removeItem('agentkeeper:dailyUsage')
+        } catch { /* ignore corrupt legacy data */ }
+      }
+      localStorage.setItem('agentkeeper:legacyImported', '1')
+    }
+  }).catch(() => { /* non-fatal */ })
 
   // reactive() dict so sub-property mutations trigger updates
   const sessions = reactive<Record<string, LiveSession>>({})
@@ -736,7 +745,6 @@ export const useSessionStore = defineStore('sessions', () => {
       if (!dailyUsage[key]) dailyUsage[key] = { tokens: 0, costUsd: 0 }
       dailyUsage[key].tokens += tokens
       dailyUsage[key].costUsd += costUsd
-      localStorage.setItem('agentkeeper:dailyUsage', JSON.stringify(toRaw(dailyUsage)))
     }
   })
 

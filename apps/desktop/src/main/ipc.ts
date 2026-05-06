@@ -7,8 +7,10 @@ import {
   type AppSettings,
   type Attachment,
   type CreatePRParams,
+  type DayTotal,
   type MergeMethod,
   type PRFilters,
+  type PricingMeta,
   type RecentProject,
   type ReviewEvent,
   type SecretKeyName,
@@ -16,6 +18,8 @@ import {
   type WorkItemCreateParams,
   type WorkItemStatus,
 } from '../shared/ipc-contract'
+import * as costLedger from './cost-ledger'
+import { getActivePriceTable, refreshFromLiteLLM } from './pricing'
 import {
   addComment as ghAddComment,
   createPR as ghCreatePR,
@@ -852,6 +856,27 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Plans
   ipcMain.handle(IPC_CHANNELS.plansList, (_e, projectPath: string) => listPlans(projectPath))
   ipcMain.handle(IPC_CHANNELS.plansGet, (_e, projectPath: string, filename: string) => getPlan(projectPath, filename))
+
+  // Cost ledger + pricing
+  ipcMain.handle(IPC_CHANNELS.costsGetDailySummary, (): DayTotal[] =>
+    costLedger.getDailySummary(),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.costsAddLegacy,
+    (_e, entries: Array<{ date: string; tokens: number; costUsd: number }>) => {
+      for (const e of entries) costLedger.addLegacyEntry(e.date, e.tokens, e.costUsd)
+    },
+  )
+
+  ipcMain.handle(IPC_CHANNELS.pricingGetMeta, (): PricingMeta => {
+    const t = getActivePriceTable()
+    return { source: t.source, fetchedAt: t.fetchedAt, modelCount: Object.keys(t.models).length }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pricingRefresh, async (): Promise<PricingMeta> => {
+    const t = await refreshFromLiteLLM()
+    return { source: t.source, fetchedAt: t.fetchedAt, modelCount: Object.keys(t.models).length }
+  })
 
   // Work items (plugin registry)
   ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {

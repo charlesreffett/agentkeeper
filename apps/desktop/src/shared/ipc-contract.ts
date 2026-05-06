@@ -489,6 +489,26 @@ export interface Plan {
   steps: PlanStep[]
 }
 
+// ─── Cost ledger ─────────────────────────────────────────────────────────────
+
+export interface DayTotal {
+  date: string     // YYYY-MM-DD
+  costUsd: number
+  tokens: number
+}
+
+export interface PricingMeta {
+  source: 'bundled' | 'litellm-cache'
+  fetchedAt: string | null
+  modelCount: number
+}
+
+export interface LegacyDayEntry {
+  date: string
+  tokens: number
+  costUsd: number
+}
+
 // ─── IPC API exposed to renderer as window.agentkeeper ──────────────────────
 
 export interface AgentKeeperApi {
@@ -659,6 +679,14 @@ export interface AgentKeeperApi {
     list: (projectPath: string) => Promise<Plan[]>
     get: (projectPath: string, filename: string) => Promise<Plan | null>
   }
+  costs: {
+    getDailySummary: () => Promise<DayTotal[]>
+    addLegacy: (entries: Array<LegacyDayEntry>) => Promise<void>
+  }
+  pricing: {
+    getMeta: () => Promise<PricingMeta>
+    refresh: () => Promise<PricingMeta>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -755,4 +783,8 @@ export const IPC_CHANNELS = {
   fsListDirectory: 'fs:listDirectory',
   plansList: 'plans:list',
   plansGet: 'plans:get',
+  costsGetDailySummary: 'costs:getDailySummary',
+  costsAddLegacy: 'costs:addLegacy',
+  pricingRefresh: 'pricing:refresh',
+  pricingGetMeta: 'pricing:getMeta',
 } as const
