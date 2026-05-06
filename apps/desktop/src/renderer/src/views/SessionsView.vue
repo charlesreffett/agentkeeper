@@ -235,16 +235,13 @@ function handleRefresh() {
 }
 
 async function handleNewSession() {
-  if (projectStore.currentProject) {
+  const target = projectsStore.focusedProject ?? projectStore.currentProject
+  if (target) {
+    projectStore.setProject(target)
     void router.push('/project')
     return
   }
-  if (projectsStore.focusedProject) {
-    projectStore.setProject(projectsStore.focusedProject)
-    void router.push('/project')
-    return
-  }
-  void router.push('/project')
+  void router.push('/')
 }
 
 function handleCardClick(card: SessionCardData) {

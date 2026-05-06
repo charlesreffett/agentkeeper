@@ -8,10 +8,13 @@ import {
   type RoleEffort,
 } from '@shared/ipc-contract'
 import type { LiveSession } from '@/stores/sessions'
+import { useProjectsStore } from '@/stores/projects'
 
 const props = defineProps<{
   session: LiveSession
 }>()
+
+const projectsStore = useProjectsStore()
 
 const roles = ref<Role[]>([])
 const agencies = ref<Agency[]>([])
@@ -84,11 +87,29 @@ function onPermChange(event: Event) {
   props.session.permissionMode = (event.target as HTMLSelectElement).value as PermissionMode
 }
 
+function onProjectChange(event: Event) {
+  const newPath = (event.target as HTMLSelectElement).value
+  props.session.projectPath = newPath
+  cfg.value.agencyKey = ''
+  cfg.value.roleId = ''
+}
+
 watch(
   () => props.session.projectPath,
   () => {
     void loadRoles()
     void loadAgencies()
+  },
+)
+
+watch(
+  () => projectsStore.focusedProject?.path,
+  (newPath) => {
+    if (newPath && newPath !== props.session.projectPath) {
+      props.session.projectPath = newPath
+      cfg.value.agencyKey = ''
+      cfg.value.roleId = ''
+    }
   },
 )
 
@@ -106,6 +127,24 @@ onMounted(() => {
         Configure the session, then send your first message to start it.
       </p>
     </header>
+
+    <!-- Project selector -->
+    <div class="space-y-1.5">
+      <label class="text-sm font-medium">Project</label>
+      <select
+        :value="props.session.projectPath"
+        class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+        @change="onProjectChange"
+      >
+        <option
+          v-for="p in projectsStore.projects"
+          :key="p.path"
+          :value="p.path"
+        >
+          {{ p.name }}
+        </option>
+      </select>
+    </div>
 
     <!-- Agency selector -->
     <div class="space-y-1.5">
