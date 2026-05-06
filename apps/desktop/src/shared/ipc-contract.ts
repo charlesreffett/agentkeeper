@@ -113,7 +113,7 @@ export type EventKind =
   | 'other'
 
 export type ContentBlock =
-  | { type: 'text'; text: string; partial?: boolean }
+  | { type: 'text'; text: string }
   | { type: 'thinking'; thinking: string; signature?: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | {

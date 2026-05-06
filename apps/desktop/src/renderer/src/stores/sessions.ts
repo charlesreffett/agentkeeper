@@ -764,7 +764,7 @@ export const useSessionStore = defineStore('sessions', () => {
           if (!partial) break
           const cb = event['content_block'] as Record<string, unknown> | undefined
           if (cb?.['type'] === 'text') {
-            partial.content.push({ type: 'text', text: '', partial: true })
+            partial.content.push({ type: 'text', text: '' })
           }
           // tool_use blocks: skip — the complete AssistantMessage will carry them
           break

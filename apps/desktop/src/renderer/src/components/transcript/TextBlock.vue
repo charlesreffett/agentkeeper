@@ -8,8 +8,7 @@ defineProps<{ block: Extract<ContentBlock, { type: 'text' }> }>()
 
 <template>
   <div class="prose prose-sm dark:prose-invert max-w-none select-text text-sm">
-    <span v-if="block.partial" class="whitespace-pre-wrap break-words">{{ block.text }}</span>
-    <Suspense v-else>
+    <Suspense>
       <Comark :markdown="block.text" :plugins="transcriptPlugins" />
       <template #fallback>
         <span class="whitespace-pre-wrap break-words">{{ block.text }}</span>
