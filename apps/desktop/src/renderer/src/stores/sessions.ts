@@ -716,12 +716,97 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ─── IPC subscriptions — set up once ───────────────────────────────────
 
+  // Tracks the index in session.events of the current partial assistant event
+  // being built from stream_event deltas, keyed by sessionId.
+  const streamingPartials: Record<string, number> = {}
+
   window.agentkeeper.sessions.onEvent((payload) => {
+    const raw = payload.message as Record<string, unknown>
+
+    // ── Streaming partial path ──────────────────────────────────────────────
+    if (raw['type'] === 'stream_event') {
+      const s = sessions[payload.sessionId]
+      if (!s) return  // drop stream events for unregistered sessions; AssistantMessage will buffer
+
+      const event = raw['event'] as Record<string, unknown> | undefined
+      if (!event) return
+
+      switch (event['type']) {
+        case 'message_start': {
+          // Begin a new partial assistant event and track its index
+          const partial: TranscriptEvent = {
+            uuid: typeof raw['uuid'] === 'string' ? raw['uuid'] : crypto.randomUUID(),
+            parentUuid: null,
+            timestamp: new Date().toISOString(),
+            kind: 'assistant',
+            role: 'assistant',
+            isMeta: false,
+            isSidechain: typeof raw['parent_tool_use_id'] === 'string',
+            model: (() => {
+              const msg = event['message'] as Record<string, unknown> | undefined
+              return typeof msg?.['model'] === 'string' ? msg['model'] : null
+            })(),
+            content: [],
+            parentToolUseId: typeof raw['parent_tool_use_id'] === 'string'
+              ? raw['parent_tool_use_id']
+              : null,
+            systemSubtype: null,
+          }
+          s.events.push(partial)
+          streamingPartials[payload.sessionId] = s.events.length - 1
+          s.lastActivityAt = Date.now()
+          break
+        }
+        case 'content_block_start': {
+          const idx = streamingPartials[payload.sessionId]
+          if (idx === undefined) break
+          const partial = s.events[idx]
+          if (!partial) break
+          const cb = event['content_block'] as Record<string, unknown> | undefined
+          if (cb?.['type'] === 'text') {
+            partial.content.push({ type: 'text', text: '', partial: true })
+          }
+          // tool_use blocks: skip — the complete AssistantMessage will carry them
+          break
+        }
+        case 'content_block_delta': {
+          const idx = streamingPartials[payload.sessionId]
+          if (idx === undefined) break
+          const partial = s.events[idx]
+          if (!partial) break
+          const delta = event['delta'] as Record<string, unknown> | undefined
+          if (delta?.['type'] === 'text_delta' && typeof delta['text'] === 'string') {
+            // Append to the last text block
+            for (let i = partial.content.length - 1; i >= 0; i--) {
+              const blk = partial.content[i]
+              if (blk && blk.type === 'text') {
+                blk.text += delta['text']
+                break
+              }
+            }
+            s.lastActivityAt = Date.now()
+          }
+          break
+        }
+      }
+      return
+    }
+
+    // ── Complete message path ───────────────────────────────────────────────
     const evt = sdkMessageToTranscriptEvent(payload.message)
     if (!evt) return
+
     const s = sessions[payload.sessionId]
     if (s) {
-      s.events.push(evt)
+      // If a partial assistant event was being streamed, replace it with the
+      // definitive complete message rather than appending a duplicate.
+      const partialIdx = streamingPartials[payload.sessionId]
+      if (partialIdx !== undefined && evt.role === 'assistant') {
+        s.events.splice(partialIdx, 1, evt)
+        delete streamingPartials[payload.sessionId]
+      } else {
+        s.events.push(evt)
+      }
       s.lastActivityAt = Date.now()
       if (evt.role === 'assistant') {
         const hasAskUser = evt.content.some(

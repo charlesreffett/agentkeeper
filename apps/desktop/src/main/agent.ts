@@ -349,6 +349,7 @@ export async function startSession(
     env: childEnv,
     permissionMode: params.permissionMode ?? 'bypassPermissions',
     settingSources: ['user', 'project'],
+    includePartialMessages: true,
   }
   if (systemPromptAppend) {
     options!.systemPrompt = {
