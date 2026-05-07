@@ -268,9 +268,14 @@ function handleCardClick(card: SessionCardData) {
       }
       break
     }
-    case 'historical':
-      void router.push(`/sessions/${card.id}`)
+    case 'historical': {
+      const hist = historicalSessions.value.find(({ summary: s }) => s.id === card.id)
+      if (hist) {
+        const localId = sessionStore.openHistorical(hist.projectPath, hist.summary)
+        void router.push(`/sessions/${localId}`)
+      }
       break
+    }
   }
 }
 </script>
