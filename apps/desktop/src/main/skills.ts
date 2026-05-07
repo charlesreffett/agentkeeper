@@ -89,7 +89,14 @@ async function runSkills(
       code?: string | number
       signal?: string
     }
-    const raw = (e.stderr?.trim() || e.stdout?.trim() || e.message) ?? ''
+    // npm writes warnings to stderr even on success; filter them out so they
+    // don't mask the actual error (which lands on stdout).
+    const meaningfulStderr = (e.stderr ?? '')
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('npm warn'))
+      .join('\n')
+      .trim()
+    const raw = meaningfulStderr || e.stdout?.trim() || e.message || ''
     console.error('[skills] exec failed', {
       cmdline,
       cwd,
@@ -231,15 +238,137 @@ export async function listSkills(projectPath: string): Promise<Skill[]> {
   return [...project, ...global]
 }
 
+/**
+ * If `url` is a GitHub tree URL whose ref segment is a bare 40-character
+ * commit SHA, rewrite it to use the repository's default branch instead.
+ *
+ * Why: `git clone --branch <ref>` only accepts branch names and tags — not
+ * arbitrary commit SHAs — so the `npx skills` CLI fails when given a GitHub
+ * permalink like `.../tree/a05d923c.../plugins/foo`. We resolve the default
+ * branch via `git ls-remote`, then verify the subpath still exists there
+ * (since the tree may have diverged from the pinned commit).
+ */
+async function resolveGithubShaUrl(url: string): Promise<string> {
+  const m =
+    /^(https?:\/\/github\.com\/([^/]+)\/([^/]+))\/tree\/([0-9a-f]{40})(\/[^?#]*)?/i.exec(url)
+  if (!m) return url
+
+  const repoBase = m[1]!
+  const owner = m[2]!
+  const repo = m[3]!
+  const sha = m[4]!
+  const subpath = m[5] ?? ''
+  const gitUrl = `${repoBase}.git`
+
+  let branch: string
+  try {
+    const { stdout } = await execFileAsync('git', ['ls-remote', '--symref', gitUrl, 'HEAD'], {
+      timeout: 15000,
+    })
+    const bm = /^ref: refs\/heads\/([^\t\n\r]+)\tHEAD/m.exec(stdout)
+    branch = bm ? bm[1]! : 'main'
+  } catch {
+    throw new Error(
+      `Could not contact ${owner}/${repo} to resolve the commit SHA — check your network connection.`,
+    )
+  }
+
+  let resolvedSubpath = subpath
+  const cleanPath = subpath.replace(/^\//, '')
+  if (cleanPath) {
+    const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${cleanPath}?ref=${branch}`
+    try {
+      const resp = await fetch(apiUrl, {
+        headers: { Accept: 'application/vnd.github.v3+json' },
+        signal: AbortSignal.timeout(10000),
+      })
+      if (resp.status === 404) {
+        throw new Error(
+          `"${cleanPath}" no longer exists on the "${branch}" branch of ${owner}/${repo}. ` +
+            `The repository may have changed since this link was created (${sha.slice(0, 7)}).`,
+        )
+      }
+      // If the path is a directory that contains a skills/ subdirectory, redirect
+      // into it — the npx skills CLI expects SKILL.md files one level below the
+      // source path, so plugin-style repos (skills/<name>/SKILL.md) need this.
+      if (resp.ok) {
+        const data = (await resp.json()) as unknown
+        if (Array.isArray(data)) {
+          const hasSkillsDir = (data as Array<{ name: string; type: string }>).some(
+            (item) => item.name === 'skills' && item.type === 'dir',
+          )
+          if (hasSkillsDir) {
+            resolvedSubpath = `${subpath}/skills`
+            console.log('[skills] detected skills/ subdirectory, redirecting into it')
+          }
+        }
+      }
+    } catch (e) {
+      if ((e as Error).message.includes('no longer exists')) throw e
+      // Network failure during validation — let the CLI attempt it and surface its own error
+    }
+  }
+
+  const rewritten = `${repoBase}/tree/${branch}${resolvedSubpath}`
+  console.log('[skills] rewrote SHA permalink', {
+    sha: sha.slice(0, 7),
+    branch,
+    rewritten,
+  })
+  return rewritten
+}
+
+/**
+ * Normalise whatever the user pastes into the source field. Accepts either a
+ * bare source (URL, GitHub shorthand, npm package) or a full terminal command
+ * like `npx skills add https://github.com/foo/bar --skill tailwindcss -g`.
+ * Strips the command prefix, known standalone flags, and -a/--agent overrides,
+ * then returns the clean source together with any --skill/-s values found.
+ */
+function parseSourceInput(raw: string): { source: string; skillFilter: string[] } {
+  let input = raw.trim()
+
+  // Strip leading `npx [--yes|-y] skills add ` prefix
+  input = input.replace(/^npx\s+(?:--yes\s+|-y\s+)?skills\s+add\s+/i, '')
+
+  // Collect --skill / -s values and remove them from the string
+  const skillFilter: string[] = []
+  input = input.replace(/(?:--skill|-s)\s+(\S+)/g, (_, name: string) => {
+    skillFilter.push(name)
+    return ''
+  })
+
+  // Strip flags we always control ourselves so they don't appear twice
+  const dropFlags = ['-g', '--global', '-y', '--yes', '--full-depth', '-l', '--list']
+  for (const flag of dropFlags) {
+    const escaped = flag.replace(/[-]/g, '\\$&')
+    input = input.replace(new RegExp(`\\s*${escaped}(?=\\s|$)`, 'g'), '')
+  }
+
+  // Strip -a/--agent <value> — we always inject -a claude-code ourselves
+  input = input.replace(/(?:-a|--agent)\s+\S+/g, '')
+
+  return { source: input.trim(), skillFilter }
+}
+
 export async function previewSkills(
   projectPath: string,
   source: string,
 ): Promise<SkillPreview[]> {
+  const { source: cleanSource, skillFilter } = parseSourceInput(source)
+  const resolvedSource = await resolveGithubShaUrl(cleanSource)
   const { stdout } = await runSkills(
-    ['add', source, '-a', 'claude-code', '-l', '-y'],
+    ['add', resolvedSource, '-a', 'claude-code', '-l', '-y'],
     projectPath,
   )
-  return parsePreviewOutput(stdout)
+  let previews = parsePreviewOutput(stdout)
+  if (skillFilter.length > 0) {
+    const normalized = skillFilter.map((s) => s.toLowerCase())
+    previews = previews.filter((p) =>
+      normalized.some((f) => p.id.toLowerCase() === f || p.name.toLowerCase() === f),
+    )
+  }
+  return previews
 }
 
 export async function installSkill(
@@ -248,22 +377,29 @@ export async function installSkill(
   scope: 'project' | 'global',
   skillIds?: string[],
 ): Promise<void> {
+  const { source: cleanSource, skillFilter } = parseSourceInput(source)
+  const resolvedSource = await resolveGithubShaUrl(cleanSource)
   const cwd = scope === 'global' ? os.homedir() : projectPath
-  const args: string[] = ['add', source, '-a', 'claude-code', '-y']
+  // Merge skill IDs from the source string with any explicitly chosen in the UI
+  const mergedIds = [
+    ...(skillIds ?? []),
+    ...skillFilter.filter((f) => !(skillIds ?? []).includes(f)),
+  ]
+  const args: string[] = ['add', resolvedSource, '-a', 'claude-code', '-y']
   if (scope === 'global') args.push('-g')
-  if (skillIds && skillIds.length > 0) {
-    for (const id of skillIds) {
+  if (mergedIds.length > 0) {
+    for (const id of mergedIds) {
       args.push('-s', id)
     }
   } else {
     args.push('-s', '*')
   }
   console.log('[skills] installSkill', {
-    source,
+    source: cleanSource,
     scope,
     cwd,
-    selectedCount: skillIds?.length ?? 0,
-    selected: skillIds ?? '(all: -s *)',
+    selectedCount: mergedIds.length,
+    selected: mergedIds.length > 0 ? mergedIds : '(all: -s *)',
     args,
   })
   await runSkills(args, cwd)
