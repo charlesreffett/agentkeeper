@@ -4,6 +4,7 @@ import TextBlock from './TextBlock.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolUseBlock from './ToolUseBlock.vue'
 import ToolResultBlock from './ToolResultBlock.vue'
+import ImageBlock from './ImageBlock.vue'
 import UnknownBlock from './UnknownBlock.vue'
 import { formatTimestamp, shortModel } from '@/lib/format'
 import { computed } from 'vue'
@@ -59,6 +60,8 @@ function blockComponent(block: ContentBlock) {
       return ToolUseBlock
     case 'tool_result':
       return ToolResultBlock
+    case 'image':
+      return ImageBlock
     default:
       return UnknownBlock
   }

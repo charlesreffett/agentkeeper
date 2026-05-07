@@ -196,7 +196,7 @@ const promoteError = ref<string | null>(null)
 
 async function onSend(text: string, attachments: Attachment[]) {
   if (isDraft.value) {
-    if (promoting.value || !text.trim()) return
+    if (promoting.value || (!text.trim() && attachments.length === 0)) return
     promoting.value = true
     promoteError.value = null
     try {
