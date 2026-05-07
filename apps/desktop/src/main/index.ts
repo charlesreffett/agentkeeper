@@ -39,6 +39,13 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://') && !url.startsWith('http://localhost')) {
+      event.preventDefault()
+      shell.openExternal(url)
+    }
+  })
+
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   if (devUrl) {
     win.loadURL(devUrl)
