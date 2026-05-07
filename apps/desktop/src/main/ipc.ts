@@ -40,7 +40,7 @@ import { listSessions, readSession, deleteHistoricalSession, deleteAllHistorical
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive } from './agent'
 import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
 import { settingsStore } from './settings'
-import { createWorktree, listWorktrees, removeWorktree } from './worktrees'
+import { createWorktree, gitDiffStat, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
 import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, startAgency } from './orchestrator'
@@ -291,6 +291,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         return await removeWorktree(projectPath, worktreePath)
       } catch (err) {
         console.error('[ipc] worktrees:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.worktreesGitDiffStat,
+    async (_event, worktreePath: string, baseBranch?: string) => {
+      try {
+        return await gitDiffStat(worktreePath, baseBranch)
+      } catch (err) {
+        console.error('[ipc] worktrees:gitDiffStat failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

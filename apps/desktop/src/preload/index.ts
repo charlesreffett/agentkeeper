@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   IPC_CHANNELS,
   type AgencyDraft,
+  type GitDiffStatFile,
   type AgencyScope,
   type AppSettings,
   type Attachment,
@@ -171,6 +172,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.worktreesCreate, projectPath, branchRequest) as Promise<never>,
     remove: (projectPath: string, worktreePath: string) =>
       invoke(IPC_CHANNELS.worktreesRemove, projectPath, worktreePath) as Promise<void>,
+    gitDiffStat: (worktreePath: string, baseBranch?: string) =>
+      invoke(IPC_CHANNELS.worktreesGitDiffStat, worktreePath, baseBranch) as Promise<GitDiffStatFile[]>,
   },
   roles: {
     list: (projectPath: string) =>

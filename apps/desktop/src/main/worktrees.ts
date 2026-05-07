@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
 import fs from 'node:fs/promises'
-import type { WorktreeInfo } from '../shared/ipc-contract'
+import type { GitDiffStatFile, WorktreeInfo } from '../shared/ipc-contract'
 
 const exec = promisify(execFile)
 
@@ -152,4 +152,63 @@ export async function removeWorktree(
   if (options.force) args.push('--force')
   args.push(worktreePath)
   await git(projectPath, args)
+}
+
+function parseNumstat(output: string): GitDiffStatFile[] {
+  const result: GitDiffStatFile[] = []
+  for (const line of output.trim().split('\n')) {
+    if (!line.trim()) continue
+    const parts = line.split('\t')
+    if (parts.length < 3) continue
+    // Binary files show '-' instead of numbers — treat as 0
+    const added = parseInt(parts[0] ?? '-', 10)
+    const removed = parseInt(parts[1] ?? '-', 10)
+    const file = parts[2] ?? ''
+    if (!file) continue
+    result.push({
+      file,
+      added: Number.isNaN(added) ? 0 : added,
+      removed: Number.isNaN(removed) ? 0 : removed,
+    })
+  }
+  return result
+}
+
+/**
+ * Returns per-file diff stats (added/removed line counts) between HEAD and
+ * a base ref. When no `baseBranch` is given, tries to find the merge-base
+ * with the remote default branch so the diff covers only the worktree's own
+ * changes since it branched off.
+ */
+export async function gitDiffStat(
+  worktreePath: string,
+  baseBranch?: string,
+): Promise<GitDiffStatFile[]> {
+  let base: string
+
+  if (baseBranch) {
+    base = baseBranch
+  } else {
+    // Try common remote default-branch names in order.
+    const candidates = ['origin/HEAD', 'origin/main', 'origin/master']
+    let mergeBase: string | null = null
+    for (const candidate of candidates) {
+      try {
+        const out = await git(worktreePath, ['merge-base', 'HEAD', candidate])
+        mergeBase = out.trim()
+        break
+      } catch {
+        // try next candidate
+      }
+    }
+    base = mergeBase ?? 'HEAD'
+  }
+
+  const args =
+    base === 'HEAD'
+      ? ['diff', '--numstat']
+      : ['diff', '--numstat', `${base}..HEAD`]
+
+  const output = await git(worktreePath, args)
+  return parseNumstat(output)
 }
