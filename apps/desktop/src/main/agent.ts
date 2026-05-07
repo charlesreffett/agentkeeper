@@ -327,7 +327,7 @@ export async function startSession(
   const input = new AsyncQueue<SDKUserMessage>()
   const isResume = !!params.resumeSdkSessionId
   if (!isResume) {
-    input.push(messageFromInput(params.initialPrompt))
+    input.push(messageFromInput(params.initialPrompt, params.initialAttachments))
   }
 
   const childEnv: Record<string, string | undefined> = {
@@ -405,7 +405,7 @@ export async function startSession(
   }
 
   if (!isResume) {
-    broadcastEvent({ sessionId: id, message: messageFromInput(params.initialPrompt) })
+    broadcastEvent({ sessionId: id, message: messageFromInput(params.initialPrompt, params.initialAttachments) })
   }
 
   void consumeStream(session)

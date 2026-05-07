@@ -220,6 +220,8 @@ export interface StartSessionParams {
   /** Resume an existing SDK session by its session_id. When set, the session
    *  starts in 'idle' and no initial prompt is pushed to the queue. */
   resumeSdkSessionId?: string
+  /** Attachments to include with the initial user message. */
+  initialAttachments?: Attachment[]
   /** Role display name — persisted so the registry can show it without a role lookup. */
   roleName?: string
   /** Agency display name — persisted for the same reason. */
@@ -232,6 +234,12 @@ export interface WorktreeInfo {
   path: string
   branch: string
   head: string
+}
+
+export interface GitDiffStatFile {
+  file: string
+  added: number
+  removed: number
 }
 
 // ─── Skills ─────────────────────────────────────────────────────────────────
@@ -558,6 +566,7 @@ export interface AgentKeeperApi {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
     create: (projectPath: string, branchRequest: string) => Promise<WorktreeInfo>
     remove: (projectPath: string, worktreePath: string) => Promise<void>
+    gitDiffStat: (worktreePath: string, baseBranch?: string) => Promise<GitDiffStatFile[]>
   }
   roles: {
     list: (projectPath: string) => Promise<Role[]>
@@ -712,6 +721,7 @@ export const IPC_CHANNELS = {
   worktreesList: 'worktrees:list',
   worktreesCreate: 'worktrees:create',
   worktreesRemove: 'worktrees:remove',
+  worktreesGitDiffStat: 'worktrees:gitDiffStat',
   rolesList: 'roles:list',
   rolesSave: 'roles:save',
   rolesRemove: 'roles:remove',

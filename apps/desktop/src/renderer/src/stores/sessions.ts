@@ -9,6 +9,7 @@ import type {
   PersistedSession,
   Role,
   RoleEffort,
+  SessionSummary,
   StartSessionParams,
   TranscriptEvent,
 } from '@shared/ipc-contract'
@@ -88,6 +89,60 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   const dailyUsage = reactive<Record<string, DayUsage>>({})
+
+  // Per-session token/cost accumulator — keyed by localId, cleared on dismiss.
+  // Populated from `onStats` (each completed turn) and persisted to localStorage
+  // so it survives navigation and full app restarts.
+  const sessionTokens = reactive<Record<string, { tokens: number; costUsd: number }>>({})
+
+  // Bootstrap from localStorage so data is available before any onStats fires.
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith('agentkeeper:stok:')) continue
+    const id = key.slice('agentkeeper:stok:'.length)
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      const data = JSON.parse(raw) as Record<string, unknown>
+      if (typeof data['tokens'] === 'number' && typeof data['costUsd'] === 'number') {
+        sessionTokens[id] = { tokens: data['tokens'], costUsd: data['costUsd'] }
+      }
+    } catch { /* ignore corrupt entries */ }
+  }
+
+  // Per-session assistant-turn counter — incremented on each onStats (one per turn).
+  // Persisted to localStorage so the count survives navigation and restarts.
+  const sessionTurns = reactive<Record<string, number>>({})
+
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith('agentkeeper:sturn:')) continue
+    const id = key.slice('agentkeeper:sturn:'.length)
+    const raw = localStorage.getItem(key)
+    const n = raw !== null ? parseInt(raw, 10) : NaN
+    if (!isNaN(n)) sessionTurns[id] = n
+  }
+
+  // In-progress token count for the currently executing SDK run — keyed by localId.
+  // Updated on every message_start (input tokens) and message_delta (output tokens)
+  // and checkpointed to localStorage so it survives renderer refreshes.
+  // Reset to 0 on `result` (onStats), at which point sessionTokens is authoritative.
+  // Safe to restore after restart: onStats adds the FULL run delta from main and
+  // then sets sessionRunTokens = 0, so there is no double-count risk.
+  const sessionRunTokens = reactive<Record<string, number>>({})
+
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith('agentkeeper:srun:')) continue
+    const id = key.slice('agentkeeper:srun:'.length)
+    const raw = localStorage.getItem(key)
+    const n = raw !== null ? parseInt(raw, 10) : NaN
+    if (!isNaN(n) && n > 0) sessionRunTokens[id] = n
+  }
+
+  // Real-time output token estimate built from content_block_delta text chunks
+  // (~4 chars per token). Zeroed on message_start (new response begins) and on
+  // message_delta (actual output_tokens land in sessionRunTokens). This gives
+  // a smoothly incrementing counter during streaming rather than a single jump
+  // at the end of each turn.
+  const sessionOutputEstimates = reactive<Record<string, number>>({})
 
   // Authoritative counts pushed from main at the end of each query turn.
   const activeAgentCount = ref(0)
@@ -291,6 +346,13 @@ export const useSessionStore = defineStore('sessions', () => {
 
   function dismiss(id: string): void {
     delete sessions[id]
+    delete sessionTokens[id]
+    delete sessionTurns[id]
+    delete sessionRunTokens[id]
+    delete sessionOutputEstimates[id]
+    localStorage.removeItem(`agentkeeper:stok:${id}`)
+    localStorage.removeItem(`agentkeeper:sturn:${id}`)
+    localStorage.removeItem(`agentkeeper:srun:${id}`)
     if (currentLiveId.value === id) currentLiveId.value = null
   }
 
@@ -386,6 +448,40 @@ export const useSessionStore = defineStore('sessions', () => {
         draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
       }
       flushBuffer(localId)
+    }
+    currentLiveId.value = localId
+    return localId
+  }
+
+  function openHistorical(projectPath: string, summary: SessionSummary): string {
+    const localId = cryptoRandomId()
+    sessions[localId] = {
+      localId,
+      sdkSessionId: null,
+      projectPath,
+      worktreePath: null,
+      branch: summary.gitBranch,
+      roleName: null,
+      agencyInstanceId: null,
+      agencyName: null,
+      initialPrompt: summary.firstUserMessage ?? '',
+      agencyPrompt: null,
+      title: null,
+      model: summary.model,
+      effort: null,
+      permissionMode: null,
+      status: 'idle',
+      events: [],
+      error: null,
+      startedAt: summary.startedAt,
+      lastActivityAt: summary.lastActivityAt,
+      resumedFromSdkSessionId: summary.id,
+      interruptedAt: null,
+      workItemKey: null,
+      workItemTitle: null,
+      isDraft: false,
+      draftConfig: null,
+      draftMessage: '',
     }
     currentLiveId.value = localId
     return localId
@@ -572,6 +668,7 @@ export const useSessionStore = defineStore('sessions', () => {
     localId: string,
     prompt: string,
     ctx: { roles: Role[]; agencies: Agency[] },
+    attachments?: Attachment[],
   ): Promise<string> {
     const draft = sessions[localId]
     if (!draft || !draft.isDraft || !draft.draftConfig) {
@@ -646,6 +743,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ...(draft.effort ? { effort: draft.effort } : {}),
       ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
       ...(role?.name ? { roleName: role.name } : {}),
+      ...(attachments && attachments.length > 0 ? { initialAttachments: attachments } : {}),
     }
 
     try {
@@ -755,6 +853,41 @@ export const useSessionStore = defineStore('sessions', () => {
           s.events.push(partial)
           streamingPartials[payload.sessionId] = s.events.length - 1
           s.lastActivityAt = Date.now()
+
+          // input_tokens are known at message_start — add them immediately so
+          // the counter starts moving as soon as a new API call begins.
+          const startMsg = event['message'] as Record<string, unknown> | undefined
+          const startUsage = startMsg?.['usage'] as Record<string, unknown> | undefined
+          const inputTokens = (startUsage?.['input_tokens'] as number | undefined) ?? 0
+          if (inputTokens > 0) {
+            sessionRunTokens[payload.sessionId] =
+              (sessionRunTokens[payload.sessionId] ?? 0) + inputTokens
+            // Checkpoint so a renderer refresh doesn't lose in-progress tokens.
+            localStorage.setItem(
+              `agentkeeper:srun:${payload.sessionId}`,
+              String(sessionRunTokens[payload.sessionId]),
+            )
+          }
+          // Reset the streaming estimate — a new response is beginning.
+          sessionOutputEstimates[payload.sessionId] = 0
+          break
+        }
+        case 'message_delta': {
+          // output_tokens are finalised at message_delta (end of each streaming response).
+          // Add actual count to sessionRunTokens and zero the estimate — it's now
+          // captured precisely rather than via the char-based approximation.
+          const deltaUsage = event['usage'] as Record<string, unknown> | undefined
+          const outputTokens = (deltaUsage?.['output_tokens'] as number | undefined) ?? 0
+          if (outputTokens > 0) {
+            sessionRunTokens[payload.sessionId] =
+              (sessionRunTokens[payload.sessionId] ?? 0) + outputTokens
+          }
+          // Checkpoint after every complete API response (input + output both captured).
+          localStorage.setItem(
+            `agentkeeper:srun:${payload.sessionId}`,
+            String(sessionRunTokens[payload.sessionId] ?? 0),
+          )
+          sessionOutputEstimates[payload.sessionId] = 0
           break
         }
         case 'content_block_start': {
@@ -785,6 +918,13 @@ export const useSessionStore = defineStore('sessions', () => {
               }
             }
             s.lastActivityAt = Date.now()
+
+            // Accumulate a real-time output token estimate (~4 chars per token).
+            // This gives a smoothly incrementing counter during streaming;
+            // message_delta replaces it with the authoritative count.
+            sessionOutputEstimates[payload.sessionId] =
+              (sessionOutputEstimates[payload.sessionId] ?? 0) +
+              Math.ceil(delta['text'].length / 4)
           }
           break
         }
@@ -828,8 +968,25 @@ export const useSessionStore = defineStore('sessions', () => {
     if (tokens > 0 || costUsd > 0) {
       const key = localDateKey()
       if (!dailyUsage[key]) dailyUsage[key] = { tokens: 0, costUsd: 0 }
-      dailyUsage[key].tokens += tokens
-      dailyUsage[key].costUsd += costUsd
+      dailyUsage[key]!.tokens += tokens
+      dailyUsage[key]!.costUsd += costUsd
+
+      // Bucket per-session so the agent tree can display per-agent token counts.
+      if (!sessionTokens[u.sessionId]) sessionTokens[u.sessionId] = { tokens: 0, costUsd: 0 }
+      sessionTokens[u.sessionId]!.tokens += tokens
+      sessionTokens[u.sessionId]!.costUsd += costUsd
+      // Persist so the totals survive navigation and full app restarts.
+      localStorage.setItem(`agentkeeper:stok:${u.sessionId}`, JSON.stringify(sessionTokens[u.sessionId]))
+
+      // Each onStats call represents one completed assistant turn.
+      sessionTurns[u.sessionId] = (sessionTurns[u.sessionId] ?? 0) + 1
+      localStorage.setItem(`agentkeeper:sturn:${u.sessionId}`, String(sessionTurns[u.sessionId]))
+
+      // Run is complete — clear in-progress counters so the display doesn't
+      // double-count (sessionTokens now covers everything they tracked).
+      sessionRunTokens[u.sessionId] = 0
+      sessionOutputEstimates[u.sessionId] = 0
+      localStorage.removeItem(`agentkeeper:srun:${u.sessionId}`)
     }
   })
 
@@ -846,6 +1003,31 @@ export const useSessionStore = defineStore('sessions', () => {
           s.status = update.status
         }
       }
+
+      // Rescue any in-progress tokens that onStats didn't capture (e.g. the run
+      // threw before emitting a result message). In the normal path onStats fires
+      // first and resets sessionRunTokens to 0, so this is a no-op. Only the
+      // error/interrupt/terminated path ever finds a non-zero value here.
+      const quiescent =
+        update.status === 'idle' ||
+        update.status === 'completed' ||
+        update.status === 'terminated' ||
+        update.status === 'error'
+      const partial = quiescent ? (sessionRunTokens[update.sessionId] ?? 0) : 0
+      if (partial > 0) {
+        if (!sessionTokens[update.sessionId]) {
+          sessionTokens[update.sessionId] = { tokens: 0, costUsd: 0 }
+        }
+        sessionTokens[update.sessionId]!.tokens += partial
+        localStorage.setItem(
+          `agentkeeper:stok:${update.sessionId}`,
+          JSON.stringify(sessionTokens[update.sessionId]),
+        )
+        sessionRunTokens[update.sessionId] = 0
+        sessionOutputEstimates[update.sessionId] = 0
+        localStorage.removeItem(`agentkeeper:srun:${update.sessionId}`)
+      }
+
       if (update.sdkSessionId) s.sdkSessionId = update.sdkSessionId
       if (update.error) s.error = update.error
       if (update.title) s.title = update.title
@@ -860,6 +1042,10 @@ export const useSessionStore = defineStore('sessions', () => {
 
   return {
     sessions,
+    sessionTokens,
+    sessionTurns,
+    sessionRunTokens,
+    sessionOutputEstimates,
     liveList,
     currentLiveId,
     currentSession,
@@ -873,6 +1059,7 @@ export const useSessionStore = defineStore('sessions', () => {
     clearFocus,
     registerExternal,
     openPersisted,
+    openHistorical,
     openPersistedAgency,
     resumeFromHistory,
     createOrFocusDraft,
