@@ -81,3 +81,10 @@
 .dark .shiki span { color: var(--shiki-dark); }
 .shiki { background-color: var(--shiki-light-bg); }
 .dark .shiki { background-color: var(--shiki-dark-bg); }
+
+@layer utilities {
+  .content-auto {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
+}

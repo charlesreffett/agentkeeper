@@ -7,8 +7,14 @@ import ToolResultBlock from './ToolResultBlock.vue'
 import UnknownBlock from './UnknownBlock.vue'
 import { formatTimestamp, shortModel } from '@/lib/format'
 import { computed } from 'vue'
+import { type VerbosityState, DEFAULT_VERBOSITY_STATE, isBlockVisible } from '@/lib/verbosity'
 
-const props = defineProps<{ event: TranscriptEvent }>()
+const props = defineProps<{
+  event: TranscriptEvent
+  verbosityState?: VerbosityState
+}>()
+
+const state = computed(() => props.verbosityState ?? DEFAULT_VERBOSITY_STATE)
 
 // user-role events whose content is entirely tool_result blocks are injected
 // by Claude Code after a tool runs — not messages authored by the human.
@@ -29,6 +35,19 @@ const roleLabel = computed(() => {
   if (props.event.role === 'assistant') return 'Assistant'
   return props.event.role ?? 'unknown'
 })
+
+const visibleContent = computed(() =>
+  props.event.content.filter((b) => isBlockVisible(b, state.value)),
+)
+
+// Hidden tool_use blocks within this event — shown as a quiet inline indicator
+// so the user knows tool activity occurred without the full call noise.
+const hiddenToolUseCount = computed(
+  () =>
+    props.event.content.filter(
+      (b) => b.type === 'tool_use' && !isBlockVisible(b, state.value),
+    ).length,
+)
 
 function blockComponent(block: ContentBlock) {
   switch (block.type) {
@@ -61,14 +80,14 @@ function blockComponent(block: ContentBlock) {
   >
     <component
       :is="blockComponent(block)"
-      v-for="(block, i) in event.content"
+      v-for="(block, i) in visibleContent"
       :key="i"
       :block="block"
     />
   </div>
   <article
     v-else
-    class="rounded-lg border border-border p-4"
+    class="rounded-lg border border-border p-4 content-auto"
     :class="isUser ? 'bg-accent/20' : 'bg-card'"
   >
     <header class="flex items-center gap-2 text-xs text-muted-foreground mb-2">
@@ -83,10 +102,16 @@ function blockComponent(block: ContentBlock) {
     <div class="space-y-2">
       <component
         :is="blockComponent(block)"
-        v-for="(block, i) in event.content"
+        v-for="(block, i) in visibleContent"
         :key="i"
         :block="block"
       />
+      <div
+        v-if="hiddenToolUseCount > 0"
+        class="text-xs text-muted-foreground/50 font-mono pt-1 select-none"
+      >
+        · {{ hiddenToolUseCount }} tool {{ hiddenToolUseCount === 1 ? 'call' : 'calls' }} ·
+      </div>
     </div>
   </article>
 </template>
