@@ -5,13 +5,13 @@
 @layer base {
   :root {
     /* Warm cream page — noticeably off-white without being yellow */
-    --background: 40 25% 95%;
+    --background: 0 0% 97%;
     /* Warm near-black — slightly amber-tinted for softness */
     --foreground: 30 8% 12%;
     /* Cards sit lighter than the page, giving a floating surface feel */
-    --card: 38 30% 99%;
+    --card: 0 0% 100%;
     --card-foreground: 30 8% 12%;
-    --popover: 38 30% 99%;
+    --popover: 0 0% 100%;
     --popover-foreground: 30 8% 12%;
     --primary: 30 8% 12%;
     --primary-foreground: 38 25% 98%;
@@ -27,7 +27,7 @@
     --input: 38 12% 86%;
     --ring: 30 8% 12%;
     --radius: 0.5rem;
-    --sidebar-background: 38 30% 97%;
+    --sidebar-background: 40 25% 93%;
     --sidebar-foreground: 30 8% 12%;
     --sidebar-primary: 30 8% 12%;
     --sidebar-primary-foreground: 38 25% 98%;
