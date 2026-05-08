@@ -7,14 +7,15 @@ defineProps<{ block: Extract<ContentBlock, { type: 'thinking' }> }>()
 </script>
 
 <template>
-  <details
+  <div
     v-if="block.thinking.trim()"
-    class="border-l-2 border-muted pl-3 text-xs text-muted-foreground"
+    class="border-l-2 border-amber-400/50 pl-3 py-0.5 space-y-1.5"
   >
-    <summary class="cursor-pointer select-none hover:text-foreground transition">
-      Thinking
-    </summary>
-    <div class="mt-2 select-text prose prose-sm dark:prose-invert max-w-none">
+    <div class="flex items-center gap-1 text-[10px] font-semibold tracking-widest uppercase text-amber-500/80 select-none">
+      <span>✧</span>
+      <span>Thinking</span>
+    </div>
+    <div class="text-sm italic text-muted-foreground/80 select-text leading-relaxed">
       <Suspense>
         <Comark :markdown="block.thinking" :plugins="transcriptPlugins" />
         <template #fallback>
@@ -22,5 +23,5 @@ defineProps<{ block: Extract<ContentBlock, { type: 'thinking' }> }>()
         </template>
       </Suspense>
     </div>
-  </details>
+  </div>
 </template>

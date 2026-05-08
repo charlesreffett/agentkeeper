@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ChevronRight, TriangleAlert } from 'lucide-vue-next'
 import type { ContentBlock } from '@shared/ipc-contract'
 
 const props = defineProps<{
@@ -32,33 +33,46 @@ const rendered = computed(() => {
   }
 })
 
+// One-line summary shown in the collapsed header.
+const summary = computed(() => {
+  const first = rendered.value.split('\n')[0]?.trim() ?? ''
+  return first.length > 80 ? first.slice(0, 80) + '…' : first
+})
+
 const lineCount = computed(() => rendered.value.split('\n').length)
 </script>
 
 <template>
   <details
-    class="rounded border text-sm overflow-hidden"
+    class="group rounded-lg border text-sm overflow-hidden"
     :class="
       block.is_error
-        ? 'border-destructive/50 bg-destructive/5'
-        : 'border-border bg-muted/20'
+        ? 'border-destructive/40 bg-destructive/5'
+        : 'border-border/50 bg-muted/20'
     "
   >
     <summary
-      class="cursor-pointer select-none px-3 py-2 flex items-center gap-2 transition hover:bg-muted/40"
+      class="cursor-pointer select-none px-3 py-2 flex items-center gap-2 transition-colors hover:bg-muted/40 list-none"
     >
+      <ChevronRight
+        class="size-3 shrink-0 text-muted-foreground/60 transition-transform group-open:rotate-90"
+      />
+      <TriangleAlert
+        v-if="block.is_error"
+        class="size-3 shrink-0 text-destructive"
+      />
       <span
-        class="text-xs font-medium"
+        class="font-mono text-xs truncate min-w-0"
         :class="block.is_error ? 'text-destructive' : 'text-muted-foreground'"
       >
-        {{ block.is_error ? 'Tool error' : 'Tool result' }}
+        {{ summary || (block.is_error ? 'Tool error' : 'Result') }}
       </span>
-      <span class="text-xs text-muted-foreground tabular-nums ml-auto">
+      <span class="ml-auto text-[10px] text-muted-foreground/50 tabular-nums shrink-0">
         {{ lineCount }} {{ lineCount === 1 ? 'line' : 'lines' }}
       </span>
     </summary>
     <pre
-      class="bg-background/50 border-t border-border p-3 text-xs overflow-x-auto font-mono select-text m-0 max-h-96"
+      class="bg-background/40 border-t border-border/40 px-3 py-2.5 text-xs overflow-x-auto font-mono select-text m-0 text-muted-foreground leading-relaxed max-h-80"
     >{{ rendered }}</pre>
   </details>
 </template>

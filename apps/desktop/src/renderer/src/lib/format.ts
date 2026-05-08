@@ -26,11 +26,10 @@ export function formatRelativeTime(ms: number, now = Date.now()): string {
 export function formatTimestamp(ts: string): string {
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return ts
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
+  return d.toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
   })
 }
 
