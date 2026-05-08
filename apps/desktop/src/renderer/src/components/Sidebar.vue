@@ -1,10 +1,33 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { LayoutDashboard, Grid, GitPullRequest, Layers, FolderOpen, Network, Bot, Wand2, Terminal, Settings2, Map } from 'lucide-vue-next'
+import {
+  LayoutDashboard,
+  Grid,
+  GitPullRequest,
+  Layers,
+  FolderOpen,
+  Network,
+  Bot,
+  Wand2,
+  Terminal,
+  Settings2,
+  Map,
+} from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { useUIContributionsStore } from '@/stores/uiContributions'
 import { usePluginHealth } from '@/composables/usePluginHealth'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarSeparator,
+} from '@/components/ui/sidebar'
 
 const router = useRouter()
 const route = useRoute()
@@ -59,66 +82,82 @@ function isActive(path: string): boolean {
 </script>
 
 <template>
-  <nav class="w-48 shrink-0 border-r border-border bg-card/30 flex flex-col py-3 gap-0.5">
-    <button
-      v-for="item in coreItems"
-      :key="item.id"
-      class="flex items-center gap-2 py-2 px-3 mx-1 rounded-md text-xs font-medium transition-colors"
-      :class="
-        isActive(item.path)
-          ? 'bg-primary/10 text-primary'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-      "
-      @click="void router.push(item.path)"
-    >
-      <component :is="iconMap[item.icon]" class="size-4 shrink-0" />
-      <span class="truncate">{{ item.label }}</span>
-    </button>
+  <Sidebar collapsible="icon">
+    <!-- macOS traffic-light zone — drag region, no content -->
+    <SidebarHeader
+      class="h-11 shrink-0 p-0"
+      style="-webkit-app-region: drag"
+    />
 
-    <div v-if="pluginItems.length" class="mx-2 my-1 border-t border-border/50" />
+    <SidebarContent>
+      <!-- Core navigation -->
+      <SidebarGroup>
+        <SidebarMenu>
+          <SidebarMenuItem v-for="item in coreItems" :key="item.id">
+            <SidebarMenuButton
+              size="sm"
+              :is-active="isActive(item.path)"
+              :tooltip="item.label"
+              @click="void router.push(item.path)"
+            >
+              <component :is="iconMap[item.icon]" />
+              <span>{{ item.label }}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroup>
 
-    <button
-      v-for="item in pluginItems"
-      :key="item.id"
-      class="relative flex items-center gap-2 py-2 px-3 mx-1 rounded-md text-xs font-medium transition-colors"
-      :class="
-        isActive(item.path)
-          ? 'bg-primary/10 text-primary'
-          : item.unhealthy
-            ? 'text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/50'
-            : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-      "
-      @click="void router.push(item.path)"
-    >
-      <div class="relative shrink-0">
-        <component
-          :is="item.icon ? iconMap[item.icon] : null"
-          v-if="item.icon && iconMap[item.icon]"
-          class="size-4"
-        />
-        <span
-          v-if="item.unhealthy"
-          class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-amber-500"
-        />
-      </div>
-      <span class="truncate">{{ item.label }}</span>
-    </button>
+      <!-- Plugin navigation -->
+      <template v-if="pluginItems.length">
+        <SidebarSeparator />
+        <SidebarGroup>
+          <SidebarMenu>
+            <SidebarMenuItem v-for="item in pluginItems" :key="item.id">
+              <SidebarMenuButton
+                size="sm"
+                :is-active="isActive(item.path)"
+                :tooltip="item.label"
+                :class="item.unhealthy ? 'opacity-50' : ''"
+                @click="void router.push(item.path)"
+              >
+                <!-- Relative wrapper preserves the unhealthy amber dot in both expand/collapse -->
+                <div class="relative size-4 shrink-0">
+                  <component
+                    :is="item.icon ? iconMap[item.icon] : null"
+                    v-if="item.icon && iconMap[item.icon]"
+                    class="size-4"
+                  />
+                  <span
+                    v-if="item.unhealthy"
+                    class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-amber-500"
+                  />
+                </div>
+                <span>{{ item.label }}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
+      </template>
 
-    <div class="mx-2 my-1 border-t border-border/50" />
+      <!-- Workspace navigation -->
+      <SidebarSeparator />
+      <SidebarGroup>
+        <SidebarMenu>
+          <SidebarMenuItem v-for="item in workspaceItems" :key="item.id">
+            <SidebarMenuButton
+              size="sm"
+              :is-active="isActive(item.path)"
+              :tooltip="item.label"
+              @click="void router.push(item.path)"
+            >
+              <component :is="iconMap[item.icon]" />
+              <span>{{ item.label }}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarGroup>
+    </SidebarContent>
 
-    <button
-      v-for="item in workspaceItems"
-      :key="item.id"
-      class="flex items-center gap-2 py-2 px-3 mx-1 rounded-md text-xs font-medium transition-colors"
-      :class="
-        isActive(item.path)
-          ? 'bg-primary/10 text-primary'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-      "
-      @click="void router.push(item.path)"
-    >
-      <component :is="iconMap[item.icon]" class="size-4 shrink-0" />
-      <span class="truncate">{{ item.label }}</span>
-    </button>
-  </nav>
+    <SidebarRail />
+  </Sidebar>
 </template>

@@ -15,6 +15,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
+import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useProjectsStore } from '@/stores/projects'
 import { useLayoutStore } from '@/stores/layout'
 import { cn } from '@/lib/utils'
@@ -98,7 +99,9 @@ watch(
 </script>
 
 <template>
-  <header class="h-11 border-b bg-background flex items-center pr-3 pl-[74px] gap-2 shrink-0" style="-webkit-app-region: drag">
+  <header class="h-11 border-b bg-background flex items-center pr-3 pl-2 gap-2 shrink-0" style="-webkit-app-region: drag">
+    <SidebarTrigger style="-webkit-app-region: no-drag" />
+    <Separator orientation="vertical" class="h-4" />
     <!-- Project picker -->
     <Popover v-model:open="popoverOpen">
       <PopoverTrigger as-child>
