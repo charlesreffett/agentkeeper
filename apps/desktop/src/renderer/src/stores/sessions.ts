@@ -63,6 +63,7 @@ export interface LiveSession {
   isDraft: boolean
   draftConfig: DraftSessionConfig | null
   draftMessage: string
+  draftAttachments: Attachment[]
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
@@ -76,6 +77,14 @@ function cryptoRandomId(): string {
     return crypto.randomUUID()
   }
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+async function loadDraft(localId: string): Promise<{ text: string; attachments: Attachment[] }> {
+  try {
+    return await window.agentkeeper.drafts.get(localId)
+  } catch {
+    return { text: '', attachments: [] }
+  }
 }
 
 export const useSessionStore = defineStore('sessions', () => {
@@ -95,47 +104,61 @@ export const useSessionStore = defineStore('sessions', () => {
   // so it survives navigation and full app restarts.
   const sessionTokens = reactive<Record<string, { tokens: number; costUsd: number }>>({})
 
-  // Bootstrap from localStorage so data is available before any onStats fires.
-  for (const key of Object.keys(localStorage)) {
-    if (!key.startsWith('agentkeeper:stok:')) continue
-    const id = key.slice('agentkeeper:stok:'.length)
-    try {
-      const raw = localStorage.getItem(key)
-      if (!raw) continue
-      const data = JSON.parse(raw) as Record<string, unknown>
-      if (typeof data['tokens'] === 'number' && typeof data['costUsd'] === 'number') {
-        sessionTokens[id] = { tokens: data['tokens'], costUsd: data['costUsd'] }
-      }
-    } catch { /* ignore corrupt entries */ }
-  }
-
   // Per-session assistant-turn counter — incremented on each onStats (one per turn).
-  // Persisted to localStorage so the count survives navigation and restarts.
   const sessionTurns = reactive<Record<string, number>>({})
 
-  for (const key of Object.keys(localStorage)) {
-    if (!key.startsWith('agentkeeper:sturn:')) continue
-    const id = key.slice('agentkeeper:sturn:'.length)
-    const raw = localStorage.getItem(key)
-    const n = raw !== null ? parseInt(raw, 10) : NaN
-    if (!isNaN(n)) sessionTurns[id] = n
-  }
-
   // In-progress token count for the currently executing SDK run — keyed by localId.
-  // Updated on every message_start (input tokens) and message_delta (output tokens)
-  // and checkpointed to localStorage so it survives renderer refreshes.
   // Reset to 0 on `result` (onStats), at which point sessionTokens is authoritative.
-  // Safe to restore after restart: onStats adds the FULL run delta from main and
-  // then sets sessionRunTokens = 0, so there is no double-count risk.
   const sessionRunTokens = reactive<Record<string, number>>({})
 
-  for (const key of Object.keys(localStorage)) {
-    if (!key.startsWith('agentkeeper:srun:')) continue
-    const id = key.slice('agentkeeper:srun:'.length)
-    const raw = localStorage.getItem(key)
-    const n = raw !== null ? parseInt(raw, 10) : NaN
-    if (!isNaN(n) && n > 0) sessionRunTokens[id] = n
-  }
+  // Bootstrap per-session stats from SQLite. First run: export localStorage keys
+  // to main (one-time migration), then always use SQLite going forward.
+  void (async () => {
+    try {
+      // One-time migration: export localStorage stok/sturn/srun to SQLite
+      const alreadyImported = localStorage.getItem('agentkeeper:statsImported')
+      if (!alreadyImported) {
+        const toImport: Array<{
+          sessionLocalId: string; totalTokens: number; totalCostUsd: number;
+          turnCount: number; inProgressTokens: number
+        }> = []
+        for (const key of Object.keys(localStorage)) {
+          if (!key.startsWith('agentkeeper:stok:')) continue
+          const id = key.slice('agentkeeper:stok:'.length)
+          try {
+            const raw = localStorage.getItem(key)
+            if (!raw) continue
+            const data = JSON.parse(raw) as Record<string, unknown>
+            const tokens = typeof data['tokens'] === 'number' ? data['tokens'] : 0
+            const costUsd = typeof data['costUsd'] === 'number' ? data['costUsd'] : 0
+            const turnRaw = localStorage.getItem(`agentkeeper:sturn:${id}`)
+            const turnCount = turnRaw !== null ? parseInt(turnRaw, 10) : 0
+            toImport.push({ sessionLocalId: id, totalTokens: tokens, totalCostUsd: costUsd, turnCount: isNaN(turnCount) ? 0 : turnCount, inProgressTokens: 0 })
+          } catch { /* ignore corrupt entries */ }
+        }
+        if (toImport.length > 0) {
+          await window.agentkeeper.stats.importLegacy(toImport)
+        }
+        // Clean up old localStorage keys
+        for (const key of Object.keys(localStorage)) {
+          if (key.startsWith('agentkeeper:stok:') || key.startsWith('agentkeeper:sturn:') || key.startsWith('agentkeeper:srun:')) {
+            localStorage.removeItem(key)
+          }
+        }
+        localStorage.setItem('agentkeeper:statsImported', '1')
+      }
+
+      // Load all stats from SQLite
+      const rows = await window.agentkeeper.stats.getAll()
+      for (const row of rows) {
+        if (row.totalTokens > 0 || row.totalCostUsd > 0) {
+          sessionTokens[row.sessionLocalId] = { tokens: row.totalTokens, costUsd: row.totalCostUsd }
+        }
+        if (row.turnCount > 0) sessionTurns[row.sessionLocalId] = row.turnCount
+        if (row.inProgressTokens > 0) sessionRunTokens[row.sessionLocalId] = row.inProgressTokens
+      }
+    } catch { /* non-fatal — UI will populate once onStats fires */ }
+  })()
 
   // Real-time output token estimate built from content_block_delta text chunks
   // (~4 chars per token). Zeroed on message_start (new response begins) and on
@@ -278,8 +301,15 @@ export const useSessionStore = defineStore('sessions', () => {
       workItemTitle: plain.workItemTitle ?? null,
       isDraft: false,
       draftConfig: null,
-      draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
+      draftMessage: '',
+      draftAttachments: [],
     }
+    void loadDraft(localId).then((d) => {
+      const s = sessions[localId]
+      if (!s) return
+      if (d.text) s.draftMessage = d.text
+      if (d.attachments.length > 0) s.draftAttachments = d.attachments
+    })
     currentLiveId.value = localId
 
     // Flush anything that arrived pre-registration (shouldn't happen with
@@ -350,9 +380,7 @@ export const useSessionStore = defineStore('sessions', () => {
     delete sessionTurns[id]
     delete sessionRunTokens[id]
     delete sessionOutputEstimates[id]
-    localStorage.removeItem(`agentkeeper:stok:${id}`)
-    localStorage.removeItem(`agentkeeper:sturn:${id}`)
-    localStorage.removeItem(`agentkeeper:srun:${id}`)
+    void window.agentkeeper.drafts.clear(id)
     if (currentLiveId.value === id) currentLiveId.value = null
   }
 
@@ -407,8 +435,15 @@ export const useSessionStore = defineStore('sessions', () => {
       workItemTitle: entry.workItemTitle ?? null,
       isDraft: false,
       draftConfig: null,
-      draftMessage: localStorage.getItem(`agentkeeper:draft:${entry.localId}`) ?? '',
+      draftMessage: '',
+      draftAttachments: [],
     }
+    void loadDraft(entry.localId).then((d) => {
+      const s = sessions[entry.localId]
+      if (!s) return
+      if (d.text) s.draftMessage = d.text
+      if (d.attachments.length > 0) s.draftAttachments = d.attachments
+    })
     flushBuffer(entry.localId)
   }
 
@@ -445,8 +480,15 @@ export const useSessionStore = defineStore('sessions', () => {
         workItemTitle: persisted.workItemTitle,
         isDraft: false,
         draftConfig: null,
-        draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
+        draftMessage: '',
+        draftAttachments: [],
       }
+      void loadDraft(localId).then((d) => {
+        const s = sessions[localId]
+        if (!s) return
+        if (d.text) s.draftMessage = d.text
+        if (d.attachments.length > 0) s.draftAttachments = d.attachments
+      })
       flushBuffer(localId)
     }
     currentLiveId.value = localId
@@ -482,6 +524,7 @@ export const useSessionStore = defineStore('sessions', () => {
       isDraft: false,
       draftConfig: null,
       draftMessage: '',
+      draftAttachments: [],
     }
     currentLiveId.value = localId
     return localId
@@ -519,8 +562,16 @@ export const useSessionStore = defineStore('sessions', () => {
           workItemTitle: s.workItemTitle,
           isDraft: false,
           draftConfig: null,
-          draftMessage: localStorage.getItem(`agentkeeper:draft:${s.localId}`) ?? '',
+          draftMessage: '',
+          draftAttachments: [],
         }
+        const sid = s.localId
+        void loadDraft(sid).then((d) => {
+          const sess = sessions[sid]
+          if (!sess) return
+          if (d.text) sess.draftMessage = d.text
+          if (d.attachments.length > 0) sess.draftAttachments = d.attachments
+        })
         flushBuffer(s.localId)
       }
     }
@@ -566,7 +617,8 @@ export const useSessionStore = defineStore('sessions', () => {
       workItemTitle: null,
       isDraft: false,
       draftConfig: null,
-      draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
+      draftMessage: '',
+      draftAttachments: [],
     }
     currentLiveId.value = localId
     flushBuffer(localId)
@@ -639,23 +691,26 @@ export const useSessionStore = defineStore('sessions', () => {
         branchTouched: false,
         effortTouched: false,
       },
-      draftMessage: localStorage.getItem(`agentkeeper:draft:${localId}`) ?? '',
+      draftMessage: '',
+      draftAttachments: [],
     }
+    void loadDraft(localId).then((d) => {
+      const s = sessions[localId]
+      if (!s) return
+      if (d.text) s.draftMessage = d.text
+      if (d.attachments.length > 0) s.draftAttachments = d.attachments
+    })
     currentLiveId.value = localId
     return localId
   }
 
-  function setDraftMessage(localId: string, text: string): void {
+  function setDraftMessage(localId: string, text: string, attachments: Attachment[] = []): void {
     const s = sessions[localId]
     if (!s) return
     s.draftMessage = text
-    // Persist so the draft survives an app restart.
-    const key = `agentkeeper:draft:${localId}`
-    if (text) {
-      localStorage.setItem(key, text)
-    } else {
-      localStorage.removeItem(key)
-    }
+    s.draftAttachments = attachments
+    // Persist to SQLite — no size limit, no silent truncation of attachments.
+    void window.agentkeeper.drafts.set(localId, text, attachments)
   }
 
   /**
@@ -862,10 +917,12 @@ export const useSessionStore = defineStore('sessions', () => {
           if (inputTokens > 0) {
             sessionRunTokens[payload.sessionId] =
               (sessionRunTokens[payload.sessionId] ?? 0) + inputTokens
-            // Checkpoint so a renderer refresh doesn't lose in-progress tokens.
-            localStorage.setItem(
-              `agentkeeper:srun:${payload.sessionId}`,
-              String(sessionRunTokens[payload.sessionId]),
+            void window.agentkeeper.stats.upsert(
+              payload.sessionId,
+              sessionTokens[payload.sessionId]?.tokens ?? 0,
+              sessionTokens[payload.sessionId]?.costUsd ?? 0,
+              sessionTurns[payload.sessionId] ?? 0,
+              sessionRunTokens[payload.sessionId]!,
             )
           }
           // Reset the streaming estimate — a new response is beginning.
@@ -882,10 +939,12 @@ export const useSessionStore = defineStore('sessions', () => {
             sessionRunTokens[payload.sessionId] =
               (sessionRunTokens[payload.sessionId] ?? 0) + outputTokens
           }
-          // Checkpoint after every complete API response (input + output both captured).
-          localStorage.setItem(
-            `agentkeeper:srun:${payload.sessionId}`,
-            String(sessionRunTokens[payload.sessionId] ?? 0),
+          void window.agentkeeper.stats.upsert(
+            payload.sessionId,
+            sessionTokens[payload.sessionId]?.tokens ?? 0,
+            sessionTokens[payload.sessionId]?.costUsd ?? 0,
+            sessionTurns[payload.sessionId] ?? 0,
+            sessionRunTokens[payload.sessionId] ?? 0,
           )
           sessionOutputEstimates[payload.sessionId] = 0
           break
@@ -975,18 +1034,21 @@ export const useSessionStore = defineStore('sessions', () => {
       if (!sessionTokens[u.sessionId]) sessionTokens[u.sessionId] = { tokens: 0, costUsd: 0 }
       sessionTokens[u.sessionId]!.tokens += tokens
       sessionTokens[u.sessionId]!.costUsd += costUsd
-      // Persist so the totals survive navigation and full app restarts.
-      localStorage.setItem(`agentkeeper:stok:${u.sessionId}`, JSON.stringify(sessionTokens[u.sessionId]))
 
       // Each onStats call represents one completed assistant turn.
       sessionTurns[u.sessionId] = (sessionTurns[u.sessionId] ?? 0) + 1
-      localStorage.setItem(`agentkeeper:sturn:${u.sessionId}`, String(sessionTurns[u.sessionId]))
 
       // Run is complete — clear in-progress counters so the display doesn't
       // double-count (sessionTokens now covers everything they tracked).
       sessionRunTokens[u.sessionId] = 0
       sessionOutputEstimates[u.sessionId] = 0
-      localStorage.removeItem(`agentkeeper:srun:${u.sessionId}`)
+      void window.agentkeeper.stats.upsert(
+        u.sessionId,
+        sessionTokens[u.sessionId]!.tokens,
+        sessionTokens[u.sessionId]!.costUsd,
+        sessionTurns[u.sessionId] ?? 0,
+        0, // in-progress reset to 0 on turn completion
+      )
     }
   })
 
@@ -1019,13 +1081,15 @@ export const useSessionStore = defineStore('sessions', () => {
           sessionTokens[update.sessionId] = { tokens: 0, costUsd: 0 }
         }
         sessionTokens[update.sessionId]!.tokens += partial
-        localStorage.setItem(
-          `agentkeeper:stok:${update.sessionId}`,
-          JSON.stringify(sessionTokens[update.sessionId]),
-        )
         sessionRunTokens[update.sessionId] = 0
         sessionOutputEstimates[update.sessionId] = 0
-        localStorage.removeItem(`agentkeeper:srun:${update.sessionId}`)
+        void window.agentkeeper.stats.upsert(
+          update.sessionId,
+          sessionTokens[update.sessionId]!.tokens,
+          sessionTokens[update.sessionId]!.costUsd ?? 0,
+          sessionTurns[update.sessionId] ?? 0,
+          0,
+        )
       }
 
       if (update.sdkSessionId) s.sdkSessionId = update.sdkSessionId

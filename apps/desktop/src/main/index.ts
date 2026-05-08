@@ -10,6 +10,9 @@ import { activatePlugins } from './plugins'
 import { setWorkItemRegistry } from './agent'
 import { init as initPricing } from './pricing'
 import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
+import { initDb } from './db/index'
+import { runLegacyImport } from './db/legacy-import'
+import { pruneOrphanedDrafts } from './drafts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -59,8 +62,12 @@ function createWindow(): BrowserWindow {
 app.on('before-quit', () => flushCostLedger())
 
 app.whenReady().then(async () => {
-  initPricing(app.getPath('userData'))
-  initCostLedger(app.getPath('userData'))
+  const userData = app.getPath('userData')
+  initDb(userData)
+  runLegacyImport(userData)
+  pruneOrphanedDrafts()
+  initPricing(userData)
+  initCostLedger(userData)
   const registry = await activatePlugins(app)
   setWorkItemRegistry(registry)
   registerIpcHandlers(registry)

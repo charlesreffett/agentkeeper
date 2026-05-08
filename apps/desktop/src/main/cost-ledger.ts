@@ -1,5 +1,6 @@
-import fs from 'node:fs'
-import path from 'node:path'
+import { eq } from 'drizzle-orm'
+import { getDb } from './db/index'
+import { costEntries } from './db/schema'
 
 export interface CostEntry {
   key: string
@@ -13,105 +14,41 @@ export interface CostEntry {
   recordedAt: string  // ISO timestamp
 }
 
-interface LedgerData {
-  entries: Record<string, CostEntry>
-}
-
 export interface DayTotal {
   date: string
   costUsd: number
   tokens: number
 }
 
-const LEDGER_FILE = 'cost-ledger.json'
-
-let _userDataPath = ''
-let _ledger: LedgerData = { entries: {} }
-let _dirty = false
-let _saveTimer: ReturnType<typeof setTimeout> | null = null
-
-export function init(userDataPath: string): void {
-  _userDataPath = userDataPath
-  try {
-    const raw = fs.readFileSync(path.join(userDataPath, LEDGER_FILE), 'utf8')
-    const parsed = JSON.parse(raw) as LedgerData
-    _ledger = { entries: parsed.entries ?? {} }
-    migrateUtcDates()
-  } catch {
-    _ledger = { entries: {} }
-  }
-}
-
-// Entries written before the UTC→local fix stored dates in UTC. Re-derive
-// local date from recordedAt so historical data appears under the right day.
-function localDateFromIso(iso: string): string {
-  const d = new Date(iso)
-  return (
-    String(d.getFullYear()) +
-    '-' +
-    String(d.getMonth() + 1).padStart(2, '0') +
-    '-' +
-    String(d.getDate()).padStart(2, '0')
-  )
-}
-
-function migrateUtcDates(): void {
-  let changed = false
-  for (const entry of Object.values(_ledger.entries)) {
-    if (!entry.recordedAt) continue
-    const local = localDateFromIso(entry.recordedAt)
-    if (entry.date !== local) {
-      entry.date = local
-      changed = true
-    }
-  }
-  if (changed) {
-    _dirty = true
-    flush()
-  }
-}
+// Kept to avoid changing index.ts call sites.
+export function init(_userDataPath: string): void {}
 
 export function hasEntry(key: string): boolean {
-  return key in _ledger.entries
+  return !!getDb().select({ key: costEntries.key }).from(costEntries).where(eq(costEntries.key, key)).get()
 }
 
-// No-op if key already recorded — the cost is frozen at computation time.
+// No-op if key already recorded — cost is frozen at computation time.
 export function recordEntry(entry: CostEntry): void {
-  if (hasEntry(entry.key)) return
-  _ledger.entries[entry.key] = entry
-  _dirty = true
-  if (!_saveTimer) {
-    _saveTimer = setTimeout(() => {
-      _saveTimer = null
-      if (!_dirty) return
-      _dirty = false
-      try {
-        fs.writeFileSync(
-          path.join(_userDataPath, LEDGER_FILE),
-          JSON.stringify(_ledger),
-          'utf8',
-        )
-      } catch (err) {
-        console.error('[cost-ledger] save failed:', err)
-      }
-    }, 500)
-  }
+  getDb().insert(costEntries).values({
+    key: entry.key,
+    date: entry.date,
+    model: entry.model,
+    inputTokens: entry.inputTokens,
+    outputTokens: entry.outputTokens,
+    cacheReadTokens: entry.cacheReadTokens,
+    cacheCreationTokens: entry.cacheCreationTokens,
+    costUsd: entry.costUsd,
+    recordedAt: entry.recordedAt,
+  }).onConflictDoNothing().run()
 }
 
-export function flush(): void {
-  if (!_dirty) return
-  if (_saveTimer !== null) { clearTimeout(_saveTimer); _saveTimer = null }
-  _dirty = false
-  try {
-    fs.writeFileSync(path.join(_userDataPath, LEDGER_FILE), JSON.stringify(_ledger), 'utf8')
-  } catch (err) {
-    console.error('[cost-ledger] flush failed:', err)
-  }
-}
+// Kept so index.ts before-quit handler compiles without changes.
+export function flush(): void {}
 
 export function getDailySummary(): DayTotal[] {
+  const rows = getDb().select().from(costEntries).all()
   const days: Record<string, DayTotal> = {}
-  for (const entry of Object.values(_ledger.entries)) {
+  for (const entry of rows) {
     if (!days[entry.date]) days[entry.date] = { date: entry.date, costUsd: 0, tokens: 0 }
     days[entry.date]!.costUsd += entry.costUsd
     days[entry.date]!.tokens += entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens
@@ -119,13 +56,11 @@ export function getDailySummary(): DayTotal[] {
   return Object.values(days).sort((a, b) => a.date.localeCompare(b.date))
 }
 
-// Bulk-import legacy per-day totals that were stored in the renderer's localStorage
-// before the ledger was introduced. Key prefix "legacy:" prevents collision with
-// turn-based keys and the hasEntry guard prevents double-import.
+// Bulk-import legacy per-day totals stored in renderer's localStorage
+// before the ledger was introduced. Key prefix "legacy:" prevents collision.
 export function addLegacyEntry(date: string, tokens: number, costUsd: number): void {
   const key = `legacy:${date}`
-  if (hasEntry(key)) return
-  _ledger.entries[key] = {
+  getDb().insert(costEntries).values({
     key,
     date,
     model: 'legacy-import',
@@ -135,7 +70,5 @@ export function addLegacyEntry(date: string, tokens: number, costUsd: number): v
     cacheCreationTokens: 0,
     costUsd,
     recordedAt: new Date().toISOString(),
-  }
-  _dirty = true
-  flush()
+  }).onConflictDoNothing().run()
 }

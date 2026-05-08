@@ -43,6 +43,11 @@ export interface Attachment {
   content: string
 }
 
+export interface DraftRecord {
+  text: string
+  attachments: Attachment[]
+}
+
 // ─── Remote sources ─────────────────────────────────────────────────────────
 
 export interface RemoteSource {
@@ -497,6 +502,16 @@ export interface Plan {
   steps: PlanStep[]
 }
 
+// ─── Session stats ───────────────────────────────────────────────────────────
+
+export interface SessionStatRow {
+  sessionLocalId: string
+  totalTokens: number
+  totalCostUsd: number
+  turnCount: number
+  inProgressTokens: number
+}
+
 // ─── Cost ledger ─────────────────────────────────────────────────────────────
 
 export interface DayTotal {
@@ -696,6 +711,16 @@ export interface AgentKeeperApi {
     getMeta: () => Promise<PricingMeta>
     refresh: () => Promise<PricingMeta>
   }
+  drafts: {
+    get: (sessionLocalId: string) => Promise<DraftRecord>
+    set: (sessionLocalId: string, text: string, attachments: Attachment[]) => Promise<void>
+    clear: (sessionLocalId: string) => Promise<void>
+  }
+  stats: {
+    getAll: () => Promise<SessionStatRow[]>
+    upsert: (sessionLocalId: string, totalTokens: number, totalCostUsd: number, turnCount: number, inProgressTokens: number) => Promise<void>
+    importLegacy: (entries: SessionStatRow[]) => Promise<void>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -797,4 +822,10 @@ export const IPC_CHANNELS = {
   costsAddLegacy: 'costs:addLegacy',
   pricingRefresh: 'pricing:refresh',
   pricingGetMeta: 'pricing:getMeta',
+  draftsGet: 'drafts:get',
+  draftsSet: 'drafts:set',
+  draftsClear: 'drafts:clear',
+  statsGetAll: 'stats:getAll',
+  statsUpsert: 'stats:upsert',
+  statsImportLegacy: 'stats:importLegacy',
 } as const

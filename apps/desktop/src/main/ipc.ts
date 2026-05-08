@@ -19,6 +19,9 @@ import {
   type WorkItemStatus,
 } from '../shared/ipc-contract'
 import * as costLedger from './cost-ledger'
+import { getDraft, setDraft, clearDraft } from './drafts'
+import { getAllStats, upsertStats, markStatsImported, isStatsImported } from './stats'
+import type { SessionStatRow } from '../shared/ipc-contract'
 import { getActivePriceTable, refreshFromLiteLLM } from './pricing'
 import {
   addComment as ghAddComment,
@@ -887,6 +890,30 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   ipcMain.handle(IPC_CHANNELS.pricingRefresh, async (): Promise<PricingMeta> => {
     const t = await refreshFromLiteLLM()
     return { source: t.source, fetchedAt: t.fetchedAt, modelCount: Object.keys(t.models).length }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.draftsGet, (_e, sessionLocalId: string) =>
+    getDraft(sessionLocalId))
+  ipcMain.handle(IPC_CHANNELS.draftsSet, (_e, sessionLocalId: string, text: string, attachments: Attachment[]) =>
+    setDraft(sessionLocalId, text, attachments))
+  ipcMain.handle(IPC_CHANNELS.draftsClear, (_e, sessionLocalId: string) =>
+    clearDraft(sessionLocalId))
+
+  ipcMain.handle(IPC_CHANNELS.statsGetAll, () => getAllStats())
+  ipcMain.handle(IPC_CHANNELS.statsUpsert, (
+    _e,
+    sessionLocalId: string,
+    totalTokens: number,
+    totalCostUsd: number,
+    turnCount: number,
+    inProgressTokens: number,
+  ) => upsertStats(sessionLocalId, totalTokens, totalCostUsd, turnCount, inProgressTokens))
+  ipcMain.handle(IPC_CHANNELS.statsImportLegacy, (_e, entries: SessionStatRow[]) => {
+    if (isStatsImported()) return
+    for (const e of entries) {
+      upsertStats(e.sessionLocalId, e.totalTokens, e.totalCostUsd, e.turnCount, e.inProgressTokens)
+    }
+    markStatsImported()
   })
 
   // Work items (plugin registry)

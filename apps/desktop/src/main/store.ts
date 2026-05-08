@@ -1,48 +1,12 @@
-import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import { desc, eq } from 'drizzle-orm'
 import type { RecentProject } from '../shared/ipc-contract'
 import { detectRemoteSources } from './git'
+import { getDb } from './db/index'
+import { appState, projects } from './db/schema'
 
 const MAX_RECENT = 20
-
-interface StoreData {
-  projects: RecentProject[]
-  focusedProjectPath: string | null
-}
-
-function filePath() {
-  return path.join(app.getPath('userData'), 'recent-projects.json')
-}
-
-function read(): StoreData {
-  try {
-    const raw = fs.readFileSync(filePath(), 'utf8')
-    const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      // migrate from old array-only format
-      return {
-        projects: parsed.map((p) => ({ ...p, repo: p.repo ?? null })),
-        focusedProjectPath: null,
-      }
-    }
-    return {
-      projects: (parsed.projects ?? []).map((p: RecentProject) => ({
-        ...p,
-        repo: p.repo ?? null,
-      })),
-      focusedProjectPath: parsed.focusedProjectPath ?? null,
-    }
-  } catch {
-    return { projects: [], focusedProjectPath: null }
-  }
-}
-
-function write(data: StoreData) {
-  const file = filePath()
-  fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, JSON.stringify(data, null, 2))
-}
 
 export async function detectGithubRepo(projectPath: string): Promise<string | null> {
   const sources = await detectRemoteSources(projectPath)
@@ -51,42 +15,83 @@ export async function detectGithubRepo(projectPath: string): Promise<string | nu
 
 export const recentProjectsStore = {
   list(): RecentProject[] {
-    return read().projects.sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
+    return getDb()
+      .select()
+      .from(projects)
+      .orderBy(desc(projects.lastOpenedAt))
+      .limit(MAX_RECENT)
+      .all()
+      .map((r) => ({ path: r.path, name: r.name, repo: r.repo ?? null, lastOpenedAt: r.lastOpenedAt }))
   },
   add(project: RecentProject) {
-    const data = read()
-    const rest = data.projects.filter((p) => p.path !== project.path)
-    rest.unshift(project)
-    write({ ...data, projects: rest.slice(0, MAX_RECENT) })
+    const db = getDb()
+    db.insert(projects).values({
+      path: project.path,
+      name: project.name,
+      repo: project.repo ?? null,
+      lastOpenedAt: project.lastOpenedAt,
+    }).onConflictDoUpdate({
+      target: projects.path,
+      set: { name: project.name, repo: project.repo ?? null, lastOpenedAt: project.lastOpenedAt },
+    }).run()
+
+    // Prune beyond MAX_RECENT (keep the most recent).
+    const all = db.select({ path: projects.path }).from(projects).orderBy(desc(projects.lastOpenedAt)).all()
+    if (all.length > MAX_RECENT) {
+      const toDelete = all.slice(MAX_RECENT)
+      for (const p of toDelete) {
+        db.delete(projects).where(eq(projects.path, p.path)).run()
+      }
+    }
   },
   remove(targetPath: string) {
-    const data = read()
-    write({
-      projects: data.projects.filter((p) => p.path !== targetPath),
-      focusedProjectPath: data.focusedProjectPath === targetPath ? null : data.focusedProjectPath,
-    })
+    const db = getDb()
+    db.delete(projects).where(eq(projects.path, targetPath)).run()
+    // Clear focused if it matches the removed project.
+    const focused = db.select({ value: appState.value }).from(appState).where(eq(appState.key, 'focusedProjectPath')).get()
+    if (focused?.value === targetPath) {
+      db.delete(appState).where(eq(appState.key, 'focusedProjectPath')).run()
+    }
   },
   rename(oldPath: string, newName: string, renameDir: boolean): RecentProject {
-    const data = read()
-    const project = data.projects.find((p) => p.path === oldPath)
-    if (!project) throw new Error(`Project not found: ${oldPath}`)
+    const db = getDb()
+    const row = db.select().from(projects).where(eq(projects.path, oldPath)).get()
+    if (!row) throw new Error(`Project not found: ${oldPath}`)
     let newPath = oldPath
     if (renameDir) {
       newPath = path.join(path.dirname(oldPath), newName)
       fs.renameSync(oldPath, newPath)
     }
-    const updated: RecentProject = { ...project, path: newPath, name: newName }
-    write({
-      projects: data.projects.map((p) => (p.path === oldPath ? updated : p)),
-      focusedProjectPath: data.focusedProjectPath === oldPath ? newPath : data.focusedProjectPath,
-    })
-    return updated
+    db.delete(projects).where(eq(projects.path, oldPath)).run()
+    db.insert(projects).values({
+      path: newPath,
+      name: newName,
+      repo: row.repo ?? null,
+      lastOpenedAt: row.lastOpenedAt,
+    }).onConflictDoUpdate({
+      target: projects.path,
+      set: { name: newName, repo: row.repo ?? null, lastOpenedAt: row.lastOpenedAt },
+    }).run()
+
+    // Update focused path if it pointed at the renamed project.
+    const focused = db.select({ value: appState.value }).from(appState).where(eq(appState.key, 'focusedProjectPath')).get()
+    if (focused?.value === oldPath) {
+      db.update(appState).set({ value: newPath }).where(eq(appState.key, 'focusedProjectPath')).run()
+    }
+
+    return { path: newPath, name: newName, repo: row.repo ?? null, lastOpenedAt: row.lastOpenedAt }
   },
   getFocused(): string | null {
-    return read().focusedProjectPath
+    return getDb().select({ value: appState.value }).from(appState).where(eq(appState.key, 'focusedProjectPath')).get()?.value ?? null
   },
   setFocused(targetPath: string | null) {
-    const data = read()
-    write({ ...data, focusedProjectPath: targetPath })
+    const db = getDb()
+    if (targetPath === null) {
+      db.delete(appState).where(eq(appState.key, 'focusedProjectPath')).run()
+    } else {
+      db.insert(appState).values({ key: 'focusedProjectPath', value: targetPath })
+        .onConflictDoUpdate({ target: appState.key, set: { value: targetPath } })
+        .run()
+    }
   },
 }
