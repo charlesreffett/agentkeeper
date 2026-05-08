@@ -13,6 +13,7 @@ import {
 const props = defineProps<{
   events: TranscriptEvent[]
   verbosityState?: VerbosityState
+  roleName?: string | null
 }>()
 
 const emit = defineEmits<{ 'show-all': [] }>()
@@ -54,7 +55,7 @@ const hasVisibleContent = computed(() => renderItems.value.length > 0)
 </script>
 
 <template>
-  <div class="px-6 py-6 max-w-4xl mx-auto space-y-4">
+  <div class="px-6 py-6 max-w-4xl mx-auto space-y-5">
 
     <!-- Empty state: events exist but all hidden by current verbosity -->
     <div
@@ -91,6 +92,7 @@ const hasVisibleContent = computed(() => renderItems.value.length > 0)
         v-else
         :event="item.event"
         :verbosity-state="state"
+        :agent-name="roleName ?? undefined"
       />
     </template>
   </div>

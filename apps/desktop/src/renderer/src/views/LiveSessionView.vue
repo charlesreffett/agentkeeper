@@ -604,6 +604,7 @@ const currentToolName = computed((): string | null => {
             <Transcript
               v-if="isResumed && historicalEvents.length"
               :events="historicalEvents"
+              :role-name="session.roleName ?? null"
               :verbosity-state="verbosityState"
               @show-all="onShowAll"
             />
@@ -617,6 +618,7 @@ const currentToolName = computed((): string | null => {
             </div>
             <Transcript
               :events="session.events"
+              :role-name="session.roleName ?? null"
               :verbosity-state="verbosityState"
               @show-all="onShowAll"
             />
