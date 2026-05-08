@@ -114,7 +114,7 @@ export function getDailySummary(): DayTotal[] {
   for (const entry of Object.values(_ledger.entries)) {
     if (!days[entry.date]) days[entry.date] = { date: entry.date, costUsd: 0, tokens: 0 }
     days[entry.date]!.costUsd += entry.costUsd
-    days[entry.date]!.tokens += entry.inputTokens + entry.outputTokens
+    days[entry.date]!.tokens += entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens
   }
   return Object.values(days).sort((a, b) => a.date.localeCompare(b.date))
 }

@@ -963,7 +963,7 @@ export const useSessionStore = defineStore('sessions', () => {
     activeAgentCount.value = stats.activeSessionCount
     runningSessionCount.value = stats.runningSessionCount
     const u = stats.turnUsage
-    const tokens = u.inputTokens + u.outputTokens
+    const tokens = u.inputTokens + u.outputTokens + u.cacheReadInputTokens + u.cacheCreationInputTokens
     const costUsd = u.totalCostUsd
     if (tokens > 0 || costUsd > 0) {
       const key = localDateKey()
