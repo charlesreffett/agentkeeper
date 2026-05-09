@@ -471,6 +471,7 @@ function handleCardClick(card: SessionCardData) {
     </div>
 
     <!-- Stats overview -->
+    <StatsCards />
 
     <!-- Selection action bar -->
     <div
@@ -526,8 +527,6 @@ function handleCardClick(card: SessionCardData) {
         </Button>
       </div>
     </div>
-
-    <StatsCards />
 
     <!-- Unified session grid -->
     <div v-if="filteredSessions.length > 0" class="grid grid-cols-3 gap-4">
