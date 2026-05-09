@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { CheckSquare, Filter, Layers, Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
+import { CheckSquare, Filter, Layers, Plus, RefreshCw, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import SessionCard, { type SessionCardData } from '@/components/SessionCard.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -247,10 +257,42 @@ async function handleNewSession() {
 
 const isSelectMode = ref(false)
 const selectedIds = ref(new Set<string>())
+const confirmDeleteSelectedOpen = ref(false)
+const confirmDeleteAllOpen = ref(false)
 
 const selectedCount = computed(() => selectedIds.value.size)
 const totalCount = computed(() => filteredSessions.value.length)
 const allSelected = computed(() => totalCount.value > 0 && selectedCount.value === totalCount.value)
+
+const scopeLabel = computed(() => {
+  if (selectedProjectPath.value) {
+    const proj = activeProjects.value.find((p) => p.path === selectedProjectPath.value)
+    return proj ? proj.name : 'project'
+  }
+  return 'all projects'
+})
+
+const selectionWarning = computed(() => {
+  const sel = filteredSessions.value.filter((s) => selectedIds.value.has(s.id))
+  const running = sel.filter((s) => s.status === 'running' || s.status === 'starting').length
+  const blocked = sel.filter((s) => s.status === 'blocked').length
+  return { running, blocked, any: running + blocked > 0 }
+})
+
+const allWarning = computed(() => {
+  const running = filteredSessions.value.filter(
+    (s) => s.status === 'running' || s.status === 'starting',
+  ).length
+  const blocked = filteredSessions.value.filter((s) => s.status === 'blocked').length
+  return { running, blocked, any: running + blocked > 0 }
+})
+
+function warningText(w: { running: number; blocked: number }): string {
+  const parts: string[] = []
+  if (w.running > 0) parts.push(`${w.running} running`)
+  if (w.blocked > 0) parts.push(`${w.blocked} blocked`)
+  return parts.join(' · ')
+}
 
 function toggleSelectMode() {
   isSelectMode.value = !isSelectMode.value
@@ -297,13 +339,21 @@ async function deleteSingleSession(card: SessionCardData) {
   }
 }
 
-async function handleDeleteSelected() {
+function handleDeleteSelected() {
+  confirmDeleteSelectedOpen.value = true
+}
+
+function handleDeleteAll() {
+  confirmDeleteAllOpen.value = true
+}
+
+async function executeDeleteSelected() {
   const toDelete = filteredSessions.value.filter((s) => selectedIds.value.has(s.id))
   await Promise.all(toDelete.map(deleteSingleSession))
   selectedIds.value = new Set()
 }
 
-async function handleDeleteAll() {
+async function executeDeleteAll() {
   await Promise.all(filteredSessions.value.map(deleteSingleSession))
   selectedIds.value = new Set()
 }
@@ -366,7 +416,7 @@ function handleCardClick(card: SessionCardData) {
           @click="toggleSelectMode"
         >
           <CheckSquare class="size-3.5" />
-          Select
+          {{ isSelectMode ? 'Done' : 'Select' }}
         </Button>
         <Button size="sm" class="gap-1.5" @click="handleNewSession">
           <Plus class="size-3.5" />
@@ -418,21 +468,28 @@ function handleCardClick(card: SessionCardData) {
     <!-- Selection action bar -->
     <div
       v-if="isSelectMode"
-      class="flex items-center justify-between gap-4 px-3 py-2 rounded-lg border bg-muted/40"
+      class="flex items-center justify-between gap-4 px-3 py-2.5 rounded-lg border bg-muted/40"
     >
-      <div class="flex items-center gap-3 text-sm">
+      <div class="flex items-center gap-4 text-sm">
         <button
-          class="text-primary hover:underline font-medium"
+          class="inline-flex items-center gap-1.5 font-medium transition-colors"
+          :class="allSelected ? 'text-primary' : 'text-foreground hover:text-primary'"
           @click="allSelected ? clearSelection() : selectAll()"
         >
-          {{ allSelected ? 'Deselect all' : 'Select all' }}
+          <component :is="allSelected ? CheckSquare : Square" class="size-4" />
+          Select all
         </button>
         <span class="text-muted-foreground">
-          {{ selectedCount }} of {{ totalCount }} selected
+          <template v-if="selectedCount > 0">
+            <span class="text-primary font-medium">{{ selectedCount }}</span> of {{ totalCount }} selected
+          </template>
+          <template v-else>
+            {{ totalCount }} session{{ totalCount === 1 ? '' : 's' }} in {{ scopeLabel }}
+          </template>
         </span>
         <button
           v-if="selectedCount > 0"
-          class="text-muted-foreground hover:text-foreground"
+          class="text-muted-foreground hover:text-foreground transition-colors"
           @click="clearSelection"
         >
           Clear
@@ -440,24 +497,25 @@ function handleCardClick(card: SessionCardData) {
       </div>
       <div class="flex items-center gap-2">
         <Button
-          variant="destructive"
+          variant="ghost"
           size="sm"
-          class="gap-1.5"
+          class="gap-1.5 transition-colors"
+          :class="selectedCount > 0 ? 'text-destructive hover:text-destructive hover:bg-destructive/10' : 'text-muted-foreground'"
           :disabled="selectedCount === 0"
           @click="handleDeleteSelected"
         >
           <Trash2 class="size-3.5" />
-          Delete selected
+          Delete selected{{ selectedCount > 0 ? ` (${selectedCount})` : '' }}
         </Button>
         <Button
-          variant="outline"
+          variant="destructive"
           size="sm"
-          class="gap-1.5 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+          class="gap-1.5"
           :disabled="totalCount === 0"
           @click="handleDeleteAll"
         >
           <Trash2 class="size-3.5" />
-          Delete all
+          Delete all ({{ totalCount }})
         </Button>
       </div>
     </div>
@@ -484,5 +542,67 @@ function handleCardClick(card: SessionCardData) {
     >
       No sessions yet.
     </div>
+
+    <!-- Confirm: delete selected -->
+    <AlertDialog v-model:open="confirmDeleteSelectedOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <div class="flex size-10 items-center justify-center rounded-full bg-destructive/10 mb-1">
+            <TriangleAlert class="size-5 text-destructive" />
+          </div>
+          <AlertDialogTitle>Delete {{ selectedCount }} session{{ selectedCount === 1 ? '' : 's' }}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You're about to delete {{ selectedCount }} selected session{{ selectedCount === 1 ? '' : 's' }}. This can't be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div
+          v-if="selectionWarning.any"
+          class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2"
+        >
+          <TriangleAlert class="size-4 shrink-0 mt-0.5" />
+          <span>{{ warningText(selectionWarning) }} — agents will be stopped immediately.</span>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            @click="executeDeleteSelected"
+          >
+            Delete {{ selectedCount }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Confirm: delete all -->
+    <AlertDialog v-model:open="confirmDeleteAllOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <div class="flex size-10 items-center justify-center rounded-full bg-destructive/10 mb-1">
+            <TriangleAlert class="size-5 text-destructive" />
+          </div>
+          <AlertDialogTitle>Delete all {{ totalCount }} sessions?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This removes {{ totalCount }} session{{ totalCount === 1 ? '' : 's' }} currently in view. Plans, transcripts, and sub-agent history will be discarded.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div
+          v-if="allWarning.any"
+          class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2"
+        >
+          <TriangleAlert class="size-4 shrink-0 mt-0.5" />
+          <span>{{ warningText(allWarning) }} — agents will be stopped immediately.</span>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            @click="executeDeleteAll"
+          >
+            Delete {{ totalCount }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
