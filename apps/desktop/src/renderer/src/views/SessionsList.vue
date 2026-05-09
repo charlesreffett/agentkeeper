@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import type { PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
+import type { Session, SessionSummary } from '@shared/ipc-contract'
 import { formatRelativeTime } from '@/lib/format'
 import { useSessionStore } from '@/stores/sessions'
 import type { LiveSession } from '@/stores/sessions'
@@ -37,13 +37,23 @@ const historical = ref<SessionSummary[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
-const persistedSessions = ref<PersistedSession[]>([])
-const persistedAgencies = ref<PersistedAgency[]>([])
+const persistedSessions = ref<Session[]>([])
 const expiryDays = ref<number | null>(14)
 
-const standalonePersistedSessions = computed(() =>
+const standaloneSessions = computed(() =>
   persistedSessions.value.filter((s) => !s.agencyInstanceId),
 )
+
+const agencyGroups = computed(() => {
+  const groups = new Map<string, Session[]>()
+  for (const s of persistedSessions.value) {
+    if (!s.agencyInstanceId) continue
+    let list = groups.get(s.agencyInstanceId)
+    if (!list) { list = []; groups.set(s.agencyInstanceId, list) }
+    list.push(s)
+  }
+  return groups
+})
 
 // ─── Confirmation dialog ─────────────────────────────────────────────────────
 
@@ -87,13 +97,11 @@ async function load() {
 
 async function loadPersisted() {
   try {
-    const [sessions, agencies, settings] = await Promise.all([
+    const [sessions, settings] = await Promise.all([
       window.agentkeeper.sessions.listPersisted(props.projectPath),
-      window.agentkeeper.agencies.listPersisted(props.projectPath),
       window.agentkeeper.settings.get(),
     ])
     persistedSessions.value = sessions
-    persistedAgencies.value = agencies
     expiryDays.value = settings.sessionExpiryDays
   } catch {
     // non-fatal
@@ -172,7 +180,7 @@ function liveStatusDot(s: LiveSession): string {
 const persistedBySdkId = computed(() => {
   const map = new Map<string, string>()
   for (const s of persistedSessions.value) {
-    map.set(s.sdkSessionId, s.localId)
+    if (s.sdkSessionId) map.set(s.sdkSessionId, s.localId)
   }
   return map
 })
@@ -183,7 +191,7 @@ function historicalDraftMessage(s: SessionSummary): string {
   return localStorage.getItem(`agentkeeper:draft:${localId}`) ?? ''
 }
 
-function persistedDraftMessage(s: PersistedSession): string {
+function persistedDraftMessage(s: Session): string {
   return localStorage.getItem(`agentkeeper:draft:${s.localId}`) ?? ''
 }
 
@@ -214,19 +222,19 @@ function confirmRemoveAllHistorical() {
 
 // ─── Previous (registry-persisted) ────────────────────────────────────────────
 
-function openSession(s: PersistedSession) {
+function openSession(s: Session) {
   const localId = store.openPersisted(s)
   emit('selectLive', store.getSession(localId)!)
 }
 
-function openAgency(a: PersistedAgency) {
-  const members = persistedSessions.value.filter((s) => s.agencyInstanceId === a.instanceId)
-  const localId = store.openPersistedAgency(a, members)
+function openAgency(agencyInstanceId: string) {
+  const members = agencyGroups.value.get(agencyInstanceId) ?? []
+  const localId = store.openPersistedAgency(members)
   const session = store.getSession(localId)
   if (session) emit('selectLive', session)
 }
 
-function confirmDismissSession(s: PersistedSession) {
+function confirmDismissSession(s: Session) {
   requestConfirm(
     'Remove session?',
     `"${s.initialPrompt.split('\n')[0] || 'Session'}" will be removed from the list.`,
@@ -237,26 +245,30 @@ function confirmDismissSession(s: PersistedSession) {
   )
 }
 
-function confirmDismissAgency(a: PersistedAgency) {
+function confirmDismissAgency(agencyInstanceId: string) {
+  const members = agencyGroups.value.get(agencyInstanceId) ?? []
+  const entrySession = members.find((s) => !s.initialPrompt.startsWith('Agency "'))
+  const name = entrySession?.initialPrompt.split('\n')[0] ?? 'Agency session'
   requestConfirm(
     'Remove agency session?',
-    `"${a.agencyName}" will be removed from the list.`,
+    `"${name}" will be removed from the list.`,
     async () => {
-      persistedAgencies.value = persistedAgencies.value.filter((x) => x.instanceId !== a.instanceId)
-      await window.agentkeeper.agencies.deletePersisted(a.instanceId)
+      for (const s of members) {
+        persistedSessions.value = persistedSessions.value.filter((x) => x.localId !== s.localId)
+        await window.agentkeeper.sessions.deletePersisted(s.localId)
+      }
     },
   )
 }
 
 function confirmRemoveAllPersisted() {
-  const count = standalonePersistedSessions.value.length + persistedAgencies.value.length
+  const count = standaloneSessions.value.length + agencyGroups.value.size
   requestConfirm(
     'Remove all previous sessions?',
     `${count} session${count !== 1 ? 's' : ''} will be permanently removed.`,
     async () => {
       await window.agentkeeper.sessions.deleteAllPersisted(props.projectPath)
       persistedSessions.value = []
-      persistedAgencies.value = []
     },
   )
 }
@@ -266,8 +278,11 @@ async function touchSession(localId: string) {
   await loadPersisted()
 }
 
-async function touchAgency(instanceId: string) {
-  await window.agentkeeper.agencies.touchPersisted(instanceId)
+async function touchAgency(agencyInstanceId: string) {
+  const members = agencyGroups.value.get(agencyInstanceId) ?? []
+  for (const s of members) {
+    await window.agentkeeper.sessions.touchPersisted(s.localId)
+  }
   await loadPersisted()
 }
 
@@ -297,9 +312,9 @@ const allHistoricalSelected = computed(
 
 const allPersistedSelected = computed(
   () =>
-    standalonePersistedSessions.value.length > 0 &&
-    standalonePersistedSessions.value.every((s) => selectedPersisted.value.has(s.localId)) &&
-    persistedAgencies.value.every((a) => selectedAgencies.value.has(a.instanceId)),
+    standaloneSessions.value.length > 0 &&
+    standaloneSessions.value.every((s) => selectedPersisted.value.has(s.localId)) &&
+    [...agencyGroups.value.keys()].every((id) => selectedAgencies.value.has(id)),
 )
 
 const allLiveSelected = computed(
@@ -342,8 +357,8 @@ function toggleAllPersisted() {
     selectedPersisted.value = new Set()
     selectedAgencies.value = new Set()
   } else {
-    selectedPersisted.value = new Set(standalonePersistedSessions.value.map((s) => s.localId))
-    selectedAgencies.value = new Set(persistedAgencies.value.map((a) => a.instanceId))
+    selectedPersisted.value = new Set(standaloneSessions.value.map((s) => s.localId))
+    selectedAgencies.value = new Set(agencyGroups.value.keys())
   }
 }
 
@@ -354,8 +369,8 @@ function toggleAllLive() {
 
 function selectAll() {
   selectedHistorical.value = new Set(historical.value.map((s) => s.id))
-  selectedPersisted.value = new Set(standalonePersistedSessions.value.map((s) => s.localId))
-  selectedAgencies.value = new Set(persistedAgencies.value.map((a) => a.instanceId))
+  selectedPersisted.value = new Set(standaloneSessions.value.map((s) => s.localId))
+  selectedAgencies.value = new Set(agencyGroups.value.keys())
   selectedLive.value = new Set(dismissableLive.value.map((s) => s.localId))
 }
 
@@ -382,10 +397,11 @@ async function deleteSelected() {
         await window.agentkeeper.sessions.deletePersisted(localId)
       }
       for (const instanceId of selectedAgencies.value) {
-        persistedAgencies.value = persistedAgencies.value.filter(
-          (a) => a.instanceId !== instanceId,
-        )
-        await window.agentkeeper.agencies.deletePersisted(instanceId)
+        const members = agencyGroups.value.get(instanceId) ?? []
+        for (const s of members) {
+          persistedSessions.value = persistedSessions.value.filter((x) => x.localId !== s.localId)
+          await window.agentkeeper.sessions.deletePersisted(s.localId)
+        }
       }
       for (const localId of selectedLive.value) {
         store.dismiss(localId)
@@ -553,7 +569,7 @@ async function deleteSelected() {
 
     <!-- Previous (registry-persisted, resumable) -->
     <section
-      v-if="standalonePersistedSessions.length || persistedAgencies.length"
+      v-if="standaloneSessions.length || agencyGroups.size"
       class="shrink-0 border-t border-border"
     >
       <div class="px-4 py-2 border-b border-border flex items-center justify-between">
@@ -585,7 +601,7 @@ async function deleteSelected() {
       <ul class="overflow-y-auto max-h-64">
         <!-- Standalone sessions -->
         <SessionListItem
-          v-for="s in standalonePersistedSessions"
+          v-for="s in standaloneSessions"
           :key="s.localId"
           :title="s.initialPrompt.split('\n')[0] || '(no prompt)'"
           status-dot="bg-muted-foreground/40"
@@ -629,47 +645,47 @@ async function deleteSelected() {
         </SessionListItem>
 
         <!-- Agencies -->
-        <SessionListItem
-          v-for="a in persistedAgencies"
-          :key="a.instanceId"
-          title-prefix="◎"
-          :title="a.agencyName"
-          status-dot="bg-muted-foreground/40"
-          status-label="Inactive"
-          :branch="a.branch"
-          :last-activity-at="a.lastActivityAt"
-          :show-checkbox="selectionMode"
-          :checked="selectedAgencies.has(a.instanceId)"
-          can-dismiss
-          @click="selectionMode ? undefined : openAgency(a)"
-          @dismiss="confirmDismissAgency(a)"
-          @toggle="toggleAgency(a.instanceId)"
-        >
-          <template #actions>
-            <button
-              v-if="
-                daysRemaining(a.lastActivityAt, expiryDays) !== null &&
-                daysRemaining(a.lastActivityAt, expiryDays)! <= 3
-              "
-              class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition shrink-0"
-              title="Reset expiry"
-              @click.stop="touchAgency(a.instanceId)"
-            >
-              Keep
-            </button>
-          </template>
-          <div
-            v-if="
-              daysRemaining(a.lastActivityAt, expiryDays) !== null &&
-              daysRemaining(a.lastActivityAt, expiryDays)! <= 3
-            "
-            class="mt-1 pl-3.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
+        <template v-for="[instanceId, members] in agencyGroups" :key="instanceId">
+          <SessionListItem
+            title-prefix="◎"
+            :title="members.find(s => !s.initialPrompt.startsWith('Agency &quot;'))?.initialPrompt.split('\n')[0] ?? members[0]?.agencyName ?? 'Agency session'"
+            status-dot="bg-muted-foreground/40"
+            status-label="Inactive"
+            :branch="members.find(s => !s.initialPrompt.startsWith('Agency &quot;'))?.branch ?? members[0]?.branch ?? null"
+            :last-activity-at="Math.max(...members.map(s => s.lastActivityAt))"
+            :show-checkbox="selectionMode"
+            :checked="selectedAgencies.has(instanceId)"
+            can-dismiss
+            @click="selectionMode ? undefined : openAgency(instanceId)"
+            @dismiss="confirmDismissAgency(instanceId)"
+            @toggle="toggleAgency(instanceId)"
           >
-            Expires in {{ daysRemaining(a.lastActivityAt, expiryDays) }} day{{
-              daysRemaining(a.lastActivityAt, expiryDays) === 1 ? '' : 's'
-            }}
-          </div>
-        </SessionListItem>
+            <template #actions>
+              <button
+                v-if="
+                  daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) !== null &&
+                  daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays)! <= 3
+                "
+                class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition shrink-0"
+                title="Reset expiry"
+                @click.stop="touchAgency(instanceId)"
+              >
+                Keep
+              </button>
+            </template>
+            <div
+              v-if="
+                daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) !== null &&
+                daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays)! <= 3
+              "
+              class="mt-1 pl-3.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
+            >
+              Expires in {{ daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) }} day{{
+                daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) === 1 ? '' : 's'
+              }}
+            </div>
+          </SessionListItem>
+        </template>
       </ul>
     </section>
   </div>

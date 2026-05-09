@@ -1,8 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Filter, Layers, Plus, RefreshCw } from 'lucide-vue-next'
+import { CheckSquare, Filter, Layers, Plus, RefreshCw, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import SessionCard, { type SessionCardData } from '@/components/SessionCard.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
@@ -10,7 +20,7 @@ import { useProjectStore } from '@/stores/project'
 import { projectColor } from '@/lib/projectColor'
 import { cn } from '@/lib/utils'
 import StatsCards from '@/components/StatsCards.vue'
-import type { PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
+import type { Session, SessionSummary } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
@@ -22,28 +32,36 @@ const statusCounts = computed(() => sessionStore.statusCounts)
 
 // ── Persisted + historical data from disk ──────────────────────────────────
 
-const persistedSessions = ref<PersistedSession[]>([])
-const persistedAgencies = ref<PersistedAgency[]>([])
+const persistedSessions = ref<Session[]>([])
 const historicalSessions = ref<{ projectPath: string; summary: SessionSummary }[]>([])
+
+// Agency groups derived from persistedSessions
+const agencyGroups = computed(() => {
+  const groups = new Map<string, Session[]>()
+  for (const s of persistedSessions.value) {
+    if (!s.agencyInstanceId) continue
+    let list = groups.get(s.agencyInstanceId)
+    if (!list) { list = []; groups.set(s.agencyInstanceId, list) }
+    list.push(s)
+  }
+  return groups
+})
 
 async function loadPersistedAndHistorical() {
   const projects = projectsStore.projects
   if (!projects.length) return
 
-  const allPersisted: PersistedSession[] = []
-  const allAgencies: PersistedAgency[] = []
+  const allPersisted: Session[] = []
   const allHistorical: { projectPath: string; summary: SessionSummary }[] = []
 
   await Promise.all(
     projects.map(async (p) => {
       try {
-        const [sessions, agencies, historical] = await Promise.all([
+        const [sessions, historical] = await Promise.all([
           window.agentkeeper.sessions.listPersisted(p.path),
-          window.agentkeeper.agencies.listPersisted(p.path),
           window.agentkeeper.sessions.list(p.path),
         ])
         allPersisted.push(...sessions)
-        allAgencies.push(...agencies)
         allHistorical.push(...historical.map((s) => ({ projectPath: p.path, summary: s })))
       } catch {
         // non-fatal — missing project dir is normal for newly registered projects
@@ -55,13 +73,6 @@ async function loadPersistedAndHistorical() {
   persistedSessions.value = allPersisted.filter((s) => {
     if (seenPersisted.has(s.localId)) return false
     seenPersisted.add(s.localId)
-    return true
-  })
-
-  const seenAgencies = new Set<string>()
-  persistedAgencies.value = allAgencies.filter((a) => {
-    if (seenAgencies.has(a.instanceId)) return false
-    seenAgencies.add(a.instanceId)
     return true
   })
 
@@ -95,7 +106,7 @@ function pathToProjectName(projectPath: string): string {
 const allSessions = computed((): SessionCardData[] => {
   const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
   // Historical JSONL ids that already have a resumable persisted entry → skip in historical
-  const persistedSdkIds = new Set(persistedSessions.value.map((s) => s.sdkSessionId))
+  const persistedSdkIds = new Set(persistedSessions.value.map((s) => s.sdkSessionId).filter((id): id is string => id !== null))
 
   const live: SessionCardData[] = sessionStore.visibleSessions.map((s) => {
     const name = pathToProjectName(s.projectPath)
@@ -141,26 +152,26 @@ const allSessions = computed((): SessionCardData[] => {
       }
     })
 
-  const agencies: SessionCardData[] = persistedAgencies.value
-    .filter((a) => {
-      const members = persistedSessions.value.filter((s) => s.agencyInstanceId === a.instanceId)
-      return !members.some((s) => liveIds.has(s.localId))
-    })
-    .map((a) => {
-      const name = pathToProjectName(a.projectPath)
+  const agencies: SessionCardData[] = [...agencyGroups.value.entries()]
+    .filter(([, members]) => !members.some((s) => liveIds.has(s.localId)))
+    .map(([instanceId, members]) => {
+      const entrySession = members.find((s) => !s.initialPrompt.startsWith('Agency "'))
+      const projectPath = members[0]?.projectPath ?? ''
+      const name = pathToProjectName(projectPath)
+      const lastActivityAt = Math.max(...members.map((s) => s.lastActivityAt))
       return {
-        id: a.instanceId,
-        title: a.workItemTitle ?? a.title ?? a.agencyName,
+        id: instanceId,
+        title: entrySession?.workItemTitle ?? entrySession?.title ?? entrySession?.initialPrompt.split('\n')[0] ?? members[0]?.agencyName ?? 'Agency session',
         status: 'inactive' as const,
         source: 'agency' as const,
-        projectPath: a.projectPath,
+        projectPath,
         projectName: name,
         projectColor: projectColor(name),
         model: null,
-        branch: a.branch,
-        lastActivityAt: a.lastActivityAt,
+        branch: entrySession?.branch ?? members[0]?.branch ?? null,
+        lastActivityAt,
         workItemKey: null,
-        workItemTitle: a.workItemTitle ?? null,
+        workItemTitle: entrySession?.workItemTitle ?? null,
         subAgentCount: 0,
         messageCount: null,
         events: [],
@@ -228,6 +239,17 @@ const statusLine = computed(() => {
   return parts.join(' · ') || 'No active sessions'
 })
 
+// ── Project filter helpers ─────────────────────────────────────────────────
+
+function selectedPillStyle(name: string): Record<string, string> {
+  const hue = parseInt(projectColor(name).match(/hsl\((\d+)/)![1])
+  return {
+    backgroundColor: `hsl(${hue}, 55%, 93%)`,
+    borderColor: `hsl(${hue}, 50%, 72%)`,
+    color: `hsl(${hue}, 65%, 38%)`,
+  }
+}
+
 // ── Actions ────────────────────────────────────────────────────────────────
 
 function handleRefresh() {
@@ -237,14 +259,125 @@ function handleRefresh() {
 async function handleNewSession() {
   const target = projectsStore.focusedProject ?? projectStore.currentProject
   if (target) {
+    const settings = await window.agentkeeper.settings.get()
     projectStore.setProject(target)
-    void router.push('/project')
+    const localId = sessionStore.createOrFocusDraft({
+      projectPath: target.path,
+      defaultModel: settings.defaultModel,
+      defaultEffort: settings.defaultEffort,
+      defaultUseWorktree: settings.defaultUseWorktree,
+    })
+    void router.push(`/sessions/${localId}`)
     return
   }
   void router.push('/')
 }
 
+const isSelectMode = ref(false)
+const selectedIds = ref(new Set<string>())
+const confirmDeleteSelectedOpen = ref(false)
+const confirmDeleteAllOpen = ref(false)
+
+const selectedCount = computed(() => selectedIds.value.size)
+const totalCount = computed(() => filteredSessions.value.length)
+const allSelected = computed(() => totalCount.value > 0 && selectedCount.value === totalCount.value)
+
+const scopeLabel = computed(() => {
+  if (selectedProjectPath.value) {
+    const proj = activeProjects.value.find((p) => p.path === selectedProjectPath.value)
+    return proj ? proj.name : 'project'
+  }
+  return 'all projects'
+})
+
+const selectionWarning = computed(() => {
+  const sel = filteredSessions.value.filter((s) => selectedIds.value.has(s.id))
+  const running = sel.filter((s) => s.status === 'running' || s.status === 'starting').length
+  const blocked = sel.filter((s) => s.status === 'blocked').length
+  return { running, blocked, any: running + blocked > 0 }
+})
+
+const allWarning = computed(() => {
+  const running = filteredSessions.value.filter(
+    (s) => s.status === 'running' || s.status === 'starting',
+  ).length
+  const blocked = filteredSessions.value.filter((s) => s.status === 'blocked').length
+  return { running, blocked, any: running + blocked > 0 }
+})
+
+function warningText(w: { running: number; blocked: number }): string {
+  const parts: string[] = []
+  if (w.running > 0) parts.push(`${w.running} running`)
+  if (w.blocked > 0) parts.push(`${w.blocked} blocked`)
+  return parts.join(' · ')
+}
+
+function toggleSelectMode() {
+  isSelectMode.value = !isSelectMode.value
+  if (!isSelectMode.value) selectedIds.value = new Set()
+}
+
+function toggleSelectCard(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+function selectAll() {
+  selectedIds.value = new Set(filteredSessions.value.map((s) => s.id))
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+async function deleteSingleSession(card: SessionCardData) {
+  switch (card.source) {
+    case 'live':
+      await window.agentkeeper.sessions.terminate(card.id)
+      sessionStore.dismiss(card.id)
+      break
+    case 'persisted':
+      await window.agentkeeper.sessions.deletePersisted(card.id)
+      persistedSessions.value = persistedSessions.value.filter((s) => s.localId !== card.id)
+      break
+    case 'agency': {
+      const members = agencyGroups.value.get(card.id) ?? []
+      await Promise.all(members.map((m) => window.agentkeeper.sessions.deletePersisted(m.localId)))
+      persistedSessions.value = persistedSessions.value.filter((s) => s.agencyInstanceId !== card.id)
+      break
+    }
+    case 'historical':
+      await window.agentkeeper.sessions.deleteHistorical(card.projectPath, card.id)
+      historicalSessions.value = historicalSessions.value.filter(
+        ({ summary: s }) => s.id !== card.id,
+      )
+      break
+  }
+}
+
+function handleDeleteSelected() {
+  confirmDeleteSelectedOpen.value = true
+}
+
+function handleDeleteAll() {
+  confirmDeleteAllOpen.value = true
+}
+
+async function executeDeleteSelected() {
+  const toDelete = filteredSessions.value.filter((s) => selectedIds.value.has(s.id))
+  await Promise.all(toDelete.map(deleteSingleSession))
+  selectedIds.value = new Set()
+}
+
+async function executeDeleteAll() {
+  await Promise.all(filteredSessions.value.map(deleteSingleSession))
+  selectedIds.value = new Set()
+}
+
 function handleCardClick(card: SessionCardData) {
+  if (isSelectMode.value) return
   switch (card.source) {
     case 'live':
       void router.push(`/sessions/${card.id}`)
@@ -258,12 +391,9 @@ function handleCardClick(card: SessionCardData) {
       break
     }
     case 'agency': {
-      const agency = persistedAgencies.value.find((a) => a.instanceId === card.id)
-      if (agency) {
-        const members = persistedSessions.value.filter(
-          (s) => s.agencyInstanceId === agency.instanceId,
-        )
-        const localId = sessionStore.openPersistedAgency(agency, members)
+      const members = agencyGroups.value.get(card.id) ?? []
+      if (members.length > 0) {
+        const localId = sessionStore.openPersistedAgency(members)
         if (localId) void router.push(`/sessions/${localId}`)
       }
       break
@@ -297,6 +427,15 @@ function handleCardClick(card: SessionCardData) {
           <Filter class="size-3.5" />
           Filter
         </Button>
+        <Button
+          :variant="isSelectMode ? 'secondary' : 'ghost'"
+          size="sm"
+          class="gap-1.5"
+          @click="toggleSelectMode"
+        >
+          <CheckSquare class="size-3.5" />
+          {{ isSelectMode ? 'Done' : 'Select' }}
+        </Button>
         <Button size="sm" class="gap-1.5" @click="handleNewSession">
           <Plus class="size-3.5" />
           New session
@@ -309,10 +448,10 @@ function handleCardClick(card: SessionCardData) {
       <button
         :class="
           cn(
-            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors border',
+            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border',
             selectedProjectPath === null
-              ? 'bg-primary/10 text-primary border-primary/30'
-              : 'text-muted-foreground hover:text-foreground border-border',
+              ? 'bg-primary/15 text-primary border-primary/50'
+              : 'text-muted-foreground hover:text-foreground border-border hover:border-foreground/30',
           )
         "
         @click="selectedProjectPath = null"
@@ -326,12 +465,13 @@ function handleCardClick(card: SessionCardData) {
         :key="proj.path"
         :class="
           cn(
-            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors border',
+            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border',
             selectedProjectPath === proj.path
-              ? 'bg-primary/10 text-primary border-primary/30'
-              : 'text-muted-foreground hover:text-foreground border-border',
+              ? ''
+              : 'text-muted-foreground hover:text-foreground border-border hover:border-foreground/30',
           )
         "
+        :style="selectedProjectPath === proj.path ? selectedPillStyle(proj.name) : {}"
         @click="selectedProjectPath = proj.path"
       >
         <span
@@ -345,13 +485,71 @@ function handleCardClick(card: SessionCardData) {
     <!-- Stats overview -->
     <StatsCards />
 
+    <!-- Selection action bar -->
+    <div
+      v-if="isSelectMode"
+      class="flex items-center justify-between gap-4 px-3 py-2.5 rounded-lg border bg-muted/40"
+    >
+      <div class="flex items-center gap-4 text-sm">
+        <button
+          class="inline-flex items-center gap-1.5 font-medium transition-colors"
+          :class="allSelected ? 'text-primary' : 'text-foreground hover:text-primary'"
+          @click="allSelected ? clearSelection() : selectAll()"
+        >
+          <component :is="allSelected ? CheckSquare : Square" class="size-4" />
+          Select all
+        </button>
+        <span class="text-muted-foreground">
+          <template v-if="selectedCount > 0">
+            <span class="text-primary font-medium">{{ selectedCount }}</span> of {{ totalCount }} selected
+          </template>
+          <template v-else>
+            {{ totalCount }} session{{ totalCount === 1 ? '' : 's' }} in {{ scopeLabel }}
+          </template>
+        </span>
+        <button
+          v-if="selectedCount > 0"
+          class="text-muted-foreground hover:text-foreground transition-colors"
+          @click="clearSelection"
+        >
+          Clear
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          class="gap-1.5 transition-colors"
+          :class="selectedCount > 0 ? 'text-destructive hover:text-destructive hover:bg-destructive/10' : 'text-muted-foreground'"
+          :disabled="selectedCount === 0"
+          @click="handleDeleteSelected"
+        >
+          <Trash2 class="size-3.5" />
+          Delete selected{{ selectedCount > 0 ? ` (${selectedCount})` : '' }}
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          class="gap-1.5"
+          :disabled="totalCount === 0"
+          @click="handleDeleteAll"
+        >
+          <Trash2 class="size-3.5" />
+          Delete all ({{ totalCount }})
+        </Button>
+      </div>
+    </div>
+
     <!-- Unified session grid -->
     <div v-if="filteredSessions.length > 0" class="grid grid-cols-3 gap-4">
       <SessionCard
         v-for="card in filteredSessions"
         :key="card.id"
         :session="card"
+        :select-mode="isSelectMode"
+        :selected="selectedIds.has(card.id)"
         @click="handleCardClick(card)"
+        @select="toggleSelectCard(card.id)"
       />
     </div>
 
@@ -362,5 +560,67 @@ function handleCardClick(card: SessionCardData) {
     >
       No sessions yet.
     </div>
+
+    <!-- Confirm: delete selected -->
+    <AlertDialog v-model:open="confirmDeleteSelectedOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <div class="flex size-10 items-center justify-center rounded-full bg-destructive/10 mb-1">
+            <TriangleAlert class="size-5 text-destructive" />
+          </div>
+          <AlertDialogTitle>Delete {{ selectedCount }} session{{ selectedCount === 1 ? '' : 's' }}?</AlertDialogTitle>
+          <AlertDialogDescription>
+            You're about to delete {{ selectedCount }} selected session{{ selectedCount === 1 ? '' : 's' }}. This can't be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div
+          v-if="selectionWarning.any"
+          class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2"
+        >
+          <TriangleAlert class="size-4 shrink-0 mt-0.5" />
+          <span>{{ warningText(selectionWarning) }} — agents will be stopped immediately.</span>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            @click="executeDeleteSelected"
+          >
+            Delete {{ selectedCount }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Confirm: delete all -->
+    <AlertDialog v-model:open="confirmDeleteAllOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <div class="flex size-10 items-center justify-center rounded-full bg-destructive/10 mb-1">
+            <TriangleAlert class="size-5 text-destructive" />
+          </div>
+          <AlertDialogTitle>Delete all {{ totalCount }} sessions?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This removes {{ totalCount }} session{{ totalCount === 1 ? '' : 's' }} currently in view. Plans, transcripts, and sub-agent history will be discarded.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div
+          v-if="allWarning.any"
+          class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2"
+        >
+          <TriangleAlert class="size-4 shrink-0 mt-0.5" />
+          <span>{{ warningText(allWarning) }} — agents will be stopped immediately.</span>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            @click="executeDeleteAll"
+          >
+            Delete {{ totalCount }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>

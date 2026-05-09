@@ -30,7 +30,7 @@ onMounted(async () => {
 
 <template>
   <!-- LiveSessionView owns the full chrome (header, back button, panels). -->
-  <div class="h-full overflow-hidden">
+  <div class="h-full flex-1 min-w-0 overflow-hidden">
     <LiveSessionView
       v-if="session"
       :live-id="id"

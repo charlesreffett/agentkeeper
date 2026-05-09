@@ -9,6 +9,7 @@ import {
   type ClaudeAuthType,
   type CreatePRParams,
   type DayTotal,
+  type DraftRecord,
   type LegacyDayEntry,
   type FsEntry,
   type GitHubConfig,
@@ -22,8 +23,7 @@ import {
   type AgentKeeperApi,
   type Plan,
   type PRFilters,
-  type PersistedAgency,
-  type PersistedSession,
+  type Session,
   type PermissionMode,
   type PricingMeta,
   type RemoteSource,
@@ -34,6 +34,7 @@ import {
   type RoleScope,
   type RolesGenerateResult,
   type SecretKeyName,
+  type SessionStatRow,
   type Skill,
   type SkillPreview,
   type SlashCommand,
@@ -145,7 +146,7 @@ const api: AgentKeeperApi = {
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
     onStats: (cb) => onChannel<LiveSessionStats>(IPC_CHANNELS.sessionStats, cb),
     listPersisted: (projectPath: string) =>
-      invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<PersistedSession[]>,
+      invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<Session[]>,
     resume: (localId: string) =>
       invoke(IPC_CHANNELS.sessionsResume, localId) as Promise<string>,
     deletePersisted: (localId: string) =>
@@ -194,14 +195,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id) as Promise<void>,
     start: (params: StartAgencyParams) =>
       invoke(IPC_CHANNELS.agenciesStart, params) as Promise<never>,
-    listPersisted: (projectPath: string) =>
-      invoke(IPC_CHANNELS.agenciesListPersisted, projectPath) as Promise<PersistedAgency[]>,
     resume: (instanceId: string) =>
       invoke(IPC_CHANNELS.agenciesResume, instanceId) as Promise<never>,
-    deletePersisted: (instanceId: string) =>
-      invoke(IPC_CHANNELS.agenciesDeletePersisted, instanceId) as Promise<void>,
-    touchPersisted: (instanceId: string) =>
-      invoke(IPC_CHANNELS.agenciesTouchPersisted, instanceId) as Promise<void>,
   },
   skills: {
     list: (projectPath: string) =>
@@ -363,6 +358,22 @@ const api: AgentKeeperApi = {
   pricing: {
     getMeta: () => invoke(IPC_CHANNELS.pricingGetMeta) as Promise<PricingMeta>,
     refresh: () => invoke(IPC_CHANNELS.pricingRefresh) as Promise<PricingMeta>,
+  },
+  drafts: {
+    get: (sessionLocalId: string) =>
+      invoke(IPC_CHANNELS.draftsGet, sessionLocalId) as Promise<DraftRecord>,
+    set: (sessionLocalId: string, text: string, attachments: Attachment[]) =>
+      invoke(IPC_CHANNELS.draftsSet, sessionLocalId, text, attachments) as Promise<void>,
+    clear: (sessionLocalId: string) =>
+      invoke(IPC_CHANNELS.draftsClear, sessionLocalId) as Promise<void>,
+  },
+  stats: {
+    getAll: () =>
+      invoke(IPC_CHANNELS.statsGetAll) as Promise<SessionStatRow[]>,
+    upsert: (sessionLocalId: string, totalTokens: number, totalCostUsd: number, turnCount: number, inProgressTokens: number) =>
+      invoke(IPC_CHANNELS.statsUpsert, sessionLocalId, totalTokens, totalCostUsd, turnCount, inProgressTokens) as Promise<void>,
+    importLegacy: (entries: SessionStatRow[]) =>
+      invoke(IPC_CHANNELS.statsImportLegacy, entries) as Promise<void>,
   },
 }
 

@@ -43,6 +43,11 @@ export interface Attachment {
   content: string
 }
 
+export interface DraftRecord {
+  text: string
+  attachments: Attachment[]
+}
+
 // ─── Remote sources ─────────────────────────────────────────────────────────
 
 export interface RemoteSource {
@@ -163,20 +168,22 @@ export type LiveSessionStatus =
   | 'terminated'
   | 'error'
 
-export interface PersistedSession {
+export interface Session {
   localId: string
-  sdkSessionId: string
+  sdkSessionId: string | null
   projectPath: string
   worktreePath: string | null
   branch: string | null
   model: string | null
-  effort: string | null
+  effort: RoleEffort | null
   permissionMode: PermissionMode | null
   initialPrompt: string
   roleName: string | null
   roleId: string | null
   agencyInstanceId: string | null
   agencyName: string | null
+  agencyId: string | null
+  agencyScope: AgencyScope | null
   startedAt: number
   lastActivityAt: number
   status: LiveSessionStatus
@@ -209,8 +216,12 @@ export interface StartSessionParams {
   /** Membership in an agency run, if applicable — tagged by the orchestrator. */
   agencyInstanceId?: string
   roleId?: string
-  /** 1-based instance index within the role — needed to write the correct roleSessionMap entry. */
+  /** 1-based instance index within the role. */
   roleInstanceIndex?: number
+  /** Agency definition id — persisted so resumeAgency can reload the agency config. */
+  agencyId?: string
+  /** Scope of the agency definition. */
+  agencyScope?: AgencyScope
   /** Work item to attach as context for the session. */
   workItemId?: string
   /** Display key for the linked work item, e.g. "CORE-482", "MOB-631". */
@@ -364,28 +375,6 @@ export interface AgencyInstance {
   sessions: AgencyInstanceSession[]
 }
 
-export interface PersistedAgency {
-  instanceId: string
-  agencyId: string
-  agencyScope: AgencyScope
-  agencyName: string
-  /** Work-item title (e.g. Jira issue summary), preferred for display. */
-  workItemTitle: string | null
-  /** Raw initial prompt sent to the entry-point role. */
-  initialPrompt: string
-  /** AI-generated short title derived from initialPrompt; null until generated. */
-  title: string | null
-  projectPath: string
-  worktreePath: string | null
-  branch: string | null
-  startedAt: number
-  lastActivityAt: number
-  /** roleId → array of { instanceIndex, sdkSessionId } */
-  roleSessionMap: Record<string, Array<{ instanceIndex: number; sdkSessionId: string }>>
-  /** roleId → array of handoff summaries from completed overflow agents */
-  handoffs: Record<string, Array<{ instanceIndex: number; summary: string; timestamp: number }>>
-}
-
 /** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
 export interface LiveSessionEvent {
   sessionId: string
@@ -497,6 +486,16 @@ export interface Plan {
   steps: PlanStep[]
 }
 
+// ─── Session stats ───────────────────────────────────────────────────────────
+
+export interface SessionStatRow {
+  sessionLocalId: string
+  totalTokens: number
+  totalCostUsd: number
+  turnCount: number
+  inProgressTokens: number
+}
+
 // ─── Cost ledger ─────────────────────────────────────────────────────────────
 
 export interface DayTotal {
@@ -551,7 +550,7 @@ export interface AgentKeeperApi {
       callback: (update: LiveSessionStatusUpdate) => void,
     ) => () => void
     onStats: (callback: (stats: LiveSessionStats) => void) => () => void
-    listPersisted: (projectPath: string) => Promise<PersistedSession[]>
+    listPersisted: (projectPath: string) => Promise<Session[]>
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
     touchPersisted: (localId: string) => Promise<void>
@@ -591,10 +590,7 @@ export interface AgentKeeperApi {
       id: string,
     ) => Promise<void>
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
-    listPersisted: (projectPath: string) => Promise<PersistedAgency[]>
     resume: (instanceId: string) => Promise<AgencyInstance>
-    deletePersisted: (instanceId: string) => Promise<void>
-    touchPersisted: (instanceId: string) => Promise<void>
   }
   skills: {
     list: (projectPath: string) => Promise<Skill[]>
@@ -696,6 +692,16 @@ export interface AgentKeeperApi {
     getMeta: () => Promise<PricingMeta>
     refresh: () => Promise<PricingMeta>
   }
+  drafts: {
+    get: (sessionLocalId: string) => Promise<DraftRecord>
+    set: (sessionLocalId: string, text: string, attachments: Attachment[]) => Promise<void>
+    clear: (sessionLocalId: string) => Promise<void>
+  }
+  stats: {
+    getAll: () => Promise<SessionStatRow[]>
+    upsert: (sessionLocalId: string, totalTokens: number, totalCostUsd: number, turnCount: number, inProgressTokens: number) => Promise<void>
+    importLegacy: (entries: SessionStatRow[]) => Promise<void>
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -778,10 +784,7 @@ export const IPC_CHANNELS = {
   sessionsDeleteHistorical: 'sessions:deleteHistorical',
   sessionsDeleteAllHistorical: 'sessions:deleteAllHistorical',
   sessionsDeleteAllPersisted: 'sessions:deleteAllPersisted',
-  agenciesListPersisted: 'agencies:listPersisted',
   agenciesResume: 'agencies:resume',
-  agenciesDeletePersisted: 'agencies:deletePersisted',
-  agenciesTouchPersisted: 'agencies:touchPersisted',
   dialogOpenFiles: 'dialog:openFiles',
   gitGetBranch: 'git:getBranch',
   gitGetStatus: 'git:getStatus',
@@ -797,4 +800,10 @@ export const IPC_CHANNELS = {
   costsAddLegacy: 'costs:addLegacy',
   pricingRefresh: 'pricing:refresh',
   pricingGetMeta: 'pricing:getMeta',
+  draftsGet: 'drafts:get',
+  draftsSet: 'drafts:set',
+  draftsClear: 'drafts:clear',
+  statsGetAll: 'stats:getAll',
+  statsUpsert: 'stats:upsert',
+  statsImportLegacy: 'stats:importLegacy',
 } as const

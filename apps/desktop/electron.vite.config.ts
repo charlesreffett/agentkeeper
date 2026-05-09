@@ -1,6 +1,21 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'node:path'
+import { cpSync } from 'node:fs'
+import type { Plugin } from 'vite'
+
+function copyDrizzleMigrations(): Plugin {
+  return {
+    name: 'copy-drizzle-migrations',
+    closeBundle() {
+      cpSync(
+        resolve(__dirname, 'src/main/db/migrations'),
+        resolve(__dirname, 'out/main/migrations'),
+        { recursive: true },
+      )
+    },
+  }
+}
 
 // Workspace packages ship .ts source (no build step — see their package.json
 // "build": "tsc --emitDeclarationOnly"). They must be bundled into the
@@ -15,7 +30,7 @@ const WORKSPACE_PKGS = [
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PKGS })],
+    plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PKGS }), copyDrizzleMigrations()],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') },
