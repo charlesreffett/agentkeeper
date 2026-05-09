@@ -10,7 +10,7 @@ import { useProjectStore } from '@/stores/project'
 import { projectColor } from '@/lib/projectColor'
 import { cn } from '@/lib/utils'
 import StatsCards from '@/components/StatsCards.vue'
-import type { PersistedAgency, PersistedSession, SessionSummary } from '@shared/ipc-contract'
+import type { PersistedAgency, Session, SessionSummary } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
@@ -22,7 +22,7 @@ const statusCounts = computed(() => sessionStore.statusCounts)
 
 // ── Persisted + historical data from disk ──────────────────────────────────
 
-const persistedSessions = ref<PersistedSession[]>([])
+const persistedSessions = ref<Session[]>([])
 const persistedAgencies = ref<PersistedAgency[]>([])
 const historicalSessions = ref<{ projectPath: string; summary: SessionSummary }[]>([])
 
@@ -30,7 +30,7 @@ async function loadPersistedAndHistorical() {
   const projects = projectsStore.projects
   if (!projects.length) return
 
-  const allPersisted: PersistedSession[] = []
+  const allPersisted: Session[] = []
   const allAgencies: PersistedAgency[] = []
   const allHistorical: { projectPath: string; summary: SessionSummary }[] = []
 
@@ -95,7 +95,7 @@ function pathToProjectName(projectPath: string): string {
 const allSessions = computed((): SessionCardData[] => {
   const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
   // Historical JSONL ids that already have a resumable persisted entry → skip in historical
-  const persistedSdkIds = new Set(persistedSessions.value.map((s) => s.sdkSessionId))
+  const persistedSdkIds = new Set(persistedSessions.value.map((s) => s.sdkSessionId).filter((id): id is string => id !== null))
 
   const live: SessionCardData[] = sessionStore.visibleSessions.map((s) => {
     const name = pathToProjectName(s.projectPath)

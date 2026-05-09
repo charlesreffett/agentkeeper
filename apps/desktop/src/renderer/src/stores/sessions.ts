@@ -6,9 +6,9 @@ import type {
   LiveSessionStatus,
   PermissionMode,
   PersistedAgency,
-  PersistedSession,
   Role,
   RoleEffort,
+  Session,
   SessionSummary,
   StartSessionParams,
   TranscriptEvent,
@@ -27,39 +27,13 @@ export interface DraftSessionConfig {
   effortTouched: boolean
 }
 
-export interface LiveSession {
-  localId: string
-  sdkSessionId: string | null
-  /** Logical project the session belongs to (used for sidebar filtering). */
-  projectPath: string
-  /** Actual cwd given to the SDK — differs from projectPath if a worktree. */
-  worktreePath: string | null
-  /** Branch name if session runs in a worktree, else null. */
-  branch: string | null
-  /** Role name applied to this session, if any. */
-  roleName: string | null
-  /** Agency instance id if this session is part of a running agency. */
-  agencyInstanceId: string | null
-  /** Agency display name. */
-  agencyName: string | null
-  initialPrompt: string
-  agencyPrompt: string | null
-  title: string | null
-  model: string | null
-  effort: RoleEffort | null
-  permissionMode: PermissionMode | null
-  status: LiveSessionStatus
+export interface LiveSession extends Session {
+  // Runtime-only — not persisted, not IPC-transferable
   events: TranscriptEvent[]
   error: string | null
-  startedAt: number
-  lastActivityAt: number
-  /** Set when this session was created via resume — the historical transcript
-   *  is loaded from this sdkSessionId's JSONL and shown above live events. */
+  agencyPrompt: string | null
   resumedFromSdkSessionId: string | null
   interruptedAt: number | null
-  workItemKey: string | null
-  workItemTitle: string | null
-  /** Renderer-only: not yet started in main. The next user message promotes it. */
   isDraft: boolean
   draftConfig: DraftSessionConfig | null
   draftMessage: string
@@ -282,6 +256,7 @@ export const useSessionStore = defineStore('sessions', () => {
       worktreePath: plain.worktreePath ?? null,
       branch: plain.branch ?? null,
       roleName: plain.roleName ?? null,
+      roleId: plain.roleId ?? null,
       agencyInstanceId: null,
       agencyName: null,
       initialPrompt: plain.initialPrompt,
@@ -416,6 +391,7 @@ export const useSessionStore = defineStore('sessions', () => {
       worktreePath: entry.worktreePath ?? null,
       branch: entry.branch ?? null,
       roleName: entry.roleName ?? null,
+      roleId: null,
       agencyInstanceId: entry.agencyInstanceId ?? null,
       agencyName: entry.agencyName ?? null,
       initialPrompt: entry.initialPrompt,
@@ -451,33 +427,16 @@ export const useSessionStore = defineStore('sessions', () => {
     currentLiveId.value = null
   }
 
-  function openPersisted(persisted: PersistedSession): string {
+  function openPersisted(persisted: Session): string {
     const localId = persisted.localId
     if (!sessions[localId]) {
       sessions[localId] = {
-        localId,
-        sdkSessionId: null,
-        projectPath: persisted.projectPath,
-        worktreePath: persisted.worktreePath,
-        branch: persisted.branch,
-        roleName: persisted.roleName,
-        agencyInstanceId: persisted.agencyInstanceId,
-        agencyName: persisted.agencyName,
-        initialPrompt: persisted.initialPrompt,
-        agencyPrompt: null,
-        title: persisted.title ?? null,
-        model: persisted.model,
-        effort: persisted.effort as RoleEffort | null,
-        permissionMode: persisted.permissionMode,
-        status: 'idle',
+        ...persisted,
         events: [],
         error: null,
-        startedAt: persisted.startedAt,
-        lastActivityAt: persisted.lastActivityAt,
+        agencyPrompt: null,
         resumedFromSdkSessionId: persisted.sdkSessionId,
         interruptedAt: null,
-        workItemKey: persisted.workItemKey,
-        workItemTitle: persisted.workItemTitle,
         isDraft: false,
         draftConfig: null,
         draftMessage: '',
@@ -504,6 +463,7 @@ export const useSessionStore = defineStore('sessions', () => {
       worktreePath: null,
       branch: summary.gitBranch,
       roleName: null,
+      roleId: null,
       agencyInstanceId: null,
       agencyName: null,
       initialPrompt: summary.firstUserMessage ?? '',
@@ -532,34 +492,17 @@ export const useSessionStore = defineStore('sessions', () => {
 
   function openPersistedAgency(
     agency: PersistedAgency,
-    memberSessions: PersistedSession[],
+    memberSessions: Session[],
   ): string {
     for (const s of memberSessions) {
       if (!sessions[s.localId]) {
         sessions[s.localId] = {
-          localId: s.localId,
-          sdkSessionId: null,
-          projectPath: s.projectPath,
-          worktreePath: s.worktreePath,
-          branch: s.branch,
-          roleName: s.roleName,
-          agencyInstanceId: s.agencyInstanceId,
-          agencyName: s.agencyName,
-          initialPrompt: s.initialPrompt,
-          agencyPrompt: null,
-          title: s.title ?? null,
-          model: s.model,
-          effort: s.effort as RoleEffort | null,
-          permissionMode: s.permissionMode,
-          status: 'idle',
+          ...s,
           events: [],
           error: null,
-          startedAt: s.startedAt,
-          lastActivityAt: s.lastActivityAt,
+          agencyPrompt: null,
           resumedFromSdkSessionId: s.sdkSessionId,
           interruptedAt: null,
-          workItemKey: s.workItemKey,
-          workItemTitle: s.workItemTitle,
           isDraft: false,
           draftConfig: null,
           draftMessage: '',
@@ -598,6 +541,7 @@ export const useSessionStore = defineStore('sessions', () => {
       worktreePath: null,
       branch: null,
       roleName: null,
+      roleId: null,
       agencyInstanceId: null,
       agencyName: null,
       initialPrompt: params.firstMessage || '(continued)',
@@ -665,6 +609,7 @@ export const useSessionStore = defineStore('sessions', () => {
       worktreePath: null,
       branch: null,
       roleName: null,
+      roleId: null,
       agencyInstanceId: null,
       agencyName: null,
       initialPrompt: '',

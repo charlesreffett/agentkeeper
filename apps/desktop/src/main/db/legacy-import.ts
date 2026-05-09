@@ -3,7 +3,7 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { type AppDb, getDb } from './index'
 import { appState, agencies, costEntries, projects, sessions } from './schema'
-import type { PersistedAgency, PersistedSession } from '../../shared/ipc-contract'
+import type { PersistedAgency, Session } from '../../shared/ipc-contract'
 import type { CostEntry } from '../cost-ledger'
 import type { RecentProject } from '../../shared/ipc-contract'
 
@@ -31,7 +31,7 @@ export function runLegacyImport(userDataPath: string): void {
 
 function importSessionRegistry(tx: AppDb, userDataPath: string): void {
   const p = path.join(userDataPath, 'session-registry.json')
-  let raw: { sessions?: Record<string, PersistedSession>; agencies?: Record<string, PersistedAgency> }
+  let raw: { sessions?: Record<string, Session>; agencies?: Record<string, PersistedAgency> }
   try { raw = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return }
 
   for (const s of Object.values(raw.sessions ?? {})) {

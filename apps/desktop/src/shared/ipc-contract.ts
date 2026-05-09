@@ -168,14 +168,14 @@ export type LiveSessionStatus =
   | 'terminated'
   | 'error'
 
-export interface PersistedSession {
+export interface Session {
   localId: string
-  sdkSessionId: string
+  sdkSessionId: string | null
   projectPath: string
   worktreePath: string | null
   branch: string | null
   model: string | null
-  effort: string | null
+  effort: RoleEffort | null
   permissionMode: PermissionMode | null
   initialPrompt: string
   roleName: string | null
@@ -566,7 +566,7 @@ export interface AgentKeeperApi {
       callback: (update: LiveSessionStatusUpdate) => void,
     ) => () => void
     onStats: (callback: (stats: LiveSessionStats) => void) => () => void
-    listPersisted: (projectPath: string) => Promise<PersistedSession[]>
+    listPersisted: (projectPath: string) => Promise<Session[]>
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
     touchPersisted: (localId: string) => Promise<void>

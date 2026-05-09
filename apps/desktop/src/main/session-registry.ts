@@ -1,21 +1,21 @@
 import { and, desc, eq, isNull, lt } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencies, sessions } from './db/schema'
-import type { LiveSessionStatus, PersistedAgency, PersistedSession } from '../shared/ipc-contract'
-export type { PersistedAgency, PersistedSession }
+import type { LiveSessionStatus, PersistedAgency, RoleEffort, Session } from '../shared/ipc-contract'
+export type { PersistedAgency, Session }
 
 const SESSION_CAP = 50
 
-function rowToSession(row: typeof sessions.$inferSelect): PersistedSession {
+function rowToSession(row: typeof sessions.$inferSelect): Session {
   return {
     localId: row.localId,
-    sdkSessionId: row.sdkSessionId ?? '',
+    sdkSessionId: row.sdkSessionId ?? null,
     projectPath: row.projectPath,
     worktreePath: row.worktreePath ?? null,
     branch: row.branch ?? null,
     model: row.model ?? null,
-    effort: row.effort ?? null,
-    permissionMode: row.permissionMode as PersistedSession['permissionMode'],
+    effort: row.effort as RoleEffort | null,
+    permissionMode: row.permissionMode as Session['permissionMode'],
     initialPrompt: row.initialPrompt,
     roleName: row.roleName ?? null,
     roleId: row.roleId ?? null,
@@ -49,7 +49,7 @@ function rowToAgency(row: typeof agencies.$inferSelect): PersistedAgency {
   }
 }
 
-export function registerSession(session: PersistedSession): void {
+export function registerSession(session: Session): void {
   const db = getDb()
   db.insert(sessions).values({
     localId: session.localId,
@@ -95,18 +95,18 @@ export function registerSession(session: PersistedSession): void {
   }
 }
 
-export function updateSession(localId: string, partial: Partial<PersistedSession>): void {
+export function updateSession(localId: string, partial: Partial<Session>): void {
   const db = getDb()
   const { roleSessionMap: _rm, handoffs: _h, ...rest } = partial as Record<string, unknown>
   db.update(sessions).set(rest as Partial<typeof sessions.$inferInsert>).where(eq(sessions.localId, localId)).run()
 }
 
-export function getSession(localId: string): PersistedSession | null {
+export function getSession(localId: string): Session | null {
   const row = getDb().select().from(sessions).where(eq(sessions.localId, localId)).get()
   return row ? rowToSession(row) : null
 }
 
-export function listSessions(projectPath: string): PersistedSession[] {
+export function listSessions(projectPath: string): Session[] {
   return getDb()
     .select()
     .from(sessions)
@@ -245,7 +245,7 @@ export function touchSession(localId: string): void {
   getDb().update(sessions).set({ lastActivityAt: Date.now() }).where(eq(sessions.localId, localId)).run()
 }
 
-export function listSessionsByAgency(agencyInstanceId: string): PersistedSession[] {
+export function listSessionsByAgency(agencyInstanceId: string): Session[] {
   return getDb()
     .select()
     .from(sessions)

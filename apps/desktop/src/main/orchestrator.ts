@@ -21,7 +21,7 @@ import {
   interruptSession,
 } from './agent'
 import * as registry from './session-registry'
-import type { PersistedSession } from './session-registry'
+import type { Session } from './session-registry'
 import { resolveClaudeAuth } from './secrets'
 
 interface AgencyRoleRestartParams {
@@ -880,9 +880,11 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
   // Build a lookup of sdkSessionId → localId so resumed sessions keep the
   // same localId the renderer already knows about. Without this, the runtime
   // would assign new UUIDs and the renderer's session references would break.
-  const memberSessions: PersistedSession[] = registry.listSessionsByAgency(instanceId)
+  const memberSessions: Session[] = registry.listSessionsByAgency(instanceId)
   const sdkToLocalId = new Map<string, string>(
-    memberSessions.map((s) => [s.sdkSessionId, s.localId]),
+    memberSessions
+      .filter((s): s is Session & { sdkSessionId: string } => s.sdkSessionId !== null)
+      .map((s) => [s.sdkSessionId, s.localId]),
   )
 
   // Restore handoffs from persisted state

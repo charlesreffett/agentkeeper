@@ -424,7 +424,7 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
       worktreePath: persisted.worktreePath ?? undefined,
       initialPrompt: persisted.initialPrompt,
       model: persisted.model ?? undefined,
-      effort: (persisted.effort as RoleEffort) ?? undefined,
+      effort: persisted.effort ?? undefined,
       permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
       resumeSdkSessionId: persisted.sdkSessionId,
       roleName: persisted.roleName ?? undefined,
@@ -506,13 +506,13 @@ export async function resumeSession(localId: string): Promise<string> {
     worktreePath: persisted.worktreePath ?? undefined,
     initialPrompt: persisted.initialPrompt,
     model: persisted.model ?? undefined,
-    effort: (persisted.effort as RoleEffort) ?? undefined,
+    effort: persisted.effort ?? undefined,
     permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
     agencyInstanceId: persisted.agencyInstanceId ?? undefined,
     roleId: persisted.roleId ?? undefined,
     roleName: persisted.roleName ?? undefined,
     agencyName: persisted.agencyName ?? undefined,
-    resumeSdkSessionId: persisted.sdkSessionId,
+    resumeSdkSessionId: persisted.sdkSessionId ?? undefined,
   })
 }
 
@@ -559,7 +559,7 @@ async function restartIdle(
       model: newModel,
       effort: newEffort,
       permissionMode: newPermissionMode,
-      resumeSdkSessionId: persisted.sdkSessionId,
+      resumeSdkSessionId: persisted.sdkSessionId ?? undefined,
       roleName: persisted.roleName ?? undefined,
       agencyName: persisted.agencyName ?? undefined,
       agencyInstanceId: persisted.agencyInstanceId ?? undefined,

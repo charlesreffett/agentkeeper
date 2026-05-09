@@ -24,7 +24,7 @@ import {
   type Plan,
   type PRFilters,
   type PersistedAgency,
-  type PersistedSession,
+  type Session,
   type PermissionMode,
   type PricingMeta,
   type RemoteSource,
@@ -147,7 +147,7 @@ const api: AgentKeeperApi = {
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
     onStats: (cb) => onChannel<LiveSessionStats>(IPC_CHANNELS.sessionStats, cb),
     listPersisted: (projectPath: string) =>
-      invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<PersistedSession[]>,
+      invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<Session[]>,
     resume: (localId: string) =>
       invoke(IPC_CHANNELS.sessionsResume, localId) as Promise<string>,
     deletePersisted: (localId: string) =>
