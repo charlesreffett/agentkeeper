@@ -14,6 +14,9 @@ export const sessions = sqliteTable('sessions', {
   roleId: text('role_id'),
   agencyInstanceId: text('agency_instance_id'),
   agencyName: text('agency_name'),
+  agencyId: text('agency_id'),
+  agencyScope: text('agency_scope'),
+  roleInstanceIndex: integer('role_instance_index'),
   title: text('title'),
   workItemKey: text('work_item_key'),
   workItemTitle: text('work_item_title'),
@@ -22,21 +25,13 @@ export const sessions = sqliteTable('sessions', {
   lastActivityAt: integer('last_activity_at').notNull(),
 })
 
-export const agencies = sqliteTable('agencies', {
-  instanceId: text('instance_id').primaryKey(),
-  agencyId: text('agency_id').notNull(),
-  agencyScope: text('agency_scope').notNull(),
-  agencyName: text('agency_name').notNull(),
-  workItemTitle: text('work_item_title'),
-  initialPrompt: text('initial_prompt').notNull().default(''),
-  title: text('title'),
-  projectPath: text('project_path').notNull(),
-  worktreePath: text('worktree_path'),
-  branch: text('branch'),
-  startedAt: integer('started_at').notNull(),
-  lastActivityAt: integer('last_activity_at').notNull(),
-  roleSessionMap: text('role_session_map').notNull().default('{}'),
-  handoffs: text('handoffs').notNull().default('{}'),
+export const agencyHandoffs = sqliteTable('agency_handoffs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  agencyInstanceId: text('agency_instance_id').notNull(),
+  roleId: text('role_id').notNull(),
+  instanceIndex: integer('instance_index').notNull(),
+  summary: text('summary').notNull(),
+  createdAt: integer('created_at').notNull(),
 })
 
 export const costEntries = sqliteTable('cost_entries', {

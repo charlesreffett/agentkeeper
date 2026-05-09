@@ -5,7 +5,6 @@ import type {
   Attachment,
   LiveSessionStatus,
   PermissionMode,
-  PersistedAgency,
   Role,
   RoleEffort,
   Session,
@@ -259,6 +258,8 @@ export const useSessionStore = defineStore('sessions', () => {
       roleId: plain.roleId ?? null,
       agencyInstanceId: null,
       agencyName: null,
+      agencyId: null,
+      agencyScope: null,
       initialPrompt: plain.initialPrompt,
       agencyPrompt: null,
       title: null,
@@ -394,6 +395,8 @@ export const useSessionStore = defineStore('sessions', () => {
       roleId: null,
       agencyInstanceId: entry.agencyInstanceId ?? null,
       agencyName: entry.agencyName ?? null,
+      agencyId: null,
+      agencyScope: null,
       initialPrompt: entry.initialPrompt,
       agencyPrompt: entry.agencyPrompt ?? null,
       title: null,
@@ -466,6 +469,8 @@ export const useSessionStore = defineStore('sessions', () => {
       roleId: null,
       agencyInstanceId: null,
       agencyName: null,
+      agencyId: null,
+      agencyScope: null,
       initialPrompt: summary.firstUserMessage ?? '',
       agencyPrompt: null,
       title: null,
@@ -491,7 +496,6 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   function openPersistedAgency(
-    agency: PersistedAgency,
     memberSessions: Session[],
   ): string {
     for (const s of memberSessions) {
@@ -544,6 +548,8 @@ export const useSessionStore = defineStore('sessions', () => {
       roleId: null,
       agencyInstanceId: null,
       agencyName: null,
+      agencyId: null,
+      agencyScope: null,
       initialPrompt: params.firstMessage || '(continued)',
       agencyPrompt: null,
       title: null,
@@ -612,6 +618,8 @@ export const useSessionStore = defineStore('sessions', () => {
       roleId: null,
       agencyInstanceId: null,
       agencyName: null,
+      agencyId: null,
+      agencyScope: null,
       initialPrompt: '',
       agencyPrompt: null,
       title: null,

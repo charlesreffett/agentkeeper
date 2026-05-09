@@ -790,10 +790,6 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     (_event, projectPath: string) => sessionRegistry.deleteAllForProject(projectPath),
   )
   ipcMain.handle(
-    IPC_CHANNELS.agenciesListPersisted,
-    (_event, projectPath: string) => sessionRegistry.listAgencies(projectPath),
-  )
-  ipcMain.handle(
     IPC_CHANNELS.agenciesResume,
     async (_event, instanceId: string) => {
       try {
@@ -804,19 +800,6 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
-  ipcMain.handle(
-    IPC_CHANNELS.agenciesDeletePersisted,
-    (_event, instanceId: string) => {
-      sessionRegistry.deleteAgency(instanceId)
-    },
-  )
-  ipcMain.handle(
-    IPC_CHANNELS.agenciesTouchPersisted,
-    (_event, instanceId: string) => {
-      sessionRegistry.touchAgency(instanceId)
-    },
-  )
-
   // Git utilities
   ipcMain.handle(IPC_CHANNELS.gitGetBranch, (_event, projectPath: string) => {
     return getBranch(projectPath)

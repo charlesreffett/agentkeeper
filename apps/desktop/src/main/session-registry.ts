@@ -1,10 +1,16 @@
 import { and, desc, eq, isNull, lt } from 'drizzle-orm'
 import { getDb } from './db/index'
-import { agencies, sessions } from './db/schema'
-import type { LiveSessionStatus, PersistedAgency, RoleEffort, Session } from '../shared/ipc-contract'
-export type { PersistedAgency, Session }
+import { agencyHandoffs, sessions } from './db/schema'
+import type { AgencyScope, LiveSessionStatus, RoleEffort, Session } from '../shared/ipc-contract'
+export type { Session }
 
 const SESSION_CAP = 50
+
+export interface HandoffRecord {
+  instanceIndex: number
+  summary: string
+  timestamp: number
+}
 
 function rowToSession(row: typeof sessions.$inferSelect): Session {
   return {
@@ -21,6 +27,8 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
     roleId: row.roleId ?? null,
     agencyInstanceId: row.agencyInstanceId ?? null,
     agencyName: row.agencyName ?? null,
+    agencyId: row.agencyId ?? null,
+    agencyScope: (row.agencyScope as AgencyScope) ?? null,
     title: row.title ?? null,
     workItemKey: row.workItemKey ?? null,
     workItemTitle: row.workItemTitle ?? null,
@@ -30,26 +38,7 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
   }
 }
 
-function rowToAgency(row: typeof agencies.$inferSelect): PersistedAgency {
-  return {
-    instanceId: row.instanceId,
-    agencyId: row.agencyId,
-    agencyScope: row.agencyScope as PersistedAgency['agencyScope'],
-    agencyName: row.agencyName,
-    workItemTitle: row.workItemTitle ?? null,
-    initialPrompt: row.initialPrompt,
-    title: row.title ?? null,
-    projectPath: row.projectPath,
-    worktreePath: row.worktreePath ?? null,
-    branch: row.branch ?? null,
-    startedAt: row.startedAt,
-    lastActivityAt: row.lastActivityAt,
-    roleSessionMap: JSON.parse(row.roleSessionMap) as PersistedAgency['roleSessionMap'],
-    handoffs: JSON.parse(row.handoffs) as PersistedAgency['handoffs'],
-  }
-}
-
-export function registerSession(session: Session): void {
+export function registerSession(session: Session, roleInstanceIndex?: number): void {
   const db = getDb()
   db.insert(sessions).values({
     localId: session.localId,
@@ -65,12 +54,15 @@ export function registerSession(session: Session): void {
     roleId: session.roleId ?? null,
     agencyInstanceId: session.agencyInstanceId ?? null,
     agencyName: session.agencyName ?? null,
+    agencyId: session.agencyId ?? null,
+    agencyScope: session.agencyScope ?? null,
     title: session.title ?? null,
     workItemKey: session.workItemKey ?? null,
     workItemTitle: session.workItemTitle ?? null,
     status: session.status ?? 'idle',
     startedAt: session.startedAt,
     lastActivityAt: session.lastActivityAt,
+    roleInstanceIndex: roleInstanceIndex ?? null,
   }).onConflictDoUpdate({
     target: sessions.localId,
     set: {
@@ -96,9 +88,7 @@ export function registerSession(session: Session): void {
 }
 
 export function updateSession(localId: string, partial: Partial<Session>): void {
-  const db = getDb()
-  const { roleSessionMap: _rm, handoffs: _h, ...rest } = partial as Record<string, unknown>
-  db.update(sessions).set(rest as Partial<typeof sessions.$inferInsert>).where(eq(sessions.localId, localId)).run()
+  getDb().update(sessions).set(partial as Partial<typeof sessions.$inferInsert>).where(eq(sessions.localId, localId)).run()
 }
 
 export function getSession(localId: string): Session | null {
@@ -116,128 +106,27 @@ export function listSessions(projectPath: string): Session[] {
     .map(rowToSession)
 }
 
-export function registerAgency(agency: PersistedAgency): void {
-  const db = getDb()
-  db.insert(agencies).values({
-    instanceId: agency.instanceId,
-    agencyId: agency.agencyId,
-    agencyScope: agency.agencyScope,
-    agencyName: agency.agencyName,
-    workItemTitle: agency.workItemTitle ?? null,
-    initialPrompt: agency.initialPrompt ?? '',
-    title: agency.title ?? null,
-    projectPath: agency.projectPath,
-    worktreePath: agency.worktreePath ?? null,
-    branch: agency.branch ?? null,
-    startedAt: agency.startedAt,
-    lastActivityAt: agency.lastActivityAt,
-    roleSessionMap: JSON.stringify(agency.roleSessionMap ?? {}),
-    handoffs: JSON.stringify(agency.handoffs ?? {}),
-  }).onConflictDoUpdate({
-    target: agencies.instanceId,
-    set: {
-      lastActivityAt: agency.lastActivityAt,
-      roleSessionMap: JSON.stringify(agency.roleSessionMap ?? {}),
-      handoffs: JSON.stringify(agency.handoffs ?? {}),
-    },
-  }).run()
-
-  // Cap agencies at SESSION_CAP per project.
-  const forProject = db.select({ instanceId: agencies.instanceId, lastActivityAt: agencies.lastActivityAt })
-    .from(agencies)
-    .where(eq(agencies.projectPath, agency.projectPath))
-    .orderBy(agencies.lastActivityAt)
-    .all()
-
-  if (forProject.length > SESSION_CAP) {
-    const toDelete = forProject.slice(0, forProject.length - SESSION_CAP)
-    for (const a of toDelete) {
-      // Remove member sessions along with the agency.
-      db.delete(sessions).where(eq(sessions.agencyInstanceId, a.instanceId)).run()
-      db.delete(agencies).where(eq(agencies.instanceId, a.instanceId)).run()
-    }
-  }
-}
-
-export function updateAgency(
-  instanceId: string,
-  partial: Omit<Partial<PersistedAgency>, 'roleSessionMap' | 'handoffs'> & {
-    roleSessionMap?: Record<string, Array<{ instanceIndex: number; sdkSessionId: string }>>
-    handoffs?: Record<string, Array<{ instanceIndex: number; summary: string; timestamp: number }>>
-  },
-): void {
-  const db = getDb()
-  const existing = getAgency(instanceId)
-  if (!existing) return
-
-  const { roleSessionMap, handoffs, ...rest } = partial
-
-  const mergedRoleSessionMap = existing.roleSessionMap
-  if (roleSessionMap) {
-    for (const [roleId, entries] of Object.entries(roleSessionMap)) {
-      if (!mergedRoleSessionMap[roleId]) mergedRoleSessionMap[roleId] = []
-      for (const entry of entries) {
-        const already = mergedRoleSessionMap[roleId]!.findIndex(
-          (e) => e.instanceIndex === entry.instanceIndex,
-        )
-        if (already === -1) mergedRoleSessionMap[roleId]!.push(entry)
-        else mergedRoleSessionMap[roleId]![already] = entry
-      }
-    }
-  }
-
-  const mergedHandoffs = existing.handoffs
-  if (handoffs) {
-    for (const [roleId, entries] of Object.entries(handoffs)) {
-      if (!mergedHandoffs[roleId]) mergedHandoffs[roleId] = []
-      mergedHandoffs[roleId]!.push(...entries)
-    }
-  }
-
-  const updateSet: Record<string, unknown> = {
-    ...rest,
-    roleSessionMap: JSON.stringify(mergedRoleSessionMap),
-    handoffs: JSON.stringify(mergedHandoffs),
-  }
-  db.update(agencies).set(updateSet as Partial<typeof agencies.$inferInsert>).where(eq(agencies.instanceId, instanceId)).run()
-}
-
-export function getAgency(instanceId: string): PersistedAgency | null {
-  const row = getDb().select().from(agencies).where(eq(agencies.instanceId, instanceId)).get()
-  return row ? rowToAgency(row) : null
-}
-
-export function listAgencies(projectPath: string): PersistedAgency[] {
-  return getDb()
-    .select()
-    .from(agencies)
-    .where(eq(agencies.projectPath, projectPath))
-    .orderBy(desc(agencies.lastActivityAt))
-    .all()
-    .map(rowToAgency)
-}
-
 export function deleteSession(localId: string): void {
   getDb().delete(sessions).where(eq(sessions.localId, localId)).run()
 }
 
 export function deleteAgency(instanceId: string): void {
   const db = getDb()
+  db.delete(agencyHandoffs).where(eq(agencyHandoffs.agencyInstanceId, instanceId)).run()
   db.delete(sessions).where(eq(sessions.agencyInstanceId, instanceId)).run()
-  db.delete(agencies).where(eq(agencies.instanceId, instanceId)).run()
 }
 
 export function deleteAllForProject(projectPath: string): void {
   const db = getDb()
-  const projectAgencies = db.select({ instanceId: agencies.instanceId })
-    .from(agencies)
-    .where(eq(agencies.projectPath, projectPath))
+  // Collect agency instance ids before deleting sessions so we can clean up handoffs
+  const agencySessions = db.select({ instanceId: sessions.agencyInstanceId })
+    .from(sessions)
+    .where(eq(sessions.projectPath, projectPath))
     .all()
-
-  for (const a of projectAgencies) {
-    db.delete(sessions).where(eq(sessions.agencyInstanceId, a.instanceId)).run()
+  const instanceIds = [...new Set(agencySessions.map((s) => s.instanceId).filter((id): id is string => id !== null))]
+  for (const instanceId of instanceIds) {
+    db.delete(agencyHandoffs).where(eq(agencyHandoffs.agencyInstanceId, instanceId)).run()
   }
-  db.delete(agencies).where(eq(agencies.projectPath, projectPath)).run()
   db.delete(sessions).where(eq(sessions.projectPath, projectPath)).run()
 }
 
@@ -254,24 +143,54 @@ export function listSessionsByAgency(agencyInstanceId: string): Session[] {
     .map(rowToSession)
 }
 
-export function touchAgency(instanceId: string): void {
-  getDb().update(agencies).set({ lastActivityAt: Date.now() }).where(eq(agencies.instanceId, instanceId)).run()
+export function addHandoff(
+  agencyInstanceId: string,
+  roleId: string,
+  instanceIndex: number,
+  summary: string,
+): void {
+  getDb().insert(agencyHandoffs).values({
+    agencyInstanceId,
+    roleId,
+    instanceIndex,
+    summary,
+    createdAt: Date.now(),
+  }).run()
+}
+
+export function getHandoffsByRole(agencyInstanceId: string): Map<string, HandoffRecord[]> {
+  const rows = getDb()
+    .select()
+    .from(agencyHandoffs)
+    .where(eq(agencyHandoffs.agencyInstanceId, agencyInstanceId))
+    .all()
+
+  const result = new Map<string, HandoffRecord[]>()
+  for (const row of rows) {
+    let list = result.get(row.roleId)
+    if (!list) { list = []; result.set(row.roleId, list) }
+    list.push({ instanceIndex: row.instanceIndex, summary: row.summary, timestamp: row.createdAt })
+  }
+  return result
+}
+
+export function getSessionRoleInstanceIndex(localId: string): number | null {
+  const row = getDb().select({ roleInstanceIndex: sessions.roleInstanceIndex }).from(sessions).where(eq(sessions.localId, localId)).get()
+  return row?.roleInstanceIndex ?? null
 }
 
 export function pruneExpired(thresholdDays: number | null): void {
   if (thresholdDays === null) return
   const db = getDb()
   const cutoff = Date.now() - thresholdDays * 86_400_000
-
-  // Find agencies to prune so their member sessions can be cleaned up first.
-  const expiredAgencies = db.select({ instanceId: agencies.instanceId })
-    .from(agencies)
-    .where(lt(agencies.lastActivityAt, cutoff))
+  const expiredAgencyIds = db.selectDistinct({ id: sessions.agencyInstanceId })
+    .from(sessions)
+    .where(lt(sessions.lastActivityAt, cutoff))
     .all()
-
-  for (const a of expiredAgencies) {
-    db.delete(sessions).where(eq(sessions.agencyInstanceId, a.instanceId)).run()
+    .map((r) => r.id)
+    .filter((id): id is string => id !== null)
+  for (const instanceId of expiredAgencyIds) {
+    db.delete(agencyHandoffs).where(eq(agencyHandoffs.agencyInstanceId, instanceId)).run()
   }
-  db.delete(agencies).where(lt(agencies.lastActivityAt, cutoff)).run()
   db.delete(sessions).where(lt(sessions.lastActivityAt, cutoff)).run()
 }

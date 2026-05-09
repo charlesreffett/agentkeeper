@@ -2,8 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { type AppDb, getDb } from './index'
-import { appState, agencies, costEntries, projects, sessions } from './schema'
-import type { PersistedAgency, Session } from '../../shared/ipc-contract'
+import { appState, costEntries, projects, sessions } from './schema'
+import type { Session } from '../../shared/ipc-contract'
 import type { CostEntry } from '../cost-ledger'
 import type { RecentProject } from '../../shared/ipc-contract'
 
@@ -31,7 +31,7 @@ export function runLegacyImport(userDataPath: string): void {
 
 function importSessionRegistry(tx: AppDb, userDataPath: string): void {
   const p = path.join(userDataPath, 'session-registry.json')
-  let raw: { sessions?: Record<string, Session>; agencies?: Record<string, PersistedAgency> }
+  let raw: { sessions?: Record<string, Session> }
   try { raw = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return }
 
   for (const s of Object.values(raw.sessions ?? {})) {
@@ -55,25 +55,6 @@ function importSessionRegistry(tx: AppDb, userDataPath: string): void {
       status: s.status ?? 'idle',
       startedAt: s.startedAt,
       lastActivityAt: s.lastActivityAt,
-    }).onConflictDoNothing().run()
-  }
-
-  for (const a of Object.values(raw.agencies ?? {})) {
-    tx.insert(agencies).values({
-      instanceId: a.instanceId,
-      agencyId: a.agencyId,
-      agencyScope: a.agencyScope,
-      agencyName: a.agencyName,
-      workItemTitle: a.workItemTitle ?? null,
-      initialPrompt: a.initialPrompt ?? '',
-      title: a.title ?? null,
-      projectPath: a.projectPath,
-      worktreePath: a.worktreePath ?? null,
-      branch: a.branch ?? null,
-      startedAt: a.startedAt,
-      lastActivityAt: a.lastActivityAt,
-      roleSessionMap: JSON.stringify(a.roleSessionMap ?? {}),
-      handoffs: JSON.stringify(a.handoffs ?? {}),
     }).onConflictDoNothing().run()
   }
 }

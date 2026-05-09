@@ -182,6 +182,8 @@ export interface Session {
   roleId: string | null
   agencyInstanceId: string | null
   agencyName: string | null
+  agencyId: string | null
+  agencyScope: AgencyScope | null
   startedAt: number
   lastActivityAt: number
   status: LiveSessionStatus
@@ -214,8 +216,12 @@ export interface StartSessionParams {
   /** Membership in an agency run, if applicable — tagged by the orchestrator. */
   agencyInstanceId?: string
   roleId?: string
-  /** 1-based instance index within the role — needed to write the correct roleSessionMap entry. */
+  /** 1-based instance index within the role. */
   roleInstanceIndex?: number
+  /** Agency definition id — persisted so resumeAgency can reload the agency config. */
+  agencyId?: string
+  /** Scope of the agency definition. */
+  agencyScope?: AgencyScope
   /** Work item to attach as context for the session. */
   workItemId?: string
   /** Display key for the linked work item, e.g. "CORE-482", "MOB-631". */
@@ -367,28 +373,6 @@ export interface AgencyInstance {
   worktreePath: string | null
   branch: string | null
   sessions: AgencyInstanceSession[]
-}
-
-export interface PersistedAgency {
-  instanceId: string
-  agencyId: string
-  agencyScope: AgencyScope
-  agencyName: string
-  /** Work-item title (e.g. Jira issue summary), preferred for display. */
-  workItemTitle: string | null
-  /** Raw initial prompt sent to the entry-point role. */
-  initialPrompt: string
-  /** AI-generated short title derived from initialPrompt; null until generated. */
-  title: string | null
-  projectPath: string
-  worktreePath: string | null
-  branch: string | null
-  startedAt: number
-  lastActivityAt: number
-  /** roleId → array of { instanceIndex, sdkSessionId } */
-  roleSessionMap: Record<string, Array<{ instanceIndex: number; sdkSessionId: string }>>
-  /** roleId → array of handoff summaries from completed overflow agents */
-  handoffs: Record<string, Array<{ instanceIndex: number; summary: string; timestamp: number }>>
 }
 
 /** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
@@ -606,10 +590,7 @@ export interface AgentKeeperApi {
       id: string,
     ) => Promise<void>
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
-    listPersisted: (projectPath: string) => Promise<PersistedAgency[]>
     resume: (instanceId: string) => Promise<AgencyInstance>
-    deletePersisted: (instanceId: string) => Promise<void>
-    touchPersisted: (instanceId: string) => Promise<void>
   }
   skills: {
     list: (projectPath: string) => Promise<Skill[]>
@@ -803,10 +784,7 @@ export const IPC_CHANNELS = {
   sessionsDeleteHistorical: 'sessions:deleteHistorical',
   sessionsDeleteAllHistorical: 'sessions:deleteAllHistorical',
   sessionsDeleteAllPersisted: 'sessions:deleteAllPersisted',
-  agenciesListPersisted: 'agencies:listPersisted',
   agenciesResume: 'agencies:resume',
-  agenciesDeletePersisted: 'agencies:deletePersisted',
-  agenciesTouchPersisted: 'agencies:touchPersisted',
   dialogOpenFiles: 'dialog:openFiles',
   gitGetBranch: 'git:getBranch',
   gitGetStatus: 'git:getStatus',

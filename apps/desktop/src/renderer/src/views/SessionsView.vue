@@ -10,7 +10,7 @@ import { useProjectStore } from '@/stores/project'
 import { projectColor } from '@/lib/projectColor'
 import { cn } from '@/lib/utils'
 import StatsCards from '@/components/StatsCards.vue'
-import type { PersistedAgency, Session, SessionSummary } from '@shared/ipc-contract'
+import type { Session, SessionSummary } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
@@ -23,27 +23,35 @@ const statusCounts = computed(() => sessionStore.statusCounts)
 // ── Persisted + historical data from disk ──────────────────────────────────
 
 const persistedSessions = ref<Session[]>([])
-const persistedAgencies = ref<PersistedAgency[]>([])
 const historicalSessions = ref<{ projectPath: string; summary: SessionSummary }[]>([])
+
+// Agency groups derived from persistedSessions
+const agencyGroups = computed(() => {
+  const groups = new Map<string, Session[]>()
+  for (const s of persistedSessions.value) {
+    if (!s.agencyInstanceId) continue
+    let list = groups.get(s.agencyInstanceId)
+    if (!list) { list = []; groups.set(s.agencyInstanceId, list) }
+    list.push(s)
+  }
+  return groups
+})
 
 async function loadPersistedAndHistorical() {
   const projects = projectsStore.projects
   if (!projects.length) return
 
   const allPersisted: Session[] = []
-  const allAgencies: PersistedAgency[] = []
   const allHistorical: { projectPath: string; summary: SessionSummary }[] = []
 
   await Promise.all(
     projects.map(async (p) => {
       try {
-        const [sessions, agencies, historical] = await Promise.all([
+        const [sessions, historical] = await Promise.all([
           window.agentkeeper.sessions.listPersisted(p.path),
-          window.agentkeeper.agencies.listPersisted(p.path),
           window.agentkeeper.sessions.list(p.path),
         ])
         allPersisted.push(...sessions)
-        allAgencies.push(...agencies)
         allHistorical.push(...historical.map((s) => ({ projectPath: p.path, summary: s })))
       } catch {
         // non-fatal — missing project dir is normal for newly registered projects
@@ -55,13 +63,6 @@ async function loadPersistedAndHistorical() {
   persistedSessions.value = allPersisted.filter((s) => {
     if (seenPersisted.has(s.localId)) return false
     seenPersisted.add(s.localId)
-    return true
-  })
-
-  const seenAgencies = new Set<string>()
-  persistedAgencies.value = allAgencies.filter((a) => {
-    if (seenAgencies.has(a.instanceId)) return false
-    seenAgencies.add(a.instanceId)
     return true
   })
 
@@ -141,26 +142,26 @@ const allSessions = computed((): SessionCardData[] => {
       }
     })
 
-  const agencies: SessionCardData[] = persistedAgencies.value
-    .filter((a) => {
-      const members = persistedSessions.value.filter((s) => s.agencyInstanceId === a.instanceId)
-      return !members.some((s) => liveIds.has(s.localId))
-    })
-    .map((a) => {
-      const name = pathToProjectName(a.projectPath)
+  const agencies: SessionCardData[] = [...agencyGroups.value.entries()]
+    .filter(([, members]) => !members.some((s) => liveIds.has(s.localId)))
+    .map(([instanceId, members]) => {
+      const entrySession = members.find((s) => !s.initialPrompt.startsWith('Agency "'))
+      const projectPath = members[0]?.projectPath ?? ''
+      const name = pathToProjectName(projectPath)
+      const lastActivityAt = Math.max(...members.map((s) => s.lastActivityAt))
       return {
-        id: a.instanceId,
-        title: a.workItemTitle ?? a.title ?? a.agencyName,
+        id: instanceId,
+        title: entrySession?.workItemTitle ?? entrySession?.title ?? entrySession?.initialPrompt.split('\n')[0] ?? members[0]?.agencyName ?? 'Agency session',
         status: 'inactive' as const,
         source: 'agency' as const,
-        projectPath: a.projectPath,
+        projectPath,
         projectName: name,
         projectColor: projectColor(name),
         model: null,
-        branch: a.branch,
-        lastActivityAt: a.lastActivityAt,
+        branch: entrySession?.branch ?? members[0]?.branch ?? null,
+        lastActivityAt,
         workItemKey: null,
-        workItemTitle: a.workItemTitle ?? null,
+        workItemTitle: entrySession?.workItemTitle ?? null,
         subAgentCount: 0,
         messageCount: null,
         events: [],
@@ -258,12 +259,9 @@ function handleCardClick(card: SessionCardData) {
       break
     }
     case 'agency': {
-      const agency = persistedAgencies.value.find((a) => a.instanceId === card.id)
-      if (agency) {
-        const members = persistedSessions.value.filter(
-          (s) => s.agencyInstanceId === agency.instanceId,
-        )
-        const localId = sessionStore.openPersistedAgency(agency, members)
+      const members = agencyGroups.value.get(card.id) ?? []
+      if (members.length > 0) {
+        const localId = sessionStore.openPersistedAgency(members)
         if (localId) void router.push(`/sessions/${localId}`)
       }
       break

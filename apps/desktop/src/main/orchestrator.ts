@@ -21,7 +21,7 @@ import {
   interruptSession,
 } from './agent'
 import * as registry from './session-registry'
-import type { Session } from './session-registry'
+import type { HandoffRecord, Session } from './session-registry'
 import { resolveClaudeAuth } from './secrets'
 
 interface AgencyRoleRestartParams {
@@ -43,12 +43,6 @@ interface PendingMessage {
   content: string
   resolve: (r: string) => void
   reject: (e: Error) => void
-}
-
-interface HandoffRecord {
-  instanceIndex: number
-  summary: string
-  timestamp: number
 }
 
 interface RuntimeAgency {
@@ -200,6 +194,8 @@ async function spawnOverflow(
         ...(restart.effort ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort } : {}),
         ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
         agencyInstanceId: runtime.instanceId,
+        agencyId: runtime.agencyId,
+        agencyScope: runtime.agencyScope,
         roleId,
         roleInstanceIndex: nextIndex,
         roleName: role.name,
@@ -277,10 +273,7 @@ async function requestHandoffAndSuspend(
   if (!runtime.handoffsByRole.has(inst.roleId)) runtime.handoffsByRole.set(inst.roleId, [])
   runtime.handoffsByRole.get(inst.roleId)!.push(record)
 
-  registry.updateAgency(runtime.instanceId, {
-    handoffs: { [inst.roleId]: [record] },
-    lastActivityAt: Date.now(),
-  })
+  registry.addHandoff(runtime.instanceId, inst.roleId, inst.instanceIndex, record.summary)
 
   try {
     await interruptSession(inst.localId)
@@ -634,15 +627,6 @@ async function generateTitle(prompt: string): Promise<string> {
   }
 }
 
-async function generateAndPersistTitle(instanceId: string, prompt: string): Promise<void> {
-  try {
-    const title = await generateTitle(prompt)
-    if (title) registry.updateAgency(instanceId, { title })
-  } catch {
-    // non-fatal — card will fall back to agencyName
-  }
-}
-
 export async function generateAndPersistSessionTitle(localId: string, prompt: string): Promise<void> {
   try {
     const title = await generateTitle(prompt)
@@ -704,25 +688,6 @@ export async function startAgency(
   }
   instances.set(instanceId, runtime)
 
-  registry.registerAgency({
-    instanceId,
-    agencyId: agency.id,
-    agencyScope: agency.scope,
-    agencyName: agency.name,
-    workItemTitle: params.workItemTitle ?? null,
-    initialPrompt: params.initialPrompt,
-    title: null,
-    projectPath: params.projectPath,
-    worktreePath,
-    branch,
-    startedAt: Date.now(),
-    lastActivityAt: Date.now(),
-    roleSessionMap: {},
-    handoffs: {},
-  })
-
-  void generateAndPersistTitle(instanceId, params.initialPrompt)
-
   // First pass: determine how many permanent instances each role gets, so we can
   // build the complete peer-id list for the system prompt preamble.
   const spawnCounts: Array<{ slot: RoleSlot; count: number }> = agency.roles.map((slot) => {
@@ -743,6 +708,7 @@ export async function startAgency(
   }
 
   const sessionsMeta: AgencyInstanceSession[] = []
+  let entryLocalId: string | null = null
 
   for (const { slot, count } of spawnCounts) {
     const role = rolesById.get(slot.roleId)!
@@ -791,6 +757,8 @@ export async function startAgency(
           ? params.initialPrompt
           : `Agency "${agency.name}" is initializing. Await messages from peers.`
 
+      if (isEntry && idx === 1) entryLocalId = localId
+
       const mcp = createOrchestratorMcp(localId)
 
       await startSession(
@@ -806,6 +774,8 @@ export async function startAgency(
             ? { allowedTools: withOrchestraMcp(role.allowedTools) }
             : {}),
           agencyInstanceId: instanceId,
+          agencyId: agency.id,
+          agencyScope: agency.scope,
           roleId: slot.roleId,
           roleInstanceIndex: idx,
           roleName: role.name,
@@ -845,6 +815,8 @@ export async function startAgency(
     }
   }
 
+  if (entryLocalId) void generateAndPersistSessionTitle(entryLocalId, params.initialPrompt)
+
   return {
     instanceId,
     agencyId: agency.id,
@@ -863,44 +835,52 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     if (existing) return existing
   }
 
-  const persisted = registry.getAgency(instanceId)
-  if (!persisted) throw new Error(`No persisted agency found for id "${instanceId}"`)
+  const memberSessions = registry.listSessionsByAgency(instanceId)
+  if (!memberSessions.length) throw new Error(`No sessions found for agency instance "${instanceId}"`)
 
-  const allAgencies = await listAgencies(persisted.projectPath)
-  const agency = allAgencies.find(
-    (a) => a.id === persisted.agencyId && a.scope === persisted.agencyScope,
-  )
-  if (!agency) {
-    throw new Error(`Agency "${persisted.agencyId}" (${persisted.agencyScope}) no longer exists.`)
-  }
+  const firstSession = memberSessions[0]!
+  const agencyId = firstSession.agencyId
+  const agencyScope = firstSession.agencyScope
+  if (!agencyId || !agencyScope) throw new Error(`Agency id/scope missing from session for instance "${instanceId}"`)
 
-  const allRoles = await listRoles(persisted.projectPath)
+  const projectPath = firstSession.projectPath
+  const worktreePath = firstSession.worktreePath
+  const branch = firstSession.branch
+
+  const allAgencies = await listAgencies(projectPath)
+  const agency = allAgencies.find((a) => a.id === agencyId && a.scope === agencyScope)
+  if (!agency) throw new Error(`Agency "${agencyId}" (${agencyScope}) no longer exists.`)
+
+  const allRoles = await listRoles(projectPath)
   const rolesById = new Map(allRoles.map((r) => [r.id, r]))
 
-  // Build a lookup of sdkSessionId → localId so resumed sessions keep the
-  // same localId the renderer already knows about. Without this, the runtime
-  // would assign new UUIDs and the renderer's session references would break.
-  const memberSessions: Session[] = registry.listSessionsByAgency(instanceId)
+  // Build roleSessionMap from persisted sessions
+  const roleSessionMap: Record<string, Array<{ instanceIndex: number; sdkSessionId: string }>> = {}
+  for (const s of memberSessions) {
+    if (!s.roleId) continue
+    const instanceIndex = registry.getSessionRoleInstanceIndex(s.localId) ?? 1
+    if (!roleSessionMap[s.roleId]) roleSessionMap[s.roleId] = []
+    if (s.sdkSessionId) {
+      roleSessionMap[s.roleId]!.push({ instanceIndex, sdkSessionId: s.sdkSessionId })
+    }
+  }
+
   const sdkToLocalId = new Map<string, string>(
     memberSessions
       .filter((s): s is Session & { sdkSessionId: string } => s.sdkSessionId !== null)
-      .map((s) => [s.sdkSessionId, s.localId]),
+      .map((s) => [s.sdkSessionId!, s.localId]),
   )
 
-  // Restore handoffs from persisted state
-  const handoffsByRole = new Map<string, HandoffRecord[]>()
-  for (const [roleId, records] of Object.entries(persisted.handoffs ?? {})) {
-    handoffsByRole.set(roleId, records)
-  }
+  const handoffsByRole = registry.getHandoffsByRole(instanceId)
 
   const runtime: RuntimeAgency = {
     instanceId,
     agencyId: agency.id,
     agencyScope: agency.scope,
     agencyName: agency.name,
-    projectPath: persisted.projectPath,
-    worktreePath: persisted.worktreePath,
-    branch: persisted.branch,
+    projectPath,
+    worktreePath,
+    branch,
     instancesByRole: new Map(),
     sessionToInstance: new Map(),
     busySessions: new Set(),
@@ -912,9 +892,9 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
   }
   instances.set(instanceId, runtime)
 
-  // Build the full peer list from persisted roleSessionMap
+  // Build the full peer list from the reconstituted roleSessionMap
   const allInstanceIds: string[] = []
-  for (const [roleId, entries] of Object.entries(persisted.roleSessionMap ?? {})) {
+  for (const [roleId, entries] of Object.entries(roleSessionMap)) {
     for (const entry of entries) {
       allInstanceIds.push(`${roleId}-${entry.instanceIndex}`)
     }
@@ -937,7 +917,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
           ].join('\n')
         : ''
 
-    const entries = persisted.roleSessionMap[slot.roleId] ?? []
+    const entries = roleSessionMap[slot.roleId] ?? []
     const totalInstances = slot.max ?? (slot.count ?? 1)
 
     for (const entry of entries) {
@@ -962,8 +942,8 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       await startSession(
         {
           localId,
-          projectPath: persisted.projectPath,
-          ...(persisted.worktreePath ? { worktreePath: persisted.worktreePath } : {}),
+          projectPath,
+          ...(worktreePath ? { worktreePath } : {}),
           initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
           systemPromptAppend,
           ...(role.model ? { model: role.model } : {}),
@@ -972,6 +952,8 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
             ? { allowedTools: withOrchestraMcp(role.allowedTools) }
             : {}),
           agencyInstanceId: instanceId,
+          agencyId: agency.id,
+          agencyScope: agency.scope,
           roleId: slot.roleId,
           roleInstanceIndex: entry.instanceIndex,
           roleName: role.name,
@@ -1013,15 +995,13 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     }
   }
 
-  registry.updateAgency(instanceId, { lastActivityAt: Date.now() })
-
   return {
     instanceId,
     agencyId: agency.id,
     agencyName: agency.name,
-    projectPath: persisted.projectPath,
-    worktreePath: persisted.worktreePath,
-    branch: persisted.branch,
+    projectPath,
+    worktreePath,
+    branch,
     sessions: sessionsMeta,
   }
 }

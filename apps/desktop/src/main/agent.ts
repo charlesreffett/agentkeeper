@@ -10,6 +10,7 @@ import {
 import * as costLedger from './cost-ledger'
 import { calculateCost } from './pricing'
 import type {
+  AgencyScope,
   Attachment,
   LiveSessionEvent,
   LiveSessionStats,
@@ -42,6 +43,8 @@ export interface ActiveSession {
   agencyName: string | null
   /** Agency membership (null if freestanding). */
   agencyInstanceId: string | null
+  agencyId: string | null
+  agencyScope: AgencyScope | null
   roleId: string | null
   roleInstanceIndex: number | null
   workItemId: string | null
@@ -164,22 +167,15 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             roleId: session.roleId,
             agencyInstanceId: session.agencyInstanceId,
             agencyName: session.agencyName,
+            agencyId: session.agencyId,
+            agencyScope: session.agencyScope,
             startedAt: session.startedAt,
             lastActivityAt: Date.now(),
             status: session.status,
             workItemKey: session.workItemKey,
             workItemTitle: session.workItemTitle,
             title: null,
-          })
-          if (session.agencyInstanceId && session.roleId) {
-            const instanceIndex = session.roleInstanceIndex ?? 1
-            registry.updateAgency(session.agencyInstanceId, {
-              roleSessionMap: {
-                [session.roleId]: [{ instanceIndex, sdkSessionId: anyMsg.session_id }],
-              },
-              lastActivityAt: Date.now(),
-            })
-          }
+          }, session.roleInstanceIndex ?? undefined)
         }
       }
 
@@ -384,6 +380,8 @@ export async function startSession(
     roleName: params.roleName ?? null,
     agencyName: params.agencyName ?? null,
     agencyInstanceId: params.agencyInstanceId ?? null,
+    agencyId: params.agencyId ?? null,
+    agencyScope: params.agencyScope ?? null,
     roleId: params.roleId ?? null,
     roleInstanceIndex: params.roleInstanceIndex ?? null,
     workItemId: params.workItemId ?? null,

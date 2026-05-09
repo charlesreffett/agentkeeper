@@ -23,7 +23,6 @@ import {
   type AgentKeeperApi,
   type Plan,
   type PRFilters,
-  type PersistedAgency,
   type Session,
   type PermissionMode,
   type PricingMeta,
@@ -196,14 +195,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id) as Promise<void>,
     start: (params: StartAgencyParams) =>
       invoke(IPC_CHANNELS.agenciesStart, params) as Promise<never>,
-    listPersisted: (projectPath: string) =>
-      invoke(IPC_CHANNELS.agenciesListPersisted, projectPath) as Promise<PersistedAgency[]>,
     resume: (instanceId: string) =>
       invoke(IPC_CHANNELS.agenciesResume, instanceId) as Promise<never>,
-    deletePersisted: (instanceId: string) =>
-      invoke(IPC_CHANNELS.agenciesDeletePersisted, instanceId) as Promise<void>,
-    touchPersisted: (instanceId: string) =>
-      invoke(IPC_CHANNELS.agenciesTouchPersisted, instanceId) as Promise<void>,
   },
   skills: {
     list: (projectPath: string) =>
