@@ -12,6 +12,9 @@ build
 # Claude Code local state (per-project sessions, worktree metadata, etc.)
 .claude/
 
+# IDE project files
+.idea/
+
 # Git worktrees the app creates live in a sibling dir, not inside the repo
 # (see main/worktrees.ts → `<projectPath>--worktrees/`), so nothing to ignore
 # for those. `.agentkeeper/` holds committed role/agency definitions — DO NOT

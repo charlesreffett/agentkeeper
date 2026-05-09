@@ -239,6 +239,17 @@ const statusLine = computed(() => {
   return parts.join(' · ') || 'No active sessions'
 })
 
+// ── Project filter helpers ─────────────────────────────────────────────────
+
+function selectedPillStyle(name: string): Record<string, string> {
+  const hue = parseInt(projectColor(name).match(/hsl\((\d+)/)![1])
+  return {
+    backgroundColor: `hsl(${hue}, 55%, 93%)`,
+    borderColor: `hsl(${hue}, 50%, 72%)`,
+    color: `hsl(${hue}, 65%, 38%)`,
+  }
+}
+
 // ── Actions ────────────────────────────────────────────────────────────────
 
 function handleRefresh() {
@@ -437,10 +448,10 @@ function handleCardClick(card: SessionCardData) {
       <button
         :class="
           cn(
-            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors border',
+            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border',
             selectedProjectPath === null
-              ? 'bg-primary/10 text-primary border-primary/30'
-              : 'text-muted-foreground hover:text-foreground border-border',
+              ? 'bg-primary/15 text-primary border-primary/50'
+              : 'text-muted-foreground hover:text-foreground border-border hover:border-foreground/30',
           )
         "
         @click="selectedProjectPath = null"
@@ -454,12 +465,13 @@ function handleCardClick(card: SessionCardData) {
         :key="proj.path"
         :class="
           cn(
-            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors border',
+            'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all border',
             selectedProjectPath === proj.path
-              ? 'bg-primary/10 text-primary border-primary/30'
-              : 'text-muted-foreground hover:text-foreground border-border',
+              ? ''
+              : 'text-muted-foreground hover:text-foreground border-border hover:border-foreground/30',
           )
         "
+        :style="selectedProjectPath === proj.path ? selectedPillStyle(proj.name) : {}"
         @click="selectedProjectPath = proj.path"
       >
         <span
