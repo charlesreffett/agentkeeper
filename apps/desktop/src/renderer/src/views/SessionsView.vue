@@ -248,8 +248,15 @@ function handleRefresh() {
 async function handleNewSession() {
   const target = projectsStore.focusedProject ?? projectStore.currentProject
   if (target) {
+    const settings = await window.agentkeeper.settings.get()
     projectStore.setProject(target)
-    void router.push('/project')
+    const localId = sessionStore.createOrFocusDraft({
+      projectPath: target.path,
+      defaultModel: settings.defaultModel,
+      defaultEffort: settings.defaultEffort,
+      defaultUseWorktree: settings.defaultUseWorktree,
+    })
+    void router.push(`/sessions/${localId}`)
     return
   }
   void router.push('/')

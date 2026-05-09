@@ -53,12 +53,13 @@ function refreshList() {
 async function onNewSessionClick() {
   await refreshConfig()
   selectedHistoricalId.value = null
-  sessionStore.createOrFocusDraft({
+  const localId = sessionStore.createOrFocusDraft({
     projectPath: project.value.path,
     defaultModel: settings.value.defaultModel,
     defaultEffort: settings.value.defaultEffort,
     defaultUseWorktree: settings.value.defaultUseWorktree,
   })
+  void router.push(`/sessions/${localId}`)
 }
 
 const startError = ref<string | null>(null)
