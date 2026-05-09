@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Filter, Layers, Plus, RefreshCw } from 'lucide-vue-next'
+import { CheckSquare, Filter, Layers, Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import SessionCard, { type SessionCardData } from '@/components/SessionCard.vue'
 import { useSessionStore } from '@/stores/sessions'
@@ -245,7 +245,71 @@ async function handleNewSession() {
   void router.push('/')
 }
 
+const isSelectMode = ref(false)
+const selectedIds = ref(new Set<string>())
+
+const selectedCount = computed(() => selectedIds.value.size)
+const totalCount = computed(() => filteredSessions.value.length)
+const allSelected = computed(() => totalCount.value > 0 && selectedCount.value === totalCount.value)
+
+function toggleSelectMode() {
+  isSelectMode.value = !isSelectMode.value
+  if (!isSelectMode.value) selectedIds.value = new Set()
+}
+
+function toggleSelectCard(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+function selectAll() {
+  selectedIds.value = new Set(filteredSessions.value.map((s) => s.id))
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+async function deleteSingleSession(card: SessionCardData) {
+  switch (card.source) {
+    case 'live':
+      await window.agentkeeper.sessions.terminate(card.id)
+      sessionStore.dismiss(card.id)
+      break
+    case 'persisted':
+      await window.agentkeeper.sessions.deletePersisted(card.id)
+      persistedSessions.value = persistedSessions.value.filter((s) => s.localId !== card.id)
+      break
+    case 'agency': {
+      const members = agencyGroups.value.get(card.id) ?? []
+      await Promise.all(members.map((m) => window.agentkeeper.sessions.deletePersisted(m.localId)))
+      persistedSessions.value = persistedSessions.value.filter((s) => s.agencyInstanceId !== card.id)
+      break
+    }
+    case 'historical':
+      await window.agentkeeper.sessions.deleteHistorical(card.projectPath, card.id)
+      historicalSessions.value = historicalSessions.value.filter(
+        ({ summary: s }) => s.id !== card.id,
+      )
+      break
+  }
+}
+
+async function handleDeleteSelected() {
+  const toDelete = filteredSessions.value.filter((s) => selectedIds.value.has(s.id))
+  await Promise.all(toDelete.map(deleteSingleSession))
+  selectedIds.value = new Set()
+}
+
+async function handleDeleteAll() {
+  await Promise.all(filteredSessions.value.map(deleteSingleSession))
+  selectedIds.value = new Set()
+}
+
 function handleCardClick(card: SessionCardData) {
+  if (isSelectMode.value) return
   switch (card.source) {
     case 'live':
       void router.push(`/sessions/${card.id}`)
@@ -295,6 +359,15 @@ function handleCardClick(card: SessionCardData) {
           <Filter class="size-3.5" />
           Filter
         </Button>
+        <Button
+          :variant="isSelectMode ? 'secondary' : 'ghost'"
+          size="sm"
+          class="gap-1.5"
+          @click="toggleSelectMode"
+        >
+          <CheckSquare class="size-3.5" />
+          Select
+        </Button>
         <Button size="sm" class="gap-1.5" @click="handleNewSession">
           <Plus class="size-3.5" />
           New session
@@ -341,6 +414,54 @@ function handleCardClick(card: SessionCardData) {
     </div>
 
     <!-- Stats overview -->
+
+    <!-- Selection action bar -->
+    <div
+      v-if="isSelectMode"
+      class="flex items-center justify-between gap-4 px-3 py-2 rounded-lg border bg-muted/40"
+    >
+      <div class="flex items-center gap-3 text-sm">
+        <button
+          class="text-primary hover:underline font-medium"
+          @click="allSelected ? clearSelection() : selectAll()"
+        >
+          {{ allSelected ? 'Deselect all' : 'Select all' }}
+        </button>
+        <span class="text-muted-foreground">
+          {{ selectedCount }} of {{ totalCount }} selected
+        </span>
+        <button
+          v-if="selectedCount > 0"
+          class="text-muted-foreground hover:text-foreground"
+          @click="clearSelection"
+        >
+          Clear
+        </button>
+      </div>
+      <div class="flex items-center gap-2">
+        <Button
+          variant="destructive"
+          size="sm"
+          class="gap-1.5"
+          :disabled="selectedCount === 0"
+          @click="handleDeleteSelected"
+        >
+          <Trash2 class="size-3.5" />
+          Delete selected
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          class="gap-1.5 border-destructive text-destructive hover:bg-destructive hover:text-destructive-foreground"
+          :disabled="totalCount === 0"
+          @click="handleDeleteAll"
+        >
+          <Trash2 class="size-3.5" />
+          Delete all
+        </Button>
+      </div>
+    </div>
+
     <StatsCards />
 
     <!-- Unified session grid -->
@@ -349,7 +470,10 @@ function handleCardClick(card: SessionCardData) {
         v-for="card in filteredSessions"
         :key="card.id"
         :session="card"
+        :select-mode="isSelectMode"
+        :selected="selectedIds.has(card.id)"
         @click="handleCardClick(card)"
+        @select="toggleSelectCard(card.id)"
       />
     </div>
 

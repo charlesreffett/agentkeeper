@@ -29,10 +29,12 @@ export interface SessionCardData {
 
 interface Props {
   session: SessionCardData
+  selectMode?: boolean
+  selected?: boolean
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{ click: [] }>()
+const emit = defineEmits<{ click: []; select: [] }>()
 
 const plan = usePlanProgress(() => props.session)
 
@@ -73,11 +75,20 @@ function badgeLabel(status: SessionCardData['status']): string {
 <template>
   <div
     :class="cn(
-      'rounded-xl border bg-card p-4 flex flex-col gap-3 cursor-pointer hover:shadow-md transition-shadow',
+      'relative rounded-xl border bg-card p-4 flex flex-col gap-3 cursor-pointer hover:shadow-md transition-shadow',
       borderClass(session.status),
     )"
-    @click="emit('click')"
+    @click="props.selectMode ? emit('select') : emit('click')"
   >
+    <!-- select mode overlay -->
+    <div
+      v-if="selectMode"
+      class="absolute top-2 left-2 size-5 rounded border-2 flex items-center justify-center transition-colors"
+      :class="selected ? 'bg-primary border-primary' : 'border-muted-foreground/40 bg-background'"
+    >
+      <Check v-if="selected" class="size-3 text-primary-foreground" />
+    </div>
+
     <!-- title row -->
     <div class="flex items-start gap-2">
       <p class="font-semibold text-sm leading-snug line-clamp-2 flex-1">
