@@ -1,6 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
-import Welcome from '@/views/Welcome.vue'
 import ProjectHome from '@/views/ProjectHome.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import GithubLayout from '@/views/GithubLayout.vue'
@@ -25,7 +24,7 @@ import SessionDetailView from '@/views/SessionDetailView.vue'
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', component: Welcome },
+    { path: '/', redirect: '/sessions' },
     { path: '/sessions', component: SessionsView },
     { path: '/sessions/:id', component: SessionDetailView },
     {
