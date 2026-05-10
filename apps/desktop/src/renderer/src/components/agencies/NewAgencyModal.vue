@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-md p-4">
     <div class="w-full max-w-2xl h-[600px] max-h-[90vh] bg-card border border-border rounded-lg shadow-xl flex flex-col overflow-hidden">
       <!-- Header -->
       <div class="flex items-center justify-between px-5 py-3 border-b border-border shrink-0">

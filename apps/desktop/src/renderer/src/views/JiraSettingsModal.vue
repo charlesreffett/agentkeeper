@@ -56,7 +56,7 @@ async function save() {
 <template>
   <dialog
     ref="dialog"
-    class="rounded-lg p-0 bg-card text-foreground border border-border backdrop:bg-black/60 max-w-sm w-full shadow-xl"
+    class="rounded-lg p-0 bg-card text-foreground border border-border backdrop:bg-black/25 backdrop:backdrop-blur-md max-w-sm w-full shadow-xl"
     @close="emit('close')"
     @cancel="emit('close')"
   >

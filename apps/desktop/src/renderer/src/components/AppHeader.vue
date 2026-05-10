@@ -212,7 +212,7 @@ watch(
   <Teleport to="body">
     <!-- Rename dialog -->
     <div v-if="renameOpen" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="absolute inset-0 bg-black/40" @click="cancelRename" />
+      <div class="absolute inset-0 bg-black/20 backdrop-blur-md" @click="cancelRename" />
       <div class="relative bg-card border border-border rounded-lg shadow-xl p-4 w-72 flex flex-col gap-3">
         <div class="text-sm font-medium">Rename project</div>
         <input

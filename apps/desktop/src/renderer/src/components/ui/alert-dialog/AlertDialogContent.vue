@@ -16,7 +16,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
 <template>
   <Teleport to="body">
     <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center">
-      <div class="fixed inset-0 bg-black/80" @click="open = false" />
+      <div class="fixed inset-0 bg-black/20 backdrop-blur-md" @click="open = false" />
       <div
         :class="cn('relative z-50 grid w-full max-w-lg gap-4 rounded-lg border border-border bg-background p-6 shadow-lg mx-4', props.class)"
         role="alertdialog"
