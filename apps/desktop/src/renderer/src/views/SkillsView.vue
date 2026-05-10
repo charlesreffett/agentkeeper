@@ -5,6 +5,7 @@ import type { Skill, SkillPreview } from '@shared/ipc-contract'
 import { useProjectsStore } from '@/stores/projects'
 import { useSkillsDataStore } from '@/stores/skillsData'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import PageHeader from '@/components/PageHeader.vue'
 
 const projectsStore = useProjectsStore()
 const skillsDataStore = useSkillsDataStore()
@@ -243,11 +244,7 @@ onMounted(async () => {
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <header
-      class="px-6 py-3 border-b border-border flex items-center justify-between shrink-0"
-    >
-      <h2 class="text-lg font-semibold">Skills</h2>
-    </header>
+    <PageHeader title="Skills" />
 
     <div class="flex-1 overflow-y-auto min-h-0">
       <!-- Tab bar -->

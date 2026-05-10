@@ -1,9 +1,6 @@
 <template>
   <div class="h-full flex flex-col overflow-hidden bg-background">
-    <!-- Header -->
-    <header class="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-      <h1 class="text-sm font-semibold text-foreground">Agencies</h1>
-    </header>
+    <PageHeader title="Agencies" />
 
     <!-- Three-panel body -->
     <div class="flex flex-1 overflow-hidden">
@@ -93,6 +90,7 @@ import AgencyDetailPanel from '@/components/agencies/AgencyDetailPanel.vue'
 import RoleInAgencyPanel from '@/components/agencies/RoleInAgencyPanel.vue'
 import ConnectionPanel from '@/components/agencies/ConnectionPanel.vue'
 import NewAgencyModal from '@/components/agencies/NewAgencyModal.vue'
+import PageHeader from '@/components/PageHeader.vue'
 import type { Agency, AgencyDraft, AgencyScope } from '@shared/ipc-contract'
 
 const store = useAgenciesStore()

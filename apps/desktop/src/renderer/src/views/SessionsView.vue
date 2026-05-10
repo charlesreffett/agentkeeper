@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CheckSquare, Filter, Layers, Plus, RefreshCw, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
+import PageHeader from '@/components/PageHeader.vue'
 import { Button } from '@/components/ui/button'
 import {
   AlertDialog,
@@ -375,14 +376,9 @@ function handleCardClick(card: SessionCardData) {
 </script>
 
 <template>
-  <div class="h-full overflow-auto flex flex-col gap-6 p-6">
-    <!-- Page header -->
-    <div class="flex items-start justify-between gap-4">
-      <div class="flex flex-col gap-0.5">
-        <h1 class="text-2xl font-bold">Sessions</h1>
-        <p class="text-sm text-muted-foreground">{{ statusLine }}</p>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
+  <div class="h-full flex flex-col overflow-hidden">
+    <PageHeader title="Sessions" :description="statusLine">
+      <template #actions>
         <Button variant="ghost" size="sm" class="gap-1.5" @click="handleRefresh">
           <RefreshCw class="size-3.5" />
           Refresh
@@ -404,9 +400,10 @@ function handleCardClick(card: SessionCardData) {
           <Plus class="size-3.5" />
           New session
         </Button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
+    <div class="flex-1 overflow-auto flex flex-col gap-6 p-6">
     <!-- Project filter tabs -->
     <div v-if="activeProjects.length > 0" class="flex items-center gap-2 flex-wrap">
       <button
@@ -600,5 +597,6 @@ function handleCardClick(card: SessionCardData) {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+    </div>
   </div>
 </template>

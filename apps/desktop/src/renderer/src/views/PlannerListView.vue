@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from 'lucide-vue-next'
+import PageHeader from '@/components/PageHeader.vue'
 import { useProjectsStore } from '@/stores/projects'
 import { usePlansStore } from '@/stores/plans'
 import type { Plan, PlanStatus } from '@shared/ipc-contract'
@@ -109,29 +110,18 @@ function closeMenu() {
 
 <template>
   <div class="h-full flex flex-col bg-background" @click="closeMenu">
-    <!-- Page header -->
-    <div class="shrink-0 px-6 pt-5 pb-4">
-      <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1">Planner</p>
-      <div class="flex items-end justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">Plans drafted by Claude</h1>
-          <p class="text-sm text-muted-foreground mt-0.5">
-            Each plan breaks a ticket or prompt into steps you can run, re-plan, or hand to sub-agents.<br>
-            Click any plan to inspect its steps.
-          </p>
-        </div>
-        <div class="flex items-center gap-2 shrink-0 pb-0.5">
-          <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
-            <Filter :size="14" />
-            Filter
-          </button>
-          <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
-            <Sparkles :size="14" />
-            Plan with Claude
-          </button>
-        </div>
-      </div>
-    </div>
+    <PageHeader title="Plans" description="Drafted by Claude">
+      <template #actions>
+        <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
+          <Filter :size="14" />
+          Filter
+        </button>
+        <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
+          <Sparkles :size="14" />
+          Plan with Claude
+        </button>
+      </template>
+    </PageHeader>
 
     <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
       <!-- No project -->

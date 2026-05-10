@@ -5,6 +5,7 @@ import type { SlashCommand } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandsDataStore } from '@/stores/commandsData'
+import PageHeader from '@/components/PageHeader.vue'
 
 const projectsStore = useProjectsStore()
 const commandsDataStore = useCommandsDataStore()
@@ -151,14 +152,11 @@ onMounted(async () => {
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <header
-      class="px-6 py-3 border-b border-border flex items-center justify-between shrink-0"
-    >
-      <h2 class="text-lg font-semibold">Commands</h2>
-      <div class="flex items-center gap-2">
+    <PageHeader title="Commands">
+      <template #actions>
         <Button size="sm" @click="beginNew">New command</Button>
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div class="flex min-h-0 flex-1">
       <aside

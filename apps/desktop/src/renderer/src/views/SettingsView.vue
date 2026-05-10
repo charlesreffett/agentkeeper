@@ -5,6 +5,7 @@ import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 import { useLayoutStore } from '@/stores/layout'
 import { useProjectsStore } from '@/stores/projects'
 import { useAppSettingsStore } from '@/stores/appSettings'
+import PageHeader from '@/components/PageHeader.vue'
 
 const layoutStore = useLayoutStore()
 const projectsStore = useProjectsStore()
@@ -203,14 +204,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto">
+  <div class="h-full flex flex-col overflow-hidden">
+    <PageHeader title="Settings" />
+    <div class="flex-1 overflow-y-auto">
     <div v-if="appSettingsStore.loading && !settings" class="flex items-center justify-center h-32 text-sm text-muted-foreground">
       Loading…
     </div>
     <div v-else class="p-6 space-y-5 max-w-lg">
-      <header class="flex items-center justify-between">
-        <h2 class="text-lg font-semibold">Settings</h2>
-      </header>
 
       <div class="space-y-3">
         <label class="text-sm font-medium">Authentication</label>
@@ -542,6 +542,7 @@ onMounted(async () => {
           {{ saving ? 'Saving…' : 'Save' }}
         </Button>
       </footer>
+    </div>
     </div>
   </div>
 </template>

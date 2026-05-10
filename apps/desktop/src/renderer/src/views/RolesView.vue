@@ -10,6 +10,7 @@ import {
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsStore } from '@/stores/projects'
 import { useRolesDataStore } from '@/stores/rolesData'
+import PageHeader from '@/components/PageHeader.vue'
 
 const projectsStore = useProjectsStore()
 const rolesDataStore = useRolesDataStore()
@@ -213,11 +214,7 @@ onMounted(async () => {
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <header
-      class="px-6 py-3 border-b border-border flex items-center shrink-0"
-    >
-      <h2 class="text-lg font-semibold">Roles</h2>
-    </header>
+    <PageHeader title="Roles" />
 
     <div class="flex min-h-0 flex-1">
       <aside

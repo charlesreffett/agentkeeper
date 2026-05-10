@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { Settings } from 'lucide-vue-next'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import JiraSettingsModal from './JiraSettingsModal.vue'
+import PageHeader from '@/components/PageHeader.vue'
 
 const { isHealthy } = usePluginHealth('jira')
 const settingsOpen = ref(false)
@@ -17,16 +18,17 @@ const settingsOpen = ref(false)
       <span>⚠</span>
       <span>Jira CLI not found. Install <code class="font-mono">jira</code> and restart the app.</span>
     </div>
-    <div class="shrink-0 flex items-center justify-between px-4 py-2 border-b border-border">
-      <span class="text-sm font-semibold">Jira</span>
-      <button
-        class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-        title="Jira settings"
-        @click="settingsOpen = true"
-      >
-        <Settings :size="14" />
-      </button>
-    </div>
+    <PageHeader title="Jira">
+      <template #actions>
+        <button
+          class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+          title="Jira settings"
+          @click="settingsOpen = true"
+        >
+          <Settings :size="14" />
+        </button>
+      </template>
+    </PageHeader>
     <div class="flex-1 min-h-0 overflow-hidden">
       <RouterView />
     </div>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
+import PageHeader from '@/components/PageHeader.vue'
 import { useProjectStore } from '@/stores/project'
 import type { LiveSession } from '@/stores/sessions'
 import { formatRelativeTime, shortModel } from '@/lib/format'
@@ -83,6 +83,11 @@ function titleFor(s: LiveSession) {
   return firstLine.length > 120 ? firstLine.slice(0, 119) + '…' : firstLine
 }
 
+const subtitle = computed(() => {
+  const count = store.liveList.length
+  return `${count} active session${count === 1 ? '' : 's'}`
+})
+
 async function openSession(s: LiveSession) {
   projectStore.setProject(projectFromPath(s.projectPath))
   await router.push('/project')
@@ -92,19 +97,7 @@ async function openSession(s: LiveSession) {
 
 <template>
   <div class="h-full flex flex-col">
-    <header
-      class="border-b border-border px-4 py-2 flex items-center gap-3 shrink-0"
-    >
-      <Button variant="ghost" size="sm" @click="router.push('/')">← Back</Button>
-      <div class="flex-1">
-        <div class="font-medium text-sm">Monitor</div>
-        <div class="text-xs text-muted-foreground">
-          {{ store.liveList.length }} active session{{
-            store.liveList.length === 1 ? '' : 's'
-          }}
-        </div>
-      </div>
-    </header>
+    <PageHeader title="Monitor" :description="subtitle" :back-to="'/'" />
 
     <div class="flex-1 overflow-y-auto p-6">
       <div
