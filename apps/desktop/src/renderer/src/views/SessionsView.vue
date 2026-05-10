@@ -530,9 +530,13 @@ function handleCardClick(card: SessionCardData) {
     <!-- Empty state -->
     <div
       v-else
-      class="flex-1 flex items-center justify-center text-sm text-muted-foreground"
+      class="flex-1 flex flex-col items-center justify-center gap-3"
     >
-      No sessions yet.
+      <p class="text-sm text-muted-foreground">No sessions yet.</p>
+      <Button size="sm" class="gap-1.5" @click="handleNewSession">
+        <Plus class="size-3.5" />
+        New session
+      </Button>
     </div>
 
     <!-- Confirm: delete selected -->
