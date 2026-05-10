@@ -92,22 +92,25 @@ const canReset = computed(
     resetGlobalSel.value,
 )
 
-async function refresh() {
-  appSettingsStore.invalidate()
-  await appSettingsStore.load()
-  // Seed local editable copies from the store
+function seedFromStore() {
   const s = appSettingsStore.settings
   if (s) {
-    // Defensive: fall back to 'medium' if defaultEffort is missing/invalid
     if (!s.defaultEffort || !ROLE_EFFORT_VALUES.includes(s.defaultEffort)) {
       s.defaultEffort = 'medium'
     }
     settings.value = { ...s }
   }
   keyStored.value = appSettingsStore.apiKeyStored
+  githubRepos.value = appSettingsStore.githubConfig.repos ?? []
+}
+
+// Called after user saves — forces a fresh fetch, resets UI state.
+async function refresh() {
+  appSettingsStore.invalidate()
+  await appSettingsStore.load()
+  seedFromStore()
   apiKeyInput.value = ''
   message.value = null
-  githubRepos.value = appSettingsStore.githubConfig.repos ?? []
   newRepoInput.value = ''
   newRepoError.value = null
 }
@@ -192,18 +195,10 @@ async function onReset() {
 }
 
 onMounted(async () => {
-  // If the store already has a completed load, seed from it immediately
-  // before re-fetching, so the UI is never blank on first paint.
-  if (appSettingsStore.settings) {
-    const s = appSettingsStore.settings
-    if (!s.defaultEffort || !ROLE_EFFORT_VALUES.includes(s.defaultEffort)) {
-      s.defaultEffort = 'medium'
-    }
-    settings.value = { ...s }
-    keyStored.value = appSettingsStore.apiKeyStored
-    githubRepos.value = appSettingsStore.githubConfig.repos ?? []
-  }
-  await refresh()
+  // Join the in-flight prefetch if it started, or fetch now if not yet triggered.
+  // Intentionally NOT invalidating — prefetched data is good to use.
+  await appSettingsStore.load()
+  seedFromStore()
 })
 </script>
 
