@@ -204,7 +204,10 @@ onMounted(async () => {
 
 <template>
   <div class="h-full overflow-y-auto">
-    <div class="p-6 space-y-5 max-w-lg">
+    <div v-if="appSettingsStore.loading && !settings" class="flex items-center justify-center h-32 text-sm text-muted-foreground">
+      Loading…
+    </div>
+    <div v-else class="p-6 space-y-5 max-w-lg">
       <header class="flex items-center justify-between">
         <h2 class="text-lg font-semibold">Settings</h2>
       </header>

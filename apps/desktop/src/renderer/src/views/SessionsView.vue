@@ -27,6 +27,7 @@ const sessionStore = useSessionStore()
 const projectsStore = useProjectsStore()
 const projectStore = useProjectStore()
 const sessionsListStore = useSessionsListStore()
+const loading = computed(() => sessionsListStore.loading)
 
 const refreshKey = ref(0)
 const statusCounts = computed(() => sessionStore.statusCounts)
@@ -516,6 +517,14 @@ function handleCardClick(card: SessionCardData) {
         @click="handleCardClick(card)"
         @select="toggleSelectCard(card.id)"
       />
+    </div>
+
+    <!-- Loading state -->
+    <div
+      v-else-if="loading"
+      class="flex-1 flex items-center justify-center text-sm text-muted-foreground"
+    >
+      Loading…
     </div>
 
     <!-- Empty state -->
