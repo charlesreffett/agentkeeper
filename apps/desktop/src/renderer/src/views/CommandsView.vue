@@ -6,6 +6,8 @@ import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsStore } from '@/stores/projects'
 import { useCommandsDataStore } from '@/stores/commandsData'
 import PageHeader from '@/components/PageHeader.vue'
+import SidebarHeader from '@/components/SidebarHeader.vue'
+import { Terminal } from 'lucide-vue-next'
 
 const projectsStore = useProjectsStore()
 const commandsDataStore = useCommandsDataStore()
@@ -160,8 +162,12 @@ onMounted(async () => {
 
     <div class="flex min-h-0 flex-1">
       <aside
-        class="w-64 border-r border-border shrink-0 overflow-y-auto bg-card/30"
+        class="w-64 border-r border-border shrink-0 flex flex-col bg-card/30"
       >
+        <SidebarHeader title="Commands">
+          <template #icon><Terminal class="size-3" /></template>
+        </SidebarHeader>
+        <div class="flex-1 overflow-y-auto">
         <div v-if="loading" class="p-4 text-sm text-muted-foreground">Loading…</div>
         <div
           v-else-if="commands.length === 0 && !editing"
@@ -194,6 +200,7 @@ onMounted(async () => {
             </div>
           </li>
         </ul>
+        </div>
       </aside>
 
       <main class="flex-1 overflow-y-auto min-w-0">

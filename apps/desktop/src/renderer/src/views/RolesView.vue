@@ -11,6 +11,8 @@ import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsStore } from '@/stores/projects'
 import { useRolesDataStore } from '@/stores/rolesData'
 import PageHeader from '@/components/PageHeader.vue'
+import SidebarHeader from '@/components/SidebarHeader.vue'
+import { ScrollText, Plus } from 'lucide-vue-next'
 
 const projectsStore = useProjectsStore()
 const rolesDataStore = useRolesDataStore()
@@ -218,17 +220,21 @@ onMounted(async () => {
 
     <div class="flex min-h-0 flex-1">
       <aside
-        class="w-64 border-r border-border shrink-0 overflow-y-auto bg-card/30"
+        class="w-64 border-r border-border shrink-0 flex flex-col bg-card/30"
       >
-        <div class="px-3 py-2 border-b border-border">
-          <button
-            class="w-full text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-secondary rounded px-3 py-1.5 transition-colors text-left flex items-center gap-1.5"
-            @click="beginNew"
-          >
-            <span class="text-base leading-none">+</span>
-            New role
-          </button>
-        </div>
+        <SidebarHeader title="Roles">
+          <template #icon><ScrollText class="size-3" /></template>
+          <template #actions>
+            <button
+              class="p-0.5 text-muted-foreground hover:text-foreground transition-colors rounded"
+              title="New role"
+              @click="beginNew"
+            >
+              <Plus class="size-3.5" />
+            </button>
+          </template>
+        </SidebarHeader>
+        <div class="flex-1 overflow-y-auto">
         <div v-if="loading" class="p-4 text-sm text-muted-foreground">
           Loading…
         </div>
@@ -264,6 +270,7 @@ onMounted(async () => {
             </div>
           </li>
         </ul>
+        </div>
       </aside>
 
       <main class="flex-1 overflow-y-auto min-w-0">

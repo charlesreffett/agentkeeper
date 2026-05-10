@@ -1,14 +1,17 @@
 <template>
   <div class="flex flex-col h-full">
-    <div class="px-3 py-2 border-b border-border">
-      <button
-        class="w-full text-xs font-medium text-muted-foreground hover:text-foreground bg-muted hover:bg-secondary rounded px-3 py-1.5 transition-colors text-left flex items-center gap-1.5"
-        @click="emit('create')"
-      >
-        <span class="text-base leading-none">+</span>
-        New agency
-      </button>
-    </div>
+    <SidebarHeader title="Agencies">
+      <template #icon><Users class="size-3" /></template>
+      <template #actions>
+        <button
+          class="p-0.5 text-muted-foreground hover:text-foreground transition-colors rounded"
+          title="New agency"
+          @click="emit('create')"
+        >
+          <Plus class="size-3.5" />
+        </button>
+      </template>
+    </SidebarHeader>
 
     <div v-if="loading" class="p-4 text-xs text-muted-foreground">Loading…</div>
 
@@ -45,6 +48,8 @@
 </template>
 
 <script setup lang="ts">
+import { Users, Plus } from 'lucide-vue-next'
+import SidebarHeader from '@/components/SidebarHeader.vue'
 import type { Agency } from '../../../../shared/ipc-contract'
 
 defineProps<{

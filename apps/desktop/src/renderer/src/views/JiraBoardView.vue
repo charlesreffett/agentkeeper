@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { LayoutGrid } from 'lucide-vue-next'
+import SidebarHeader from '@/components/SidebarHeader.vue'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import JiraCreateTicketModal from './JiraCreateTicketModal.vue'
 import type { WorkItem, WorkItemStatus } from '@shared/ipc-contract'
@@ -153,26 +155,28 @@ onUnmounted(() => unsub?.())
 <template>
   <div class="h-full flex min-h-0">
     <!-- Left sidebar: boards -->
-    <aside class="w-40 shrink-0 border-r border-border flex flex-col overflow-y-auto bg-card/20">
-      <div class="px-3 pt-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        Boards
+    <aside class="w-40 shrink-0 border-r border-border flex flex-col bg-card/20">
+      <SidebarHeader title="Boards">
+        <template #icon><LayoutGrid class="size-3" /></template>
+      </SidebarHeader>
+      <div class="flex-1 overflow-y-auto">
+        <button
+          class="text-left px-3 py-1.5 text-sm rounded-sm mx-1 transition-colors"
+          :class="boardFilter === '' ? 'bg-primary/10 text-primary font-medium' : 'text-foreground hover:bg-muted/40'"
+          @click="boardFilter = ''"
+        >
+          All
+        </button>
+        <button
+          v-for="key in boards"
+          :key="key"
+          class="text-left px-3 py-1.5 text-sm font-mono rounded-sm mx-1 transition-colors"
+          :class="boardFilter === key ? 'bg-primary/10 text-primary font-medium' : 'text-foreground hover:bg-muted/40'"
+          @click="boardFilter = key"
+        >
+          {{ key }}
+        </button>
       </div>
-      <button
-        class="text-left px-3 py-1.5 text-sm rounded-sm mx-1 transition-colors"
-        :class="boardFilter === '' ? 'bg-primary/10 text-primary font-medium' : 'text-foreground hover:bg-muted/40'"
-        @click="boardFilter = ''"
-      >
-        All
-      </button>
-      <button
-        v-for="key in boards"
-        :key="key"
-        class="text-left px-3 py-1.5 text-sm font-mono rounded-sm mx-1 transition-colors"
-        :class="boardFilter === key ? 'bg-primary/10 text-primary font-medium' : 'text-foreground hover:bg-muted/40'"
-        @click="boardFilter = key"
-      >
-        {{ key }}
-      </button>
     </aside>
 
     <!-- Main board area -->
