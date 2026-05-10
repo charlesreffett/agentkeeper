@@ -4,17 +4,20 @@ import { useRouter, useRoute } from 'vue-router'
 import {
   LayoutDashboard,
   Grid,
+  Activity,
   GitPullRequest,
   Layers,
   FolderOpen,
   Network,
   Bot,
   Wand2,
+  Sparkles,
   Terminal,
   Settings2,
   Map,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
+import IconSessions from '@/components/icons/IconSessions.vue'
 import { useUIContributionsStore } from '@/stores/uiContributions'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import {
@@ -35,23 +38,26 @@ const uiStore = useUIContributionsStore()
 const { isHealthy: githubHealthy } = usePluginHealth('github')
 
 const iconMap: Record<string, Component> = {
+  IconSessions,
   LayoutDashboard,
   Grid,
+  Activity,
   GitPullRequest,
   Layers,
   FolderOpen,
   Network,
   Bot,
   Wand2,
+  Sparkles,
   Terminal,
   Settings2,
   Map,
 }
 
 const coreItems = [
-  { id: 'sessions', label: 'Sessions', icon: 'LayoutDashboard', path: '/sessions' },
-  { id: 'monitor', label: 'Monitor', icon: 'Grid', path: '/monitor' },
-  { id: 'planner', label: 'Planner', icon: 'Map', path: '/planner' },
+  { id: 'sessions', label: 'Sessions', icon: 'IconSessions', path: '/sessions' },
+  { id: 'monitor', label: 'Monitor', icon: 'Activity', path: '/monitor' },
+  { id: 'planner', label: 'Planner', icon: 'Sparkles', path: '/planner' },
   { id: 'projects', label: 'Projects', icon: 'FolderOpen', path: '/project' },
 ]
 
