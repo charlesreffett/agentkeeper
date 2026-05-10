@@ -2,9 +2,10 @@
 
 Cross-platform Electron desktop app that drives the Claude Agent SDK from a
 GUI, replacing the terminal `claude` workflow. End goal: Jira → worktree →
-agent team → PR → merged, all from the app. Shipped so far (V0–V3 + V6
+agent team → PR → merged, all from the app. Shipped so far (V0–V3 + V2.1 + V6
 partial): live sessions, worktrees, roles, agencies with `send_message`,
-monitor grid, GitHub PR views, project registry with focus model.
+monitor grid, GitHub PR views, project registry with focus model,
+SQLite/Drizzle persistence.
 
 ## Stack
 
@@ -48,6 +49,9 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
 - V0 ✅ monorepo + Electron/Vue shell
 - V1 ✅ read-only session viewer (reads `~/.claude/projects/**/*.jsonl`)
 - V2 ✅ live sessions via Agent SDK — 🎯 dogfood point
+- V2.1 ✅ SQLite/Drizzle persistence — all session, cost, stats, draft, project, and
+  agency-handoff data written to a local DB; legacy JSON auto-imported on first launch;
+  sessions UI redesigned with select mode + bulk delete
 - V3 ✅ multi-session + worktrees + roles + agencies + monitor grid
 - V4 ✅ skills + commands manager (wraps `npx skills`)
   - ✅ Skills: list, install, remove, preview — project + global scope
@@ -79,9 +83,6 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
   - ⬜ Monitor view — wire focused project filter
   - ⬜ Project-as-filter plumbing for V5 Jira views when built
 
-V2.1 (custom JSONL + SQLite dual-write) is intentionally deferred — the
-SDK's own persistence is fine for now; revisit if it diverges from
-`~/.claude/projects/`.
 
 ## Commands
 
@@ -134,8 +135,6 @@ rejected — reply with plain text, which is auto-captured.
 
 ## What NOT to do
 
-- Don't add SQLite or custom JSONL persistence — V2.1 is explicitly
-  deferred until the SDK's own path diverges from what V1 reads.
 - Don't push or force-push without explicit instruction.
 - Don't edit from the `planner` role — it's tool-restricted for a reason.
 - Don't reach into `packages/core` from a plugin. Only `@agentkeeper/sdk`.
