@@ -17,27 +17,28 @@ import SessionCard, { type SessionCardData } from '@/components/SessionCard.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { useProjectStore } from '@/stores/project'
+import { useSessionsListStore } from '@/stores/sessionsList'
 import { projectColor } from '@/lib/projectColor'
 import { cn } from '@/lib/utils'
 import StatsCards from '@/components/StatsCards.vue'
-import type { Session, SessionSummary } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
 const projectsStore = useProjectsStore()
 const projectStore = useProjectStore()
+const sessionsListStore = useSessionsListStore()
 
 const refreshKey = ref(0)
 const statusCounts = computed(() => sessionStore.statusCounts)
 
 // ── Persisted + historical data from disk ──────────────────────────────────
 
-const persistedSessions = ref<Session[]>([])
-const historicalSessions = ref<{ projectPath: string; summary: SessionSummary }[]>([])
+const persistedSessions = computed(() => sessionsListStore.persistedSessions)
+const historicalSessions = computed(() => sessionsListStore.historicalSessions)
 
 // Agency groups derived from persistedSessions
 const agencyGroups = computed(() => {
-  const groups = new Map<string, Session[]>()
+  const groups = new Map<string, typeof persistedSessions.value[number][]>()
   for (const s of persistedSessions.value) {
     if (!s.agencyInstanceId) continue
     let list = groups.get(s.agencyInstanceId)
@@ -47,51 +48,15 @@ const agencyGroups = computed(() => {
   return groups
 })
 
-async function loadPersistedAndHistorical() {
-  const projects = projectsStore.projects
-  if (!projects.length) return
-
-  const allPersisted: Session[] = []
-  const allHistorical: { projectPath: string; summary: SessionSummary }[] = []
-
-  await Promise.all(
-    projects.map(async (p) => {
-      try {
-        const [sessions, historical] = await Promise.all([
-          window.agentkeeper.sessions.listPersisted(p.path),
-          window.agentkeeper.sessions.list(p.path),
-        ])
-        allPersisted.push(...sessions)
-        allHistorical.push(...historical.map((s) => ({ projectPath: p.path, summary: s })))
-      } catch {
-        // non-fatal — missing project dir is normal for newly registered projects
-      }
-    }),
-  )
-
-  const seenPersisted = new Set<string>()
-  persistedSessions.value = allPersisted.filter((s) => {
-    if (seenPersisted.has(s.localId)) return false
-    seenPersisted.add(s.localId)
-    return true
-  })
-
-  const seenHistorical = new Set<string>()
-  historicalSessions.value = allHistorical
-    .filter(({ summary: s }) => {
-      if (seenHistorical.has(s.id)) return false
-      seenHistorical.add(s.id)
-      return true
-    })
-    .sort((a, b) => b.summary.lastActivityAt - a.summary.lastActivityAt)
-}
-
 watch(
   () => projectsStore.projects.length,
-  (len) => { if (len > 0) void loadPersistedAndHistorical() },
+  (len) => { if (len > 0) void sessionsListStore.load(projectsStore.projects) },
   { immediate: true },
 )
-watch(refreshKey, () => { void loadPersistedAndHistorical() })
+watch(refreshKey, () => {
+  sessionsListStore.invalidate()
+  void sessionsListStore.load(projectsStore.projects)
+})
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -340,19 +305,17 @@ async function deleteSingleSession(card: SessionCardData) {
       break
     case 'persisted':
       await window.agentkeeper.sessions.deletePersisted(card.id)
-      persistedSessions.value = persistedSessions.value.filter((s) => s.localId !== card.id)
+      sessionsListStore.removePersisted(card.id)
       break
     case 'agency': {
       const members = agencyGroups.value.get(card.id) ?? []
       await Promise.all(members.map((m) => window.agentkeeper.sessions.deletePersisted(m.localId)))
-      persistedSessions.value = persistedSessions.value.filter((s) => s.agencyInstanceId !== card.id)
+      sessionsListStore.removeAgency(card.id)
       break
     }
     case 'historical':
       await window.agentkeeper.sessions.deleteHistorical(card.projectPath, card.id)
-      historicalSessions.value = historicalSessions.value.filter(
-        ({ summary: s }) => s.id !== card.id,
-      )
+      sessionsListStore.removeHistorical(card.projectPath, card.id)
       break
   }
 }
@@ -457,7 +420,8 @@ function handleCardClick(card: SessionCardData) {
         @click="selectedProjectPath = null"
       >
         <Layers class="size-3 shrink-0" />
-        All projects {{ allSessions.length }}
+        All projects
+        <span class="tabular-nums inline-block min-w-[2ch] text-right">{{ allSessions.length }}</span>
       </button>
 
       <button
@@ -478,7 +442,8 @@ function handleCardClick(card: SessionCardData) {
           class="size-2 rounded-full shrink-0"
           :style="{ backgroundColor: projectColor(proj.name) }"
         />
-        {{ proj.name }} {{ proj.count }}
+        {{ proj.name }}
+        <span class="tabular-nums inline-block min-w-[2ch] text-right">{{ proj.count }}</span>
       </button>
     </div>
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import {
   ROLE_EFFORT_VALUES,
@@ -9,13 +9,14 @@ import {
 } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsStore } from '@/stores/projects'
-import { computed } from 'vue'
+import { useRolesDataStore } from '@/stores/rolesData'
 
 const projectsStore = useProjectsStore()
+const rolesDataStore = useRolesDataStore()
 const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
 
-const roles = ref<Role[]>([])
-const loading = ref(false)
+const roles = computed(() => rolesDataStore.roles)
+const loading = computed(() => rolesDataStore.loading)
 const selectedId = ref<string | null>(null)
 const editing = ref(false)
 
@@ -75,15 +76,12 @@ const MODEL_OPTIONS = [
 ] as const
 
 async function refresh() {
-  loading.value = true
   message.value = null
   try {
-    roles.value = await window.agentkeeper.roles.list(projectPath.value)
+    rolesDataStore.invalidate()
+    await rolesDataStore.load(projectPath.value)
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
-    roles.value = []
-  } finally {
-    loading.value = false
   }
 }
 
@@ -198,18 +196,18 @@ async function remove(role: Role) {
 }
 
 watch(
-  () => projectsStore.focusedProject,
-  async () => {
+  () => projectsStore.focusedProject?.path,
+  async (path) => {
     editing.value = false
     selectedId.value = null
-    await refresh()
+    if (path) await rolesDataStore.load(path)
   },
 )
 
 onMounted(async () => {
   editing.value = false
   selectedId.value = null
-  await refresh()
+  await rolesDataStore.load(projectPath.value)
 })
 </script>
 

@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { useProjectStore } from '@/stores/project'
+import { installPrefetchGuard } from './prefetch'
 import ProjectHome from '@/views/ProjectHome.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import GithubLayout from '@/views/GithubLayout.vue'
@@ -69,5 +70,7 @@ const router = createRouter({
     },
   ],
 })
+
+installPrefetchGuard(router)
 
 export default router

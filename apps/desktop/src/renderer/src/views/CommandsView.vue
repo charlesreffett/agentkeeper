@@ -4,13 +4,15 @@ import { Button } from '@/components/ui/button'
 import type { SlashCommand } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsStore } from '@/stores/projects'
+import { useCommandsDataStore } from '@/stores/commandsData'
 
 const projectsStore = useProjectsStore()
+const commandsDataStore = useCommandsDataStore()
 const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
 const { handleAuthError } = useClaudeAuth()
 
-const commands = ref<SlashCommand[]>([])
-const loading = ref(false)
+const commands = computed(() => commandsDataStore.commands)
+const loading = computed(() => commandsDataStore.loading)
 const selectedId = ref<string | null>(null)
 const editing = ref(false)
 const message = ref<string | null>(null)
@@ -56,15 +58,12 @@ async function generateCommand() {
 }
 
 async function refresh() {
-  loading.value = true
   message.value = null
   try {
-    commands.value = await window.agentkeeper.commands.list(projectPath.value)
+    commandsDataStore.invalidate()
+    await commandsDataStore.load(projectPath.value)
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
-    commands.value = []
-  } finally {
-    loading.value = false
   }
 }
 
@@ -135,18 +134,18 @@ async function remove(cmd: SlashCommand) {
 }
 
 watch(
-  () => projectsStore.focusedProject,
-  async () => {
+  () => projectsStore.focusedProject?.path,
+  async (path) => {
     editing.value = false
     selectedId.value = null
-    await refresh()
+    if (path !== undefined) await commandsDataStore.load(path ?? '')
   },
 )
 
 onMounted(async () => {
   editing.value = false
   selectedId.value = null
-  await refresh()
+  await commandsDataStore.load(projectPath.value)
 })
 </script>
 

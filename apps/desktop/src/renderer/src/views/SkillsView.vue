@@ -3,14 +3,16 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import type { Skill, SkillPreview } from '@shared/ipc-contract'
 import { useProjectsStore } from '@/stores/projects'
+import { useSkillsDataStore } from '@/stores/skillsData'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 
 const projectsStore = useProjectsStore()
+const skillsDataStore = useSkillsDataStore()
 const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
 const { handleAuthError } = useClaudeAuth()
 
-const skills = ref<Skill[]>([])
-const loading = ref(false)
+const skills = computed(() => skillsDataStore.skills)
+const loading = computed(() => skillsDataStore.loading)
 const expanded = ref<string | null>(null)
 const message = ref<string | null>(null)
 
@@ -116,15 +118,12 @@ async function doSaveSkill() {
 // ── Shared ───────────────────────────────────────────────────────────────────
 
 async function refresh() {
-  loading.value = true
   message.value = null
   try {
-    skills.value = await window.agentkeeper.skills.list(projectPath.value)
+    skillsDataStore.invalidate()
+    await skillsDataStore.load(projectPath.value)
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
-    skills.value = []
-  } finally {
-    loading.value = false
   }
 }
 
@@ -228,9 +227,9 @@ function toggleExpand(skill: Skill) {
 }
 
 watch(
-  () => projectsStore.focusedProject,
-  async () => {
-    await refresh()
+  () => projectsStore.focusedProject?.path,
+  async (path) => {
+    if (path !== undefined) await skillsDataStore.load(path ?? '')
   },
 )
 
@@ -238,7 +237,7 @@ onMounted(async () => {
   expanded.value = null
   activeTab.value = 'install'
   resetInstallForm()
-  await refresh()
+  await skillsDataStore.load(projectPath.value)
 })
 </script>
 

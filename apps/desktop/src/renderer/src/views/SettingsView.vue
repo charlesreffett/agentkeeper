@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 import { useLayoutStore } from '@/stores/layout'
 import { useProjectsStore } from '@/stores/projects'
+import { useAppSettingsStore } from '@/stores/appSettings'
 
 const layoutStore = useLayoutStore()
 const projectsStore = useProjectsStore()
+const appSettingsStore = useAppSettingsStore()
 const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
 
 const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
@@ -91,21 +93,21 @@ const canReset = computed(
 )
 
 async function refresh() {
-  settings.value = await window.agentkeeper.settings.get()
-  // Defensive: if main is running an older build (no defaults for
-  // defaultEffort), or the on-disk settings has an invalid value, fall
-  // back to 'medium' in the UI so the dropdown never starts blank.
-  if (
-    !settings.value.defaultEffort ||
-    !ROLE_EFFORT_VALUES.includes(settings.value.defaultEffort)
-  ) {
-    settings.value.defaultEffort = 'medium'
+  appSettingsStore.invalidate()
+  await appSettingsStore.load()
+  // Seed local editable copies from the store
+  const s = appSettingsStore.settings
+  if (s) {
+    // Defensive: fall back to 'medium' if defaultEffort is missing/invalid
+    if (!s.defaultEffort || !ROLE_EFFORT_VALUES.includes(s.defaultEffort)) {
+      s.defaultEffort = 'medium'
+    }
+    settings.value = { ...s }
   }
-  keyStored.value = await window.agentkeeper.secrets.has('anthropicApiKey')
+  keyStored.value = appSettingsStore.apiKeyStored
   apiKeyInput.value = ''
   message.value = null
-  const ghConfig = await window.agentkeeper.github.getConfig()
-  githubRepos.value = ghConfig.repos ?? []
+  githubRepos.value = appSettingsStore.githubConfig.repos ?? []
   newRepoInput.value = ''
   newRepoError.value = null
 }
@@ -189,7 +191,20 @@ async function onReset() {
   }
 }
 
-onMounted(refresh)
+onMounted(async () => {
+  // If the store already has a completed load, seed from it immediately
+  // before re-fetching, so the UI is never blank on first paint.
+  if (appSettingsStore.settings) {
+    const s = appSettingsStore.settings
+    if (!s.defaultEffort || !ROLE_EFFORT_VALUES.includes(s.defaultEffort)) {
+      s.defaultEffort = 'medium'
+    }
+    settings.value = { ...s }
+    keyStored.value = appSettingsStore.apiKeyStored
+    githubRepos.value = appSettingsStore.githubConfig.repos ?? []
+  }
+  await refresh()
+})
 </script>
 
 <template>

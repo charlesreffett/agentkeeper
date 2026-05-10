@@ -1,32 +1,24 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from 'lucide-vue-next'
 import { useProjectsStore } from '@/stores/projects'
+import { usePlansStore } from '@/stores/plans'
 import type { Plan, PlanStatus } from '@shared/ipc-contract'
 
 const router = useRouter()
 const projectsStore = useProjectsStore()
-
-const plans = ref<Plan[]>([])
-const loading = ref(false)
+const plansStore = usePlansStore()
 
 const focusedProject = computed(() => projectsStore.focusedProject)
-
-async function loadPlans(projectPath: string) {
-  loading.value = true
-  try {
-    plans.value = await window.agentkeeper.plans.list(projectPath)
-  } finally {
-    loading.value = false
-  }
-}
+const plans = computed(() => plansStore.plans)
+const loading = computed(() => plansStore.loading)
 
 watch(
   () => focusedProject.value?.path,
   (path) => {
-    if (path) void loadPlans(path)
-    else plans.value = []
+    if (path) void plansStore.load(path)
+    else plansStore.invalidate()
   },
   { immediate: true },
 )
