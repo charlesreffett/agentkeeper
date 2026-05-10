@@ -204,7 +204,10 @@ async function onSend(text: string, attachments: Attachment[]) {
         window.agentkeeper.roles.list(session.value!.projectPath),
         window.agentkeeper.agencies.list(session.value!.projectPath),
       ])
-      await store.promoteDraft(props.liveId, text, { roles, agencies }, attachments)
+      const focusedId = await store.promoteDraft(props.liveId, text, { roles, agencies }, attachments)
+      if (focusedId && focusedId !== props.liveId) {
+        void router.replace(`/sessions/${focusedId}`)
+      }
     } catch (e) {
       promoteError.value = e instanceof Error ? e.message : String(e)
     } finally {
