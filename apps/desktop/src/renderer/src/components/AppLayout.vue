@@ -20,7 +20,9 @@ const projectsStore = useProjectsStore()
     <SidebarInset class="flex flex-col overflow-hidden">
       <AppHeader />
       <div class="flex flex-1 min-h-0 overflow-hidden">
-        <RouterView />
+        <div class="flex-1 min-w-0 overflow-hidden">
+          <RouterView />
+        </div>
         <RightPanel
           v-if="layoutStore.rightPanelOpen"
           :project-path="projectsStore.focusedProject?.path ?? ''"

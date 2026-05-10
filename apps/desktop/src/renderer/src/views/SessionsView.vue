@@ -242,7 +242,7 @@ const statusLine = computed(() => {
 // ── Project filter helpers ─────────────────────────────────────────────────
 
 function selectedPillStyle(name: string): Record<string, string> {
-  const hue = parseInt(projectColor(name).match(/hsl\((\d+)/)![1])
+  const hue = parseInt(projectColor(name).match(/hsl\((\d+)/)![1] ?? '0')
   return {
     backgroundColor: `hsl(${hue}, 55%, 93%)`,
     borderColor: `hsl(${hue}, 50%, 72%)`,
