@@ -120,6 +120,10 @@ function reset() {
 const totalActiveFiles = computed(() =>
   groups.value.reduce((n, g) => n + activeFiles(g).length, 0),
 )
+
+const activeGroupCount = computed(() =>
+  groups.value.filter((g) => activeFiles(g).length > 0).length,
+)
 </script>
 
 <template>
@@ -230,7 +234,7 @@ const totalActiveFiles = computed(() =>
           :disabled="totalActiveFiles === 0"
           @click="commitAll"
         >
-          Commit {{ groups.length }} group{{ groups.length === 1 ? '' : 's' }}
+          Commit {{ activeGroupCount }} group{{ activeGroupCount === 1 ? '' : 's' }}
         </button>
       </div>
     </div>
@@ -238,17 +242,17 @@ const totalActiveFiles = computed(() =>
     <!-- Committing: progress -->
     <div v-else-if="phase === 'committing'" class="py-3 space-y-2">
       <div
-        v-for="(group, idx) in groups"
-        :key="idx"
+        v-for="group in groups.filter(g => activeFiles(g).length > 0)"
+        :key="groups.indexOf(group)"
         class="flex items-center gap-2 text-xs"
-        :class="group.committed ? 'text-green-400' : idx === committingIndex ? 'text-foreground' : 'text-muted-foreground/40'"
+        :class="group.committed ? 'text-green-400' : groups.indexOf(group) === committingIndex ? 'text-foreground' : 'text-muted-foreground/40'"
       >
         <!-- Done checkmark -->
         <svg v-if="group.committed" class="size-3.5 shrink-0" viewBox="0 0 16 16" fill="none">
           <path d="M3 8l4 4 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         <!-- Spinner for current -->
-        <svg v-else-if="idx === committingIndex" class="size-3.5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none">
+        <svg v-else-if="groups.indexOf(group) === committingIndex" class="size-3.5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" />
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
@@ -264,7 +268,7 @@ const totalActiveFiles = computed(() =>
     <!-- Done -->
     <div v-else-if="phase === 'done'" class="py-2 space-y-2">
       <div class="rounded-md bg-green-500/10 border border-green-500/20 px-3 py-2 text-xs text-green-400">
-        {{ groups.length }} commit{{ groups.length === 1 ? '' : 's' }} created ✓
+        {{ groups.filter(g => g.committed).length }} commit{{ groups.filter(g => g.committed).length === 1 ? '' : 's' }} created ✓
       </div>
 
       <!-- Push row -->
