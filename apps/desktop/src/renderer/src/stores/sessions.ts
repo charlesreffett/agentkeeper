@@ -13,6 +13,8 @@ import type {
   TranscriptEvent,
 } from '@shared/ipc-contract'
 import { sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
+import { queryClient } from '@/lib/queryClient'
+import { queryKeys } from '@/lib/queryKeys'
 
 /** Renderer-only configuration captured while a session is still a draft. */
 export interface DraftSessionConfig {
@@ -134,8 +136,12 @@ export const useSessionStore = defineStore('sessions', () => {
         localStorage.setItem('agentkeeper:statsImported', '1')
       }
 
-      // Load all stats from SQLite
-      const rows = await window.agentkeeper.stats.getAll()
+      // Load all stats from SQLite (also primes the TSQ cache for subscribers)
+      const rows = await queryClient.fetchQuery({
+        queryKey: queryKeys.stats.all(),
+        queryFn: () => window.agentkeeper.stats.getAll(),
+        staleTime: 60_000,
+      })
       for (const row of rows) {
         if (row.totalTokens > 0 || row.totalCostUsd > 0) {
           sessionTokens[row.sessionLocalId] = {
@@ -170,7 +176,11 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // Load persisted daily costs from main-process ledger on startup.
   // This runs async; until it resolves dailyUsage starts empty (then fills in).
-  void window.agentkeeper.costs.getDailySummary().then(async (rows) => {
+  void queryClient.fetchQuery({
+    queryKey: queryKeys.costs.daily(),
+    queryFn: () => window.agentkeeper.costs.getDailySummary(),
+    staleTime: 60_000,
+  }).then(async (rows) => {
     for (const row of rows) {
       dailyUsage[row.date] = { tokens: row.tokens, costUsd: row.costUsd }
     }
