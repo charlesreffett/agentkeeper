@@ -1,8 +1,6 @@
 import type { Router } from 'vue-router'
 import { useProjectsStore } from '@/stores/projects'
-import { useAgenciesStore } from '@/stores/agencies'
 import { usePlansStore } from '@/stores/plans'
-import { useRolesDataStore } from '@/stores/rolesData'
 import { useCommandsDataStore } from '@/stores/commandsData'
 import { useSkillsDataStore } from '@/stores/skillsData'
 import { useSessionsListStore } from '@/stores/sessionsList'
@@ -19,12 +17,6 @@ export function installPrefetchGuard(router: Router): void {
         break
       case '/planner':
         if (focusedPath) void usePlansStore().load(focusedPath)
-        break
-      case '/roles':
-        void useRolesDataStore().load(focusedPath)
-        break
-      case '/agencies':
-        if (focusedPath) void useAgenciesStore().loadAll(focusedPath)
         break
       case '/commands':
         void useCommandsDataStore().load(focusedPath)

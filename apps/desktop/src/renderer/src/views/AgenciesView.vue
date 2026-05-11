@@ -7,9 +7,9 @@
       <!-- Left sidebar: agency list -->
       <aside class="w-60 shrink-0 border-r border-border overflow-y-auto">
         <AgencyList
-          :agencies="store.agencies"
+          :agencies="agencies"
           :selected-id="selectedAgencyId"
-          :loading="store.loading"
+          :loading="isLoading"
           @select="selectAgency"
           @create="beginCreate"
         />
@@ -72,7 +72,7 @@
     <!-- New agency modal -->
     <NewAgencyModal
       v-if="showCreateModal"
-      :all-roles="store.roles"
+      :all-roles="roles"
       :project-path="focusedProjectPath"
       @save="onCreateAgency"
       @cancel="showCreateModal = false"
@@ -81,8 +81,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { useAgenciesStore } from '@/stores/agencies'
+import { computed, ref, watch } from 'vue'
+import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
+import { useRolesQuery } from '@/composables/useRolesQuery'
 import { useProjectsStore } from '@/stores/projects'
 import { useFlowGraph } from '@/components/graph/useFlowGraph'
 import FlowCanvas from '@/components/graph/FlowCanvas.vue'
@@ -94,16 +95,18 @@ import NewAgencyModal from '@/components/agencies/NewAgencyModal.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import type { Agency, AgencyDraft, AgencyScope } from '@shared/ipc-contract'
 
-const store = useAgenciesStore()
 const projectsStore = useProjectsStore()
 
 const focusedProjectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+
+const { agencies, isLoading, saveAgency: saveAgencyMutation, removeAgency: removeAgencyMutation } = useAgenciesQuery(focusedProjectPath)
+const { roles } = useRolesQuery(focusedProjectPath)
 
 const selectedAgencyId = ref<string | null>(null)
 
 const selectedAgency = computed<Agency | null>(() => {
   if (!selectedAgencyId.value) return null
-  return store.agencies.find(a => a.id === selectedAgencyId.value) ?? null
+  return agencies.value.find(a => a.id === selectedAgencyId.value) ?? null
 })
 
 async function saveHelper(draft: Agency) {
@@ -120,16 +123,16 @@ async function saveHelper(draft: Agency) {
   // Deep-unwrap reactive proxies — contextBridge structured-clone fails on
   // Vue proxy arrays (roles, entryPoints) that survive a top-level spread.
   const plainDraft = JSON.parse(JSON.stringify(agencyDraft)) as typeof agencyDraft
-  await store.saveAgency(scope, projectPath, plainDraft)
+  await saveAgencyMutation({ scope, path: projectPath, draft: plainDraft })
 }
 
 async function deleteHelper() {
   if (!selectedAgency.value) return
-  await store.removeAgency(
-    selectedAgency.value.scope,
-    focusedProjectPath.value,
-    selectedAgency.value.id,
-  )
+  await removeAgencyMutation({
+    scope: selectedAgency.value.scope,
+    path: focusedProjectPath.value,
+    id: selectedAgency.value.id,
+  })
   selectedAgencyId.value = null
 }
 
@@ -147,7 +150,7 @@ function beginCreate() {
 }
 
 async function onCreateAgency(draft: AgencyDraft, scope: AgencyScope) {
-  await store.saveAgency(scope, focusedProjectPath.value, draft)
+  await saveAgencyMutation({ scope, path: focusedProjectPath.value, draft })
   showCreateModal.value = false
   // Select the newly created agency
   selectedAgencyId.value = draft.id
@@ -163,14 +166,9 @@ async function onUpdateAgency(draft: Agency) {
 
 watch(
   () => projectsStore.focusedProject,
-  async () => {
+  () => {
     selectedAgencyId.value = null
     graph.clearSelection()
-    await store.loadAll(focusedProjectPath.value)
   },
 )
-
-onMounted(async () => {
-  await store.loadAll(focusedProjectPath.value)
-})
 </script>
