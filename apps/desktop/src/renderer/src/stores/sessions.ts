@@ -75,7 +75,18 @@ export const useSessionStore = defineStore('sessions', () => {
   // Per-session token/cost accumulator — keyed by localId, cleared on dismiss.
   // Populated from `onStats` (each completed turn) and persisted to localStorage
   // so it survives navigation and full app restarts.
-  const sessionTokens = reactive<Record<string, { tokens: number; costUsd: number }>>({})
+  const sessionTokens = reactive<Record<string, {
+    tokens: number
+    costUsd: number
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheCreationTokens: number
+    inputCostUsd: number
+    outputCostUsd: number
+    cacheReadCostUsd: number
+    cacheCreationCostUsd: number
+  }>>({})
 
   // Per-session assistant-turn counter — incremented on each onStats (one per turn).
   const sessionTurns = reactive<Record<string, number>>({})
@@ -93,7 +104,9 @@ export const useSessionStore = defineStore('sessions', () => {
       if (!alreadyImported) {
         const toImport: Array<{
           sessionLocalId: string; totalTokens: number; totalCostUsd: number;
-          turnCount: number; inProgressTokens: number
+          turnCount: number; inProgressTokens: number;
+          inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number;
+          inputCostUsd: number; outputCostUsd: number; cacheReadCostUsd: number; cacheCreationCostUsd: number
         }> = []
         for (const key of Object.keys(localStorage)) {
           if (!key.startsWith('agentkeeper:stok:')) continue
@@ -106,7 +119,7 @@ export const useSessionStore = defineStore('sessions', () => {
             const costUsd = typeof data['costUsd'] === 'number' ? data['costUsd'] : 0
             const turnRaw = localStorage.getItem(`agentkeeper:sturn:${id}`)
             const turnCount = turnRaw !== null ? parseInt(turnRaw, 10) : 0
-            toImport.push({ sessionLocalId: id, totalTokens: tokens, totalCostUsd: costUsd, turnCount: isNaN(turnCount) ? 0 : turnCount, inProgressTokens: 0 })
+            toImport.push({ sessionLocalId: id, totalTokens: tokens, totalCostUsd: costUsd, turnCount: isNaN(turnCount) ? 0 : turnCount, inProgressTokens: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 })
           } catch { /* ignore corrupt entries */ }
         }
         if (toImport.length > 0) {
@@ -125,7 +138,18 @@ export const useSessionStore = defineStore('sessions', () => {
       const rows = await window.agentkeeper.stats.getAll()
       for (const row of rows) {
         if (row.totalTokens > 0 || row.totalCostUsd > 0) {
-          sessionTokens[row.sessionLocalId] = { tokens: row.totalTokens, costUsd: row.totalCostUsd }
+          sessionTokens[row.sessionLocalId] = {
+            tokens: row.totalTokens,
+            costUsd: row.totalCostUsd,
+            inputTokens: row.inputTokens,
+            outputTokens: row.outputTokens,
+            cacheReadTokens: row.cacheReadTokens,
+            cacheCreationTokens: row.cacheCreationTokens,
+            inputCostUsd: row.inputCostUsd,
+            outputCostUsd: row.outputCostUsd,
+            cacheReadCostUsd: row.cacheReadCostUsd,
+            cacheCreationCostUsd: row.cacheCreationCostUsd,
+          }
         }
         if (row.turnCount > 0) sessionTurns[row.sessionLocalId] = row.turnCount
         if (row.inProgressTokens > 0) sessionRunTokens[row.sessionLocalId] = row.inProgressTokens
@@ -458,6 +482,17 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   function openHistorical(projectPath: string, summary: SessionSummary): string {
+    // Reuse an existing in-memory entry for this SDK session rather than
+    // creating a fresh localId every time — multiple clicks would otherwise
+    // add duplicate cards to visibleSessions.
+    const existing = Object.values(sessions).find(
+      (s) => s.resumedFromSdkSessionId === summary.id,
+    )
+    if (existing) {
+      currentLiveId.value = existing.localId
+      return existing.localId
+    }
+
     const localId = cryptoRandomId()
     sessions[localId] = {
       localId,
@@ -984,9 +1019,19 @@ export const useSessionStore = defineStore('sessions', () => {
       dailyUsage[key]!.costUsd += costUsd
 
       // Bucket per-session so the agent tree can display per-agent token counts.
-      if (!sessionTokens[u.sessionId]) sessionTokens[u.sessionId] = { tokens: 0, costUsd: 0 }
+      if (!sessionTokens[u.sessionId]) {
+        sessionTokens[u.sessionId] = { tokens: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
+      }
       sessionTokens[u.sessionId]!.tokens += tokens
       sessionTokens[u.sessionId]!.costUsd += costUsd
+      sessionTokens[u.sessionId]!.inputTokens += u.inputTokens
+      sessionTokens[u.sessionId]!.outputTokens += u.outputTokens
+      sessionTokens[u.sessionId]!.cacheReadTokens += u.cacheReadInputTokens
+      sessionTokens[u.sessionId]!.cacheCreationTokens += u.cacheCreationInputTokens
+      sessionTokens[u.sessionId]!.inputCostUsd += u.inputCostUsd
+      sessionTokens[u.sessionId]!.outputCostUsd += u.outputCostUsd
+      sessionTokens[u.sessionId]!.cacheReadCostUsd += u.cacheReadCostUsd
+      sessionTokens[u.sessionId]!.cacheCreationCostUsd += u.cacheCreationCostUsd
 
       // Each onStats call represents one completed assistant turn.
       sessionTurns[u.sessionId] = (sessionTurns[u.sessionId] ?? 0) + 1
@@ -1031,7 +1076,7 @@ export const useSessionStore = defineStore('sessions', () => {
       const partial = quiescent ? (sessionRunTokens[update.sessionId] ?? 0) : 0
       if (partial > 0) {
         if (!sessionTokens[update.sessionId]) {
-          sessionTokens[update.sessionId] = { tokens: 0, costUsd: 0 }
+          sessionTokens[update.sessionId] = { tokens: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
         }
         sessionTokens[update.sessionId]!.tokens += partial
         sessionRunTokens[update.sessionId] = 0

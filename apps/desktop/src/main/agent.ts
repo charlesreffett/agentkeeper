@@ -8,7 +8,8 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import * as costLedger from './cost-ledger'
-import { calculateCost } from './pricing'
+import { calculateCost, calculateCostBreakdown } from './pricing'
+import { getPersistedTurnCount } from './stats'
 import type {
   AgencyScope,
   Attachment,
@@ -192,6 +193,15 @@ async function consumeStream(session: ActiveSession): Promise<void> {
           total_cost_usd?: number
         }
         const u = resultMsg.usage ?? {}
+        const tokenUsage = {
+          inputTokens: u.input_tokens ?? 0,
+          outputTokens: u.output_tokens ?? 0,
+          cacheReadTokens: u.cache_read_input_tokens ?? 0,
+          cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
+        }
+        const perTypeCost = calculateCostBreakdown(tokenUsage, session.model ?? '')
+        const sdkCost = resultMsg.total_cost_usd ?? 0
+        const totalCostUsd = sdkCost > 0 ? sdkCost : calculateCost(tokenUsage, session.model ?? '')
         broadcastStats({
           activeSessionCount: active.size,
           runningSessionCount: Array.from(active.values()).filter(
@@ -199,38 +209,31 @@ async function consumeStream(session: ActiveSession): Promise<void> {
           ).length,
           turnUsage: {
             sessionId: session.id,
-            inputTokens: u.input_tokens ?? 0,
-            outputTokens: u.output_tokens ?? 0,
-            cacheReadInputTokens: u.cache_read_input_tokens ?? 0,
-            cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0,
-            totalCostUsd: resultMsg.total_cost_usd ?? 0,
+            inputTokens: tokenUsage.inputTokens,
+            outputTokens: tokenUsage.outputTokens,
+            cacheReadInputTokens: tokenUsage.cacheReadTokens,
+            cacheCreationInputTokens: tokenUsage.cacheCreationTokens,
+            totalCostUsd,
+            inputCostUsd: perTypeCost.inputCostUsd,
+            outputCostUsd: perTypeCost.outputCostUsd,
+            cacheReadCostUsd: perTypeCost.cacheReadCostUsd,
+            cacheCreationCostUsd: perTypeCost.cacheCreationCostUsd,
           },
         })
         const turnKey = `${session.id}:turn:${session.turnCount}`
         session.turnCount++
         if (!costLedger.hasEntry(turnKey)) {
-          const sdkCost = resultMsg.total_cost_usd ?? 0
-          const costUsd = sdkCost > 0
-            ? sdkCost
-            : calculateCost(
-                {
-                  inputTokens: u.input_tokens ?? 0,
-                  outputTokens: u.output_tokens ?? 0,
-                  cacheReadTokens: u.cache_read_input_tokens ?? 0,
-                  cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
-                },
-                session.model ?? '',
-              )
           const _now = new Date()
           costLedger.recordEntry({
             key: turnKey,
             date: `${_now.getFullYear()}-${String(_now.getMonth() + 1).padStart(2, '0')}-${String(_now.getDate()).padStart(2, '0')}`,
             model: session.model ?? 'unknown',
-            inputTokens: u.input_tokens ?? 0,
-            outputTokens: u.output_tokens ?? 0,
-            cacheReadTokens: u.cache_read_input_tokens ?? 0,
-            cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
-            costUsd,
+            ...tokenUsage,
+            inputCostUsd: perTypeCost.inputCostUsd,
+            outputCostUsd: perTypeCost.outputCostUsd,
+            cacheReadCostUsd: perTypeCost.cacheReadCostUsd,
+            cacheCreationCostUsd: perTypeCost.cacheCreationCostUsd,
+            costUsd: totalCostUsd,
             recordedAt: new Date().toISOString(),
           })
         }
@@ -390,7 +393,7 @@ export async function startSession(
     events: [],
     idleWaiters: [],
     interrupted: false,
-    turnCount: 0,
+    turnCount: getPersistedTurnCount(id),
   }
 
   active.set(id, session)

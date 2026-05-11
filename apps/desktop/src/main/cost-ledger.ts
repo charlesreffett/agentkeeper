@@ -10,6 +10,10 @@ export interface CostEntry {
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+  inputCostUsd: number
+  outputCostUsd: number
+  cacheReadCostUsd: number
+  cacheCreationCostUsd: number
   costUsd: number
   recordedAt: string  // ISO timestamp
 }
@@ -37,6 +41,10 @@ export function recordEntry(entry: CostEntry): void {
     outputTokens: entry.outputTokens,
     cacheReadTokens: entry.cacheReadTokens,
     cacheCreationTokens: entry.cacheCreationTokens,
+    inputCostUsd: entry.inputCostUsd,
+    outputCostUsd: entry.outputCostUsd,
+    cacheReadCostUsd: entry.cacheReadCostUsd,
+    cacheCreationCostUsd: entry.cacheCreationCostUsd,
     costUsd: entry.costUsd,
     recordedAt: entry.recordedAt,
   }).onConflictDoNothing().run()
@@ -44,6 +52,53 @@ export function recordEntry(entry: CostEntry): void {
 
 // Kept so index.ts before-quit handler compiles without changes.
 export function flush(): void {}
+
+export interface SessionTokenBreakdown {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  inputCostUsd: number
+  outputCostUsd: number
+  cacheReadCostUsd: number
+  cacheCreationCostUsd: number
+}
+
+// Aggregate per-type token counts from cost entries, grouped by session local ID.
+// Cost entry keys follow the pattern `<sessionLocalId>:turn:<n>`; legacy entries
+// use `legacy:<date>` and are skipped.
+export function getSessionTokenBreakdowns(): Record<string, SessionTokenBreakdown> {
+  const rows = getDb().select({
+    key: costEntries.key,
+    inputTokens: costEntries.inputTokens,
+    outputTokens: costEntries.outputTokens,
+    cacheReadTokens: costEntries.cacheReadTokens,
+    cacheCreationTokens: costEntries.cacheCreationTokens,
+    inputCostUsd: costEntries.inputCostUsd,
+    outputCostUsd: costEntries.outputCostUsd,
+    cacheReadCostUsd: costEntries.cacheReadCostUsd,
+    cacheCreationCostUsd: costEntries.cacheCreationCostUsd,
+  }).from(costEntries).all()
+
+  const result: Record<string, SessionTokenBreakdown> = {}
+  for (const row of rows) {
+    const turnIdx = row.key.indexOf(':turn:')
+    if (turnIdx === -1) continue
+    const sessionId = row.key.slice(0, turnIdx)
+    if (!result[sessionId]) {
+      result[sessionId] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
+    }
+    result[sessionId]!.inputTokens += row.inputTokens
+    result[sessionId]!.outputTokens += row.outputTokens
+    result[sessionId]!.cacheReadTokens += row.cacheReadTokens
+    result[sessionId]!.cacheCreationTokens += row.cacheCreationTokens
+    result[sessionId]!.inputCostUsd += row.inputCostUsd
+    result[sessionId]!.outputCostUsd += row.outputCostUsd
+    result[sessionId]!.cacheReadCostUsd += row.cacheReadCostUsd
+    result[sessionId]!.cacheCreationCostUsd += row.cacheCreationCostUsd
+  }
+  return result
+}
 
 export function getDailySummary(): DayTotal[] {
   const rows = getDb().select().from(costEntries).all()

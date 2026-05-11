@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 const props = defineProps<{
   class?: string
   align?: 'start' | 'center' | 'end'
+  side?: 'top' | 'right' | 'bottom' | 'left'
   sideOffset?: number
 }>()
 </script>
@@ -12,6 +13,7 @@ const props = defineProps<{
 <template>
   <PopoverContent
     :align="align ?? 'start'"
+    :side="side"
     :side-offset="sideOffset ?? 4"
     :class="
       cn(

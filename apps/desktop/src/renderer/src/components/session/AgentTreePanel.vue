@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { ChevronLeft, ChevronRight, CornerDownRight, Network, User2 } from 'lucide-vue-next'
+import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore, type LiveSession } from '@/stores/sessions'
 import { shortModel } from '@/lib/format'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
@@ -237,7 +238,10 @@ function agentSubtitle(s: LiveSession): string {
         </div>
 
         <div class="flex items-center justify-between gap-2">
-          <span class="text-muted-foreground shrink-0">Tokens</span>
+          <span class="text-muted-foreground shrink-0 flex items-center gap-1">
+            Tokens
+            <TokenBreakdownPopover :session-id="selectedSession.localId" side="right" />
+          </span>
           <span class="tabular-nums text-foreground">
             {{ agentTokens(selectedSession).toLocaleString() }}
           </span>

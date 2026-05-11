@@ -74,6 +74,12 @@ const allSessions = computed((): SessionCardData[] => {
   const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
   // Historical JSONL ids that already have a resumable persisted entry → skip in historical
   const persistedSdkIds = new Set(persistedSessions.value.map((s) => s.sdkSessionId).filter((id): id is string => id !== null))
+  // SDK session ids already opened in-memory via openHistorical → also skip in historical
+  const liveResumeSdkIds = new Set(
+    Object.values(sessionStore.sessions)
+      .map((s) => s.resumedFromSdkSessionId)
+      .filter((id): id is string => id !== null),
+  )
 
   const live: SessionCardData[] = sessionStore.visibleSessions.map((s) => {
     const name = pathToProjectName(s.projectPath)
@@ -145,9 +151,9 @@ const allSessions = computed((): SessionCardData[] => {
       }
     })
 
-  // Historical JSONL — skip any that already appear as a resumable persisted session
+  // Historical JSONL — skip any that already appear as a persisted or in-memory live session
   const historical: SessionCardData[] = historicalSessions.value
-    .filter(({ summary: s }) => !persistedSdkIds.has(s.id))
+    .filter(({ summary: s }) => !persistedSdkIds.has(s.id) && !liveResumeSdkIds.has(s.id))
     .map(({ projectPath, summary: s }) => {
       const name = pathToProjectName(projectPath)
       return {

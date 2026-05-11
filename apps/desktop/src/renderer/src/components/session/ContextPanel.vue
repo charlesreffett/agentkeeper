@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, FileCode2, GitBranch, Layers, Tag } from 'lucide-vue-next'
+import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
 import { usePluginHealth } from '@/composables/usePluginHealth'
@@ -416,7 +417,10 @@ function openUrl(url: string) {
             <span class="tabular-nums text-foreground">{{ tokens.toLocaleString() }}</span>
           </div>
           <div class="flex items-center justify-between gap-2">
-            <span class="text-muted-foreground shrink-0">Cost</span>
+            <span class="text-muted-foreground shrink-0 flex items-center gap-1">
+              Cost
+              <TokenBreakdownPopover :session-id="rootSessionId" side="left" />
+            </span>
             <span class="tabular-nums text-foreground">{{ formatCost(costUsd) }}</span>
           </div>
           <div class="flex items-start justify-between gap-2">
