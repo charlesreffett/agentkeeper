@@ -1,24 +1,17 @@
-import fs from 'node:fs'
 import https from 'node:https'
-import path from 'node:path'
+import { getDb } from './db/index'
+import { modelPricing } from './db/schema'
 
-// All prices in USD per 1 million tokens.
 export interface ModelPricing {
-  input: number
-  output: number
-  cacheWrite5m: number
-  cacheWrite1h: number
-  cacheRead: number
-}
-
-export interface PriceTable {
-  source: 'bundled' | 'litellm-cache'
-  fetchedAt: string | null
-  models: Record<string, ModelPricing>
+  input: number        // $/1M tokens
+  output: number       // $/1M tokens
+  cacheWrite5m: number // $/1M tokens
+  cacheWrite1h: number // $/1M tokens
+  cacheRead: number    // $/1M tokens
 }
 
 // Bundled from Anthropic pricing page 2026-05-05.
-const BUNDLED_MODELS: Record<string, ModelPricing> = {
+const BUNDLED: Record<string, ModelPricing> = {
   'claude-opus-4-7':   { input: 5,    output: 25,   cacheWrite5m: 6.25,  cacheWrite1h: 10,   cacheRead: 0.50 },
   'claude-opus-4-6':   { input: 5,    output: 25,   cacheWrite5m: 6.25,  cacheWrite1h: 10,   cacheRead: 0.50 },
   'claude-opus-4-5':   { input: 5,    output: 25,   cacheWrite5m: 6.25,  cacheWrite1h: 10,   cacheRead: 0.50 },
@@ -34,38 +27,62 @@ const BUNDLED_MODELS: Record<string, ModelPricing> = {
   'claude-opus-3':     { input: 15,   output: 75,   cacheWrite5m: 18.75, cacheWrite1h: 30,   cacheRead: 1.50 },
 }
 
-export const BUNDLED: PriceTable = { source: 'bundled', fetchedAt: null, models: BUNDLED_MODELS }
-
 const LITELLM_URL =
   'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
-const CACHE_FILE = 'pricing-cache.json'
-
-let _userDataPath = ''
-let _active: PriceTable = BUNDLED
-
-export function init(userDataPath: string): void {
-  _userDataPath = userDataPath
-  try {
-    const raw = fs.readFileSync(path.join(userDataPath, CACHE_FILE), 'utf8')
-    const cached = JSON.parse(raw) as PriceTable
-    if (cached.models && Object.keys(cached.models).length > 0) _active = cached
-  } catch {
-    // no cache file yet
-  }
-}
 
 // Strip trailing date suffix e.g. -20250715 and lowercase.
 function normalizeId(id: string): string {
   return id.toLowerCase().replace(/-\d{8}$/, '')
 }
 
+// Seed the DB table with bundled prices if it is empty, and return a full
+// in-memory snapshot used for synchronous lookups in the same process.
+export function init(): Record<string, ModelPricing> {
+  const db = getDb()
+  const existing = db.select().from(modelPricing).all()
+  if (existing.length === 0) {
+    const now = Date.now()
+    db.insert(modelPricing).values(
+      Object.entries(BUNDLED).map(([id, p]) => ({
+        modelId: id,
+        inputPerM: p.input,
+        outputPerM: p.output,
+        cacheWrite5mPerM: p.cacheWrite5m,
+        cacheWrite1hPerM: p.cacheWrite1h,
+        cacheReadPerM: p.cacheRead,
+        source: 'bundled' as const,
+        updatedAt: now,
+      }))
+    ).run()
+    return { ...BUNDLED }
+  }
+  return Object.fromEntries(
+    existing.map((r) => [r.modelId, {
+      input: r.inputPerM,
+      output: r.outputPerM,
+      cacheWrite5m: r.cacheWrite5mPerM,
+      cacheWrite1h: r.cacheWrite1hPerM,
+      cacheRead: r.cacheReadPerM,
+    }])
+  )
+}
+
+// In-process cache so lookupPricing() is synchronous without a DB round-trip per call.
+let _cache: Record<string, ModelPricing> = {}
+
+export function initPricing(): void {
+  _cache = init()
+}
+
+export function getAllPricing(): Record<string, ModelPricing> {
+  return { ..._cache }
+}
+
 export function lookupPricing(modelId: string): ModelPricing | null {
   const n = normalizeId(modelId)
-  for (const table of _active === BUNDLED ? [BUNDLED] : [_active, BUNDLED]) {
-    if (table.models[n]) return table.models[n]
-    for (const [key, p] of Object.entries(table.models)) {
-      if (n.startsWith(key) || key.startsWith(n)) return p
-    }
+  if (_cache[n]) return _cache[n]!
+  for (const [key, p] of Object.entries(_cache)) {
+    if (n.startsWith(key) || key.startsWith(n)) return p
   }
   return null
 }
@@ -75,6 +92,25 @@ export interface TokenUsage {
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+}
+
+export interface PerTypeCost {
+  inputCostUsd: number
+  outputCostUsd: number
+  cacheReadCostUsd: number
+  cacheCreationCostUsd: number
+}
+
+export function calculateCostBreakdown(usage: TokenUsage, modelId: string): PerTypeCost {
+  const p = lookupPricing(modelId)
+  if (!p) return { inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
+  const M = 1_000_000
+  return {
+    inputCostUsd: (usage.inputTokens / M) * p.input,
+    outputCostUsd: (usage.outputTokens / M) * p.output,
+    cacheReadCostUsd: (usage.cacheReadTokens / M) * p.cacheRead,
+    cacheCreationCostUsd: (usage.cacheCreationTokens / M) * p.cacheWrite5m,
+  }
 }
 
 export function calculateCost(usage: TokenUsage, modelId: string): number {
@@ -89,15 +125,11 @@ export function calculateCost(usage: TokenUsage, modelId: string): number {
   )
 }
 
-export function getActivePriceTable(): PriceTable {
-  return _active
-}
-
-export async function refreshFromLiteLLM(): Promise<PriceTable> {
+export async function refreshFromLiteLLM(): Promise<void> {
   const raw = await fetchUrl(LITELLM_URL)
   const json = JSON.parse(raw) as Record<string, unknown>
-
-  const models: Record<string, ModelPricing> = { ...BUNDLED_MODELS }
+  const db = getDb()
+  const now = Date.now()
   const M = 1_000_000
 
   for (const [id, entry] of Object.entries(json)) {
@@ -108,7 +140,7 @@ export async function refreshFromLiteLLM(): Promise<PriceTable> {
     const out = e['output_cost_per_token']
     if (typeof inp !== 'number' || typeof out !== 'number') continue
 
-    const cacheWrite =
+    const cacheWrite5m =
       typeof e['cache_creation_input_token_cost'] === 'number'
         ? (e['cache_creation_input_token_cost'] as number) * M
         : inp * M * 1.25
@@ -117,23 +149,39 @@ export async function refreshFromLiteLLM(): Promise<PriceTable> {
         ? (e['cache_read_input_token_cost'] as number) * M
         : inp * M * 0.1
 
-    models[normalizeId(id)] = {
+    const pricing: ModelPricing = {
       input: inp * M,
       output: out * M,
-      cacheWrite5m: cacheWrite,
-      cacheWrite1h: cacheWrite * 1.6,
+      cacheWrite5m,
+      cacheWrite1h: cacheWrite5m * 1.6,
       cacheRead,
     }
-  }
+    const mid = normalizeId(id)
 
-  const table: PriceTable = {
-    source: 'litellm-cache',
-    fetchedAt: new Date().toISOString(),
-    models,
+    db.insert(modelPricing).values({
+      modelId: mid,
+      inputPerM: pricing.input,
+      outputPerM: pricing.output,
+      cacheWrite5mPerM: pricing.cacheWrite5m,
+      cacheWrite1hPerM: pricing.cacheWrite1h,
+      cacheReadPerM: pricing.cacheRead,
+      source: 'litellm',
+      updatedAt: now,
+    }).onConflictDoUpdate({
+      target: modelPricing.modelId,
+      set: {
+        inputPerM: pricing.input,
+        outputPerM: pricing.output,
+        cacheWrite5mPerM: pricing.cacheWrite5m,
+        cacheWrite1hPerM: pricing.cacheWrite1h,
+        cacheReadPerM: pricing.cacheRead,
+        source: 'litellm',
+        updatedAt: now,
+      },
+    }).run()
+
+    _cache[mid] = pricing
   }
-  fs.writeFileSync(path.join(_userDataPath, CACHE_FILE), JSON.stringify(table), 'utf8')
-  _active = table
-  return table
 }
 
 function fetchUrl(url: string): Promise<string> {

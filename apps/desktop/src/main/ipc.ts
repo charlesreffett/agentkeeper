@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import type { EventMap } from '@agentkeeper/sdk'
 import path from 'node:path'
 import fs from 'node:fs/promises'
@@ -10,7 +10,6 @@ import {
   type DayTotal,
   type MergeMethod,
   type PRFilters,
-  type PricingMeta,
   type RecentProject,
   type ReviewEvent,
   type SecretKeyName,
@@ -21,8 +20,10 @@ import {
 import * as costLedger from './cost-ledger'
 import { getDraft, setDraft, clearDraft } from './drafts'
 import { getAllStats, upsertStats, markStatsImported, isStatsImported } from './stats'
+import { getDb, runMigrations } from './db/index'
+import { sql } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
-import { getActivePriceTable, refreshFromLiteLLM } from './pricing'
+import { getAllPricing, refreshFromLiteLLM } from './pricing'
 import {
   addComment as ghAddComment,
   createPR as ghCreatePR,
@@ -865,14 +866,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     },
   )
 
-  ipcMain.handle(IPC_CHANNELS.pricingGetMeta, (): PricingMeta => {
-    const t = getActivePriceTable()
-    return { source: t.source, fetchedAt: t.fetchedAt, modelCount: Object.keys(t.models).length }
-  })
+  ipcMain.handle(IPC_CHANNELS.pricingGetTable, () => getAllPricing())
 
-  ipcMain.handle(IPC_CHANNELS.pricingRefresh, async (): Promise<PricingMeta> => {
-    const t = await refreshFromLiteLLM()
-    return { source: t.source, fetchedAt: t.fetchedAt, modelCount: Object.keys(t.models).length }
+  ipcMain.handle(IPC_CHANNELS.pricingRefresh, async () => {
+    await refreshFromLiteLLM()
+    return getAllPricing()
   })
 
   ipcMain.handle(IPC_CHANNELS.draftsGet, (_e, sessionLocalId: string) =>
@@ -898,6 +896,19 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
     markStatsImported()
   })
+
+  if (!app.isPackaged) {
+    ipcMain.handle(IPC_CHANNELS.devRunMigrations, () => {
+      const db = getDb()
+      const count = () =>
+        (db.get<{ n: number }>(sql`SELECT count(*) as n FROM __drizzle_migrations`) ?? { n: 0 }).n
+      const before = count()
+      runMigrations()
+      const applied = count() - before
+      console.log(`[dev] migrations: ${applied} applied`)
+      return { applied }
+    })
+  }
 
   // Work items (plugin registry)
   ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {

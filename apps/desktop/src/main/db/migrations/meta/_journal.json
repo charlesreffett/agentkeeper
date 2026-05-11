@@ -15,6 +15,20 @@
       "when": 1778230332974,
       "tag": "0001_dissolve_agencies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1778230332975,
+      "tag": "0002_model_pricing",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1778230332976,
+      "tag": "0003_cost_breakdown",
+      "breakpoints": true
     }
   ]
 }

@@ -403,6 +403,10 @@ export interface LiveSessionStats {
     cacheReadInputTokens: number
     cacheCreationInputTokens: number
     totalCostUsd: number
+    inputCostUsd: number
+    outputCostUsd: number
+    cacheReadCostUsd: number
+    cacheCreationCostUsd: number
   }
 }
 
@@ -494,6 +498,14 @@ export interface SessionStatRow {
   totalCostUsd: number
   turnCount: number
   inProgressTokens: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  inputCostUsd: number
+  outputCostUsd: number
+  cacheReadCostUsd: number
+  cacheCreationCostUsd: number
 }
 
 // ─── Cost ledger ─────────────────────────────────────────────────────────────
@@ -504,10 +516,12 @@ export interface DayTotal {
   tokens: number
 }
 
-export interface PricingMeta {
-  source: 'bundled' | 'litellm-cache'
-  fetchedAt: string | null
-  modelCount: number
+export interface ModelPricing {
+  input: number
+  output: number
+  cacheWrite5m: number
+  cacheWrite1h: number
+  cacheRead: number
 }
 
 export interface LegacyDayEntry {
@@ -689,8 +703,8 @@ export interface AgentKeeperApi {
     addLegacy: (entries: Array<LegacyDayEntry>) => Promise<void>
   }
   pricing: {
-    getMeta: () => Promise<PricingMeta>
-    refresh: () => Promise<PricingMeta>
+    getTable: () => Promise<Record<string, ModelPricing>>
+    refresh: () => Promise<Record<string, ModelPricing>>
   }
   drafts: {
     get: (sessionLocalId: string) => Promise<DraftRecord>
@@ -701,6 +715,10 @@ export interface AgentKeeperApi {
     getAll: () => Promise<SessionStatRow[]>
     upsert: (sessionLocalId: string, totalTokens: number, totalCostUsd: number, turnCount: number, inProgressTokens: number) => Promise<void>
     importLegacy: (entries: SessionStatRow[]) => Promise<void>
+  }
+  /** Only present in development builds (`!app.isPackaged`). */
+  dev?: {
+    runMigrations: () => Promise<{ applied: number }>
   }
 }
 
@@ -799,11 +817,12 @@ export const IPC_CHANNELS = {
   costsGetDailySummary: 'costs:getDailySummary',
   costsAddLegacy: 'costs:addLegacy',
   pricingRefresh: 'pricing:refresh',
-  pricingGetMeta: 'pricing:getMeta',
+  pricingGetTable: 'pricing:getTable',
   draftsGet: 'drafts:get',
   draftsSet: 'drafts:set',
   draftsClear: 'drafts:clear',
   statsGetAll: 'stats:getAll',
   statsUpsert: 'stats:upsert',
   statsImportLegacy: 'stats:importLegacy',
+  devRunMigrations: 'dev:runMigrations',
 } as const

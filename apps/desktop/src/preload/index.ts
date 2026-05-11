@@ -25,7 +25,7 @@ import {
   type PRFilters,
   type Session,
   type PermissionMode,
-  type PricingMeta,
+  type ModelPricing,
   type RemoteSource,
   type ResetRequest,
   type ReviewEvent,
@@ -356,8 +356,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.costsAddLegacy, entries) as Promise<void>,
   },
   pricing: {
-    getMeta: () => invoke(IPC_CHANNELS.pricingGetMeta) as Promise<PricingMeta>,
-    refresh: () => invoke(IPC_CHANNELS.pricingRefresh) as Promise<PricingMeta>,
+    getTable: () => invoke(IPC_CHANNELS.pricingGetTable) as Promise<Record<string, ModelPricing>>,
+    refresh: () => invoke(IPC_CHANNELS.pricingRefresh) as Promise<Record<string, ModelPricing>>,
   },
   drafts: {
     get: (sessionLocalId: string) =>
@@ -375,6 +375,16 @@ const api: AgentKeeperApi = {
     importLegacy: (entries: SessionStatRow[]) =>
       invoke(IPC_CHANNELS.statsImportLegacy, entries) as Promise<void>,
   },
+  ...(process.env.NODE_ENV === 'development' ? {
+    dev: {
+      runMigrations: () =>
+        invoke(IPC_CHANNELS.devRunMigrations) as Promise<{ applied: number }>,
+    },
+  } : {}),
 }
 
 contextBridge.exposeInMainWorld('agentkeeper', api)
+
+if (process.env.NODE_ENV === 'development') {
+  console.log('%c[AgentKeeper dev] run pending migrations: await window.agentkeeper.dev.runMigrations()', 'color: #f59e0b; font-weight: bold')
+}

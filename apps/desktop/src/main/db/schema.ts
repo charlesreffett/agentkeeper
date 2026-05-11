@@ -42,6 +42,10 @@ export const costEntries = sqliteTable('cost_entries', {
   outputTokens: integer('output_tokens').notNull().default(0),
   cacheReadTokens: integer('cache_read_tokens').notNull().default(0),
   cacheCreationTokens: integer('cache_creation_tokens').notNull().default(0),
+  inputCostUsd: real('input_cost_usd').notNull().default(0),
+  outputCostUsd: real('output_cost_usd').notNull().default(0),
+  cacheReadCostUsd: real('cache_read_cost_usd').notNull().default(0),
+  cacheCreationCostUsd: real('cache_creation_cost_usd').notNull().default(0),
   costUsd: real('cost_usd').notNull().default(0),
   recordedAt: text('recorded_at').notNull(),
 })
@@ -64,6 +68,17 @@ export const sessionStats = sqliteTable('session_stats', {
   totalCostUsd: real('total_cost_usd').notNull().default(0),
   turnCount: integer('turn_count').notNull().default(0),
   inProgressTokens: integer('in_progress_tokens').notNull().default(0),
+  updatedAt: integer('updated_at').notNull(),
+})
+
+export const modelPricing = sqliteTable('model_pricing', {
+  modelId: text('model_id').primaryKey(),
+  inputPerM: real('input_per_m').notNull(),
+  outputPerM: real('output_per_m').notNull(),
+  cacheWrite5mPerM: real('cache_write_5m_per_m').notNull(),
+  cacheWrite1hPerM: real('cache_write_1h_per_m').notNull(),
+  cacheReadPerM: real('cache_read_per_m').notNull(),
+  source: text('source').notNull().default('bundled'),
   updatedAt: integer('updated_at').notNull(),
 })
 

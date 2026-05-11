@@ -7,13 +7,19 @@ import * as schema from './schema'
 export type AppDb = BetterSQLite3Database<typeof schema>
 
 let _db: AppDb | null = null
+const migrationsFolder = path.join(__dirname, 'migrations')
 
 export function initDb(userDataPath: string): void {
   const sqlite = new Database(path.join(userDataPath, 'agentkeeper.db'))
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('foreign_keys = ON')
   _db = drizzle(sqlite, { schema })
-  migrate(_db, { migrationsFolder: path.join(__dirname, 'migrations') })
+  migrate(_db, { migrationsFolder })
+}
+
+export function runMigrations(): void {
+  if (!_db) throw new Error('[db] not initialized')
+  migrate(_db, { migrationsFolder })
 }
 
 export function getDb(): AppDb {

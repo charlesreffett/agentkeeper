@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { activatePlugins } from './plugins'
 import { setWorkItemRegistry } from './agent'
-import { init as initPricing } from './pricing'
+import { initPricing } from './pricing'
 import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
 import { initDb } from './db/index'
 import { runLegacyImport } from './db/legacy-import'
@@ -66,7 +66,7 @@ app.whenReady().then(async () => {
   initDb(userData)
   runLegacyImport(userData)
   pruneOrphanedDrafts()
-  initPricing(userData)
+  initPricing()
   initCostLedger(userData)
   const registry = await activatePlugins(app)
   setWorkItemRegistry(registry)
