@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 import { useLayoutStore } from '@/stores/layout'
 import { useProjectsStore } from '@/stores/projects'
-import { useAppSettingsStore } from '@/stores/appSettings'
+import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import PageHeader from '@/components/PageHeader.vue'
 
 const layoutStore = useLayoutStore()
 const projectsStore = useProjectsStore()
-const appSettingsStore = useAppSettingsStore()
+const { settings: storedSettings, apiKeyStored: storedApiKeyStored, githubConfig: storedGithubConfig, isLoading, invalidateAll } = useSettingsQuery()
 const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
 
 const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
@@ -93,23 +93,25 @@ const canReset = computed(
     resetGlobalSel.value,
 )
 
-function seedFromStore() {
-  const s = appSettingsStore.settings
+function seedFromQuery() {
+  const s = storedSettings.value
   if (s) {
     if (!s.defaultEffort || !ROLE_EFFORT_VALUES.includes(s.defaultEffort)) {
       s.defaultEffort = 'medium'
     }
     settings.value = { ...s }
   }
-  keyStored.value = appSettingsStore.apiKeyStored
-  githubRepos.value = appSettingsStore.githubConfig.repos ?? []
+  keyStored.value = storedApiKeyStored.value ?? false
+  githubRepos.value = storedGithubConfig.value?.repos ?? []
 }
 
-// Called after user saves — forces a fresh fetch, resets UI state.
-async function refresh() {
-  appSettingsStore.invalidate()
-  await appSettingsStore.load()
-  seedFromStore()
+watch(storedSettings, (s) => {
+  if (s && !settings.value) seedFromQuery()
+}, { immediate: true })
+
+// Called after user saves — invalidates TSQ cache; watcher re-seeds when fresh data arrives.
+function refresh() {
+  invalidateAll()
   apiKeyInput.value = ''
   message.value = null
   newRepoInput.value = ''
@@ -137,7 +139,7 @@ async function save() {
       })
     }
     message.value = 'Saved.'
-    await refresh()
+    refresh()
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -147,7 +149,7 @@ async function save() {
 
 async function clearKey() {
   await window.agentkeeper.secrets.delete('anthropicApiKey')
-  await refresh()
+  refresh()
 }
 
 async function onReset() {
@@ -187,7 +189,7 @@ async function onReset() {
     resetAppSettingsSel.value = false
     resetProjectSel.value = false
     resetGlobalSel.value = false
-    await refresh()
+    refresh()
   } catch (err) {
     resetMessage.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -195,19 +197,13 @@ async function onReset() {
   }
 }
 
-onMounted(async () => {
-  // Join the in-flight prefetch if it started, or fetch now if not yet triggered.
-  // Intentionally NOT invalidating — prefetched data is good to use.
-  await appSettingsStore.load()
-  seedFromStore()
-})
 </script>
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
     <PageHeader title="Settings" />
     <div class="flex-1 overflow-y-auto">
-    <div v-if="appSettingsStore.loading && !settings" class="flex items-center justify-center h-32 text-sm text-muted-foreground">
+    <div v-if="isLoading && !settings" class="flex items-center justify-center h-32 text-sm text-muted-foreground">
       Loading…
     </div>
     <div v-else class="p-6 space-y-5 max-w-lg">

@@ -5,7 +5,6 @@ import { usePlansStore } from '@/stores/plans'
 import { useRolesDataStore } from '@/stores/rolesData'
 import { useCommandsDataStore } from '@/stores/commandsData'
 import { useSkillsDataStore } from '@/stores/skillsData'
-import { useAppSettingsStore } from '@/stores/appSettings'
 import { useSessionsListStore } from '@/stores/sessionsList'
 
 export function installPrefetchGuard(router: Router): void {
@@ -32,9 +31,6 @@ export function installPrefetchGuard(router: Router): void {
         break
       case '/skills':
         void useSkillsDataStore().load(focusedPath)
-        break
-      case '/settings':
-        void useAppSettingsStore().load()
         break
     }
   })

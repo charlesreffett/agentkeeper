@@ -1,5 +1,5 @@
-import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '@/lib/queryKeys'
 import type { ModelPricing } from '@shared/ipc-contract'
 
 export type { ModelPricing }
@@ -16,28 +16,28 @@ function normalizeId(id: string): string {
   return id.toLowerCase().replace(/-\d{8}$/, '')
 }
 
-export const usePricingStore = defineStore('pricing', () => {
-  const table = ref<Record<string, ModelPricing>>({})
-  const loaded = ref(false)
+export function usePricingQuery() {
+  const queryClient = useQueryClient()
 
-  async function load(): Promise<void> {
-    if (loaded.value) return
-    try {
-      table.value = await window.agentkeeper.pricing.getTable()
-      loaded.value = true
-    } catch { /* non-fatal — breakdowns will show $0 */ }
-  }
+  const { data: table, isLoading } = useQuery({
+    queryKey: queryKeys.pricing.table(),
+    queryFn: () => window.agentkeeper.pricing.getTable(),
+    staleTime: Infinity,
+  })
 
-  async function refresh(): Promise<void> {
-    try {
-      table.value = await window.agentkeeper.pricing.refresh()
-    } catch { /* non-fatal */ }
-  }
+  const { mutate: refresh, isPending: isRefreshing } = useMutation({
+    mutationFn: () => window.agentkeeper.pricing.refresh(),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.pricing.table(), data)
+    },
+  })
 
   function lookup(modelId: string): ModelPricing | null {
+    const t = table.value
+    if (!t) return null
     const n = normalizeId(modelId)
-    if (table.value[n]) return table.value[n]!
-    for (const [key, p] of Object.entries(table.value)) {
+    if (t[n]) return t[n]!
+    for (const [key, p] of Object.entries(t)) {
       if (n.startsWith(key) || key.startsWith(n)) return p
     }
     return null
@@ -60,5 +60,5 @@ export const usePricingStore = defineStore('pricing', () => {
     return { inputCost, outputCost, cacheReadCost, cacheCreationCost, total: inputCost + outputCost + cacheReadCost + cacheCreationCost }
   }
 
-  return { table, loaded, load, refresh, lookup, estimateBreakdown }
-})
+  return { table, isLoading, refresh, isRefreshing, lookup, estimateBreakdown }
+}

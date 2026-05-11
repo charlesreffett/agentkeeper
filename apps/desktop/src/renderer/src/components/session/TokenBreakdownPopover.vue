@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Info } from 'lucide-vue-next'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useSessionStore } from '@/stores/sessions'
-import { usePricingStore } from '@/stores/pricing'
+import { usePricingQuery } from '@/composables/usePricingQuery'
 import { shortModel } from '@/lib/format'
 
 const props = defineProps<{
@@ -12,8 +12,7 @@ const props = defineProps<{
 }>()
 
 const store = useSessionStore()
-const pricingStore = usePricingStore()
-void pricingStore.load()
+const { estimateBreakdown } = usePricingQuery()
 
 const tokenData = computed(() => store.sessionTokens[props.sessionId])
 const session = computed(() => store.getSession(props.sessionId))
@@ -45,7 +44,7 @@ const breakdown = computed(() => {
   }
   const model = session.value?.model
   if (!model) return null
-  return pricingStore.estimateBreakdown(td.inputTokens, td.outputTokens, td.cacheReadTokens, td.cacheCreationTokens, model)
+  return estimateBreakdown(td.inputTokens, td.outputTokens, td.cacheReadTokens, td.cacheCreationTokens, model)
 })
 
 const totalCost = computed(() => tokenData.value?.costUsd ?? 0)
