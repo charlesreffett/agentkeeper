@@ -109,6 +109,10 @@ watch(storedSettings, (s) => {
   if (s && !settings.value) seedFromQuery()
 }, { immediate: true })
 
+watch(storedApiKeyStored, (v) => {
+  if (v != null) keyStored.value = v
+})
+
 // Called after user saves — invalidates TSQ cache; watcher re-seeds when fresh data arrives.
 function refresh() {
   invalidateAll()
