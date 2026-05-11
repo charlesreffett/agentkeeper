@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CheckSquare, Filter, Layers, Plus, RefreshCw, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import PageHeader from '@/components/PageHeader.vue'
@@ -17,8 +17,10 @@ import {
 import SessionCard, { type SessionCardData } from '@/components/SessionCard.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { useProjectStore } from '@/stores/project'
-import { useSessionsListStore } from '@/stores/sessionsList'
+import { useQueryClient } from '@tanstack/vue-query'
+import { queryKeys } from '@/lib/queryKeys'
 import { projectColor } from '@/lib/projectColor'
 import { cn } from '@/lib/utils'
 import StatsCards from '@/components/StatsCards.vue'
@@ -27,18 +29,14 @@ const router = useRouter()
 const sessionStore = useSessionStore()
 const { projects, focusedProject } = useProjectsQuery()
 const projectStore = useProjectStore()
-const sessionsListStore = useSessionsListStore()
-const loading = computed(() => sessionsListStore.loading)
+const queryClient = useQueryClient()
 
-const refreshKey = ref(0)
+const { persistedSessions, historicalSessions, isLoading: loading, invalidateAll: invalidateSessionsList } = useSessionsListQuery(projects)
+
 const statusCounts = computed(() => sessionStore.statusCounts)
 
-// ── Persisted + historical data from disk ──────────────────────────────────
+// ── Agency groups derived from persistedSessions ───────────────────────────
 
-const persistedSessions = computed(() => sessionsListStore.persistedSessions)
-const historicalSessions = computed(() => sessionsListStore.historicalSessions)
-
-// Agency groups derived from persistedSessions
 const agencyGroups = computed(() => {
   const groups = new Map<string, typeof persistedSessions.value[number][]>()
   for (const s of persistedSessions.value) {
@@ -48,16 +46,6 @@ const agencyGroups = computed(() => {
     list.push(s)
   }
   return groups
-})
-
-watch(
-  () => projects.value.length,
-  (len) => { if (len > 0) void sessionsListStore.load(projects.value) },
-  { immediate: true },
-)
-watch(refreshKey, () => {
-  sessionsListStore.invalidate()
-  void sessionsListStore.load(projects.value)
 })
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -226,7 +214,7 @@ function selectedPillStyle(name: string): Record<string, string> {
 // ── Actions ────────────────────────────────────────────────────────────────
 
 function handleRefresh() {
-  refreshKey.value++
+  invalidateSessionsList()
 }
 
 async function handleNewSession() {
@@ -313,17 +301,20 @@ async function deleteSingleSession(card: SessionCardData) {
       break
     case 'persisted':
       await window.agentkeeper.sessions.deletePersisted(card.id)
-      sessionsListStore.removePersisted(card.id)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.persisted(card.projectPath) })
       break
     case 'agency': {
       const members = agencyGroups.value.get(card.id) ?? []
       await Promise.all(members.map((m) => window.agentkeeper.sessions.deletePersisted(m.localId)))
-      sessionsListStore.removeAgency(card.id)
+      const affectedPaths = new Set(members.map((m) => m.projectPath))
+      for (const path of affectedPaths) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.persisted(path) })
+      }
       break
     }
     case 'historical':
       await window.agentkeeper.sessions.deleteHistorical(card.projectPath, card.id)
-      sessionsListStore.removeHistorical(card.projectPath, card.id)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.historical(card.projectPath) })
       break
   }
 }

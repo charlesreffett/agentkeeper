@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
-import { useSessionsListStore } from '@/stores/sessionsList'
+import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { projectColor } from '@/lib/projectColor'
 import { useTimeSeries } from '@/composables/useTimeSeries'
 import SparklineChart from '@/components/SparklineChart.vue'
@@ -10,7 +10,7 @@ import DonutChart from '@/components/DonutChart.vue'
 
 const sessionStore = useSessionStore()
 const { projects } = useProjectsQuery()
-const sessionsListStore = useSessionsListStore()
+const { persistedSessions } = useSessionsListQuery(projects)
 
 const runningCount = computed(() => sessionStore.statusCounts.running)
 const totalCount = computed(() => sessionStore.visibleSessions.length)
@@ -68,7 +68,7 @@ const projectSegments = computed(() => {
   for (const s of sessionStore.visibleSessions) {
     pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
   }
-  for (const s of sessionsListStore.persistedSessions) {
+  for (const s of persistedSessions.value) {
     if (!liveIds.has(s.localId) && !s.agencyInstanceId) {
       pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
     }
