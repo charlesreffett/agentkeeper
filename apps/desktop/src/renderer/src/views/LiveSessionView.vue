@@ -19,7 +19,7 @@ import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
 import AgentTreePanel from '@/components/session/AgentTreePanel.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import {
   DEFAULT_VERBOSITY_STATE,
   MODE_DEFAULTS,
@@ -42,7 +42,7 @@ const props = defineProps<{
 
 const router = useRouter()
 const store = useSessionStore()
-const projectsStore = useProjectsStore()
+const { projects } = useProjectsQuery()
 const messageInputRef = ref<InstanceType<typeof MessageInput> | null>(null)
 
 // Root session — fixed to props.liveId. Used for header title, project name, agency group key.
@@ -61,7 +61,7 @@ const session = computed(
 const sessionProjectName = computed(() => {
   const path = rootSession.value?.projectPath ?? ''
   return (
-    projectsStore.projects.find((p) => p.path === path)?.name ??
+    projects.value.find((p) => p.path === path)?.name ??
     path.split('/').filter(Boolean).pop() ??
     ''
   )

@@ -20,13 +20,13 @@ import {
   Zap,
   File,
 } from 'lucide-vue-next'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import type { Plan, PlanStep } from '@shared/ipc-contract'
 
 const route = useRoute()
 const router = useRouter()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 
 const filename = computed(() => route.params.filename as string)
@@ -42,7 +42,7 @@ const expandedSteps = ref<Set<number>>(new Set())
 const openMenuStep = ref<number | null>(null)
 
 async function loadPlan() {
-  const project = projectsStore.focusedProject
+  const project = focusedProject.value
   if (!project) return
   loading.value = true
   try {
@@ -209,7 +209,7 @@ function closeMenu() {
 
 async function replan() {
   if (!plan.value) return
-  const project = projectsStore.focusedProject
+  const project = focusedProject.value
   if (!project) return
   replanError.value = null
   replanning.value = true

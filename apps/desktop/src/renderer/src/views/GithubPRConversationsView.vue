@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 import { useRouter } from 'vue-router'
 import type { PRComment, PRDetail } from '@shared/github-types'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useProjectStore } from '@/stores/project'
 
 const route = useRoute()
@@ -22,7 +22,7 @@ const submitError = ref<string | null>(null)
 
 const router = useRouter()
 const sessionStore = useSessionStore()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const projectStore = useProjectStore()
 
 const sendingCommentId = ref<number | null>(null)
@@ -106,7 +106,7 @@ function avatarInitial(author: string): string {
 }
 
 async function sendCommentToClaude(comment: PRComment) {
-  const focused = projectsStore.focusedProject
+  const focused = focusedProject.value
   if (!focused) {
     claudeError.value = 'No focused project — focus a project first.'
     return
@@ -128,7 +128,7 @@ async function sendCommentToClaude(comment: PRComment) {
 }
 
 async function sendAllToClaude() {
-  const focused = projectsStore.focusedProject
+  const focused = focusedProject.value
   if (!focused) {
     claudeError.value = 'No focused project — focus a project first.'
     return

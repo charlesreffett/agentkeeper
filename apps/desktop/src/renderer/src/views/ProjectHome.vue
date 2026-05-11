@@ -7,14 +7,14 @@ import SessionDetail from './SessionDetail.vue'
 import LiveSessionView from './LiveSessionView.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectStore } from '@/stores/project'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import type { LiveSession } from '@/stores/sessions'
 import type { AppSettings, SessionSummary } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
 const projectStore = useProjectStore()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 
 // Invariant: only reachable after setProject(); assert non-null for template ergonomics.
 const project = computed(() => projectStore.currentProject!)
@@ -92,10 +92,10 @@ watch(
 // When the global project selector (AppHeader / Sidebar) switches focus, keep
 // this page in sync so the header label and "New session" use the right project.
 watch(
-  () => projectsStore.focusedProject?.path,
+  () => focusedProject.value?.path,
   (newPath) => {
     if (newPath && newPath !== projectStore.currentProject?.path) {
-      projectStore.setProject(projectsStore.focusedProject!)
+      projectStore.setProject(focusedProject.value!)
     }
   },
 )

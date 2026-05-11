@@ -84,7 +84,7 @@
 import { computed, ref, watch } from 'vue'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useFlowGraph } from '@/components/graph/useFlowGraph'
 import FlowCanvas from '@/components/graph/FlowCanvas.vue'
 import AgencyList from '@/components/agencies/AgencyList.vue'
@@ -95,9 +95,9 @@ import NewAgencyModal from '@/components/agencies/NewAgencyModal.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import type { Agency, AgencyDraft, AgencyScope } from '@shared/ipc-contract'
 
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 
-const focusedProjectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+const focusedProjectPath = computed(() => focusedProject.value?.path ?? '')
 
 const { agencies, isLoading, saveAgency: saveAgencyMutation, removeAgency: removeAgencyMutation } = useAgenciesQuery(focusedProjectPath)
 const { roles } = useRolesQuery(focusedProjectPath)
@@ -165,7 +165,7 @@ async function onUpdateAgency(draft: Agency) {
 }
 
 watch(
-  () => projectsStore.focusedProject,
+  () => focusedProject.value,
   () => {
     selectedAgencyId.value = null
     graph.clearSelection()

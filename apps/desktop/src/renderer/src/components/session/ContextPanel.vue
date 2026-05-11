@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ChevronLeft, ChevronRight, FileCode2, GitBranch, Layers, Tag } from 'lucide-vue-next'
 import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import { formatRelativeTime, shortModel } from '@/lib/format'
 import type { GitDiffStatFile } from '@shared/ipc-contract'
@@ -17,7 +17,7 @@ const props = defineProps<{
 defineEmits<{ collapse: []; expand: [] }>()
 
 const store = useSessionStore()
-const projectsStore = useProjectsStore()
+const { projects } = useProjectsQuery()
 
 const { isHealthy: githubHealthy } = usePluginHealth('github')
 const { isHealthy: jiraHealthy } = usePluginHealth('jira')
@@ -26,7 +26,7 @@ const rootSession = computed(() => store.getSession(props.rootSessionId))
 
 // Repo slug ('owner/repo') from the project registry, used for PR lookups.
 const githubRepo = computed(
-  () => projectsStore.projects.find((p) => p.path === rootSession.value?.projectPath)?.repo ?? null,
+  () => projects.value.find((p) => p.path === rootSession.value?.projectPath)?.repo ?? null,
 )
 
 // ─── Derived stats ────────────────────────────────────────────────────────────

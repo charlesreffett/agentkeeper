@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import SessionCard, { type SessionCardData } from '@/components/SessionCard.vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useProjectStore } from '@/stores/project'
 import { useSessionsListStore } from '@/stores/sessionsList'
 import { projectColor } from '@/lib/projectColor'
@@ -25,7 +25,7 @@ import StatsCards from '@/components/StatsCards.vue'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
-const projectsStore = useProjectsStore()
+const { projects, focusedProject } = useProjectsQuery()
 const projectStore = useProjectStore()
 const sessionsListStore = useSessionsListStore()
 const loading = computed(() => sessionsListStore.loading)
@@ -51,19 +51,19 @@ const agencyGroups = computed(() => {
 })
 
 watch(
-  () => projectsStore.projects.length,
-  (len) => { if (len > 0) void sessionsListStore.load(projectsStore.projects) },
+  () => projects.value.length,
+  (len) => { if (len > 0) void sessionsListStore.load(projects.value) },
   { immediate: true },
 )
 watch(refreshKey, () => {
   sessionsListStore.invalidate()
-  void sessionsListStore.load(projectsStore.projects)
+  void sessionsListStore.load(projects.value)
 })
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function pathToProjectName(projectPath: string): string {
-  const found = projectsStore.projects.find((p) => p.path === projectPath)
+  const found = projects.value.find((p) => p.path === projectPath)
   if (found) return found.name
   return projectPath.split('/').pop() ?? projectPath
 }
@@ -230,7 +230,7 @@ function handleRefresh() {
 }
 
 async function handleNewSession() {
-  const target = projectsStore.focusedProject ?? projectStore.currentProject
+  const target = focusedProject.value ?? projectStore.currentProject
   if (target) {
     const settings = await window.agentkeeper.settings.get()
     projectStore.setProject(target)

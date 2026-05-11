@@ -2,10 +2,10 @@
 import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { PRSummary, PRState, CheckState, ReviewDecision } from '@shared/github-types'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 
 const router = useRouter()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 
 const allPRs = ref<PRSummary[]>([])
 const loading = ref(false)
@@ -47,7 +47,7 @@ onMounted(async () => {
 })
 
 watch(
-  () => projectsStore.focusedProject,
+  () => focusedProject.value,
   async (proj) => {
     if (proj?.repo) repoFilter.value = proj.repo
     else repoFilter.value = ''

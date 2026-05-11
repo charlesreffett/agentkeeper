@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore } from '@/stores/jiraActivity'
 import type { Agency, Role, RoleEffort, WorkItem } from '@shared/ipc-contract'
@@ -21,7 +21,7 @@ type Mode = 'solo' | 'agency'
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const mode = ref<Mode>('solo')
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 const activityStore = useJiraActivityStore()
 
@@ -50,7 +50,6 @@ const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 ] as const
 
-const focusedProject = computed(() => projectsStore.focusedProject)
 
 const defaultPrompt = computed(
   () => `Work on ${props.item.externalRef}: ${props.item.title}`,

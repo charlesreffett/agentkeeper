@@ -8,14 +8,14 @@ import {
   type RoleScope,
 } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import PageHeader from '@/components/PageHeader.vue'
 import SidebarHeader from '@/components/SidebarHeader.vue'
 import { ScrollText, Plus } from 'lucide-vue-next'
 
-const projectsStore = useProjectsStore()
-const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+const { focusedProject } = useProjectsQuery()
+const projectPath = computed(() => focusedProject.value?.path ?? '')
 
 const { roles, isLoading: loading, saveRole, removeRole } = useRolesQuery(projectPath)
 const selectedId = ref<string | null>(null)
@@ -186,7 +186,7 @@ async function remove(role: Role) {
 }
 
 watch(
-  () => projectsStore.focusedProject?.path,
+  () => focusedProject.value?.path,
   () => {
     editing.value = false
     selectedId.value = null

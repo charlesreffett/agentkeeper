@@ -4,13 +4,13 @@ import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectStore } from '@/stores/project'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import type { RecentProject } from '@shared/ipc-contract'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
 const projectStore = useProjectStore()
-const projectsStore = useProjectsStore()
+const { remove } = useProjectsQuery()
 const activeCount = computed(() => sessionStore.liveList.length)
 
 const recent = ref<RecentProject[]>([])
@@ -37,7 +37,7 @@ function openRecent(project: RecentProject) {
 
 async function removeRecent(path: string, event: Event) {
   event.stopPropagation()
-  await projectsStore.remove(path)
+  await remove(path)
   await refresh()
 }
 

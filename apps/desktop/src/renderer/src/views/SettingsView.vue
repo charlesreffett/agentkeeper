@@ -3,14 +3,14 @@ import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 import { useLayoutStore } from '@/stores/layout'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import PageHeader from '@/components/PageHeader.vue'
 
 const layoutStore = useLayoutStore()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const { settings: storedSettings, apiKeyStored: storedApiKeyStored, githubConfig: storedGithubConfig, isLoading, invalidateAll } = useSettingsQuery()
-const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+const projectPath = computed(() => focusedProject.value?.path ?? '')
 
 const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
 

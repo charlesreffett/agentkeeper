@@ -3,15 +3,15 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import type { SlashCommand } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useCommandsDataStore } from '@/stores/commandsData'
 import PageHeader from '@/components/PageHeader.vue'
 import SidebarHeader from '@/components/SidebarHeader.vue'
 import { Terminal } from 'lucide-vue-next'
 
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const commandsDataStore = useCommandsDataStore()
-const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+const projectPath = computed(() => focusedProject.value?.path ?? '')
 const { handleAuthError } = useClaudeAuth()
 
 const commands = computed(() => commandsDataStore.commands)
@@ -137,7 +137,7 @@ async function remove(cmd: SlashCommand) {
 }
 
 watch(
-  () => projectsStore.focusedProject?.path,
+  () => focusedProject.value?.path,
   async (path) => {
     editing.value = false
     selectedId.value = null

@@ -2,14 +2,14 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Bot, Sparkles, User } from 'lucide-vue-next'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore, relativeTime } from '@/stores/jiraActivity'
 import JiraStartSessionModal from './JiraStartSessionModal.vue'
 import type { IssueTransition, WorkItem, WorkItemStatus } from '@shared/ipc-contract'
 
 const route = useRoute()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 const activityStore = useJiraActivityStore()
 
@@ -134,8 +134,8 @@ async function setStatus(newStatus: WorkItemStatus) {
 async function planWithClaude() {
   if (!item.value) return
   planError.value = null
-  const focusedProject = projectsStore.focusedProject
-  if (!focusedProject) {
+  const focused = focusedProject.value
+  if (!focused) {
     planError.value = 'Focus a project in the sidebar before planning.'
     return
   }
@@ -179,7 +179,7 @@ Guidance for each step:
 Aim for 4-8 focused, concrete steps. Make each step title specific and actionable.`
   try {
     await sessionStore.start({
-      projectPath: focusedProject.path,
+      projectPath: focused.path,
       workItemId: cur.id,
       initialPrompt: planningPrompt,
     })

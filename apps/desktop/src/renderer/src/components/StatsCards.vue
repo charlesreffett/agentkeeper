@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionsListStore } from '@/stores/sessionsList'
 import { projectColor } from '@/lib/projectColor'
 import { useTimeSeries } from '@/composables/useTimeSeries'
@@ -9,7 +9,7 @@ import SparklineChart from '@/components/SparklineChart.vue'
 import DonutChart from '@/components/DonutChart.vue'
 
 const sessionStore = useSessionStore()
-const projectsStore = useProjectsStore()
+const { projects } = useProjectsQuery()
 const sessionsListStore = useSessionsListStore()
 
 const runningCount = computed(() => sessionStore.statusCounts.running)
@@ -73,7 +73,7 @@ const projectSegments = computed(() => {
       pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
     }
   }
-  return projectsStore.projects
+  return projects.value
     .filter((p) => pathCounts.has(p.path))
     .map((p) => ({
       label: p.name,
