@@ -124,6 +124,54 @@ function idleInstance(runtime: RuntimeAgency, roleId: string): AgentInstance | n
   return list.find((i) => !runtime.busySessions.has(i.localId)) ?? null
 }
 
+const instanceIdPattern = /^(.+)-(\d+)$/
+
+/** Check whether a flow from fromInstance/fromRole → toTarget is permitted.
+ *  Checks four key combinations so instance-level, role-level, and mixed
+ *  flow entries all resolve correctly. */
+function isFlowAllowed(
+  runtime: RuntimeAgency,
+  fromInstanceId: string,
+  fromRoleId: string,
+  toTarget: string,
+  toRoleId: string,
+): boolean {
+  if (runtime.allowedFlows.size === 0) return true
+  return (
+    runtime.allowedFlows.has(`${fromInstanceId}->${toTarget}`) ||
+    runtime.allowedFlows.has(`${fromRoleId}->${toTarget}`) ||
+    runtime.allowedFlows.has(`${fromInstanceId}->${toRoleId}`) ||
+    runtime.allowedFlows.has(`${fromRoleId}->${toRoleId}`)
+  )
+}
+
+/** Compute the list of peer IDs this instance is allowed to send_message to.
+ *  Returns null when flows are empty (any-to-any). */
+function computeAllowedPeerIds(
+  fromInstanceId: string,
+  fromRoleId: string,
+  allInstanceIds: string[],
+  allRoleIds: string[],
+  allowedFlows: Set<string>,
+): string[] | null {
+  if (allowedFlows.size === 0) return null
+  const permitted: string[] = []
+  for (const target of [...allInstanceIds, ...allRoleIds]) {
+    if (target === fromInstanceId || target === fromRoleId) continue
+    const m = instanceIdPattern.exec(target)
+    const targetRoleId = m ? m[1]! : target
+    if (
+      allowedFlows.has(`${fromInstanceId}->${target}`) ||
+      allowedFlows.has(`${fromRoleId}->${target}`) ||
+      allowedFlows.has(`${fromInstanceId}->${targetRoleId}`) ||
+      allowedFlows.has(`${fromRoleId}->${targetRoleId}`)
+    ) {
+      permitted.push(target)
+    }
+  }
+  return permitted
+}
+
 async function spawnOverflow(
   runtime: RuntimeAgency,
   roleId: string,
@@ -148,6 +196,10 @@ async function spawnOverflow(
         ].join('\n')
       : ''
 
+  const allRoleIds = [...runtime.roleSlots.keys()]
+  const allowedPeerIds = computeAllowedPeerIds(
+    instanceId, roleId, allInstanceIds, allRoleIds, runtime.allowedFlows,
+  )
   const contextPreamble = buildContextPreamble({
     roleName: role.name,
     roleId,
@@ -158,6 +210,7 @@ async function spawnOverflow(
     allInstanceIds,
     isEntry: false,
     handoffLines,
+    allowedPeerIds,
   })
 
   const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
@@ -405,7 +458,6 @@ async function routeMessage(
   const fromRole = fromInst.roleId
 
   // Resolve the target: either an instance id ("developer-2") or a role id ("developer")
-  const instanceIdPattern = /^(.+)-(\d+)$/
   const match = instanceIdPattern.exec(to)
 
   if (match) {
@@ -413,11 +465,8 @@ async function routeMessage(
     const targetRoleId = match[1]!
     const targetIndex = parseInt(match[2]!, 10)
 
-    if (
-      runtime.allowedFlows.size > 0 &&
-      !runtime.allowedFlows.has(`${fromRole}->${targetRoleId}`)
-    ) {
-      return `Error: role "${fromRole}" is not permitted to send_message to "${targetRoleId}" in this agency.`
+    if (!isFlowAllowed(runtime, fromInst.instanceId, fromRole, to, targetRoleId)) {
+      return `Error: "${fromInst.instanceId}" is not permitted to send_message to "${to}" in this agency.`
     }
 
     const list = runtime.instancesByRole.get(targetRoleId) ?? []
@@ -444,11 +493,8 @@ async function routeMessage(
 
   // Role targeting — load-balance across instances of this role
   const toRole = to
-  if (
-    runtime.allowedFlows.size > 0 &&
-    !runtime.allowedFlows.has(`${fromRole}->${toRole}`)
-  ) {
-    return `Error: role "${fromRole}" is not permitted to send_message to "${toRole}" in this agency.`
+  if (!isFlowAllowed(runtime, fromInst.instanceId, fromRole, toRole, toRole)) {
+    return `Error: "${fromInst.instanceId}" is not permitted to send_message to "${toRole}" in this agency.`
   }
 
   if (!runtime.instancesByRole.has(toRole)) {
@@ -535,12 +581,20 @@ function buildContextPreamble(opts: {
   allInstanceIds: string[]
   isEntry: boolean
   handoffLines: string
+  /** null = any-to-any; [] = no outbound peers permitted */
+  allowedPeerIds: string[] | null
 }): string {
   const {
     roleName, roleId, instanceIndex, totalInstances, instanceId,
-    agencyName, allInstanceIds, isEntry, handoffLines,
+    agencyName, allInstanceIds, isEntry, handoffLines, allowedPeerIds,
   } = opts
   const instanceNote = totalInstances > 1 ? `, instance ${instanceIndex} of ${totalInstances}` : ''
+  const peerRestrictionLines: string[] =
+    allowedPeerIds === null
+      ? []
+      : allowedPeerIds.length > 0
+        ? ['', `Flow-restricted: you may only send_message to — ${allowedPeerIds.join(', ')}.`]
+        : ['', `Flow-restricted: you have no permitted outbound peers — do not call send_message.`]
   return [
     `You are the "${roleName}" (role: "${roleId}"${instanceNote}, id: "${instanceId}") in agency "${agencyName}".`,
     `Current agency members: ${allInstanceIds.join(', ')}.`,
@@ -551,6 +605,7 @@ function buildContextPreamble(opts: {
     `  that role, or spawns a NEW overflow instance if all are busy. Use role-id addressing`,
     `  whenever you want to fan out work in parallel or delegate to a peer of the same role.`,
     `  Overflow instances are temporary: they suspend after completing one task.`,
+    ...peerRestrictionLines,
     ``,
     `Communication protocol:`,
     `- send_message BLOCKS until the peer replies; their response becomes your tool_result.`,
@@ -700,6 +755,7 @@ export async function startAgency(
     return { slot, count }
   })
 
+  const allRoleIds = agency.roles.map(s => s.roleId)
   const allInstanceIds: string[] = []
   for (const { slot, count } of spawnCounts) {
     for (let i = 1; i <= count; i++) {
@@ -726,18 +782,6 @@ export async function startAgency(
     const totalInstances = slot.max ?? count
 
     const resolvedModel = role.model ?? params.model
-    const systemPromptForRole = (instanceIndex: number, instanceId: string) =>
-      buildContextPreamble({
-        roleName: role.name,
-        roleId: slot.roleId,
-        instanceIndex,
-        totalInstances,
-        instanceId,
-        agencyName: agency.name,
-        allInstanceIds,
-        isEntry,
-        handoffLines,
-      })
 
     const restartBase: AgencyRoleRestartParams = {
       systemPromptAppend: '', // will be filled per-instance below
@@ -749,7 +793,21 @@ export async function startAgency(
     for (let idx = 1; idx <= count; idx++) {
       const localId = randomUUID()
       const instId = `${slot.roleId}-${idx}`
-      const contextPreamble = systemPromptForRole(idx, instId)
+      const allowedPeerIds = computeAllowedPeerIds(
+        instId, slot.roleId, allInstanceIds, allRoleIds, runtime.allowedFlows,
+      )
+      const contextPreamble = buildContextPreamble({
+        roleName: role.name,
+        roleId: slot.roleId,
+        instanceIndex: idx,
+        totalInstances,
+        instanceId: instId,
+        agencyName: agency.name,
+        allInstanceIds,
+        isEntry,
+        handoffLines,
+        allowedPeerIds,
+      })
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
 
       const initialPrompt =
@@ -893,6 +951,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
   instances.set(instanceId, runtime)
 
   // Build the full peer list from the reconstituted roleSessionMap
+  const allRoleIds = agency.roles.map(s => s.roleId)
   const allInstanceIds: string[] = []
   for (const [roleId, entries] of Object.entries(roleSessionMap)) {
     for (const entry of entries) {
@@ -924,6 +983,9 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       const localId = sdkToLocalId.get(entry.sdkSessionId) ?? randomUUID()
       const instId = `${slot.roleId}-${entry.instanceIndex}`
 
+      const allowedPeerIds = computeAllowedPeerIds(
+        instId, slot.roleId, allInstanceIds, allRoleIds, runtime.allowedFlows,
+      )
       const contextPreamble = buildContextPreamble({
         roleName: role.name,
         roleId: slot.roleId,
@@ -934,6 +996,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         allInstanceIds,
         isEntry,
         handoffLines,
+        allowedPeerIds,
       })
 
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`

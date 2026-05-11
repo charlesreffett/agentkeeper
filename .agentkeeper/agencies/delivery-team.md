@@ -6,7 +6,13 @@ roles:
   - id: developer
     count: 3
   - reviewer
-flows: []
+flows:
+  - - reviewer
+    - planner
+  - - planner
+    - developer
+  - - developer
+    - reviewer
 entryPoints:
   - planner
 ---

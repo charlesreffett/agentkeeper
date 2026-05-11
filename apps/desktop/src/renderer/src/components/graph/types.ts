@@ -1,4 +1,4 @@
-export type NodeKind = 'role'
+export type NodeKind = 'role' | 'instance'
 
 export interface GraphNode {
   id: string
@@ -7,6 +7,12 @@ export interface GraphNode {
   isEntryPoint: boolean
   anyToAny: boolean
   multiplicityLabel: string  // "" = single instance, "×3" = fixed 3, "1–5" = dynamic
+  /** Role node can be expanded into per-instance nodes */
+  isExpandable: boolean
+  /** Role is currently shown as individual instance nodes */
+  isExpanded: boolean
+  /** Set on instance nodes; the roleId they belong to */
+  parentRoleId?: string
   position: { x: number; y: number }
   meta: Record<string, unknown>
 }

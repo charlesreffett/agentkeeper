@@ -46,6 +46,7 @@ import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import AgencyRoleNode from './AgencyRoleNode.vue'
+import AgencyInstanceNode from './AgencyInstanceNode.vue'
 import FloatingEdge from './FloatingEdge.vue'
 import FloatingConnectionLine from './FloatingConnectionLine.vue'
 import AnyToAnyOverlay from './AnyToAnyOverlay.vue'
@@ -67,6 +68,7 @@ const emit = defineEmits<{
   (e: 'connection', payload: GraphConnectionRequest): void
   (e: 'pane-click'): void
   (e: 'node-move', nodeId: string, position: { x: number; y: number }): void
+  (e: 'node-expand', roleId: string): void
 }>()
 
 const layoutStore = useLayoutStore()
@@ -84,7 +86,10 @@ useVueFlow('agency-flow')
 // Cast to bypass strict NodeComponent type mismatch — our component satisfies
 // the runtime contract but Vue Flow's generic NodeProps don't align with defineProps<...>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const nodeTypes: Record<string, any> = { role: markRaw(AgencyRoleNode) }
+const nodeTypes: Record<string, any> = {
+  role: markRaw(AgencyRoleNode),
+  instance: markRaw(AgencyInstanceNode),
+}
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const edgeTypes: Record<string, any> = { floating: markRaw(FloatingEdge) }
 
@@ -96,18 +101,41 @@ const defaultEdgeOptions = {
 }
 
 const vfNodes = computed<VFNode[]>(() =>
-  props.nodes.map(n => ({
-    id: n.id,
-    type: 'role',
-    position: n.position,
-    selected: n.id === props.selectedNodeId,
-    data: {
-      label: n.label,
-      isEntryPoint: n.isEntryPoint,
-      anyToAny: n.anyToAny,
-      multiplicityLabel: n.multiplicityLabel,
-    },
-  }))
+  props.nodes.map(n => {
+    if (n.kind === 'instance') {
+      return {
+        id: n.id,
+        type: 'instance',
+        position: n.position,
+        selected: n.id === props.selectedNodeId,
+        data: {
+          label: n.label,
+          isEntryPoint: n.isEntryPoint,
+          // Pass collapse callback — collapses the parent role group
+          onCollapse: n.parentRoleId
+            ? () => emit('node-expand', n.parentRoleId!)
+            : undefined,
+        },
+      }
+    }
+    return {
+      id: n.id,
+      type: 'role',
+      position: n.position,
+      selected: n.id === props.selectedNodeId,
+      data: {
+        label: n.label,
+        isEntryPoint: n.isEntryPoint,
+        anyToAny: n.anyToAny,
+        multiplicityLabel: n.multiplicityLabel,
+        isExpandable: n.isExpandable,
+        isExpanded: n.isExpanded,
+        onToggleExpand: n.isExpandable
+          ? () => emit('node-expand', n.id)
+          : undefined,
+      },
+    }
+  })
 )
 
 const vfEdges = computed<VFEdge[]>(() =>

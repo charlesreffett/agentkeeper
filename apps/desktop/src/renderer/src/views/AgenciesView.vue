@@ -37,6 +37,7 @@
           @pane-click="graph.clearSelection"
           @connection="graph.addConnection"
           @node-move="graph.updateNodePosition"
+          @node-expand="graph.toggleExpanded"
         />
       </main>
 
