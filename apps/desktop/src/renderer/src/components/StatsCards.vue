@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsStore } from '@/stores/projects'
+import { useSessionsListStore } from '@/stores/sessionsList'
 import { projectColor } from '@/lib/projectColor'
 import { useTimeSeries } from '@/composables/useTimeSeries'
 import SparklineChart from '@/components/SparklineChart.vue'
@@ -9,6 +10,7 @@ import DonutChart from '@/components/DonutChart.vue'
 
 const sessionStore = useSessionStore()
 const projectsStore = useProjectsStore()
+const sessionsListStore = useSessionsListStore()
 
 const runningCount = computed(() => sessionStore.statusCounts.running)
 const totalCount = computed(() => sessionStore.visibleSessions.length)
@@ -62,8 +64,14 @@ function formatCost(usd: number): string {
 
 const projectSegments = computed(() => {
   const pathCounts = new Map<string, number>()
+  const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
   for (const s of sessionStore.visibleSessions) {
     pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
+  }
+  for (const s of sessionsListStore.persistedSessions) {
+    if (!liveIds.has(s.localId) && !s.agencyInstanceId) {
+      pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
+    }
   }
   return projectsStore.projects
     .filter((p) => pathCounts.has(p.path))
@@ -73,6 +81,10 @@ const projectSegments = computed(() => {
       color: projectColor(p.name),
     }))
 })
+
+const projectTotal = computed(() =>
+  projectSegments.value.reduce((sum, seg) => sum + seg.value, 0),
+)
 </script>
 
 <template>
@@ -131,7 +143,7 @@ const projectSegments = computed(() => {
       <div class="flex items-center gap-4 flex-1">
         <DonutChart
           :segments="projectSegments"
-          :total="totalCount"
+          :total="projectTotal"
           :size="72"
         />
         <div class="flex flex-col gap-1 min-w-0">
