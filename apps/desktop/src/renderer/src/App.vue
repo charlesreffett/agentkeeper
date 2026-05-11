@@ -2,9 +2,12 @@
 import { onMounted } from 'vue'
 import AppLayout from '@/components/AppLayout.vue'
 import { Toaster } from '@/components/ui/sonner'
+import QueryDevtools from '@/components/QueryDevtools.vue'
 import { useUIContributionsStore } from '@/stores/uiContributions'
 import { useProjectsStore } from '@/stores/projects'
 import { useLayoutStore } from '@/stores/layout'
+
+const isDev = import.meta.env.DEV
 
 const uiStore = useUIContributionsStore()
 const projectsStore = useProjectsStore()
@@ -36,4 +39,5 @@ onMounted(async () => {
 <template>
   <AppLayout />
   <Toaster :theme="layoutStore.theme" />
+  <QueryDevtools v-if="isDev" />
 </template>
