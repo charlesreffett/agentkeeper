@@ -20,6 +20,7 @@ export const sessions = sqliteTable('sessions', {
   title: text('title'),
   workItemKey: text('work_item_key'),
   workItemTitle: text('work_item_title'),
+  planState: text('plan_state'),
   status: text('status').notNull().default('idle'),
   startedAt: integer('started_at').notNull(),
   lastActivityAt: integer('last_activity_at').notNull(),

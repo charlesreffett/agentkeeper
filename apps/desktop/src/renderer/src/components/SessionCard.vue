@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { GitBranch, Users, Clock, Check, MessageSquare } from 'lucide-vue-next'
-import type { LiveSessionStatus, TranscriptEvent } from '@shared/ipc-contract'
+import type { LiveSessionStatus, PlanTodo, TranscriptEvent } from '@shared/ipc-contract'
 import { shortModel, formatRelativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { usePlanProgress } from '@/composables/usePlanProgress'
@@ -25,6 +25,8 @@ export interface SessionCardData {
   messageCount: number | null
   /** Live events for plan-progress widget; empty for non-live sessions. */
   events: TranscriptEvent[]
+  /** Persisted todo list from DB — used when events are empty (not yet loaded). */
+  planState: PlanTodo[] | null
 }
 
 interface Props {

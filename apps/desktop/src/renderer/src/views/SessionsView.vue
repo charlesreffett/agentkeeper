@@ -87,6 +87,7 @@ const allSessions = computed((): SessionCardData[] => {
       subAgentCount: sessionStore.subAgentCount(s),
       messageCount: null,
       events: s.events,
+      planState: s.planState ?? null,
     }
   })
 
@@ -110,11 +111,22 @@ const allSessions = computed((): SessionCardData[] => {
         subAgentCount: 0,
         messageCount: null,
         events: [],
+        planState: s.planState ?? null,
       }
     })
 
+  // Agency instance IDs that are active in-memory — used to suppress persisted
+  // agency cards that race ahead of DB registration completing for all members.
+  const liveAgencyInstanceIds = new Set(
+    Object.values(sessionStore.sessions)
+      .filter((s) => s.agencyInstanceId && !s.isDraft)
+      .map((s) => s.agencyInstanceId!),
+  )
+
   const agencies: SessionCardData[] = [...agencyGroups.value.entries()]
-    .filter(([, members]) => !members.some((s) => liveIds.has(s.localId)))
+    .filter(([instanceId, members]) =>
+      !liveAgencyInstanceIds.has(instanceId) && !members.some((s) => liveIds.has(s.localId)),
+    )
     .map(([instanceId, members]) => {
       const entrySession = members.find((s) => !s.initialPrompt.startsWith('Agency "'))
       const projectPath = members[0]?.projectPath ?? ''
@@ -136,6 +148,7 @@ const allSessions = computed((): SessionCardData[] => {
         subAgentCount: 0,
         messageCount: null,
         events: [],
+        planState: entrySession?.planState ?? null,
       }
     })
 
@@ -160,6 +173,7 @@ const allSessions = computed((): SessionCardData[] => {
         subAgentCount: 0,
         messageCount: s.messageCount,
         events: [],
+        planState: null,
       }
     })
 

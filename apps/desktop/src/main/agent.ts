@@ -18,7 +18,9 @@ import type {
   LiveSessionStatus,
   LiveSessionStatusUpdate,
   PermissionMode,
+  PlanTodo,
   RoleEffort,
+  Session,
   StartSessionParams,
 } from '../shared/ipc-contract'
 import { AsyncQueue } from './async-queue'
@@ -53,6 +55,8 @@ export interface ActiveSession {
   workItemTitle: string | null
   /** Full SDK message history for orchestrator routing. */
   events: SDKMessage[]
+  /** Last-known TodoWrite todo list, kept in sync during the session. */
+  planState: PlanTodo[] | null
   /** Resolvers awaiting next terminal status (idle/suspended/completed/error/terminated). */
   idleWaiters: Array<(status: LiveSessionStatus) => void>
   interrupted: boolean
@@ -175,12 +179,37 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             status: session.status,
             workItemKey: session.workItemKey,
             workItemTitle: session.workItemTitle,
+            planState: null,
             title: null,
           }, session.roleInstanceIndex ?? undefined)
         }
       }
 
       broadcastEvent({ sessionId: session.id, message: msg })
+
+      // Persist latest TodoWrite state so plan progress survives restarts.
+      const rawMsg = msg as unknown as Record<string, unknown>
+      if (rawMsg['type'] === 'assistant') {
+        const content = rawMsg['content'] as unknown[] | undefined
+        if (Array.isArray(content)) {
+          const todoBlock = content.find((b) => {
+            const block = b as Record<string, unknown>
+            return block['type'] === 'tool_use' && block['name'] === 'TodoWrite'
+          }) as Record<string, unknown> | undefined
+          if (todoBlock) {
+            const input = todoBlock['input'] as { todos?: unknown[] } | undefined
+            if (Array.isArray(input?.todos)) {
+              const todos = input!.todos.filter((t): t is PlanTodo => {
+                if (typeof t !== 'object' || t === null) return false
+                const o = t as Record<string, unknown>
+                return typeof o['content'] === 'string' && typeof o['status'] === 'string'
+              })
+              session.planState = todos
+              registry.updateSession(session.id, { planState: todos })
+            }
+          }
+        }
+      }
 
       if (msg.type === 'result') {
         const resultMsg = msg as unknown as {
@@ -268,10 +297,18 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       setStatus(session, 'error', message)
     }
   } finally {
-    registry.updateSession(session.id, {
+    const updateData: Partial<Session> = {
       status: session.status,
       lastActivityAt: Date.now(),
-    })
+    }
+    if (session.planState) {
+      const hasInProgress = session.status !== 'completed' &&
+        session.planState.some(t => t.status === 'in_progress')
+      updateData.planState = hasInProgress
+        ? session.planState.map(t => t.status === 'in_progress' ? { ...t, status: 'partial' as const } : t)
+        : session.planState
+    }
+    registry.updateSession(session.id, updateData)
     active.delete(session.id)
   }
 }
@@ -318,6 +355,24 @@ export async function startSession(
         ...(item.assignee ? [`Assignee: ${item.assignee}`] : []),
       ].join('\n')
       systemPromptAppend = [itemContext, systemPromptAppend].filter(Boolean).join('\n\n')
+    }
+  }
+
+  if (params.resumeSdkSessionId) {
+    const prevSession = registry.getSessionBySdkId(params.resumeSdkSessionId)
+    if (prevSession?.planState) {
+      const incomplete = prevSession.planState.filter(
+        (t) => t.status === 'partial' || t.status === 'in_progress',
+      )
+      if (incomplete.length > 0) {
+        const resumeCtx = [
+          '\n\n## Resumed session — incomplete steps',
+          'Your previous session was interrupted. The following plan steps were not finished:',
+          ...incomplete.map((t) => `- ${t.content}`),
+          '\nResume from the first incomplete step above.',
+        ].join('\n')
+        systemPromptAppend = (systemPromptAppend ?? '') + resumeCtx
+      }
     }
   }
 
@@ -391,6 +446,7 @@ export async function startSession(
     workItemKey: params.workItemKey ?? null,
     workItemTitle: params.workItemTitle ?? null,
     events: [],
+    planState: null,
     idleWaiters: [],
     interrupted: false,
     turnCount: getPersistedTurnCount(id),

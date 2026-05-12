@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, lt } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencyHandoffs, sessions } from './db/schema'
-import type { AgencyScope, LiveSessionStatus, RoleEffort, Session } from '../shared/ipc-contract'
+import type { AgencyScope, LiveSessionStatus, PlanTodo, RoleEffort, Session } from '../shared/ipc-contract'
 export type { Session }
 
 const SESSION_CAP = 50
@@ -32,6 +32,7 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
     title: row.title ?? null,
     workItemKey: row.workItemKey ?? null,
     workItemTitle: row.workItemTitle ?? null,
+    planState: row.planState ? (JSON.parse(row.planState) as PlanTodo[]) : null,
     status: row.status as LiveSessionStatus,
     startedAt: row.startedAt,
     lastActivityAt: row.lastActivityAt,
@@ -88,7 +89,12 @@ export function registerSession(session: Session, roleInstanceIndex?: number): v
 }
 
 export function updateSession(localId: string, partial: Partial<Session>): void {
-  getDb().update(sessions).set(partial as Partial<typeof sessions.$inferInsert>).where(eq(sessions.localId, localId)).run()
+  const { planState, ...rest } = partial
+  const dbSet: Partial<typeof sessions.$inferInsert> = rest as Partial<typeof sessions.$inferInsert>
+  if ('planState' in partial) {
+    dbSet.planState = planState ? JSON.stringify(planState) : null
+  }
+  getDb().update(sessions).set(dbSet).where(eq(sessions.localId, localId)).run()
 }
 
 export function getSession(localId: string): Session | null {
@@ -177,6 +183,11 @@ export function getHandoffsByRole(agencyInstanceId: string): Map<string, Handoff
 export function getSessionRoleInstanceIndex(localId: string): number | null {
   const row = getDb().select({ roleInstanceIndex: sessions.roleInstanceIndex }).from(sessions).where(eq(sessions.localId, localId)).get()
   return row?.roleInstanceIndex ?? null
+}
+
+export function getSessionBySdkId(sdkSessionId: string): Session | undefined {
+  const row = getDb().select().from(sessions).where(eq(sessions.sdkSessionId, sdkSessionId)).get()
+  return row ? rowToSession(row) : undefined
 }
 
 export function pruneExpired(thresholdDays: number | null): void {

@@ -96,6 +96,17 @@ export interface FsEntry {
   isDirectory: boolean
 }
 
+// ─── Plan todos ─────────────────────────────────────────────────────────────
+
+export type PlanTodoStatus = 'pending' | 'in_progress' | 'completed' | 'partial'
+
+export interface PlanTodo {
+  id: string
+  content: string
+  status: PlanTodoStatus
+  priority?: string
+}
+
 // ─── Sessions (historical, JSONL-backed) ────────────────────────────────────
 
 export interface SessionSummary {
@@ -190,6 +201,7 @@ export interface Session {
   workItemKey: string | null
   workItemTitle: string | null
   title: string | null
+  planState: PlanTodo[] | null
 }
 
 export interface StartSessionParams {
@@ -348,6 +360,7 @@ export interface StartAgencyParams {
   agencyId: string
   agencyScope: AgencyScope
   initialPrompt: string
+  initialAttachments?: Attachment[]
   useWorktree: boolean
   branch?: string
   model?: string
