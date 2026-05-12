@@ -9,16 +9,19 @@ export function useSettingsQuery() {
   const { data: appSettings, isLoading: isLoadingSettings } = useQuery({
     queryKey: queryKeys.settings.app(),
     queryFn: () => window.agentkeeper.settings.get(),
+    staleTime: 0,
   })
 
   const { data: apiKeyStored, isLoading: isLoadingKey } = useQuery({
     queryKey: queryKeys.settings.secrets(),
     queryFn: () => window.agentkeeper.secrets.has('anthropicApiKey'),
+    staleTime: 0,
   })
 
   const { data: githubConfig, isLoading: isLoadingGithub } = useQuery({
     queryKey: queryKeys.settings.github(),
     queryFn: () => window.agentkeeper.github.getConfig(),
+    staleTime: 0,
   })
 
   const isLoading = computed(
