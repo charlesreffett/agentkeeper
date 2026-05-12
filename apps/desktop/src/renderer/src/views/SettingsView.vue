@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,7 @@ import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { queryKeys } from '@/lib/queryKeys'
 import PageHeader from '@/components/PageHeader.vue'
 
+const router = useRouter()
 const queryClient = useQueryClient()
 const layoutStore = useLayoutStore()
 const { focusedProject } = useProjectsQuery()
@@ -27,7 +29,19 @@ const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
 const apiKeyInput = ref('')
 const keyStored = ref(false)
 const settings = ref<AppSettings | null>(null)
+const baseline = ref<AppSettings | null>(null)
 const saving = ref(false)
+
+const DIRTY_FIELDS = [
+  'defaultModel', 'defaultEffort', 'defaultUseWorktree',
+  'enterToSend', 'sendModifier', 'sessionExpiryDays',
+] as const satisfies ReadonlyArray<keyof AppSettings>
+
+const isDirty = computed(() => {
+  if (apiKeyInput.value.trim()) return true
+  if (!settings.value || !baseline.value) return false
+  return DIRTY_FIELDS.some((f) => settings.value![f] !== baseline.value![f])
+})
 
 const isMac = /Mac/i.test(navigator.platform)
 const capturing = ref(false)
@@ -108,7 +122,9 @@ function seedFromQuery() {
   const s = storedSettings.value
   if (s) {
     const effort = ROLE_EFFORT_VALUES.includes(s.defaultEffort) ? s.defaultEffort : 'medium'
-    settings.value = { ...s, defaultEffort: effort }
+    const seeded = { ...s, defaultEffort: effort }
+    settings.value = seeded
+    baseline.value = { ...seeded }
   }
   if (storedApiKeyStored.value != null) keyStored.value = storedApiKeyStored.value
   if (storedGithubConfig.value != null) githubRepos.value = storedGithubConfig.value.repos ?? []
@@ -121,6 +137,14 @@ watch(storedSettings, (s) => {
 watch(storedApiKeyStored, (v) => {
   if (v != null) keyStored.value = v
 })
+
+function cancel() {
+  if (baseline.value) settings.value = { ...baseline.value }
+  apiKeyInput.value = ''
+  newRepoInput.value = ''
+  newRepoError.value = null
+  router.back()
+}
 
 async function save() {
   saving.value = true
@@ -523,14 +547,15 @@ async function onReset() {
           </div>
         </details>
 
-        <!-- Footer -->
-        <footer class="flex items-center justify-end gap-2 pt-2">
-          <Button size="sm" :disabled="saving" @click="save">
-            {{ saving ? 'Saving…' : 'Save' }}
-          </Button>
-        </footer>
-
       </div>
     </div>
+
+    <!-- Sticky footer: always visible, outside scroll area -->
+    <footer class="shrink-0 border-t bg-background px-6 py-3 flex items-center justify-end gap-2">
+      <Button variant="ghost" size="sm" @click="cancel">Cancel</Button>
+      <Button size="sm" :disabled="saving || !isDirty" @click="save">
+        {{ saving ? 'Saving…' : 'Save' }}
+      </Button>
+    </footer>
   </div>
 </template>
