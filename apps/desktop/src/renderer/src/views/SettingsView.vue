@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useQueryClient } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 import { useLayoutStore } from '@/stores/layout'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSettingsQuery } from '@/composables/useSettingsQuery'
+import { queryKeys } from '@/lib/queryKeys'
 import PageHeader from '@/components/PageHeader.vue'
 
+const queryClient = useQueryClient()
 const layoutStore = useLayoutStore()
 const { focusedProject } = useProjectsQuery()
 const { settings: storedSettings, apiKeyStored: storedApiKeyStored, githubConfig: storedGithubConfig, isLoading, invalidateAll } = useSettingsQuery()
@@ -71,12 +74,14 @@ async function addRepo() {
   }
   githubRepos.value = [...githubRepos.value, val]
   await window.agentkeeper.github.setConfig({ repos: githubRepos.value })
+  queryClient.setQueryData(queryKeys.settings.github(), { repos: githubRepos.value })
   newRepoInput.value = ''
 }
 
 async function removeRepo(repo: string) {
   githubRepos.value = githubRepos.value.filter((r) => r !== repo)
   await window.agentkeeper.github.setConfig({ repos: githubRepos.value })
+  queryClient.setQueryData(queryKeys.settings.github(), { repos: githubRepos.value })
 }
 
 // Danger-zone state
@@ -106,7 +111,7 @@ function seedFromQuery() {
 }
 
 watch(storedSettings, (s) => {
-  if (s && !settings.value) seedFromQuery()
+  if (s) seedFromQuery()
 }, { immediate: true })
 
 watch(storedApiKeyStored, (v) => {
@@ -131,16 +136,20 @@ async function save() {
         'anthropicApiKey',
         apiKeyInput.value.trim(),
       )
+      // Immediately reflect in cache so navigate-away-and-back shows current state.
+      queryClient.setQueryData(queryKeys.settings.secrets(), true)
     }
     if (settings.value) {
-      await window.agentkeeper.settings.set({
+      const toSave = {
         defaultModel: settings.value.defaultModel,
         defaultEffort: settings.value.defaultEffort,
         defaultUseWorktree: settings.value.defaultUseWorktree,
         enterToSend: settings.value.enterToSend,
         sendModifier: settings.value.sendModifier,
         sessionExpiryDays: settings.value.sessionExpiryDays,
-      })
+      }
+      await window.agentkeeper.settings.set(toSave)
+      queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
     }
     message.value = 'Saved.'
     refresh()
