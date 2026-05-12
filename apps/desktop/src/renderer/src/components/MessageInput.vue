@@ -195,6 +195,8 @@ async function handlePaste(event: ClipboardEvent) {
 defineExpose({
   getText: () => text.value,
   setText: (v: string) => { text.value = v },
+  getAttachments: () => attachments.value.map(toRaw),
+  setAttachments: (v: Attachment[]) => { attachments.value = v },
 })
 </script>
 

@@ -148,11 +148,12 @@ watch(
   selectedAgentLocalId,
   (newId, oldId) => {
     if (oldId && messageInputRef.value) {
-      store.setDraftMessage(oldId, messageInputRef.value.getText())
+      store.setDraftMessage(oldId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
     }
     void nextTick(() => {
       const s = store.getSession(newId)
       messageInputRef.value?.setText(s?.draftMessage ?? '')
+      messageInputRef.value?.setAttachments(s?.draftAttachments ?? [])
     })
     // Reset scroll and turn timing when switching agents.
     isAtBottom.value = true
@@ -166,7 +167,7 @@ watch(
 
 onBeforeUnmount(() => {
   if (messageInputRef.value) {
-    store.setDraftMessage(selectedAgentLocalId.value, messageInputRef.value.getText())
+    store.setDraftMessage(selectedAgentLocalId.value, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
   }
 })
 
