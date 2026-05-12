@@ -21,7 +21,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const gradient = computed(() => {
   const sum = props.segments.reduce((s, seg) => s + seg.value, 0)
-  if (sum === 0) return `conic-gradient(var(--color-muted) 0deg 360deg)`
+  if (sum === 0) return `conic-gradient(var(--border) 0deg 360deg)`
   let angle = 0
   const stops = props.segments.map((seg) => {
     const deg = (seg.value / sum) * 360
@@ -40,7 +40,7 @@ const gradient = computed(() => {
       class="absolute inset-0 m-auto rounded-full bg-card flex items-center justify-center"
       :style="{ width: `${size * (1 - thickness)}px`, height: `${size * (1 - thickness)}px` }"
     >
-      <span class="text-sm font-bold">{{ total }}</span>
+      <span v-if="total > 0" class="text-sm font-bold">{{ total }}</span>
     </div>
   </div>
 </template>
