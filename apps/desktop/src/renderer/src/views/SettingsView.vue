@@ -123,30 +123,39 @@ watch(storedApiKeyStored, (v) => {
 })
 
 async function save() {
+  console.log('[save] invoked, settings.value:', settings.value)
   saving.value = true
   try {
-    if (apiKeyInput.value.trim()) {
-      await window.agentkeeper.secrets.set('anthropicApiKey', apiKeyInput.value.trim())
-      queryClient.setQueryData(queryKeys.settings.secrets(), true)
-      apiKeyInput.value = ''
-    }
-    if (settings.value) {
-      const toSave: Partial<AppSettings> = {
-        defaultModel: settings.value.defaultModel,
-        defaultEffort: settings.value.defaultEffort,
-        defaultUseWorktree: settings.value.defaultUseWorktree,
-        enterToSend: settings.value.enterToSend,
-        sendModifier: settings.value.sendModifier,
-        sessionExpiryDays: settings.value.sessionExpiryDays,
+    try {
+      if (apiKeyInput.value.trim()) {
+        await window.agentkeeper.secrets.set('anthropicApiKey', apiKeyInput.value.trim())
+        queryClient.setQueryData(queryKeys.settings.secrets(), true)
+        apiKeyInput.value = ''
       }
-      await window.agentkeeper.settings.set(toSave)
-      queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
+      if (settings.value) {
+        const toSave: Partial<AppSettings> = {
+          defaultModel: settings.value.defaultModel,
+          defaultEffort: settings.value.defaultEffort,
+          defaultUseWorktree: settings.value.defaultUseWorktree,
+          enterToSend: settings.value.enterToSend,
+          sendModifier: settings.value.sendModifier,
+          sessionExpiryDays: settings.value.sessionExpiryDays,
+        }
+        console.log('[save] calling IPC settings.set with:', toSave)
+        await window.agentkeeper.settings.set(toSave)
+        console.log('[save] IPC resolved')
+        queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
+      }
+      console.log('[save] calling toast.success')
+      toast.success('Settings saved')
+    } catch (e) {
+      console.error('[save] caught error:', e)
+      toast.error('Failed to save settings', {
+        description: e instanceof Error ? e.message : String(e),
+      })
     }
-    toast.success('Settings saved')
   } catch (e) {
-    toast.error('Failed to save settings', {
-      description: e instanceof Error ? e.message : String(e),
-    })
+    console.error('[save] unhandled:', e)
   } finally {
     saving.value = false
   }
