@@ -66,6 +66,10 @@ export const useSessionStore = defineStore('sessions', () => {
   interface DayUsage {
     tokens: number
     costUsd: number
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheCreationTokens: number
   }
 
   function localDateKey(date = new Date()): string {
@@ -182,7 +186,7 @@ export const useSessionStore = defineStore('sessions', () => {
     staleTime: 60_000,
   }).then(async (rows) => {
     for (const row of rows) {
-      dailyUsage[row.date] = { tokens: row.tokens, costUsd: row.costUsd }
+      dailyUsage[row.date] = { tokens: row.tokens, costUsd: row.costUsd, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
     }
 
     // One-time migration: import per-day totals that were stored in localStorage
@@ -199,7 +203,7 @@ export const useSessionStore = defineStore('sessions', () => {
             if (v.tokens > 0) {
               toImport.push({ date, tokens: v.tokens, costUsd: v.costUsd })
               if (!dailyUsage[date]) {
-                dailyUsage[date] = { tokens: v.tokens, costUsd: v.costUsd }
+                dailyUsage[date] = { tokens: v.tokens, costUsd: v.costUsd, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
               } else {
                 dailyUsage[date]!.tokens += v.tokens
                 dailyUsage[date]!.costUsd += v.costUsd
@@ -851,12 +855,21 @@ export const useSessionStore = defineStore('sessions', () => {
     const todayKey = localDateKey()
     const today = dailyUsage[todayKey] ?? { tokens: 0, costUsd: 0 }
     const now = new Date()
-    const history: Array<{ date: string; tokens: number; costUsd: number }> = []
+    const history: Array<{ date: string; tokens: number; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }> = []
     for (let i = 29; i >= 0; i--) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
       const key = localDateKey(d)
-      history.push({ date: key, tokens: dailyUsage[key]?.tokens ?? 0, costUsd: dailyUsage[key]?.costUsd ?? 0 })
+      const day = dailyUsage[key]
+      history.push({
+        date: key,
+        tokens: day?.tokens ?? 0,
+        costUsd: day?.costUsd ?? 0,
+        inputTokens: day?.inputTokens ?? 0,
+        outputTokens: day?.outputTokens ?? 0,
+        cacheReadTokens: day?.cacheReadTokens ?? 0,
+        cacheCreationTokens: day?.cacheCreationTokens ?? 0,
+      })
     }
     return {
       tokensToday: today.tokens,
@@ -1024,9 +1037,13 @@ export const useSessionStore = defineStore('sessions', () => {
     const costUsd = u.totalCostUsd
     if (tokens > 0 || costUsd > 0) {
       const key = localDateKey()
-      if (!dailyUsage[key]) dailyUsage[key] = { tokens: 0, costUsd: 0 }
+      if (!dailyUsage[key]) dailyUsage[key] = { tokens: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
       dailyUsage[key]!.tokens += tokens
       dailyUsage[key]!.costUsd += costUsd
+      dailyUsage[key]!.inputTokens += u.inputTokens
+      dailyUsage[key]!.outputTokens += u.outputTokens
+      dailyUsage[key]!.cacheReadTokens += u.cacheReadInputTokens
+      dailyUsage[key]!.cacheCreationTokens += u.cacheCreationInputTokens
 
       // Bucket per-session so the agent tree can display per-agent token counts.
       if (!sessionTokens[u.sessionId]) {
