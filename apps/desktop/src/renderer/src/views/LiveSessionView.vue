@@ -7,8 +7,6 @@ import {
   KeyRound,
   LayoutGrid,
   MoreHorizontal,
-  PanelBottomClose,
-  PanelBottomOpen,
 } from 'lucide-vue-next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Transcript from '@/components/transcript/Transcript.vue'
@@ -16,7 +14,6 @@ import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
-import AgentTreePanel from '@/components/session/AgentTreePanel.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -368,30 +365,6 @@ function onShowAll() {
   verbosityState.value = { mode: 'verbose', toggles: { ...MODE_DEFAULTS.verbose } }
 }
 
-// ─── Status bar collapse (persisted via localStorage) ────────────────────────
-
-const STATUS_BAR_KEY = 'agentkeeper.ui.statusBarExpanded'
-
-function readStatusBarExpanded(): boolean {
-  try {
-    const v = localStorage.getItem(STATUS_BAR_KEY)
-    return v === null ? true : v !== 'false'
-  } catch {
-    return true
-  }
-}
-
-const statusBarExpanded = ref(readStatusBarExpanded())
-
-function toggleStatusBar() {
-  statusBarExpanded.value = !statusBarExpanded.value
-  try {
-    localStorage.setItem(STATUS_BAR_KEY, String(statusBarExpanded.value))
-  } catch {
-    // localStorage unavailable — non-fatal
-  }
-}
-
 // ─── Side panel collapse (persisted via localStorage) ────────────────────────
 
 const PANEL_KEY = 'agentkeeper.ui.panels'
@@ -413,13 +386,7 @@ function writePanelCollapsed(name: string, value: boolean) {
   }
 }
 
-const leftCollapsed = ref(readPanelCollapsed('left', false))
 const rightCollapsed = ref(readPanelCollapsed('right', false))
-
-function setLeftCollapsed(v: boolean) {
-  leftCollapsed.value = v
-  writePanelCollapsed('left', v)
-}
 
 function setRightCollapsed(v: boolean) {
   rightCollapsed.value = v
@@ -460,16 +427,6 @@ const currentToolName = computed((): string | null => {
 
 <template>
   <div v-if="session" class="h-full flex overflow-hidden">
-
-    <!-- ── Left column: Agent Tree ─────────────────────────────────────────── -->
-    <AgentTreePanel
-      :collapsed="leftCollapsed"
-      :root-session-id="props.liveId"
-      :selected-id="selectedAgentLocalId"
-      @collapse="setLeftCollapsed(true)"
-      @expand="setLeftCollapsed(false)"
-      @update:selected-id="selectedAgentLocalId = $event"
-    />
 
     <!-- ── Center column: Chat ────────────────────────────────────────────── -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -578,14 +535,6 @@ const currentToolName = computed((): string | null => {
         v-if="!isDraft"
         class="border-b border-border/50 px-4 py-1.5 shrink-0 flex items-center justify-between"
       >
-        <button
-          class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors select-none"
-          :title="statusBarExpanded ? 'Collapse status bar' : 'Expand status bar'"
-          @click="toggleStatusBar"
-        >
-          <PanelBottomClose v-if="statusBarExpanded" class="size-3.5" />
-          <PanelBottomOpen v-else class="size-3.5" />
-        </button>
         <VerbosityFilter
           :model-value="verbosityState"
           :hidden-count="totalHiddenCount"
@@ -661,9 +610,9 @@ const currentToolName = computed((): string | null => {
         </Transition>
       </div>
 
-      <!-- Processing status bar — outside scroll, always visible when expanded -->
+      <!-- Processing status bar -->
       <SessionStatusBar
-        v-if="!isDraft && statusBarExpanded"
+        v-if="!isDraft"
         :status="session.status"
         :current-tool-name="currentToolName"
         :turn-started-at="turnStartedAt"
@@ -741,8 +690,10 @@ const currentToolName = computed((): string | null => {
     <ContextPanel
       :collapsed="rightCollapsed"
       :root-session-id="props.liveId"
+      :selected-id="selectedAgentLocalId"
       @collapse="setRightCollapsed(true)"
       @expand="setRightCollapsed(false)"
+      @update:selected-id="selectedAgentLocalId = $event"
     />
 
   </div>
