@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CheckSquare, Filter, Layers, Plus, RefreshCw, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import PageHeader from '@/components/PageHeader.vue'
@@ -34,6 +34,21 @@ const queryClient = useQueryClient()
 const { persistedSessions, historicalSessions, isLoading: loading, invalidateAll: invalidateSessionsList } = useSessionsListQuery(projects)
 
 const statusCounts = computed(() => sessionStore.statusCounts)
+
+watch(
+  persistedSessions,
+  (sessions) => {
+    for (const s of sessions) {
+      if (
+        (s.status === 'running' || s.status === 'starting') &&
+        !sessionStore.getSession(s.localId)
+      ) {
+        sessionStore.trackRunning(s)
+      }
+    }
+  },
+  { immediate: true },
+)
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -575,6 +575,36 @@ export const useSessionStore = defineStore('sessions', () => {
     return localId
   }
 
+  function trackRunning(persisted: Session): void {
+    const localId = persisted.localId
+    if (sessions[localId]) return
+    sessions[localId] = {
+      ...persisted,
+      events: [],
+      agentEvents: {},
+      agents: [],
+      error: null,
+      agencyPrompt: null,
+      resumedFromSdkSessionId: null,
+      interruptedAt: null,
+      isDraft: false,
+      draftConfig: null,
+      draftMessage: '',
+      draftAttachments: [],
+    }
+    flushBuffer(localId)
+    void window.agentkeeper.sessions.getAgents(localId).then((agentList) => {
+      const s = sessions[localId]
+      if (!s) return
+      s.agents = agentList
+      for (const a of agentList) {
+        if (!s.agentEvents[a.localId]) s.agentEvents[a.localId] = []
+      }
+      const entryAgent = agentList.find(a => a.isEntryPoint) ?? agentList[0]
+      if (entryAgent?.sdkSessionId) s.resumedFromSdkSessionId = entryAgent.sdkSessionId
+    })
+  }
+
   function openHistorical(projectPath: string, summary: SessionSummary): string {
     const existing = Object.values(sessions).find(
       (s) => s.resumedFromSdkSessionId === summary.id,
@@ -1230,6 +1260,7 @@ export const useSessionStore = defineStore('sessions', () => {
     clearFocus,
     registerExternal,
     openPersisted,
+    trackRunning,
     openHistorical,
     openPersistedAgency,
     resumeFromHistory,
