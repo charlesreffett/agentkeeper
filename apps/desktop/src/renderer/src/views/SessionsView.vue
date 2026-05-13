@@ -35,19 +35,6 @@ const { persistedSessions, historicalSessions, isLoading: loading, invalidateAll
 
 const statusCounts = computed(() => sessionStore.statusCounts)
 
-// ── Agency groups derived from persistedSessions ───────────────────────────
-
-const agencyGroups = computed(() => {
-  const groups = new Map<string, typeof persistedSessions.value[number][]>()
-  for (const s of persistedSessions.value) {
-    if (!s.agencyInstanceId) continue
-    let list = groups.get(s.agencyInstanceId)
-    if (!list) { list = []; groups.set(s.agencyInstanceId, list) }
-    list.push(s)
-  }
-  return groups
-})
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function pathToProjectName(projectPath: string): string {
@@ -60,9 +47,7 @@ function pathToProjectName(projectPath: string): string {
 
 const allSessions = computed((): SessionCardData[] => {
   const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
-  // Historical JSONL ids that already have a resumable persisted entry → skip in historical
-  const persistedSdkIds = new Set(persistedSessions.value.map((s) => s.sdkSessionId).filter((id): id is string => id !== null))
-  // SDK session ids already opened in-memory via openHistorical → also skip in historical
+  // SDK session ids already opened in-memory via openHistorical → skip in historical
   const liveResumeSdkIds = new Set(
     Object.values(sessionStore.sessions)
       .map((s) => s.resumedFromSdkSessionId)
@@ -91,8 +76,9 @@ const allSessions = computed((): SessionCardData[] => {
     }
   })
 
+  // All persisted sessions (including agency ones) rendered uniformly.
   const previous: SessionCardData[] = persistedSessions.value
-    .filter((s) => !s.agencyInstanceId && !liveIds.has(s.localId))
+    .filter((s) => !liveIds.has(s.localId))
     .map((s) => {
       const name = pathToProjectName(s.projectPath)
       return {
@@ -108,53 +94,16 @@ const allSessions = computed((): SessionCardData[] => {
         lastActivityAt: s.lastActivityAt,
         workItemKey: s.workItemKey,
         workItemTitle: s.workItemTitle,
-        subAgentCount: 0,
+        subAgentCount: s.agentCount ?? 0,
         messageCount: null,
         events: [],
         planState: s.planState ?? null,
       }
     })
 
-  // Agency instance IDs that are active in-memory — used to suppress persisted
-  // agency cards that race ahead of DB registration completing for all members.
-  const liveAgencyInstanceIds = new Set(
-    Object.values(sessionStore.sessions)
-      .filter((s) => s.agencyInstanceId && !s.isDraft)
-      .map((s) => s.agencyInstanceId!),
-  )
-
-  const agencies: SessionCardData[] = [...agencyGroups.value.entries()]
-    .filter(([instanceId, members]) =>
-      !liveAgencyInstanceIds.has(instanceId) && !members.some((s) => liveIds.has(s.localId)),
-    )
-    .map(([instanceId, members]) => {
-      const entrySession = members.find((s) => !s.initialPrompt.startsWith('Agency "'))
-      const projectPath = members[0]?.projectPath ?? ''
-      const name = pathToProjectName(projectPath)
-      const lastActivityAt = Math.max(...members.map((s) => s.lastActivityAt))
-      return {
-        id: instanceId,
-        title: entrySession?.workItemTitle ?? entrySession?.title ?? entrySession?.initialPrompt.split('\n')[0] ?? members[0]?.agencyName ?? 'Agency session',
-        status: 'inactive' as const,
-        source: 'agency' as const,
-        projectPath,
-        projectName: name,
-        projectColor: projectColor(name),
-        model: null,
-        branch: entrySession?.branch ?? members[0]?.branch ?? null,
-        lastActivityAt,
-        workItemKey: null,
-        workItemTitle: entrySession?.workItemTitle ?? null,
-        subAgentCount: 0,
-        messageCount: null,
-        events: [],
-        planState: entrySession?.planState ?? null,
-      }
-    })
-
-  // Historical JSONL — skip any that already appear as a persisted or in-memory live session
+  // Historical JSONL — skip any already opened in-memory
   const historical: SessionCardData[] = historicalSessions.value
-    .filter(({ summary: s }) => !persistedSdkIds.has(s.id) && !liveResumeSdkIds.has(s.id))
+    .filter(({ summary: s }) => !liveResumeSdkIds.has(s.id))
     .map(({ projectPath, summary: s }) => {
       const name = pathToProjectName(projectPath)
       return {
@@ -177,7 +126,7 @@ const allSessions = computed((): SessionCardData[] => {
       }
     })
 
-  return [...live, ...previous, ...agencies, ...historical].sort(
+  return [...live, ...previous, ...historical].sort(
     (a, b) => b.lastActivityAt - a.lastActivityAt,
   )
 })
@@ -314,18 +263,12 @@ async function deleteSingleSession(card: SessionCardData) {
       sessionStore.dismiss(card.id)
       break
     case 'persisted':
+    case 'agency':
+      // Agency sessions are single DB rows after the session-agent split;
+      // CASCADE delete removes agents automatically.
       await window.agentkeeper.sessions.deletePersisted(card.id)
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.persisted(card.projectPath) })
       break
-    case 'agency': {
-      const members = agencyGroups.value.get(card.id) ?? []
-      await Promise.all(members.map((m) => window.agentkeeper.sessions.deletePersisted(m.localId)))
-      const affectedPaths = new Set(members.map((m) => m.projectPath))
-      for (const path of affectedPaths) {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.persisted(path) })
-      }
-      break
-    }
     case 'historical':
       await window.agentkeeper.sessions.deleteHistorical(card.projectPath, card.id)
       void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.historical(card.projectPath) })
@@ -358,19 +301,12 @@ function handleCardClick(card: SessionCardData) {
     case 'live':
       void router.push(`/sessions/${card.id}`)
       break
-    case 'persisted': {
+    case 'persisted':
+    case 'agency': {
       const session = persistedSessions.value.find((s) => s.localId === card.id)
       if (session) {
         const localId = sessionStore.openPersisted(session)
         void router.push(`/sessions/${localId}`)
-      }
-      break
-    }
-    case 'agency': {
-      const members = agencyGroups.value.get(card.id) ?? []
-      if (members.length > 0) {
-        const localId = sessionStore.openPersistedAgency(members)
-        if (localId) void router.push(`/sessions/${localId}`)
       }
       break
     }

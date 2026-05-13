@@ -18,7 +18,7 @@ const activeSparkline = useTimeSeries(() => runningCount.value, { intervalMs: 30
 
 const subAgentStats = computed(() => {
   const runningSessions = sessionStore.visibleSessions.filter(
-    (s) => (s.status === 'running' || s.status === 'starting') && s.agencyInstanceId,
+    (s) => (s.status === 'running' || s.status === 'starting') && s.agencyId,
   )
   return {
     total: runningSessions.reduce((sum, s) => sum + sessionStore.subAgentCount(s), 0),
@@ -80,7 +80,7 @@ const projectSegments = computed(() => {
     pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
   }
   for (const s of persistedSessions.value) {
-    if (!liveIds.has(s.localId) && !s.agencyInstanceId) {
+    if (!liveIds.has(s.localId)) {
       pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
     }
   }

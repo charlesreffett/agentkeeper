@@ -147,14 +147,14 @@ async function openSession(s: LiveSession) {
               </div>
 
               <div
-                v-if="s.agencyName || s.roleName || s.branch"
+                v-if="s.agencyName || s.agents.find(a => a.isEntryPoint)?.roleName || s.branch"
                 class="flex flex-wrap gap-x-2 gap-y-0.5 text-[11px]"
               >
                 <span v-if="s.agencyName" class="text-foreground/80">
                   ◎ {{ s.agencyName }}
                 </span>
-                <span v-if="s.roleName" class="text-muted-foreground">
-                  {{ s.roleName }}
+                <span v-if="s.agents.find(a => a.isEntryPoint)?.roleName" class="text-muted-foreground">
+                  {{ s.agents.find(a => a.isEntryPoint)?.roleName }}
                 </span>
                 <span
                   v-if="s.branch"

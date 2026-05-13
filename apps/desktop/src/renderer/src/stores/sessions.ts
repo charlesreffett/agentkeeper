@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
-import { computed, reactive, ref, toRaw, watch } from 'vue'
+import { computed, reactive, ref, toRaw } from 'vue'
 import type {
   Agency,
+  Agent,
   Attachment,
   LiveSessionStatus,
   PermissionMode,
@@ -30,15 +31,31 @@ export interface DraftSessionConfig {
 
 export interface LiveSession extends Session {
   // Runtime-only — not persisted, not IPC-transferable
+  /** All events in chronological order — kept for backward compat with SessionCard.vue. */
   events: TranscriptEvent[]
+  /** Per-agent event streams. Key = agentLocalId. */
+  agentEvents: Record<string, TranscriptEvent[]>
+  /** Agents running within this session. */
+  agents: Agent[]
   error: string | null
   agencyPrompt: string | null
+  /** sdkSessionId of the entry-point agent (for resume detection). */
   resumedFromSdkSessionId: string | null
   interruptedAt: number | null
   isDraft: boolean
   draftConfig: DraftSessionConfig | null
   draftMessage: string
   draftAttachments: Attachment[]
+}
+
+function computeSessionStatus(agentList: Agent[]): LiveSessionStatus {
+  if (agentList.length === 0) return 'idle'
+  if (agentList.some(a => a.status === 'running' || a.status === 'starting')) return 'running'
+  if (agentList.some(a => a.status === 'blocked')) return 'blocked'
+  if (agentList.every(a => a.status === 'completed')) return 'completed'
+  if (agentList.every(a => a.status === 'terminated')) return 'terminated'
+  if (agentList.some(a => a.status === 'error')) return 'error'
+  return 'idle'
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
@@ -62,15 +79,29 @@ async function loadDraft(localId: string): Promise<{ text: string; attachments: 
   }
 }
 
+interface DayUsage {
+  tokens: number
+  costUsd: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+}
+
+interface TokenStats {
+  tokens: number
+  costUsd: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  inputCostUsd: number
+  outputCostUsd: number
+  cacheReadCostUsd: number
+  cacheCreationCostUsd: number
+}
+
 export const useSessionStore = defineStore('sessions', () => {
-  interface DayUsage {
-    tokens: number
-    costUsd: number
-    inputTokens: number
-    outputTokens: number
-    cacheReadTokens: number
-    cacheCreationTokens: number
-  }
 
   function localDateKey(date = new Date()): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -78,28 +109,20 @@ export const useSessionStore = defineStore('sessions', () => {
 
   const dailyUsage = reactive<Record<string, DayUsage>>({})
 
-  // Per-session token/cost accumulator — keyed by localId, cleared on dismiss.
-  // Populated from `onStats` (each completed turn) and persisted to localStorage
-  // so it survives navigation and full app restarts.
-  const sessionTokens = reactive<Record<string, {
-    tokens: number
-    costUsd: number
-    inputTokens: number
-    outputTokens: number
-    cacheReadTokens: number
-    cacheCreationTokens: number
-    inputCostUsd: number
-    outputCostUsd: number
-    cacheReadCostUsd: number
-    cacheCreationCostUsd: number
-  }>>({})
+  // Per-session token/cost accumulator — keyed by sessionLocalId.
+  const sessionTokens = reactive<Record<string, TokenStats>>({})
+
+  // Per-agent token/cost accumulator — keyed by agentLocalId.
+  const agentTokens = reactive<Record<string, TokenStats>>({})
 
   // Per-session assistant-turn counter — incremented on each onStats (one per turn).
   const sessionTurns = reactive<Record<string, number>>({})
 
-  // In-progress token count for the currently executing SDK run — keyed by localId.
-  // Reset to 0 on `result` (onStats), at which point sessionTokens is authoritative.
+  // In-progress token count for the currently executing SDK run — keyed by agentLocalId.
   const sessionRunTokens = reactive<Record<string, number>>({})
+
+  // Real-time output token estimate built from content_block_delta text chunks.
+  const sessionOutputEstimates = reactive<Record<string, number>>({})
 
   // Bootstrap per-session stats from SQLite. First run: export localStorage keys
   // to main (one-time migration), then always use SQLite going forward.
@@ -131,7 +154,6 @@ export const useSessionStore = defineStore('sessions', () => {
         if (toImport.length > 0) {
           await window.agentkeeper.stats.importLegacy(toImport)
         }
-        // Clean up old localStorage keys
         for (const key of Object.keys(localStorage)) {
           if (key.startsWith('agentkeeper:stok:') || key.startsWith('agentkeeper:sturn:') || key.startsWith('agentkeeper:srun:')) {
             localStorage.removeItem(key)
@@ -140,7 +162,6 @@ export const useSessionStore = defineStore('sessions', () => {
         localStorage.setItem('agentkeeper:statsImported', '1')
       }
 
-      // Load all stats from SQLite (also primes the TSQ cache for subscribers)
       const rows = await queryClient.fetchQuery({
         queryKey: queryKeys.stats.all(),
         queryFn: () => window.agentkeeper.stats.getAll(),
@@ -167,19 +188,10 @@ export const useSessionStore = defineStore('sessions', () => {
     } catch { /* non-fatal — UI will populate once onStats fires */ }
   })()
 
-  // Real-time output token estimate built from content_block_delta text chunks
-  // (~4 chars per token). Zeroed on message_start (new response begins) and on
-  // message_delta (actual output_tokens land in sessionRunTokens). This gives
-  // a smoothly incrementing counter during streaming rather than a single jump
-  // at the end of each turn.
-  const sessionOutputEstimates = reactive<Record<string, number>>({})
-
   // Authoritative counts pushed from main at the end of each query turn.
   const activeAgentCount = ref(0)
   const runningSessionCount = ref(0)
 
-  // Load persisted daily costs from main-process ledger on startup.
-  // This runs async; until it resolves dailyUsage starts empty (then fills in).
   void queryClient.fetchQuery({
     queryKey: queryKeys.costs.daily(),
     queryFn: () => window.agentkeeper.costs.getDailySummary(),
@@ -189,10 +201,6 @@ export const useSessionStore = defineStore('sessions', () => {
       dailyUsage[row.date] = { tokens: row.tokens, costUsd: row.costUsd, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
     }
 
-    // One-time migration: import per-day totals that were stored in localStorage
-    // by the pre-ledger code (removed in commit 05e8021). localStorage stops
-    // updating at renderer hot-reload; ledger starts at main-process restart —
-    // the two windows are mutually exclusive so adding them is safe.
     if (!localStorage.getItem('agentkeeper:legacyImported')) {
       const legacy = localStorage.getItem('agentkeeper:dailyUsage')
       if (legacy) {
@@ -225,15 +233,15 @@ export const useSessionStore = defineStore('sessions', () => {
   const currentLiveId = ref<string | null>(null)
 
   // Buffer for status/event payloads that arrive before the session is
-  // registered in the store (race between main broadcasting init status
-  // and renderer adding the session after start() resolves).
+  // registered in the store.
   const buffered = reactive<
     Record<
       string,
       {
-        events: TranscriptEvent[]
+        events: Array<{ agentLocalId: string | null; event: TranscriptEvent }>
         status: LiveSessionStatus | null
         sdkSessionId: string | null
+        agentLocalId: string | null
         error: string | null
       }
     >
@@ -245,6 +253,7 @@ export const useSessionStore = defineStore('sessions', () => {
         events: [],
         status: null,
         sdkSessionId: null,
+        agentLocalId: null,
         error: null,
       }
     }
@@ -255,9 +264,17 @@ export const useSessionStore = defineStore('sessions', () => {
     const buf = buffered[id]
     const s = sessions[id]
     if (!buf || !s) return
-    if (buf.events.length) s.events.push(...buf.events)
+    for (const { agentLocalId, event } of buf.events) {
+      s.events.push(event)
+      const aId = agentLocalId ?? id
+      if (!s.agentEvents[aId]) s.agentEvents[aId] = []
+      s.agentEvents[aId]!.push(event)
+    }
     if (buf.status) s.status = buf.status
-    if (buf.sdkSessionId) s.sdkSessionId = buf.sdkSessionId
+    if (buf.sdkSessionId && buf.agentLocalId) {
+      const agent = s.agents.find(a => a.localId === buf.agentLocalId)
+      if (agent) agent.sdkSessionId = buf.sdkSessionId!
+    }
     if (buf.error) s.error = buf.error
     delete buffered[id]
   }
@@ -285,16 +302,13 @@ export const useSessionStore = defineStore('sessions', () => {
       roleName?: string | null
     }
     const localId = plain.localId ?? cryptoRandomId()
+    const now = Date.now()
 
     sessions[localId] = {
       localId,
-      sdkSessionId: null,
       projectPath: plain.projectPath,
       worktreePath: plain.worktreePath ?? null,
       branch: plain.branch ?? null,
-      roleName: plain.roleName ?? null,
-      roleId: plain.roleId ?? null,
-      agencyInstanceId: null,
       agencyName: null,
       agencyId: null,
       agencyScope: null,
@@ -306,9 +320,23 @@ export const useSessionStore = defineStore('sessions', () => {
       permissionMode: plain.permissionMode ?? null,
       status: 'starting',
       events: [],
+      agentEvents: { [localId]: [] },
+      agents: [{
+        localId,
+        sessionLocalId: localId,
+        sdkSessionId: null,
+        roleId: plain.roleId ?? null,
+        roleName: (plain as { roleName?: string | null }).roleName ?? null,
+        roleInstanceIndex: plain.roleInstanceIndex ?? null,
+        initialPrompt: plain.initialPrompt,
+        isEntryPoint: true,
+        status: 'starting',
+        startedAt: now,
+        lastActivityAt: now,
+      }],
       error: null,
-      startedAt: Date.now(),
-      lastActivityAt: Date.now(),
+      startedAt: now,
+      lastActivityAt: now,
       resumedFromSdkSessionId: null,
       interruptedAt: null,
       workItemKey: plain.workItemKey ?? null,
@@ -326,13 +354,9 @@ export const useSessionStore = defineStore('sessions', () => {
       if (d.attachments.length > 0) s.draftAttachments = d.attachments
     })
     currentLiveId.value = localId
-
-    // Flush anything that arrived pre-registration (shouldn't happen with
-    // pre-supplied localId, but cheap and correct).
     flushBuffer(localId)
 
     try {
-      // `branch` and `roleName` are renderer-only hints; strip before crossing IPC.
       const { branch: _branch, roleName: _roleName, ...startArgs } = plain
       await window.agentkeeper.sessions.start({ ...startArgs, localId })
     } catch (err) {
@@ -361,7 +385,7 @@ export const useSessionStore = defineStore('sessions', () => {
     try {
       await window.agentkeeper.sessions.interrupt(id)
       s.interruptedAt = Date.now()
-      s.events.push({
+      const entry: TranscriptEvent = {
         uuid: crypto.randomUUID(),
         parentUuid: null,
         timestamp: new Date().toISOString(),
@@ -373,7 +397,14 @@ export const useSessionStore = defineStore('sessions', () => {
         content: [{ type: 'text', text: 'Interrupted.' }],
         parentToolUseId: null,
         systemSubtype: 'interrupted',
-      })
+      }
+      s.events.push(entry)
+      // Push to the focused agent's stream too
+      const entryAgent = s.agents.find(a => a.isEntryPoint) ?? s.agents[0]
+      if (entryAgent) {
+        if (!s.agentEvents[entryAgent.localId]) s.agentEvents[entryAgent.localId] = []
+        s.agentEvents[entryAgent.localId]!.push(entry)
+      }
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)
     }
@@ -390,6 +421,14 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   function dismiss(id: string): void {
+    const s = sessions[id]
+    if (s) {
+      for (const agent of s.agents) {
+        delete agentTokens[agent.localId]
+        delete sessionRunTokens[agent.localId]
+        delete sessionOutputEstimates[agent.localId]
+      }
+    }
     delete sessions[id]
     delete sessionTokens[id]
     delete sessionTurns[id]
@@ -405,17 +444,20 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   /**
-   * Register a session started outside the store (e.g. by the orchestrator
-   * as part of an agency). Events/status broadcasts find it by id from then on.
+   * Register an agent started outside the store (e.g. by the orchestrator
+   * as part of an agency). Creates the session entry on first call; subsequent
+   * calls for the same session just add agents.
    */
   function registerExternal(entry: {
     localId: string
+    sessionLocalId: string
     projectPath: string
     worktreePath?: string | null
     branch?: string | null
     roleName?: string | null
-    agencyInstanceId?: string | null
     agencyName?: string | null
+    agencyId?: string | null
+    agencyScope?: string | null
     initialPrompt: string
     agencyPrompt?: string | null
     model?: string | null
@@ -423,47 +465,70 @@ export const useSessionStore = defineStore('sessions', () => {
     permissionMode?: PermissionMode | null
     workItemKey?: string | null
     workItemTitle?: string | null
+    isEntryPoint?: boolean
+    roleId?: string | null
+    roleInstanceIndex?: number | null
   }): void {
-    sessions[entry.localId] = {
-      localId: entry.localId,
-      sdkSessionId: null,
-      projectPath: entry.projectPath,
-      worktreePath: entry.worktreePath ?? null,
-      branch: entry.branch ?? null,
-      roleName: entry.roleName ?? null,
-      roleId: null,
-      agencyInstanceId: entry.agencyInstanceId ?? null,
-      agencyName: entry.agencyName ?? null,
-      agencyId: null,
-      agencyScope: null,
-      initialPrompt: entry.initialPrompt,
-      agencyPrompt: entry.agencyPrompt ?? null,
-      title: null,
-      model: entry.model ?? null,
-      effort: entry.effort ?? null,
-      permissionMode: entry.permissionMode ?? null,
-      status: 'starting',
-      events: [],
-      error: null,
-      startedAt: Date.now(),
-      lastActivityAt: Date.now(),
-      resumedFromSdkSessionId: null,
-      interruptedAt: null,
-      workItemKey: entry.workItemKey ?? null,
-      workItemTitle: entry.workItemTitle ?? null,
-      planState: null,
-      isDraft: false,
-      draftConfig: null,
-      draftMessage: '',
-      draftAttachments: [],
+    const now = Date.now()
+    // Create the session entry if this is the first agent for this session.
+    if (!sessions[entry.sessionLocalId]) {
+      sessions[entry.sessionLocalId] = {
+        localId: entry.sessionLocalId,
+        projectPath: entry.projectPath,
+        worktreePath: entry.worktreePath ?? null,
+        branch: entry.branch ?? null,
+        agencyName: entry.agencyName ?? null,
+        agencyId: entry.agencyId ?? null,
+        agencyScope: (entry.agencyScope as LiveSession['agencyScope']) ?? null,
+        initialPrompt: entry.agencyPrompt ?? entry.initialPrompt,
+        agencyPrompt: entry.agencyPrompt ?? null,
+        title: null,
+        model: entry.model ?? null,
+        effort: entry.effort ?? null,
+        permissionMode: entry.permissionMode ?? null,
+        status: 'starting',
+        events: [],
+        agentEvents: {},
+        agents: [],
+        error: null,
+        startedAt: now,
+        lastActivityAt: now,
+        resumedFromSdkSessionId: null,
+        interruptedAt: null,
+        workItemKey: entry.workItemKey ?? null,
+        workItemTitle: entry.workItemTitle ?? null,
+        planState: null,
+        isDraft: false,
+        draftConfig: null,
+        draftMessage: '',
+        draftAttachments: [],
+      }
+      void loadDraft(entry.sessionLocalId).then((d) => {
+        const s = sessions[entry.sessionLocalId]
+        if (!s) return
+        if (d.text) s.draftMessage = d.text
+        if (d.attachments.length > 0) s.draftAttachments = d.attachments
+      })
+      flushBuffer(entry.sessionLocalId)
     }
-    void loadDraft(entry.localId).then((d) => {
-      const s = sessions[entry.localId]
-      if (!s) return
-      if (d.text) s.draftMessage = d.text
-      if (d.attachments.length > 0) s.draftAttachments = d.attachments
-    })
-    flushBuffer(entry.localId)
+
+    const s = sessions[entry.sessionLocalId]!
+    if (!s.agents.find(a => a.localId === entry.localId)) {
+      s.agents.push({
+        localId: entry.localId,
+        sessionLocalId: entry.sessionLocalId,
+        sdkSessionId: null,
+        roleId: entry.roleId ?? null,
+        roleName: entry.roleName ?? null,
+        roleInstanceIndex: entry.roleInstanceIndex ?? null,
+        initialPrompt: entry.initialPrompt,
+        isEntryPoint: entry.isEntryPoint ?? false,
+        status: 'starting',
+        startedAt: now,
+        lastActivityAt: now,
+      })
+    }
+    if (!s.agentEvents[entry.localId]) s.agentEvents[entry.localId] = []
   }
 
   function clearFocus(): void {
@@ -476,9 +541,11 @@ export const useSessionStore = defineStore('sessions', () => {
       sessions[localId] = {
         ...persisted,
         events: [],
+        agentEvents: {},
+        agents: [],
         error: null,
         agencyPrompt: null,
-        resumedFromSdkSessionId: persisted.sdkSessionId,
+        resumedFromSdkSessionId: null,
         interruptedAt: null,
         isDraft: false,
         draftConfig: null,
@@ -492,15 +559,23 @@ export const useSessionStore = defineStore('sessions', () => {
         if (d.attachments.length > 0) s.draftAttachments = d.attachments
       })
       flushBuffer(localId)
+      // Load agents and populate agentEvents slots
+      void window.agentkeeper.sessions.getAgents(localId).then((agentList) => {
+        const s = sessions[localId]
+        if (!s) return
+        s.agents = agentList
+        for (const a of agentList) {
+          if (!s.agentEvents[a.localId]) s.agentEvents[a.localId] = []
+        }
+        const entryAgent = agentList.find(a => a.isEntryPoint) ?? agentList[0]
+        if (entryAgent?.sdkSessionId) s.resumedFromSdkSessionId = entryAgent.sdkSessionId
+      })
     }
     currentLiveId.value = localId
     return localId
   }
 
   function openHistorical(projectPath: string, summary: SessionSummary): string {
-    // Reuse an existing in-memory entry for this SDK session rather than
-    // creating a fresh localId every time — multiple clicks would otherwise
-    // add duplicate cards to visibleSessions.
     const existing = Object.values(sessions).find(
       (s) => s.resumedFromSdkSessionId === summary.id,
     )
@@ -512,13 +587,9 @@ export const useSessionStore = defineStore('sessions', () => {
     const localId = cryptoRandomId()
     sessions[localId] = {
       localId,
-      sdkSessionId: null,
       projectPath,
       worktreePath: null,
       branch: summary.gitBranch,
-      roleName: null,
-      roleId: null,
-      agencyInstanceId: null,
       agencyName: null,
       agencyId: null,
       agencyScope: null,
@@ -530,6 +601,20 @@ export const useSessionStore = defineStore('sessions', () => {
       permissionMode: null,
       status: 'idle',
       events: [],
+      agentEvents: { [localId]: [] },
+      agents: [{
+        localId,
+        sessionLocalId: localId,
+        sdkSessionId: summary.id,
+        roleId: null,
+        roleName: null,
+        roleInstanceIndex: null,
+        initialPrompt: summary.firstUserMessage ?? '',
+        isEntryPoint: true,
+        status: 'idle',
+        startedAt: summary.startedAt,
+        lastActivityAt: summary.lastActivityAt,
+      }],
       error: null,
       startedAt: summary.startedAt,
       lastActivityAt: summary.lastActivityAt,
@@ -547,39 +632,11 @@ export const useSessionStore = defineStore('sessions', () => {
     return localId
   }
 
-  function openPersistedAgency(
-    memberSessions: Session[],
-  ): string {
-    for (const s of memberSessions) {
-      if (!sessions[s.localId]) {
-        sessions[s.localId] = {
-          ...s,
-          events: [],
-          error: null,
-          agencyPrompt: null,
-          resumedFromSdkSessionId: s.sdkSessionId,
-          interruptedAt: null,
-          isDraft: false,
-          draftConfig: null,
-          draftMessage: '',
-          draftAttachments: [],
-        }
-        const sid = s.localId
-        void loadDraft(sid).then((d) => {
-          const sess = sessions[sid]
-          if (!sess) return
-          if (d.text) sess.draftMessage = d.text
-          if (d.attachments.length > 0) sess.draftAttachments = d.attachments
-        })
-        flushBuffer(s.localId)
-      }
-    }
-    // Entry session = the one with the user's actual task (not an agency init placeholder).
-    // The orchestrator uses "Agency ... is initializing..." / "Agency ... resumed..." for non-entry.
-    const entry =
-      memberSessions.find((s) => !s.initialPrompt.startsWith('Agency "')) ?? memberSessions[0]
-    if (entry) currentLiveId.value = entry.localId
-    return entry?.localId ?? ''
+  /** Compatibility shim — after migration there is one session row per agency, not N members. */
+  function openPersistedAgency(memberSessions: Session[]): string {
+    const session = memberSessions[0]
+    if (!session) return ''
+    return openPersisted(session)
   }
 
   async function resumeFromHistory(params: {
@@ -590,15 +647,12 @@ export const useSessionStore = defineStore('sessions', () => {
     effort: RoleEffort
   }): Promise<string> {
     const localId = cryptoRandomId()
+    const now = Date.now()
     sessions[localId] = {
       localId,
-      sdkSessionId: null,
       projectPath: params.projectPath,
       worktreePath: null,
       branch: null,
-      roleName: null,
-      roleId: null,
-      agencyInstanceId: null,
       agencyName: null,
       agencyId: null,
       agencyScope: null,
@@ -610,9 +664,23 @@ export const useSessionStore = defineStore('sessions', () => {
       permissionMode: null,
       status: 'idle',
       events: [],
+      agentEvents: { [localId]: [] },
+      agents: [{
+        localId,
+        sessionLocalId: localId,
+        sdkSessionId: params.sdkSessionId,
+        roleId: null,
+        roleName: null,
+        roleInstanceIndex: null,
+        initialPrompt: params.firstMessage || '(continued)',
+        isEntryPoint: true,
+        status: 'idle',
+        startedAt: now,
+        lastActivityAt: now,
+      }],
       error: null,
-      startedAt: Date.now(),
-      lastActivityAt: Date.now(),
+      startedAt: now,
+      lastActivityAt: now,
       resumedFromSdkSessionId: params.sdkSessionId,
       interruptedAt: null,
       workItemKey: null,
@@ -646,7 +714,6 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ─── Drafts ──────────────────────────────────────────────────────────────
 
-  /** Find an existing draft for the project, or create a new one. Focuses it. */
   function createOrFocusDraft(params: {
     projectPath: string
     defaultModel: string
@@ -663,13 +730,9 @@ export const useSessionStore = defineStore('sessions', () => {
     const localId = cryptoRandomId()
     sessions[localId] = {
       localId,
-      sdkSessionId: null,
       projectPath: params.projectPath,
       worktreePath: null,
       branch: null,
-      roleName: null,
-      roleId: null,
-      agencyInstanceId: null,
       agencyName: null,
       agencyId: null,
       agencyScope: null,
@@ -681,6 +744,8 @@ export const useSessionStore = defineStore('sessions', () => {
       permissionMode: 'bypassPermissions',
       status: 'idle',
       events: [],
+      agentEvents: {},
+      agents: [],
       error: null,
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
@@ -716,15 +781,13 @@ export const useSessionStore = defineStore('sessions', () => {
     if (!s) return
     s.draftMessage = text
     s.draftAttachments = attachments
-    // Persist to SQLite — no size limit, no silent truncation of attachments.
     void window.agentkeeper.drafts.set(localId, text, attachments)
   }
 
   /**
    * Promote a draft into a live session by sending its first message.
-   * For agency drafts: dismisses the draft and registers the agency's sessions.
+   * For agency drafts: dismisses the draft and registers the agency session.
    * For plain drafts: updates the same entry in-place and starts the SDK session.
-   * Returns the focused session id (entry-point for agencies, the same id otherwise).
    */
   async function promoteDraft(
     localId: string,
@@ -754,26 +817,26 @@ export const useSessionStore = defineStore('sessions', () => {
         ...(draft.model ? { model: draft.model } : {}),
       })
       delete sessions[localId]
-      let entryLocalId: string | null = null
       for (const s of instance.sessions) {
         const role = ctx.roles.find((r) => r.id === s.roleId) ?? null
         registerExternal({
           localId: s.localId,
+          sessionLocalId: s.sessionLocalId,
           projectPath: instance.projectPath,
           worktreePath: instance.worktreePath,
           branch: instance.branch,
           roleName: s.roleName,
-          agencyInstanceId: instance.instanceId,
+          roleId: s.roleId,
           agencyName: instance.agencyName,
           initialPrompt: s.isEntryPoint ? trimmedPrompt : '(awaiting peers)',
           agencyPrompt: trimmedPrompt,
           model: role?.model ?? draft.model,
+          isEntryPoint: s.isEntryPoint,
         })
-        if (s.isEntryPoint) entryLocalId = s.localId
       }
-      const focusId = entryLocalId ?? instance.sessions[0]?.localId ?? null
-      if (focusId) currentLiveId.value = focusId
-      return focusId ?? localId
+      // Focus the session UUID (not an individual agent UUID)
+      currentLiveId.value = instance.instanceId
+      return instance.instanceId
     }
 
     let worktreePath: string | undefined
@@ -790,10 +853,18 @@ export const useSessionStore = defineStore('sessions', () => {
     draft.draftConfig = null
     draft.worktreePath = worktreePath ?? null
     draft.branch = branch ?? null
-    draft.roleName = role?.name ?? null
     draft.initialPrompt = trimmedPrompt
     draft.status = 'starting'
     draft.lastActivityAt = Date.now()
+    // Update the solo agent's initialPrompt
+    const soloAgent = draft.agents[0]
+    if (soloAgent) {
+      soloAgent.initialPrompt = trimmedPrompt
+      if (role) {
+        soloAgent.roleId = role.id
+        soloAgent.roleName = role.name
+      }
+    }
 
     const startArgs: StartSessionParams = {
       localId,
@@ -820,40 +891,11 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ─── Derived state for global Sessions page ──────────────────────────────
 
-  const visibleSessions = computed<LiveSession[]>(() => {
-    const all = Object.values(sessions)
-
-    // For each agency group, find the entry-point: the earliest-started session
-    // whose initialPrompt is NOT an agency init placeholder. Sub-agents and
-    // placeholder sessions are excluded from the sidebar entirely.
-    const agencyEntryPoint = new Map<string, string>()
-    for (const s of all) {
-      if (!s.agencyInstanceId || s.initialPrompt.startsWith('Agency "')) continue
-      const currentBest = agencyEntryPoint.get(s.agencyInstanceId)
-      if (!currentBest) {
-        agencyEntryPoint.set(s.agencyInstanceId, s.localId)
-      } else {
-        const bestSession = sessions[currentBest]
-        if (bestSession && s.startedAt < bestSession.startedAt) {
-          agencyEntryPoint.set(s.agencyInstanceId, s.localId)
-        }
-      }
-    }
-
-    const result: LiveSession[] = []
-    const sorted = all.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
-
-    for (const s of sorted) {
-      if (s.isDraft) continue
-      if (s.status === 'completed' || s.status === 'terminated') continue
-      if (s.agencyInstanceId) {
-        if (agencyEntryPoint.get(s.agencyInstanceId) !== s.localId) continue
-      }
-      result.push(s)
-    }
-
-    return result
-  })
+  const visibleSessions = computed<LiveSession[]>(() =>
+    Object.values(sessions)
+      .filter(s => !s.isDraft)
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt),
+  )
 
   const statusCounts = computed(() => {
     const counts = { running: 0, blocked: 0, idle: 0 }
@@ -866,10 +908,7 @@ export const useSessionStore = defineStore('sessions', () => {
   })
 
   function subAgentCount(session: LiveSession): number {
-    if (!session.agencyInstanceId) return 1
-    return Object.values(sessions).filter(
-      (s) => s.agencyInstanceId === session.agencyInstanceId,
-    ).length
+    return session.agents.length || 1
   }
 
   const tokenStats = computed(() => {
@@ -901,24 +940,28 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // ─── IPC subscriptions — set up once ───────────────────────────────────
 
-  // Tracks the index in session.events of the current partial assistant event
-  // being built from stream_event deltas, keyed by sessionId.
+  // Tracks the index of the current partial assistant event per agentLocalId.
   const streamingPartials: Record<string, number> = {}
 
   window.agentkeeper.sessions.onEvent((payload) => {
     const raw = payload.message as Record<string, unknown>
+    // agentLocalId in event; fall back to sessionId for solo sessions
+    const agentKey = payload.agentLocalId ?? payload.sessionId
+    const sessionId = payload.sessionId
 
     // ── Streaming partial path ──────────────────────────────────────────────
     if (raw['type'] === 'stream_event') {
-      const s = sessions[payload.sessionId]
-      if (!s) return  // drop stream events for unregistered sessions; AssistantMessage will buffer
+      const s = sessions[sessionId]
+      if (!s) return
+
+      if (!s.agentEvents[agentKey]) s.agentEvents[agentKey] = []
+      const agentEvts = s.agentEvents[agentKey]!
 
       const event = raw['event'] as Record<string, unknown> | undefined
       if (!event) return
 
       switch (event['type']) {
         case 'message_start': {
-          // Begin a new partial assistant event and track its index
           const partial: TranscriptEvent = {
             uuid: typeof raw['uuid'] === 'string' ? raw['uuid'] : crypto.randomUUID(),
             parentUuid: null,
@@ -937,70 +980,61 @@ export const useSessionStore = defineStore('sessions', () => {
               : null,
             systemSubtype: null,
           }
+          agentEvts.push(partial)
           s.events.push(partial)
-          streamingPartials[payload.sessionId] = s.events.length - 1
+          streamingPartials[agentKey] = agentEvts.length - 1
           s.lastActivityAt = Date.now()
 
-          // input_tokens are known at message_start — add them immediately so
-          // the counter starts moving as soon as a new API call begins.
           const startMsg = event['message'] as Record<string, unknown> | undefined
           const startUsage = startMsg?.['usage'] as Record<string, unknown> | undefined
           const inputTokens = (startUsage?.['input_tokens'] as number | undefined) ?? 0
           if (inputTokens > 0) {
-            sessionRunTokens[payload.sessionId] =
-              (sessionRunTokens[payload.sessionId] ?? 0) + inputTokens
+            sessionRunTokens[agentKey] = (sessionRunTokens[agentKey] ?? 0) + inputTokens
             void window.agentkeeper.stats.upsert(
-              payload.sessionId,
-              sessionTokens[payload.sessionId]?.tokens ?? 0,
-              sessionTokens[payload.sessionId]?.costUsd ?? 0,
-              sessionTurns[payload.sessionId] ?? 0,
-              sessionRunTokens[payload.sessionId]!,
+              sessionId,
+              sessionTokens[sessionId]?.tokens ?? 0,
+              sessionTokens[sessionId]?.costUsd ?? 0,
+              sessionTurns[sessionId] ?? 0,
+              sessionRunTokens[agentKey]!,
             )
           }
-          // Reset the streaming estimate — a new response is beginning.
-          sessionOutputEstimates[payload.sessionId] = 0
+          sessionOutputEstimates[agentKey] = 0
           break
         }
         case 'message_delta': {
-          // output_tokens are finalised at message_delta (end of each streaming response).
-          // Add actual count to sessionRunTokens and zero the estimate — it's now
-          // captured precisely rather than via the char-based approximation.
           const deltaUsage = event['usage'] as Record<string, unknown> | undefined
           const outputTokens = (deltaUsage?.['output_tokens'] as number | undefined) ?? 0
           if (outputTokens > 0) {
-            sessionRunTokens[payload.sessionId] =
-              (sessionRunTokens[payload.sessionId] ?? 0) + outputTokens
+            sessionRunTokens[agentKey] = (sessionRunTokens[agentKey] ?? 0) + outputTokens
           }
           void window.agentkeeper.stats.upsert(
-            payload.sessionId,
-            sessionTokens[payload.sessionId]?.tokens ?? 0,
-            sessionTokens[payload.sessionId]?.costUsd ?? 0,
-            sessionTurns[payload.sessionId] ?? 0,
-            sessionRunTokens[payload.sessionId] ?? 0,
+            sessionId,
+            sessionTokens[sessionId]?.tokens ?? 0,
+            sessionTokens[sessionId]?.costUsd ?? 0,
+            sessionTurns[sessionId] ?? 0,
+            sessionRunTokens[agentKey] ?? 0,
           )
-          sessionOutputEstimates[payload.sessionId] = 0
+          sessionOutputEstimates[agentKey] = 0
           break
         }
         case 'content_block_start': {
-          const idx = streamingPartials[payload.sessionId]
+          const idx = streamingPartials[agentKey]
           if (idx === undefined) break
-          const partial = s.events[idx]
+          const partial = agentEvts[idx]
           if (!partial) break
           const cb = event['content_block'] as Record<string, unknown> | undefined
           if (cb?.['type'] === 'text') {
             partial.content.push({ type: 'text', text: '' })
           }
-          // tool_use blocks: skip — the complete AssistantMessage will carry them
           break
         }
         case 'content_block_delta': {
-          const idx = streamingPartials[payload.sessionId]
+          const idx = streamingPartials[agentKey]
           if (idx === undefined) break
-          const partial = s.events[idx]
+          const partial = agentEvts[idx]
           if (!partial) break
           const delta = event['delta'] as Record<string, unknown> | undefined
           if (delta?.['type'] === 'text_delta' && typeof delta['text'] === 'string') {
-            // Append to the last text block
             for (let i = partial.content.length - 1; i >= 0; i--) {
               const blk = partial.content[i]
               if (blk && blk.type === 'text') {
@@ -1009,12 +1043,8 @@ export const useSessionStore = defineStore('sessions', () => {
               }
             }
             s.lastActivityAt = Date.now()
-
-            // Accumulate a real-time output token estimate (~4 chars per token).
-            // This gives a smoothly incrementing counter during streaming;
-            // message_delta replaces it with the authoritative count.
-            sessionOutputEstimates[payload.sessionId] =
-              (sessionOutputEstimates[payload.sessionId] ?? 0) +
+            sessionOutputEstimates[agentKey] =
+              (sessionOutputEstimates[agentKey] ?? 0) +
               Math.ceil(delta['text'].length / 4)
           }
           break
@@ -1027,15 +1057,20 @@ export const useSessionStore = defineStore('sessions', () => {
     const evt = sdkMessageToTranscriptEvent(payload.message)
     if (!evt) return
 
-    const s = sessions[payload.sessionId]
+    const s = sessions[sessionId]
     if (s) {
-      // If a partial assistant event was being streamed, replace it with the
-      // definitive complete message rather than appending a duplicate.
-      const partialIdx = streamingPartials[payload.sessionId]
+      if (!s.agentEvents[agentKey]) s.agentEvents[agentKey] = []
+      const agentEvts = s.agentEvents[agentKey]!
+      const partialIdx = streamingPartials[agentKey]
       if (partialIdx !== undefined && evt.role === 'assistant') {
-        s.events.splice(partialIdx, 1, evt)
-        delete streamingPartials[payload.sessionId]
+        agentEvts.splice(partialIdx, 1, evt)
+        // Sync with s.events (find the partial by reference or index)
+        const globalIdx = s.events.lastIndexOf(agentEvts[partialIdx] ?? evt)
+        if (globalIdx >= 0) s.events.splice(globalIdx, 1, evt)
+        else s.events.push(evt)
+        delete streamingPartials[agentKey]
       } else {
+        agentEvts.push(evt)
         s.events.push(evt)
       }
       s.lastActivityAt = Date.now()
@@ -1046,7 +1081,7 @@ export const useSessionStore = defineStore('sessions', () => {
         if (hasAskUser) s.status = 'blocked'
       }
     } else {
-      ensureBuffer(payload.sessionId).events.push(evt)
+      ensureBuffer(sessionId).events.push({ agentLocalId: payload.agentLocalId ?? null, event: evt })
     }
   })
 
@@ -1066,7 +1101,7 @@ export const useSessionStore = defineStore('sessions', () => {
       dailyUsage[key]!.cacheReadTokens += u.cacheReadInputTokens
       dailyUsage[key]!.cacheCreationTokens += u.cacheCreationInputTokens
 
-      // Bucket per-session so the agent tree can display per-agent token counts.
+      // Session-level accumulation
       if (!sessionTokens[u.sessionId]) {
         sessionTokens[u.sessionId] = { tokens: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
       }
@@ -1081,19 +1116,31 @@ export const useSessionStore = defineStore('sessions', () => {
       sessionTokens[u.sessionId]!.cacheReadCostUsd += u.cacheReadCostUsd
       sessionTokens[u.sessionId]!.cacheCreationCostUsd += u.cacheCreationCostUsd
 
-      // Each onStats call represents one completed assistant turn.
+      // Per-agent accumulation
+      if (!agentTokens[u.agentLocalId]) {
+        agentTokens[u.agentLocalId] = { tokens: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
+      }
+      agentTokens[u.agentLocalId]!.tokens += tokens
+      agentTokens[u.agentLocalId]!.costUsd += costUsd
+      agentTokens[u.agentLocalId]!.inputTokens += u.inputTokens
+      agentTokens[u.agentLocalId]!.outputTokens += u.outputTokens
+      agentTokens[u.agentLocalId]!.cacheReadTokens += u.cacheReadInputTokens
+      agentTokens[u.agentLocalId]!.cacheCreationTokens += u.cacheCreationInputTokens
+      agentTokens[u.agentLocalId]!.inputCostUsd += u.inputCostUsd
+      agentTokens[u.agentLocalId]!.outputCostUsd += u.outputCostUsd
+      agentTokens[u.agentLocalId]!.cacheReadCostUsd += u.cacheReadCostUsd
+      agentTokens[u.agentLocalId]!.cacheCreationCostUsd += u.cacheCreationCostUsd
+
       sessionTurns[u.sessionId] = (sessionTurns[u.sessionId] ?? 0) + 1
 
-      // Run is complete — clear in-progress counters so the display doesn't
-      // double-count (sessionTokens now covers everything they tracked).
-      sessionRunTokens[u.sessionId] = 0
-      sessionOutputEstimates[u.sessionId] = 0
+      sessionRunTokens[u.agentLocalId] = 0
+      sessionOutputEstimates[u.agentLocalId] = 0
       void window.agentkeeper.stats.upsert(
         u.sessionId,
         sessionTokens[u.sessionId]!.tokens,
         sessionTokens[u.sessionId]!.costUsd,
         sessionTurns[u.sessionId] ?? 0,
-        0, // in-progress reset to 0 on turn completion
+        0,
       )
     }
   })
@@ -1101,34 +1148,45 @@ export const useSessionStore = defineStore('sessions', () => {
   window.agentkeeper.sessions.onStatus((update) => {
     const s = sessions[update.sessionId]
     if (s) {
-      if (update.status != null) {
-        // 'blocked' is renderer-derived — only clear it when the session resumes or ends,
-        // not when the SDK reports idle (agent finished its turn while still awaiting input)
-        const preserveBlocked =
-          s.status === 'blocked' &&
-          (update.status === 'idle' || update.status === 'starting')
-        if (!preserveBlocked) {
-          s.status = update.status
+      if (update.agentLocalId) {
+        // Agent-level update
+        const agent = s.agents.find(a => a.localId === update.agentLocalId)
+        if (agent) {
+          if (update.status != null) agent.status = update.status
+          if (update.sdkSessionId) agent.sdkSessionId = update.sdkSessionId
+          agent.lastActivityAt = Date.now()
+        }
+        if (update.status != null) {
+          // Recompute session status from all agents
+          const rollup = computeSessionStatus(s.agents)
+          const preserveBlocked = s.status === 'blocked' && (rollup === 'idle' || rollup === 'starting')
+          if (!preserveBlocked) s.status = rollup
+        }
+      } else {
+        // Session-level update
+        if (update.status != null) {
+          const preserveBlocked =
+            s.status === 'blocked' &&
+            (update.status === 'idle' || update.status === 'starting')
+          if (!preserveBlocked) s.status = update.status
         }
       }
 
-      // Rescue any in-progress tokens that onStats didn't capture (e.g. the run
-      // threw before emitting a result message). In the normal path onStats fires
-      // first and resets sessionRunTokens to 0, so this is a no-op. Only the
-      // error/interrupt/terminated path ever finds a non-zero value here.
+      // Rescue any in-progress tokens on quiescent status
       const quiescent =
         update.status === 'idle' ||
         update.status === 'completed' ||
         update.status === 'terminated' ||
         update.status === 'error'
-      const partial = quiescent ? (sessionRunTokens[update.sessionId] ?? 0) : 0
+      const agentKey = update.agentLocalId ?? update.sessionId
+      const partial = quiescent ? (sessionRunTokens[agentKey] ?? 0) : 0
       if (partial > 0) {
         if (!sessionTokens[update.sessionId]) {
           sessionTokens[update.sessionId] = { tokens: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
         }
         sessionTokens[update.sessionId]!.tokens += partial
-        sessionRunTokens[update.sessionId] = 0
-        sessionOutputEstimates[update.sessionId] = 0
+        sessionRunTokens[agentKey] = 0
+        sessionOutputEstimates[agentKey] = 0
         void window.agentkeeper.stats.upsert(
           update.sessionId,
           sessionTokens[update.sessionId]!.tokens,
@@ -1138,14 +1196,16 @@ export const useSessionStore = defineStore('sessions', () => {
         )
       }
 
-      if (update.sdkSessionId) s.sdkSessionId = update.sdkSessionId
-      if (update.error) s.error = update.error
       if (update.title) s.title = update.title
+      if (update.error) s.error = update.error
       s.lastActivityAt = Date.now()
     } else {
       const buf = ensureBuffer(update.sessionId)
       if (update.status != null) buf.status = update.status
-      if (update.sdkSessionId) buf.sdkSessionId = update.sdkSessionId
+      if (update.sdkSessionId) {
+        buf.sdkSessionId = update.sdkSessionId
+        buf.agentLocalId = update.agentLocalId ?? null
+      }
       if (update.error) buf.error = update.error
     }
   })
@@ -1153,6 +1213,7 @@ export const useSessionStore = defineStore('sessions', () => {
   return {
     sessions,
     sessionTokens,
+    agentTokens,
     sessionTurns,
     sessionRunTokens,
     sessionOutputEstimates,

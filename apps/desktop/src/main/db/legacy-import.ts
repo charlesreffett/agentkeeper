@@ -3,7 +3,28 @@ import path from 'node:path'
 import { eq } from 'drizzle-orm'
 import { type AppDb, getDb } from './index'
 import { appState, costEntries, projects, sessions } from './schema'
-import type { Session } from '../../shared/ipc-contract'
+// Legacy session shape that existed before the session-agent split migration.
+interface LegacySession {
+  localId: string
+  sdkSessionId?: string | null
+  projectPath: string
+  worktreePath?: string | null
+  branch?: string | null
+  model?: string | null
+  effort?: string | null
+  permissionMode?: string | null
+  initialPrompt?: string
+  roleName?: string | null
+  roleId?: string | null
+  agencyInstanceId?: string | null
+  agencyName?: string | null
+  title?: string | null
+  workItemKey?: string | null
+  workItemTitle?: string | null
+  status?: string
+  startedAt: number
+  lastActivityAt: number
+}
 import type { CostEntry } from '../cost-ledger'
 import type { RecentProject } from '../../shared/ipc-contract'
 
@@ -31,13 +52,15 @@ export function runLegacyImport(userDataPath: string): void {
 
 function importSessionRegistry(tx: AppDb, userDataPath: string): void {
   const p = path.join(userDataPath, 'session-registry.json')
-  let raw: { sessions?: Record<string, Session> }
+  let raw: { sessions?: Record<string, LegacySession> }
   try { raw = JSON.parse(fs.readFileSync(p, 'utf8')) } catch { return }
 
   for (const s of Object.values(raw.sessions ?? {})) {
+    // Legacy JSON had sdkSessionId / roleName / roleId / agencyInstanceId on the session
+    // row. After the session-agent split these moved to the agents table; insert only
+    // the columns that still exist on the sessions table.
     tx.insert(sessions).values({
       localId: s.localId,
-      sdkSessionId: s.sdkSessionId ?? null,
       projectPath: s.projectPath,
       worktreePath: s.worktreePath ?? null,
       branch: s.branch ?? null,
@@ -45,9 +68,6 @@ function importSessionRegistry(tx: AppDb, userDataPath: string): void {
       effort: s.effort ?? null,
       permissionMode: s.permissionMode ?? null,
       initialPrompt: s.initialPrompt ?? '',
-      roleName: s.roleName ?? null,
-      roleId: s.roleId ?? null,
-      agencyInstanceId: s.agencyInstanceId ?? null,
       agencyName: s.agencyName ?? null,
       title: s.title ?? null,
       workItemKey: s.workItemKey ?? null,

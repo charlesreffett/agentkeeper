@@ -11,6 +11,7 @@ import * as costLedger from './cost-ledger'
 import { calculateCost, calculateCostBreakdown } from './pricing'
 import { getPersistedTurnCount } from './stats'
 import type {
+  Agent,
   AgencyScope,
   Attachment,
   LiveSessionEvent,
@@ -29,7 +30,11 @@ import type { WorkItemRegistryFull } from './plugins'
 import * as registry from './session-registry'
 
 export interface ActiveSession {
+  /** Agent UUID — also the key in the `active` map. Equals sessionLocalId for solo sessions. */
   id: string
+  agentLocalId: string
+  /** Session UUID. Equals id for solo sessions; the shared instance UUID for agency agents. */
+  sessionLocalId: string
   sdkSessionId: string | null
   projectPath: string
   worktreePath: string | undefined
@@ -42,14 +47,6 @@ export interface ActiveSession {
   status: LiveSessionStatus
   startedAt: number
   initialPrompt: string
-  roleName: string | null
-  agencyName: string | null
-  /** Agency membership (null if freestanding). */
-  agencyInstanceId: string | null
-  agencyId: string | null
-  agencyScope: AgencyScope | null
-  roleId: string | null
-  roleInstanceIndex: number | null
   workItemId: string | null
   workItemKey: string | null
   workItemTitle: string | null
@@ -129,7 +126,12 @@ const TERMINAL_STATUSES: LiveSessionStatus[] = [
 
 function setStatus(s: ActiveSession, status: LiveSessionStatus, error?: string) {
   s.status = status
-  broadcastStatus({ sessionId: s.id, status, ...(error ? { error } : {}) })
+  broadcastStatus({
+    sessionId: s.sessionLocalId,
+    agentLocalId: s.agentLocalId,
+    status,
+    ...(error ? { error } : {}),
+  })
   if (TERMINAL_STATUSES.includes(status)) {
     const waiters = s.idleWaiters.splice(0, s.idleWaiters.length)
     for (const w of waiters) w(status)
@@ -150,42 +152,21 @@ async function consumeStream(session: ActiveSession): Promise<void> {
         }
         if (anyMsg.subtype === 'init' && typeof anyMsg.session_id === 'string') {
           session.sdkSessionId = anyMsg.session_id
+          registry.updateAgent(session.agentLocalId, { sdkSessionId: anyMsg.session_id })
           broadcastStatus({
-            sessionId: session.id,
+            sessionId: session.sessionLocalId,
+            agentLocalId: session.agentLocalId,
             status: session.status,
             sdkSessionId: anyMsg.session_id,
           })
-          const branch = session.worktreePath
-            ? path.basename(session.worktreePath)
-            : null
-          registry.registerSession({
-            localId: session.id,
-            sdkSessionId: anyMsg.session_id,
-            projectPath: session.projectPath,
-            worktreePath: session.worktreePath ?? null,
-            branch,
-            model: session.model ?? null,
-            effort: session.effort ?? null,
-            permissionMode: session.permissionMode,
-            initialPrompt: session.initialPrompt,
-            roleName: session.roleName,
-            roleId: session.roleId,
-            agencyInstanceId: session.agencyInstanceId,
-            agencyName: session.agencyName,
-            agencyId: session.agencyId,
-            agencyScope: session.agencyScope,
-            startedAt: session.startedAt,
-            lastActivityAt: Date.now(),
-            status: session.status,
-            workItemKey: session.workItemKey,
-            workItemTitle: session.workItemTitle,
-            planState: null,
-            title: null,
-          }, session.roleInstanceIndex ?? undefined)
         }
       }
 
-      broadcastEvent({ sessionId: session.id, message: msg })
+      broadcastEvent({
+        sessionId: session.sessionLocalId,
+        agentLocalId: session.agentLocalId,
+        message: msg,
+      })
 
       // Persist latest TodoWrite state so plan progress survives restarts.
       const rawMsg = msg as unknown as Record<string, unknown>
@@ -205,7 +186,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
                 return typeof o['content'] === 'string' && typeof o['status'] === 'string'
               })
               session.planState = todos
-              registry.updateSession(session.id, { planState: todos })
+              registry.updateSession(session.sessionLocalId, { planState: todos })
             }
           }
         }
@@ -237,7 +218,8 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             (s) => s.status === 'running' || s.status === 'starting',
           ).length,
           turnUsage: {
-            sessionId: session.id,
+            sessionId: session.sessionLocalId,
+            agentLocalId: session.agentLocalId,
             inputTokens: tokenUsage.inputTokens,
             outputTokens: tokenUsage.outputTokens,
             cacheReadInputTokens: tokenUsage.cacheReadTokens,
@@ -249,7 +231,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             cacheCreationCostUsd: perTypeCost.cacheCreationCostUsd,
           },
         })
-        const turnKey = `${session.id}:turn:${session.turnCount}`
+        const turnKey = `${session.agentLocalId}:turn:${session.turnCount}`
         session.turnCount++
         if (!costLedger.hasEntry(turnKey)) {
           const _now = new Date()
@@ -266,11 +248,10 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             recordedAt: new Date().toISOString(),
           })
         }
-        // Agency members signal 'idle' so routeMessage's waitForNextIdle
-        // resolves and can capture the reply text, then we still close and
-        // break — the subprocess is re-spawned lazily on the next
-        // send_message call rather than held alive between turns.
-        setStatus(session, session.agencyInstanceId ? 'idle' : 'suspended')
+        // Agency agents signal 'idle' so routeMessage's waitForNextIdle resolves
+        // and can capture the reply text, then close — the subprocess is re-spawned
+        // lazily on the next send_message call rather than held alive between turns.
+        setStatus(session, session.sessionLocalId !== session.agentLocalId ? 'idle' : 'suspended')
         try { session.input.close() } catch { /* ignore */ }
         break
       }
@@ -293,23 +274,33 @@ async function consumeStream(session: ActiveSession): Promise<void> {
   } catch (err) {
     if (!session.interrupted) {
       const message = err instanceof Error ? err.message : String(err)
-      console.error(`[agent] session ${session.id} stream error:`, err)
+      console.error(`[agent] session ${session.agentLocalId} stream error:`, err)
       setStatus(session, 'error', message)
     }
   } finally {
-    const updateData: Partial<Session> = {
+    const now = Date.now()
+    // Update agent row in DB.
+    registry.updateAgent(session.agentLocalId, {
       status: session.status,
-      lastActivityAt: Date.now(),
+      lastActivityAt: now,
+    })
+    // Compute session-level status rollup from all agents.
+    const allAgents = registry.listAgentsBySession(session.sessionLocalId)
+      .map((a): Agent => a.localId === session.agentLocalId ? { ...a, status: session.status } : a)
+    const sessionStatus = registry.computeSessionStatus(allAgents)
+    const sessionUpdate: Partial<Session> = {
+      status: sessionStatus,
+      lastActivityAt: now,
     }
     if (session.planState) {
       const hasInProgress = session.status !== 'completed' &&
         session.planState.some(t => t.status === 'in_progress')
-      updateData.planState = hasInProgress
+      sessionUpdate.planState = hasInProgress
         ? session.planState.map(t => t.status === 'in_progress' ? { ...t, status: 'partial' as const } : t)
         : session.planState
     }
-    registry.updateSession(session.id, updateData)
-    active.delete(session.id)
+    registry.updateSession(session.sessionLocalId, sessionUpdate)
+    active.delete(session.agentLocalId)
   }
 }
 
@@ -376,13 +367,56 @@ export async function startSession(
     }
   }
 
-  const id = params.localId ?? randomUUID()
+  const agentLocalId = params.agentLocalId ?? params.localId ?? randomUUID()
+  const sessionLocalId = params.sessionLocalId ?? agentLocalId
+  const isNewSession = !params.sessionLocalId
+  const now = Date.now()
+
   const controller = new AbortController()
   const input = new AsyncQueue<SDKUserMessage>()
   const isResume = !!params.resumeSdkSessionId
   if (!isResume) {
     input.push(messageFromInput(params.initialPrompt, params.initialAttachments))
   }
+
+  // Register session row upfront (solo sessions only; agency session was registered by orchestrator).
+  if (isNewSession) {
+    registry.registerSession({
+      localId: sessionLocalId,
+      projectPath: params.projectPath,
+      worktreePath: params.worktreePath ?? null,
+      branch: params.worktreePath ? path.basename(params.worktreePath) : null,
+      model: params.model ?? null,
+      effort: params.effort ?? null,
+      permissionMode: params.permissionMode ?? 'bypassPermissions',
+      initialPrompt: params.initialPrompt ?? '',
+      agencyName: params.agencyName ?? null,
+      agencyId: params.agencyId ?? null,
+      agencyScope: params.agencyScope ?? null,
+      title: null,
+      workItemKey: params.workItemKey ?? null,
+      workItemTitle: params.workItemTitle ?? null,
+      status: 'starting',
+      startedAt: now,
+      lastActivityAt: now,
+      planState: null,
+    })
+  }
+
+  // Register agent row upfront (solo: isEntryPoint=true; agency: caller sets isEntryPoint).
+  registry.registerAgent({
+    localId: agentLocalId,
+    sessionLocalId,
+    sdkSessionId: null,
+    roleId: params.roleId ?? null,
+    roleName: params.roleName ?? null,
+    roleInstanceIndex: params.roleInstanceIndex ?? null,
+    initialPrompt: params.initialPrompt ?? '',
+    isEntryPoint: params.isEntryPoint ?? isNewSession,
+    status: 'starting',
+    startedAt: now,
+    lastActivityAt: now,
+  })
 
   const childEnv: Record<string, string | undefined> = {
     ...process.env,
@@ -422,7 +456,9 @@ export async function startSession(
   const q = query({ prompt: input, options })
 
   const session: ActiveSession = {
-    id,
+    id: agentLocalId,
+    agentLocalId,
+    sessionLocalId,
     sdkSessionId: null,
     projectPath: params.projectPath,
     worktreePath: params.worktreePath,
@@ -433,15 +469,8 @@ export async function startSession(
     input,
     abortController: controller,
     status: 'starting',
-    startedAt: Date.now(),
+    startedAt: now,
     initialPrompt: params.initialPrompt,
-    roleName: params.roleName ?? null,
-    agencyName: params.agencyName ?? null,
-    agencyInstanceId: params.agencyInstanceId ?? null,
-    agencyId: params.agencyId ?? null,
-    agencyScope: params.agencyScope ?? null,
-    roleId: params.roleId ?? null,
-    roleInstanceIndex: params.roleInstanceIndex ?? null,
     workItemId: params.workItemId ?? null,
     workItemKey: params.workItemKey ?? null,
     workItemTitle: params.workItemTitle ?? null,
@@ -449,50 +478,60 @@ export async function startSession(
     planState: null,
     idleWaiters: [],
     interrupted: false,
-    turnCount: getPersistedTurnCount(id),
+    turnCount: getPersistedTurnCount(agentLocalId),
   }
 
-  active.set(id, session)
+  active.set(agentLocalId, session)
   if (isResume) {
-    broadcastStatus({ sessionId: id, status: 'starting' })
+    broadcastStatus({ sessionId: sessionLocalId, agentLocalId, status: 'starting' })
     setStatus(session, 'idle')
   } else {
-    broadcastStatus({ sessionId: id, status: 'starting' })
+    broadcastStatus({ sessionId: sessionLocalId, agentLocalId, status: 'starting' })
     setStatus(session, 'running')
   }
 
   if (!isResume) {
-    broadcastEvent({ sessionId: id, message: messageFromInput(params.initialPrompt, params.initialAttachments) })
+    broadcastEvent({
+      sessionId: sessionLocalId,
+      agentLocalId,
+      message: messageFromInput(params.initialPrompt, params.initialAttachments),
+    })
   }
 
   void consumeStream(session)
 
-  return id
+  return agentLocalId
 }
 
 export async function sendInput(sessionId: string, text: string, attachments?: Attachment[]): Promise<void> {
   let s = active.get(sessionId)
   if (!s) {
-    const persisted = registry.getSession(sessionId)
-    if (!persisted?.sdkSessionId) throw new Error(`session ${sessionId} not found`)
+    const agent = registry.getAgent(sessionId)
+    if (!agent?.sdkSessionId) throw new Error(`session ${sessionId} not found`)
+    const persistedSession = registry.getSession(agent.sessionLocalId)
+    if (!persistedSession) throw new Error(`session data for ${sessionId} not found`)
     await startSession({
       localId: sessionId,
-      projectPath: persisted.projectPath,
-      worktreePath: persisted.worktreePath ?? undefined,
-      initialPrompt: persisted.initialPrompt,
-      model: persisted.model ?? undefined,
-      effort: persisted.effort ?? undefined,
-      permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
-      resumeSdkSessionId: persisted.sdkSessionId,
-      roleName: persisted.roleName ?? undefined,
-      agencyName: persisted.agencyName ?? undefined,
-      agencyInstanceId: persisted.agencyInstanceId ?? undefined,
-      roleId: persisted.roleId ?? undefined,
+      agentLocalId: sessionId,
+      sessionLocalId: agent.sessionLocalId !== sessionId ? agent.sessionLocalId : undefined,
+      projectPath: persistedSession.projectPath,
+      worktreePath: persistedSession.worktreePath ?? undefined,
+      initialPrompt: persistedSession.initialPrompt,
+      model: persistedSession.model ?? undefined,
+      effort: persistedSession.effort ?? undefined,
+      permissionMode: (persistedSession.permissionMode as PermissionMode) ?? undefined,
+      resumeSdkSessionId: agent.sdkSessionId,
+      roleId: agent.roleId ?? undefined,
+      roleName: agent.roleName ?? undefined,
+      agencyName: persistedSession.agencyName ?? undefined,
+      agencyId: persistedSession.agencyId ?? undefined,
+      agencyScope: persistedSession.agencyScope ?? undefined,
+      isEntryPoint: agent.isEntryPoint,
     })
     s = active.get(sessionId)!
   }
   const userMsg = messageFromInput(text, attachments)
-  broadcastEvent({ sessionId: s.id, message: userMsg })
+  broadcastEvent({ sessionId: s.sessionLocalId, agentLocalId: s.agentLocalId, message: userMsg })
   s.input.push(userMsg)
   setStatus(s, 'running')
 }
@@ -556,20 +595,26 @@ export function waitForNextIdle(
 }
 
 export async function resumeSession(localId: string): Promise<string> {
-  const persisted = registry.getSession(localId)
-  if (!persisted) throw new Error(`No persisted session found for id "${localId}"`)
+  const agent = registry.getAgent(localId)
+  const persistedSession = registry.getSession(agent?.sessionLocalId ?? localId)
+  if (!persistedSession) throw new Error(`No persisted session found for id "${localId}"`)
   return startSession({
-    projectPath: persisted.projectPath,
-    worktreePath: persisted.worktreePath ?? undefined,
-    initialPrompt: persisted.initialPrompt,
-    model: persisted.model ?? undefined,
-    effort: persisted.effort ?? undefined,
-    permissionMode: (persisted.permissionMode as PermissionMode) ?? undefined,
-    agencyInstanceId: persisted.agencyInstanceId ?? undefined,
-    roleId: persisted.roleId ?? undefined,
-    roleName: persisted.roleName ?? undefined,
-    agencyName: persisted.agencyName ?? undefined,
-    resumeSdkSessionId: persisted.sdkSessionId ?? undefined,
+    localId,
+    agentLocalId: localId,
+    sessionLocalId: agent && agent.sessionLocalId !== localId ? agent.sessionLocalId : undefined,
+    projectPath: persistedSession.projectPath,
+    worktreePath: persistedSession.worktreePath ?? undefined,
+    initialPrompt: persistedSession.initialPrompt,
+    model: persistedSession.model ?? undefined,
+    effort: persistedSession.effort ?? undefined,
+    permissionMode: (persistedSession.permissionMode as PermissionMode) ?? undefined,
+    agencyName: persistedSession.agencyName ?? undefined,
+    agencyId: persistedSession.agencyId ?? undefined,
+    agencyScope: persistedSession.agencyScope ?? undefined,
+    roleId: agent?.roleId ?? undefined,
+    roleName: agent?.roleName ?? undefined,
+    resumeSdkSessionId: agent?.sdkSessionId ?? undefined,
+    isEntryPoint: agent?.isEntryPoint,
   })
 }
 
@@ -580,11 +625,12 @@ async function restartIdle(
   if (restartingIds.has(localId)) throw new Error(`Session ${localId} is already restarting`)
   restartingIds.add(localId)
   try {
-    const persisted = registry.getSession(localId)
-    if (!persisted) throw new Error(`session ${localId} not found`)
+    const agent = registry.getAgent(localId)
+    const persistedSession = registry.getSession(agent?.sessionLocalId ?? localId)
+    if (!persistedSession) throw new Error(`session ${localId} not found`)
 
     const s = active.get(localId)
-    const currentStatus = s?.status ?? persisted.status
+    const currentStatus = s?.status ?? persistedSession.status
     if (currentStatus === 'running' || currentStatus === 'starting') {
       throw new Error(`cannot change session params while status is ${currentStatus}`)
     }
@@ -603,24 +649,28 @@ async function restartIdle(
       if ('effort' in overrides) s.effort = overrides.effort
     }
 
-    const newModel = overrides.model ?? persisted.model ?? undefined
-    const newEffort = (overrides.effort ?? persisted.effort) as RoleEffort | undefined
-    const newPermissionMode = (overrides.permissionMode ?? persisted.permissionMode ?? undefined) as PermissionMode | undefined
-    registry.updateSession(localId, { model: newModel ?? null, effort: newEffort ?? null, permissionMode: newPermissionMode ?? null })
+    const newModel = overrides.model ?? persistedSession.model ?? undefined
+    const newEffort = (overrides.effort ?? persistedSession.effort) as RoleEffort | undefined
+    const newPermissionMode = (overrides.permissionMode ?? persistedSession.permissionMode ?? undefined) as PermissionMode | undefined
+    registry.updateSession(persistedSession.localId, { model: newModel ?? null, effort: newEffort ?? null, permissionMode: newPermissionMode ?? null })
 
     await startSession({
       localId,
-      projectPath: persisted.projectPath,
-      worktreePath: persisted.worktreePath ?? undefined,
-      initialPrompt: persisted.initialPrompt,
+      agentLocalId: localId,
+      sessionLocalId: agent && agent.sessionLocalId !== localId ? agent.sessionLocalId : undefined,
+      projectPath: persistedSession.projectPath,
+      worktreePath: persistedSession.worktreePath ?? undefined,
+      initialPrompt: persistedSession.initialPrompt,
       model: newModel,
       effort: newEffort,
       permissionMode: newPermissionMode,
-      resumeSdkSessionId: persisted.sdkSessionId ?? undefined,
-      roleName: persisted.roleName ?? undefined,
-      agencyName: persisted.agencyName ?? undefined,
-      agencyInstanceId: persisted.agencyInstanceId ?? undefined,
-      roleId: persisted.roleId ?? undefined,
+      resumeSdkSessionId: agent?.sdkSessionId ?? undefined,
+      roleName: agent?.roleName ?? undefined,
+      roleId: agent?.roleId ?? undefined,
+      agencyName: persistedSession.agencyName ?? undefined,
+      agencyId: persistedSession.agencyId ?? undefined,
+      agencyScope: persistedSession.agencyScope ?? undefined,
+      isEntryPoint: agent?.isEntryPoint,
     })
   } finally {
     restartingIds.delete(localId)
@@ -641,24 +691,24 @@ export async function setPermissionMode(localId: string, permissionMode: Permiss
 
 export function listActiveSessions(): Array<{
   id: string
+  agentLocalId: string
+  sessionLocalId: string
   sdkSessionId: string | null
   projectPath: string
   status: LiveSessionStatus
   startedAt: number
   model: string | undefined
-  agencyInstanceId: string | null
-  roleId: string | null
   workItemId: string | null
 }> {
   return Array.from(active.values()).map((s) => ({
     id: s.id,
+    agentLocalId: s.agentLocalId,
+    sessionLocalId: s.sessionLocalId,
     sdkSessionId: s.sdkSessionId,
     projectPath: s.projectPath,
     status: s.status,
     startedAt: s.startedAt,
     model: s.model,
-    agencyInstanceId: s.agencyInstanceId,
-    roleId: s.roleId,
     workItemId: s.workItemId,
   }))
 }

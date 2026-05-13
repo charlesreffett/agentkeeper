@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import {
   IPC_CHANNELS,
+  type AddAgentParams,
+  type Agent,
   type AgencyDraft,
   type GitDiffStatFile,
   type AgencyScope,
@@ -22,6 +24,8 @@ import {
   type MergeMethod,
   type AgentKeeperApi,
   type Plan,
+  type PlansCreateInput,
+  type PlansUpdateInput,
   type PRFilters,
   type Session,
   type PermissionMode,
@@ -165,6 +169,10 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.sessionsDeleteAllHistorical, projectPath) as Promise<void>,
     deleteAllPersisted: (projectPath: string) =>
       invoke(IPC_CHANNELS.sessionsDeleteAllPersisted, projectPath) as Promise<void>,
+    getAgents: (sessionLocalId: string) =>
+      invoke(IPC_CHANNELS.sessionsGetAgents, sessionLocalId) as Promise<Agent[]>,
+    addAgent: (sessionLocalId: string, params: AddAgentParams) =>
+      invoke(IPC_CHANNELS.sessionsAddAgent, sessionLocalId, params) as Promise<string>,
   },
   worktrees: {
     list: (projectPath: string) =>
@@ -348,6 +356,10 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.plansList, projectPath) as Promise<Plan[]>,
     get: (projectPath: string, filename: string) =>
       invoke(IPC_CHANNELS.plansGet, projectPath, filename) as Promise<Plan | null>,
+    create: (projectPath: string, data: PlansCreateInput) =>
+      invoke(IPC_CHANNELS.plansCreate, projectPath, data) as Promise<Plan>,
+    update: (projectPath: string, filename: string, patch: PlansUpdateInput) =>
+      invoke(IPC_CHANNELS.plansUpdate, projectPath, filename, patch) as Promise<Plan | null>,
   },
   costs: {
     getDailySummary: () =>

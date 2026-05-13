@@ -14,6 +14,7 @@ import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
+import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -42,15 +43,26 @@ const store = useSessionStore()
 const { projects } = useProjectsQuery()
 const messageInputRef = ref<InstanceType<typeof MessageInput> | null>(null)
 
-// Root session — fixed to props.liveId. Used for header title, project name, agency group key.
+// Root session — fixed to props.liveId. Used for header title, project name, agent list.
 const rootSession = computed(() => store.getSession(props.liveId))
 
 // Selected agent — switches when user clicks a row in the agent tree.
-// All transcript/status/input operations target this session.
-const selectedAgentLocalId = ref(props.liveId)
+// For solo sessions agentLocalId === sessionLocalId, so getSession falls through correctly.
+const selectedAgentLocalId = ref(
+  rootSession.value?.agents.find(a => a.isEntryPoint)?.localId ?? props.liveId,
+)
 const session = computed(
+  // For solo sessions: getSession(agentLocalId) === rootSession.
+  // For agency sessions: agentLocalId is not a session key → falls back to rootSession.
   () => store.getSession(selectedAgentLocalId.value) ?? rootSession.value,
 )
+
+// Events for the currently selected agent's stream.
+const agentEvents = computed(() => {
+  const root = rootSession.value
+  if (!root) return session.value?.events ?? []
+  return root.agentEvents[selectedAgentLocalId.value] ?? root.events
+})
 
 // ─── Project / title ────────────────────────────────────────────────────────
 
@@ -67,7 +79,7 @@ const sessionProjectName = computed(() => {
 const sessionTitle = computed(() => {
   const s = rootSession.value
   if (!s) return ''
-  return s.title ?? s.agencyName ?? s.roleName ?? s.initialPrompt ?? props.liveId
+  return s.title ?? s.agencyName ?? s.initialPrompt ?? props.liveId
 })
 
 // ─── Scroll tracking ────────────────────────────────────────────────────────
@@ -85,7 +97,7 @@ const BOTTOM_THRESHOLD = 64
 
 const newMessageCount = computed(() =>
   hasNewMessages.value
-    ? Math.max(0, (session.value?.events.length ?? 0) - firstNewEventsLength.value)
+    ? Math.max(0, agentEvents.value.length - firstNewEventsLength.value)
     : 0,
 )
 
@@ -114,7 +126,7 @@ function goToNewMessages() {
 }
 
 watch(
-  () => session.value?.events.length ?? 0,
+  () => agentEvents.value.length,
   (newLen, oldLen) => {
     if (isAtBottom.value) {
       void scrollToBottom()
@@ -126,11 +138,12 @@ watch(
   },
 )
 
-// When the route session changes, reset the selected agent to match.
+// When the route changes, reset the selected agent to the entry-point agent.
 watch(
   () => props.liveId,
-  (newId) => {
-    selectedAgentLocalId.value = newId
+  () => {
+    const ep = store.getSession(props.liveId)?.agents.find(a => a.isEntryPoint)
+    selectedAgentLocalId.value = ep?.localId ?? props.liveId
   },
 )
 
@@ -140,15 +153,15 @@ const turnStartedAt = ref<number | null>(null)
 const turnEndedAt = ref<number | null>(null)
 
 // When the selected agent changes (route change OR tree click), reset UI state
-// and save/restore draft messages for the respective sessions.
+// and save/restore draft messages via the root session (draft keyed by sessionLocalId).
 watch(
   selectedAgentLocalId,
-  (newId, oldId) => {
-    if (oldId && messageInputRef.value) {
-      store.setDraftMessage(oldId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
+  (_newId, _oldId) => {
+    if (_oldId && messageInputRef.value) {
+      store.setDraftMessage(props.liveId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
     }
     void nextTick(() => {
-      const s = store.getSession(newId)
+      const s = store.getSession(props.liveId)
       messageInputRef.value?.setText(s?.draftMessage ?? '')
       messageInputRef.value?.setAttachments(s?.draftAttachments ?? [])
     })
@@ -164,7 +177,7 @@ watch(
 
 onBeforeUnmount(() => {
   if (messageInputRef.value) {
-    store.setDraftMessage(selectedAgentLocalId.value, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
+    store.setDraftMessage(props.liveId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
   }
 })
 
@@ -213,8 +226,8 @@ async function onSend(text: string, attachments: Attachment[]) {
     }
     return
   }
-  store.setDraftMessage(selectedAgentLocalId.value, '')
-  void store.send(selectedAgentLocalId.value, text, attachments)
+  store.setDraftMessage(props.liveId, '')
+  void store.send(props.liveId, text, attachments)
 }
 
 async function onStop() {
@@ -355,11 +368,9 @@ const verbosityState = ref<VerbosityState>({
   toggles: { ...DEFAULT_VERBOSITY_STATE.toggles },
 })
 
-const totalHiddenCount = computed(() => {
-  const s = session.value
-  if (!s) return 0
-  return computeHiddenCount(s.events, verbosityState.value)
-})
+const totalHiddenCount = computed(() =>
+  computeHiddenCount(agentEvents.value, verbosityState.value)
+)
 
 function onShowAll() {
   verbosityState.value = { mode: 'verbose', toggles: { ...MODE_DEFAULTS.verbose } }
@@ -386,7 +397,13 @@ function writePanelCollapsed(name: string, value: boolean) {
   }
 }
 
+const leftCollapsed = ref(readPanelCollapsed('left', false))
 const rightCollapsed = ref(readPanelCollapsed('right', false))
+
+function setLeftCollapsed(v: boolean) {
+  leftCollapsed.value = v
+  writePanelCollapsed('left', v)
+}
 
 function setRightCollapsed(v: boolean) {
   rightCollapsed.value = v
@@ -412,8 +429,9 @@ watch(
 const currentToolName = computed((): string | null => {
   const s = session.value
   if (!s || (s.status !== 'running' && s.status !== 'starting')) return null
-  for (let i = s.events.length - 1; i >= 0; i--) {
-    const evt = s.events[i]
+  const evts = agentEvents.value
+  for (let i = evts.length - 1; i >= 0; i--) {
+    const evt = evts[i]
     if (!evt) continue
     for (let j = evt.content.length - 1; j >= 0; j--) {
       const block = evt.content[j]
@@ -427,6 +445,14 @@ const currentToolName = computed((): string | null => {
 
 <template>
   <div v-if="session" class="h-full flex overflow-hidden">
+
+    <!-- ── Left column: Sessions list ────────────────────────────────────── -->
+    <SessionsSidebar
+      :collapsed="leftCollapsed"
+      :active-id="props.liveId"
+      @collapse="setLeftCollapsed(true)"
+      @expand="setLeftCollapsed(false)"
+    />
 
     <!-- ── Center column: Chat ────────────────────────────────────────────── -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -557,7 +583,7 @@ const currentToolName = computed((): string | null => {
             <Transcript
               v-if="isResumed && historicalEvents.length"
               :events="historicalEvents"
-              :role-name="session.roleName ?? null"
+              :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
               :verbosity-state="verbosityState"
               @show-all="onShowAll"
             />
@@ -570,8 +596,8 @@ const currentToolName = computed((): string | null => {
               <span class="flex-1 border-t border-border" />
             </div>
             <Transcript
-              :events="session.events"
-              :role-name="session.roleName ?? null"
+              :events="agentEvents"
+              :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
               :verbosity-state="verbosityState"
               @show-all="onShowAll"
             />
@@ -627,7 +653,7 @@ const currentToolName = computed((): string | null => {
         :enter-to-send="props.enterToSend"
         :send-modifier="props.sendModifier"
         :project-path="session.projectPath"
-        :role-name="session.roleName"
+        :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
         :agency-name="session.agencyName"
         :placeholder="
           isDraft

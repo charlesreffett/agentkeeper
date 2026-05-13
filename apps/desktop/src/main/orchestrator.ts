@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import Anthropic from '@anthropic-ai/sdk'
-import { createSdkMcpServer, query, tool } from '@anthropic-ai/claude-agent-sdk'
+import { createSdkMcpServer, query, tool, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
 import type {
   AgencyInstance,
@@ -21,8 +21,9 @@ import {
   interruptSession,
 } from './agent'
 import * as registry from './session-registry'
-import type { HandoffRecord, Session } from './session-registry'
+import type { Agent, HandoffRecord } from './session-registry'
 import { resolveClaudeAuth } from './secrets'
+import { createPlan, updatePlan } from './plans'
 
 interface AgencyRoleRestartParams {
   systemPromptAppend: string
@@ -233,12 +234,14 @@ async function spawnOverflow(
   sessionToRuntimeId.set(localId, runtime.instanceId)
   runtime.busySessions.add(localId)
 
-  const mcp = createOrchestratorMcp(localId)
+  const mcp = createOrchestratorMcp(runtime.projectPath, localId)
 
   try {
     await startSession(
       {
         localId,
+        agentLocalId: localId,
+        sessionLocalId: runtime.instanceId,
         projectPath: runtime.projectPath,
         ...(runtime.worktreePath ? { worktreePath: runtime.worktreePath } : {}),
         initialPrompt: `Agency "${runtime.agencyName}" overflow agent initialized. Await messages from peers.`,
@@ -246,13 +249,13 @@ async function spawnOverflow(
         ...(restart.model ? { model: restart.model } : {}),
         ...(restart.effort ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort } : {}),
         ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
-        agencyInstanceId: runtime.instanceId,
         agencyId: runtime.agencyId,
         agencyScope: runtime.agencyScope,
         roleId,
         roleInstanceIndex: nextIndex,
         roleName: role.name,
         agencyName: runtime.agencyName,
+        isEntryPoint: false,
       },
       { mcpServer: mcp },
     )
@@ -371,33 +374,37 @@ async function injectAndWait(
 
   let target = getActiveSession(toSessionId)
   if (!target) {
-    const persisted = registry.getSession(toSessionId)
-    if (!persisted?.sdkSessionId) {
+    const persistedAgent = registry.getAgent(toSessionId)
+    if (!persistedAgent?.sdkSessionId) {
       return `Error: instance "${inst.instanceId}" has no resolvable session — it may not have initialised yet. Retry in a moment.`
     }
     const restart = runtime.restartParamsByRole.get(inst.roleId)
     if (!restart) {
       return `Error: instance "${inst.instanceId}" has no restart context in this agency.`
     }
-    const mcp = createOrchestratorMcp(toSessionId)
+    const mcp = createOrchestratorMcp(runtime.projectPath, toSessionId)
     await startSession(
       {
         localId: toSessionId,
+        agentLocalId: toSessionId,
+        sessionLocalId: runtime.instanceId,
         projectPath: runtime.projectPath,
         ...(runtime.worktreePath ? { worktreePath: runtime.worktreePath } : {}),
-        initialPrompt: persisted.initialPrompt,
-        resumeSdkSessionId: persisted.sdkSessionId,
+        initialPrompt: persistedAgent.initialPrompt,
+        resumeSdkSessionId: persistedAgent.sdkSessionId,
         systemPromptAppend: restart.systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
         ...(restart.effort
           ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort }
           : {}),
         ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
-        agencyInstanceId: runtime.instanceId,
+        agencyId: runtime.agencyId,
+        agencyScope: runtime.agencyScope,
         roleId: inst.roleId,
         roleInstanceIndex: inst.instanceIndex,
-        roleName: persisted.roleName ?? inst.roleId,
+        roleName: persistedAgent.roleName ?? inst.roleId,
         agencyName: runtime.agencyName,
+        isEntryPoint: persistedAgent.isEntryPoint,
       },
       { mcpServer: mcp },
     )
@@ -627,13 +634,92 @@ function buildContextPreamble(opts: {
   ].join('\n')
 }
 
+const planStepSchema = z.array(
+  z.object({
+    id: z.number(),
+    title: z.string(),
+    summary: z.string().optional(),
+    instructions: z.string().optional(),
+    filesInScope: z.array(z.string()).optional(),
+    model: z.string().describe('"claude-haiku-4-5" for reads/audits, "claude-sonnet-4-5" for implementation, "claude-opus-4-5" for complex architecture'),
+    estimatedMinutes: z.number(),
+    agent: z.string().describe('"explorer" | "main" | "qa" | "doc"'),
+    parallel: z.boolean(),
+    status: z.enum(['pending', 'running', 'complete', 'failed', 'skipped', 'replanning']).optional(),
+  }),
+)
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildPlanTools(projectPath: string): SdkMcpToolDefinition<any>[] {
+  return [
+    tool(
+      'create_plan',
+      'Create a structured implementation plan in .agentkeeper/plans/. Use this instead of the Write tool whenever creating a plan.',
+      {
+        title: z.string(),
+        externalRef: z.string().describe('Ticket or feature ID, e.g. "EJP-45" or "auth-revamp". Used as the filename base.'),
+        workItemId: z.string().optional(),
+        prompt: z.string().optional().describe('Original task description or user request'),
+        estimatedMinutes: z.number().describe('Sum of all step estimatedMinutes'),
+        steps: planStepSchema,
+      },
+      async ({ title, externalRef, workItemId, prompt, estimatedMinutes, steps }) => {
+        const plan = await createPlan(projectPath, {
+          title,
+          externalRef,
+          workItemId: workItemId ?? '',
+          prompt,
+          estimatedMinutes,
+          steps: steps.map((s) => ({ ...s, status: s.status ?? 'pending' })),
+          status: 'planned',
+        })
+        return { content: [{ type: 'text', text: JSON.stringify(plan) }] }
+      },
+    ),
+    tool(
+      'update_plan',
+      'Update an existing plan\'s status, steps, or session associations.',
+      {
+        filename: z.string().describe('Plan filename, e.g. "EJP-45-plan.json"'),
+        status: z.enum(['planned', 'drafting', 'running', 'complete']).optional(),
+        estimatedMinutes: z.number().optional(),
+        steps: planStepSchema.optional(),
+        sessionIds: z.array(z.string()).optional(),
+      },
+      async ({ filename, steps, ...rest }) => {
+        const patch = {
+          ...rest,
+          ...(steps !== undefined
+            ? { steps: steps.map((s) => ({ ...s, status: s.status ?? 'pending' as const })) }
+            : {}),
+        }
+        const updated = await updatePlan(projectPath, filename, patch)
+        if (!updated) return { content: [{ type: 'text', text: `Error: plan file "${filename}" not found.` }] }
+        return { content: [{ type: 'text', text: JSON.stringify(updated) }] }
+      },
+    ),
+  ]
+}
+
+export function createProjectMcp(
+  projectPath: string,
+): ReturnType<typeof createSdkMcpServer> {
+  return createSdkMcpServer({
+    name: 'agentkeeper',
+    version: '1.0.0',
+    tools: buildPlanTools(projectPath),
+  })
+}
+
 export function createOrchestratorMcp(
+  projectPath: string,
   sessionId: string,
 ): ReturnType<typeof createSdkMcpServer> {
   return createSdkMcpServer({
     name: 'agentkeeper',
     version: '1.0.0',
     tools: [
+      ...buildPlanTools(projectPath),
       tool(
         'send_message',
         'Send a message to a peer agent by instance id (e.g. "developer-1") or role id (e.g. "developer" for load-balanced delivery). Waits for their reply and returns it as the tool result.',
@@ -724,6 +810,30 @@ export async function startAgency(
   }
 
   const instanceId = randomUUID()
+
+  // Register the single session row that represents this agency run.
+  const sessionNow = Date.now()
+  registry.registerSession({
+    localId: instanceId,
+    projectPath: params.projectPath,
+    worktreePath: worktreePath ?? null,
+    branch: branch ?? null,
+    model: params.model ?? null,
+    effort: null,
+    permissionMode: 'bypassPermissions',
+    initialPrompt: params.initialPrompt ?? '',
+    agencyName: agency.name,
+    agencyId: agency.id,
+    agencyScope: agency.scope,
+    title: null,
+    workItemKey: params.workItemKey ?? null,
+    workItemTitle: params.workItemTitle ?? null,
+    status: 'starting',
+    startedAt: sessionNow,
+    lastActivityAt: sessionNow,
+    planState: null,
+  })
+
   const runtime: RuntimeAgency = {
     instanceId,
     agencyId: agency.id,
@@ -764,7 +874,6 @@ export async function startAgency(
   }
 
   const sessionsMeta: AgencyInstanceSession[] = []
-  let entryLocalId: string | null = null
 
   for (const { slot, count } of spawnCounts) {
     const role = rolesById.get(slot.roleId)!
@@ -815,29 +924,32 @@ export async function startAgency(
           ? params.initialPrompt
           : `Agency "${agency.name}" is initializing. Await messages from peers.`
 
-      if (isEntry && idx === 1) entryLocalId = localId
-
-      const mcp = createOrchestratorMcp(localId)
+      const mcp = createOrchestratorMcp(params.projectPath, localId)
 
       await startSession(
         {
           localId,
+          agentLocalId: localId,
+          sessionLocalId: instanceId,
           projectPath: params.projectPath,
           ...(worktreePath ? { worktreePath } : {}),
           initialPrompt,
+          ...(isEntry && idx === 1 && params.initialAttachments?.length
+            ? { initialAttachments: params.initialAttachments }
+            : {}),
           ...(resolvedModel ? { model: resolvedModel } : {}),
           ...(role.effort ? { effort: role.effort } : {}),
           systemPromptAppend,
           ...(withOrchestraMcp(role.allowedTools)
             ? { allowedTools: withOrchestraMcp(role.allowedTools) }
             : {}),
-          agencyInstanceId: instanceId,
           agencyId: agency.id,
           agencyScope: agency.scope,
           roleId: slot.roleId,
           roleInstanceIndex: idx,
           roleName: role.name,
           agencyName: agency.name,
+          isEntryPoint: isEntry && idx === 1,
         },
         { mcpServer: mcp },
       )
@@ -863,17 +975,18 @@ export async function startAgency(
 
       sessionsMeta.push({
         localId,
+        sessionLocalId: instanceId,
         roleId: slot.roleId,
         instanceId: instId,
         instanceIndex: idx,
         roleName: role.name,
-        isEntryPoint: isEntry,
+        isEntryPoint: isEntry && idx === 1,
         isOverflow: false,
       })
     }
   }
 
-  if (entryLocalId) void generateAndPersistSessionTitle(entryLocalId, params.initialPrompt)
+  void generateAndPersistSessionTitle(instanceId, params.initialPrompt)
 
   return {
     instanceId,
@@ -893,17 +1006,19 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     if (existing) return existing
   }
 
-  const memberSessions = registry.listSessionsByAgency(instanceId)
-  if (!memberSessions.length) throw new Error(`No sessions found for agency instance "${instanceId}"`)
+  const memberAgents = registry.listAgentsBySession(instanceId)
+  if (!memberAgents.length) throw new Error(`No agents found for agency instance "${instanceId}"`)
 
-  const firstSession = memberSessions[0]!
-  const agencyId = firstSession.agencyId
-  const agencyScope = firstSession.agencyScope
+  const session = registry.getSession(instanceId)
+  if (!session) throw new Error(`Session row missing for agency instance "${instanceId}"`)
+
+  const agencyId = session.agencyId
+  const agencyScope = session.agencyScope
   if (!agencyId || !agencyScope) throw new Error(`Agency id/scope missing from session for instance "${instanceId}"`)
 
-  const projectPath = firstSession.projectPath
-  const worktreePath = firstSession.worktreePath
-  const branch = firstSession.branch
+  const projectPath = session.projectPath
+  const worktreePath = session.worktreePath
+  const branch = session.branch
 
   const allAgencies = await listAgencies(projectPath)
   const agency = allAgencies.find((a) => a.id === agencyId && a.scope === agencyScope)
@@ -912,21 +1027,21 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
   const allRoles = await listRoles(projectPath)
   const rolesById = new Map(allRoles.map((r) => [r.id, r]))
 
-  // Build roleSessionMap from persisted sessions
+  // Build roleSessionMap from persisted agents
   const roleSessionMap: Record<string, Array<{ instanceIndex: number; sdkSessionId: string }>> = {}
-  for (const s of memberSessions) {
-    if (!s.roleId) continue
-    const instanceIndex = registry.getSessionRoleInstanceIndex(s.localId) ?? 1
-    if (!roleSessionMap[s.roleId]) roleSessionMap[s.roleId] = []
-    if (s.sdkSessionId) {
-      roleSessionMap[s.roleId]!.push({ instanceIndex, sdkSessionId: s.sdkSessionId })
+  for (const agent of memberAgents) {
+    if (!agent.roleId) continue
+    const instanceIndex = agent.roleInstanceIndex ?? 1
+    if (!roleSessionMap[agent.roleId]) roleSessionMap[agent.roleId] = []
+    if (agent.sdkSessionId) {
+      roleSessionMap[agent.roleId]!.push({ instanceIndex, sdkSessionId: agent.sdkSessionId })
     }
   }
 
   const sdkToLocalId = new Map<string, string>(
-    memberSessions
-      .filter((s): s is Session & { sdkSessionId: string } => s.sdkSessionId !== null)
-      .map((s) => [s.sdkSessionId!, s.localId]),
+    memberAgents
+      .filter((a): a is Agent & { sdkSessionId: string } => a.sdkSessionId !== null)
+      .map((a) => [a.sdkSessionId, a.localId]),
   )
 
   const handoffsByRole = registry.getHandoffsByRole(instanceId)
@@ -1000,11 +1115,13 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       })
 
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
-      const mcp = createOrchestratorMcp(localId)
+      const mcp = createOrchestratorMcp(projectPath, localId)
 
       await startSession(
         {
           localId,
+          agentLocalId: localId,
+          sessionLocalId: instanceId,
           projectPath,
           ...(worktreePath ? { worktreePath } : {}),
           initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
@@ -1014,13 +1131,13 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
           ...(withOrchestraMcp(role.allowedTools)
             ? { allowedTools: withOrchestraMcp(role.allowedTools) }
             : {}),
-          agencyInstanceId: instanceId,
           agencyId: agency.id,
           agencyScope: agency.scope,
           roleId: slot.roleId,
           roleInstanceIndex: entry.instanceIndex,
           roleName: role.name,
           agencyName: agency.name,
+          isEntryPoint: isEntry,
           ...(entry.sdkSessionId ? { resumeSdkSessionId: entry.sdkSessionId } : {}),
         },
         { mcpServer: mcp },
@@ -1048,6 +1165,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
 
       sessionsMeta.push({
         localId,
+        sessionLocalId: instanceId,
         roleId: slot.roleId,
         instanceId: instId,
         instanceIndex: entry.instanceIndex,
@@ -1083,6 +1201,7 @@ export function listAgencyInstances(): AgencyInstance[] {
     branch: r.branch,
     sessions: Array.from(r.sessionToInstance.values()).map((inst) => ({
       localId: inst.localId,
+      sessionLocalId: r.instanceId,
       roleId: inst.roleId,
       instanceId: inst.instanceId,
       instanceIndex: inst.instanceIndex,
