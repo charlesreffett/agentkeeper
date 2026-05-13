@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-vue-next'
+import { ChevronRight, Plus } from 'lucide-vue-next'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { useProjectStore } from '@/stores/project'
 import { formatRelativeTime } from '@/lib/format'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
@@ -18,22 +19,40 @@ defineEmits<{ collapse: []; expand: [] }>()
 const router = useRouter()
 const sessionStore = useSessionStore()
 const projectStore = useProjectStore()
-const { focusedProject } = useProjectsQuery()
+const { focusedProject, projects } = useProjectsQuery()
+const { persistedSessions } = useSessionsListQuery(projects)
 
 const filterText = ref('')
 
 const sessions = computed(() => {
-  const visible = sessionStore.visibleSessions.filter((s) => !s.isDraft)
+  const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
+
+  const live = sessionStore.visibleSessions.filter((s) => !s.isDraft)
+
+  const previous = persistedSessions.value
+    .filter((s) => !liveIds.has(s.localId))
+    .map((s) => ({
+      localId: s.localId,
+      status: s.status,
+      workItemKey: s.workItemKey ?? null,
+      workItemTitle: s.workItemTitle ?? null,
+      title: s.title ?? null,
+      initialPrompt: s.initialPrompt,
+      lastActivityAt: s.lastActivityAt,
+    }))
+
+  const all = [...live, ...previous]
+
   const q = filterText.value.toLowerCase().trim()
   const filtered = q
-    ? visible.filter(
+    ? all.filter(
         (s) =>
           (s.workItemKey ?? '').toLowerCase().includes(q) ||
           (s.workItemTitle ?? '').toLowerCase().includes(q) ||
           (s.title ?? '').toLowerCase().includes(q) ||
           s.initialPrompt.toLowerCase().includes(q),
       )
-    : visible
+    : all
   return filtered.slice().sort((a, b) => b.lastActivityAt - a.lastActivityAt)
 })
 
@@ -111,24 +130,13 @@ async function handleNew() {
   >
     <!-- Header -->
     <div class="px-3 py-2 shrink-0 flex items-center justify-between border-b border-border">
-      <div class="flex items-center gap-2">
-        <span class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Sessions
-        </span>
-        <button
-          class="p-0.5 rounded text-muted-foreground hover:text-foreground transition-colors"
-          title="New session"
-          @click="handleNew"
-        >
-          <Plus class="size-3.5" />
-        </button>
-      </div>
+      <span class="text-sm font-semibold text-foreground">Sessions</span>
       <button
-        class="p-0.5 text-muted-foreground hover:text-foreground transition-colors rounded"
-        title="Collapse sessions"
-        @click="$emit('collapse')"
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+        @click="handleNew"
       >
-        <ChevronLeft class="size-3.5" />
+        <Plus class="size-3" />
+        New
       </button>
     </div>
 
