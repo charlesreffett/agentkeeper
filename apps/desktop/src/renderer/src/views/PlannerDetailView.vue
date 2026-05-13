@@ -35,6 +35,7 @@ const loading = ref(false)
 const generating = ref(false)
 const replanning = ref(false)
 const replanError = ref<string | null>(null)
+const starting = ref(false)
 
 // Which step indices are expanded
 const expandedSteps = ref<Set<number>>(new Set())
@@ -207,6 +208,49 @@ function closeMenu() {
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
+async function startAllSteps() {
+  if (!plan.value || !focusedProject.value) return
+  const project = focusedProject.value
+  const cur = plan.value
+  starting.value = true
+  const stepsText = cur.steps
+    .map((s, i) => {
+      const lines = [
+        `${i + 1}. ${s.title} — ${s.summary}`,
+        `   Instructions: ${s.instructions}`,
+      ]
+      if (s.filesInScope?.length) {
+        lines.push(`   Files in scope: ${s.filesInScope.join(', ')}`)
+      }
+      return lines.join('\n')
+    })
+    .join('\n')
+  const prompt = `Execute the following implementation plan step by step.
+
+Plan: ${cur.title} (${cur.externalRef})
+
+Steps:
+${stepsText}
+
+Execute each step in sequence (run parallel:true steps concurrently where safe). Mark steps complete as you finish each one using the update_plan MCP tool.`
+  try {
+    const updated = await window.agentkeeper.plans.update(project.path, filename.value, { status: 'running' })
+    if (updated) plan.value = updated
+    await sessionStore.start({
+      projectPath: project.path,
+      initialPrompt: prompt,
+      workItemId: cur.workItemId || undefined,
+    })
+    void router.push('/sessions')
+  } catch (err) {
+    console.error('Failed to start plan:', err)
+    await window.agentkeeper.plans.update(project.path, filename.value, { status: 'planned' }).catch(() => {})
+    if (plan.value) plan.value = { ...plan.value, status: 'planned' }
+  } finally {
+    starting.value = false
+  }
+}
+
 async function replan() {
   if (!plan.value) return
   const project = focusedProject.value
@@ -322,10 +366,13 @@ The file must be valid JSON with this structure:
             <!-- Idle/planned state: Start all steps -->
             <button
               v-if="plan.status === 'planned'"
-              class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+              class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="starting"
+              @click="startAllSteps"
             >
-              <Play :size="14" />
-              Start all steps
+              <Loader2 v-if="starting" :size="14" class="animate-spin" />
+              <Play v-else :size="14" />
+              {{ starting ? 'Starting…' : 'Start all steps' }}
             </button>
 
             <!-- Complete state: Open session -->
