@@ -171,7 +171,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       // Persist latest TodoWrite state so plan progress survives restarts.
       const rawMsg = msg as unknown as Record<string, unknown>
       if (rawMsg['type'] === 'assistant') {
-        const content = rawMsg['content'] as unknown[] | undefined
+        const content = (rawMsg['message'] as Record<string, unknown> | undefined)?.['content'] as unknown[] | undefined
         if (Array.isArray(content)) {
           const todoBlock = content.find((b) => {
             const block = b as Record<string, unknown>
