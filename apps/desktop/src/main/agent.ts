@@ -537,20 +537,11 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
 }
 
 export async function interruptSession(sessionId: string): Promise<boolean> {
-  const direct = active.get(sessionId)
-  if (direct) {
-    direct.interrupted = true
-    setStatus(direct, 'suspended')
-    try { direct.input.close() } catch { /* ignore */ }
-    try { await direct.query.interrupt() } catch { /* ignore */ }
-    try { direct.abortController.abort() } catch { /* ignore */ }
-    try { direct.query.close?.() } catch { /* ignore */ }
-    return true
-  }
-  // Cascade: sessionId is a sessionLocalId shared by all agency sub-agents
-  const siblings = [...active.values()].filter(s => s.sessionLocalId === sessionId)
-  if (siblings.length === 0) return false
-  await Promise.all(siblings.map(async s => {
+  const targets = [...active.values()].filter(
+    s => s.agentLocalId === sessionId || s.sessionLocalId === sessionId
+  )
+  if (targets.length === 0) return false
+  await Promise.all(targets.map(async s => {
     s.interrupted = true
     setStatus(s, 'suspended')
     try { s.input.close() } catch { /* ignore */ }
@@ -562,19 +553,10 @@ export async function interruptSession(sessionId: string): Promise<boolean> {
 }
 
 export async function terminateSession(sessionId: string): Promise<void> {
-  const direct = active.get(sessionId)
-  if (direct) {
-    try { direct.input.close() } catch { /* ignore */ }
-    try { await direct.query.interrupt() } catch { /* ignore */ }
-    try { direct.abortController.abort() } catch { /* ignore */ }
-    try { direct.query.close?.() } catch { /* ignore */ }
-    setStatus(direct, 'terminated')
-    active.delete(sessionId)
-    return
-  }
-  // Cascade: sessionId is a sessionLocalId shared by all agency sub-agents
-  const siblings = [...active.values()].filter(s => s.sessionLocalId === sessionId)
-  await Promise.all(siblings.map(async s => {
+  const targets = [...active.values()].filter(
+    s => s.agentLocalId === sessionId || s.sessionLocalId === sessionId
+  )
+  await Promise.all(targets.map(async s => {
     try { s.input.close() } catch { /* ignore */ }
     try { await s.query.interrupt() } catch { /* ignore */ }
     try { s.abortController.abort() } catch { /* ignore */ }
