@@ -29,6 +29,21 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
     ),
   })
 
+  const trackedSdkIdResults = useQueries({
+    queries: computed(() =>
+      projects.value.map((p) => ({
+        queryKey: queryKeys.sessions.trackedSdkIds(p.path),
+        queryFn: (): Promise<string[]> =>
+          window.agentkeeper.sessions.listTrackedSdkIds(p.path).catch(() => []),
+      })),
+    ),
+  })
+
+  const trackedSdkIds = computed(() => {
+    const all = trackedSdkIdResults.value.flatMap((r) => r.data ?? [])
+    return new Set(all)
+  })
+
   const persistedSessions = computed(() => {
     const all: Session[] = persistedResults.value.flatMap((r) => r.data ?? [])
     const seen = new Set<string>()
@@ -48,6 +63,7 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
       .filter(({ summary: s }) => {
         if (seen.has(s.id)) return false
         seen.add(s.id)
+        if (trackedSdkIds.value.has(s.id)) return false
         return true
       })
       .sort((a, b) => b.summary.lastActivityAt - a.summary.lastActivityAt)
@@ -56,12 +72,14 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
   const isLoading = computed(
     () =>
       persistedResults.value.some((r) => r.isLoading) ||
-      historicalResults.value.some((r) => r.isLoading),
+      historicalResults.value.some((r) => r.isLoading) ||
+      trackedSdkIdResults.value.some((r) => r.isLoading),
   )
 
   function invalidateForProject(projectPath: string) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.persisted(projectPath) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.historical(projectPath) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.trackedSdkIds(projectPath) })
   }
 
   function invalidateAll() {

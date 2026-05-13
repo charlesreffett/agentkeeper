@@ -21,6 +21,7 @@ export const queryKeys = {
   sessions: {
     persisted: (projectPath: string) => ['sessions', 'persisted', projectPath] as const,
     historical: (projectPath: string) => ['sessions', 'historical', projectPath] as const,
+    trackedSdkIds: (projectPath: string) => ['sessions', 'trackedSdkIds', projectPath] as const,
   },
   stats: {
     all: () => ['stats', 'all'] as const,

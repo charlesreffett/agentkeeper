@@ -830,6 +830,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     (_event, sessionLocalId: string) => sessionRegistry.listAgentsBySession(sessionLocalId),
   )
   ipcMain.handle(
+    IPC_CHANNELS.sessionsListTrackedSdkIds,
+    (_event, projectPath: string) => sessionRegistry.listTrackedSdkIds(projectPath),
+  )
+  ipcMain.handle(
     IPC_CHANNELS.sessionsAddAgent,
     async (_event, sessionLocalId: string, params: AddAgentParams) => {
       try {

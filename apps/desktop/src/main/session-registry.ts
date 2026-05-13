@@ -1,4 +1,4 @@
-import { and, desc, eq, lt } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, lt } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencyHandoffs, agents, sessions } from './db/schema'
 import type { Agent, AgencyScope, LiveSessionStatus, PlanTodo, RoleEffort, Session } from '../shared/ipc-contract'
@@ -215,6 +215,17 @@ export function listAgentsBySession(sessionLocalId: string): Agent[] {
     .where(eq(agents.sessionLocalId, sessionLocalId))
     .all()
     .map(rowToAgent)
+}
+
+export function listTrackedSdkIds(projectPath: string): string[] {
+  const db = getDb()
+  return db
+    .selectDistinct({ sdkSessionId: agents.sdkSessionId })
+    .from(agents)
+    .innerJoin(sessions, eq(agents.sessionLocalId, sessions.localId))
+    .where(and(eq(sessions.projectPath, projectPath), isNotNull(agents.sdkSessionId)))
+    .all()
+    .map((r) => r.sdkSessionId!)
 }
 
 // ── Handoffs ──────────────────────────────────────────────────────────────────

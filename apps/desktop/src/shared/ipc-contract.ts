@@ -636,6 +636,7 @@ export interface AgentKeeperApi {
     deleteAllPersisted: (projectPath: string) => Promise<void>
     getAgents: (sessionLocalId: string) => Promise<Agent[]>
     addAgent: (sessionLocalId: string, params: AddAgentParams) => Promise<string>
+    listTrackedSdkIds: (projectPath: string) => Promise<string[]>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -868,6 +869,7 @@ export const IPC_CHANNELS = {
   sessionsDeleteAllPersisted: 'sessions:deleteAllPersisted',
   sessionsGetAgents: 'sessions:getAgents',
   sessionsAddAgent: 'sessions:addAgent',
+  sessionsListTrackedSdkIds: 'sessions:listTrackedSdkIds',
   agenciesResume: 'agencies:resume',
   dialogOpenFiles: 'dialog:openFiles',
   gitGetBranch: 'git:getBranch',
