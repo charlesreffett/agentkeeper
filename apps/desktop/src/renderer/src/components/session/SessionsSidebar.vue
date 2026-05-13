@@ -90,6 +90,14 @@ function isRunning(status: LiveSessionStatus): boolean {
   return status === 'running' || status === 'starting'
 }
 
+function handleSessionClick(s: (typeof sessions.value)[number]): void {
+  if (!sessionStore.getSession(s.localId)) {
+    const persisted = persistedSessions.value.find((p) => p.localId === s.localId)
+    if (persisted) sessionStore.openPersisted(persisted)
+  }
+  void router.push(`/sessions/${s.localId}`)
+}
+
 async function handleNew() {
   const target = focusedProject.value ?? projectStore.currentProject
   if (target) {
@@ -129,7 +137,7 @@ async function handleNew() {
     class="w-[260px] shrink-0 flex flex-col border-r border-border overflow-hidden"
   >
     <!-- Header -->
-    <div class="px-3 py-2 shrink-0 flex items-center justify-between border-b border-border">
+    <div class="px-3 h-10 shrink-0 flex items-center justify-between border-b border-border">
       <span class="text-sm font-semibold text-foreground">Sessions</span>
       <button
         class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
@@ -161,7 +169,7 @@ async function handleNew() {
             ? 'bg-muted'
             : 'hover:bg-muted/50'
         "
-        @click="router.push(`/sessions/${s.localId}`)"
+        @click="handleSessionClick(s)"
       >
         <!-- Row 1: dot + key + time -->
         <div class="flex items-center gap-1.5 mb-0.5">
