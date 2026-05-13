@@ -264,7 +264,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionInterrupt,
     async (_event, sessionId: string) => {
       try {
-        await interruptSession(sessionId)
+        return await interruptSession(sessionId)
       } catch (err) {
         console.error('[ipc] session:interrupt failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))

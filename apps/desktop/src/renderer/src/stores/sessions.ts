@@ -383,27 +383,28 @@ export const useSessionStore = defineStore('sessions', () => {
     const s = sessions[id]
     if (!s) return
     try {
-      await window.agentkeeper.sessions.interrupt(id)
-      s.interruptedAt = Date.now()
-      const entry: TranscriptEvent = {
-        uuid: crypto.randomUUID(),
-        parentUuid: null,
-        timestamp: new Date().toISOString(),
-        kind: 'system',
-        role: 'system',
-        isMeta: false,
-        isSidechain: false,
-        model: null,
-        content: [{ type: 'text', text: 'Interrupted.' }],
-        parentToolUseId: null,
-        systemSubtype: 'interrupted',
-      }
-      s.events.push(entry)
-      // Push to the focused agent's stream too
-      const entryAgent = s.agents.find(a => a.isEntryPoint) ?? s.agents[0]
-      if (entryAgent) {
-        if (!s.agentEvents[entryAgent.localId]) s.agentEvents[entryAgent.localId] = []
-        s.agentEvents[entryAgent.localId]!.push(entry)
+      const didInterrupt = await window.agentkeeper.sessions.interrupt(id)
+      if (didInterrupt) {
+        s.interruptedAt = Date.now()
+        const entry: TranscriptEvent = {
+          uuid: crypto.randomUUID(),
+          parentUuid: null,
+          timestamp: new Date().toISOString(),
+          kind: 'system',
+          role: 'system',
+          isMeta: false,
+          isSidechain: false,
+          model: null,
+          content: [{ type: 'text', text: 'Interrupted.' }],
+          parentToolUseId: null,
+          systemSubtype: 'interrupted',
+        }
+        s.events.push(entry)
+        const entryAgent = s.agents.find(a => a.isEntryPoint) ?? s.agents[0]
+        if (entryAgent) {
+          if (!s.agentEvents[entryAgent.localId]) s.agentEvents[entryAgent.localId] = []
+          s.agentEvents[entryAgent.localId]!.push(entry)
+        }
       }
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)

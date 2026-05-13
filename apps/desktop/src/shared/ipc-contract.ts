@@ -617,7 +617,7 @@ export interface AgentKeeperApi {
     ) => Promise<SessionTranscript | null>
     start: (params: StartSessionParams) => Promise<string>
     sendInput: (sessionId: string, text: string, attachments?: Attachment[]) => Promise<void>
-    interrupt: (sessionId: string) => Promise<void>
+    interrupt: (sessionId: string) => Promise<boolean>
     terminate: (sessionId: string) => Promise<void>
     onEvent: (callback: (event: LiveSessionEvent) => void) => () => void
     onStatus: (

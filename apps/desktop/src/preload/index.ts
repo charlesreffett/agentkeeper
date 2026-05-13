@@ -142,7 +142,7 @@ const api: AgentKeeperApi = {
     sendInput: (sessionId: string, text: string, attachments?: Attachment[]) =>
       invoke(IPC_CHANNELS.sessionInput, sessionId, text, attachments) as Promise<void>,
     interrupt: (sessionId: string) =>
-      invoke(IPC_CHANNELS.sessionInterrupt, sessionId) as Promise<void>,
+      invoke(IPC_CHANNELS.sessionInterrupt, sessionId) as Promise<boolean>,
     terminate: (sessionId: string) =>
       invoke(IPC_CHANNELS.sessionTerminate, sessionId) as Promise<void>,
     onEvent: (cb) => onChannel<LiveSessionEvent>(IPC_CHANNELS.sessionEvent, cb),
