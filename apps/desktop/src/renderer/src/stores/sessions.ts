@@ -821,18 +821,33 @@ export const useSessionStore = defineStore('sessions', () => {
   // ─── Derived state for global Sessions page ──────────────────────────────
 
   const visibleSessions = computed<LiveSession[]>(() => {
-    const seenAgencies = new Set<string>()
-    const result: LiveSession[] = []
+    const all = Object.values(sessions)
 
-    const sorted = Object.values(sessions).sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+    // For each agency group, find the entry-point: the earliest-started session
+    // whose initialPrompt is NOT an agency init placeholder. Sub-agents and
+    // placeholder sessions are excluded from the sidebar entirely.
+    const agencyEntryPoint = new Map<string, string>()
+    for (const s of all) {
+      if (!s.agencyInstanceId || s.initialPrompt.startsWith('Agency "')) continue
+      const currentBest = agencyEntryPoint.get(s.agencyInstanceId)
+      if (!currentBest) {
+        agencyEntryPoint.set(s.agencyInstanceId, s.localId)
+      } else {
+        const bestSession = sessions[currentBest]
+        if (bestSession && s.startedAt < bestSession.startedAt) {
+          agencyEntryPoint.set(s.agencyInstanceId, s.localId)
+        }
+      }
+    }
+
+    const result: LiveSession[] = []
+    const sorted = all.sort((a, b) => b.lastActivityAt - a.lastActivityAt)
 
     for (const s of sorted) {
       if (s.isDraft) continue
       if (s.status === 'completed' || s.status === 'terminated') continue
       if (s.agencyInstanceId) {
-        if (s.initialPrompt.startsWith('Agency "')) continue
-        if (seenAgencies.has(s.agencyInstanceId)) continue
-        seenAgencies.add(s.agencyInstanceId)
+        if (agencyEntryPoint.get(s.agencyInstanceId) !== s.localId) continue
       }
       result.push(s)
     }
