@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -138,10 +138,11 @@ watch(
   },
 )
 
-// When the route changes, reset the selected agent to the entry-point agent.
+// When the route changes, reset historical events and selected agent to the entry-point agent.
 watch(
   () => props.liveId,
   () => {
+    historicalEvents.value = []
     const ep = store.getSession(props.liveId)?.agents.find(a => a.isEntryPoint)
     selectedAgentLocalId.value = ep?.localId ?? props.liveId
   },
@@ -181,14 +182,16 @@ onBeforeUnmount(() => {
   }
 })
 
-onMounted(async () => {
-  const s = session.value
-  if (s?.resumedFromSdkSessionId) {
+// Reactive watch handles both sync (historical) and async (persisted) cases,
+// and also fires on sidebar navigation when the same component instance is reused.
+watch(
+  () => session.value?.resumedFromSdkSessionId,
+  async (sdkId) => {
+    if (!sdkId) return
+    const s = session.value
+    if (!s) return
     try {
-      const transcript = await window.agentkeeper.sessions.read(
-        s.projectPath,
-        s.resumedFromSdkSessionId,
-      )
+      const transcript = await window.agentkeeper.sessions.read(s.projectPath, sdkId)
       if (transcript) {
         historicalEvents.value = transcript.events
         void scrollToBottom()
@@ -196,8 +199,9 @@ onMounted(async () => {
     } catch {
       // non-fatal — live events still work
     }
-  }
-})
+  },
+  { immediate: true },
+)
 
 // ─── Draft / send ───────────────────────────────────────────────────────────
 
@@ -458,7 +462,7 @@ const currentToolName = computed((): string | null => {
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
       <!-- Header -->
-      <header class="border-b border-border px-3 py-2 shrink-0 flex items-center gap-2">
+      <header class="border-b border-border px-3 h-10 shrink-0 flex items-center gap-2">
         <!-- Back to sessions list -->
         <button
           class="shrink-0 p-1 -ml-1 rounded text-muted-foreground hover:text-foreground transition-colors"
