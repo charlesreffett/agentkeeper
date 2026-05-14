@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { provide, ref } from 'vue'
 import { Settings } from 'lucide-vue-next'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import JiraSettingsModal from './JiraSettingsModal.vue'
@@ -7,6 +7,14 @@ import PageHeader from '@/components/PageHeader.vue'
 
 const { isHealthy } = usePluginHealth('jira')
 const settingsOpen = ref(false)
+
+// Increment when settings are saved so child views can react
+const jiraConfigVersion = ref(0)
+provide('jiraConfigVersion', jiraConfigVersion)
+
+function onSettingsSaved() {
+  jiraConfigVersion.value++
+}
 </script>
 
 <template>
@@ -37,6 +45,6 @@ const settingsOpen = ref(false)
   <JiraSettingsModal
     :open="settingsOpen"
     @close="settingsOpen = false"
-    @saved="() => {}"
+    @saved="onSettingsSaved"
   />
 </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
+import type { JiraProject } from '@shared/ipc-contract'
 
 interface Mapping {
   jiraProjectKey: string
@@ -20,6 +21,8 @@ const emit = defineEmits<{ close: []; saved: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 const mappings = ref<Mapping[]>([])
 const projects = ref<RegisteredProject[]>([])
+const jiraProjects = ref<JiraProject[]>([])
+const loadingJiraProjects = ref(false)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 
@@ -31,35 +34,30 @@ watch(
       saveError.value = null
       mappings.value = []
       projects.value = []
+      jiraProjects.value = []
 
-      try {
-        projects.value = (await window.agentkeeper.projects.list()) as RegisteredProject[]
-      } catch {
-        // non-fatal
-      }
+      loadingJiraProjects.value = true
+      const [cfg, jira, local] = await Promise.all([
+        window.agentkeeper.plugins.getConfig('jira').catch(() => null),
+        window.agentkeeper.jira.listProjects().catch(() => [] as JiraProject[]),
+        window.agentkeeper.projects.list().catch(() => [] as RegisteredProject[]),
+      ])
+      loadingJiraProjects.value = false
 
-      try {
-        const cfg = (await window.agentkeeper.plugins.getConfig('jira')) as
-          | Record<string, unknown>
-          | null
-          | undefined
+      jiraProjects.value = jira
+      projects.value = local
 
-        if (cfg) {
-          const stored = cfg.projectMappings
-          if (Array.isArray(stored) && stored.length > 0) {
-            mappings.value = stored.map((m: unknown) => {
-              const row = m as Record<string, unknown>
-              return {
-                jiraProjectKey: typeof row.jiraProjectKey === 'string' ? row.jiraProjectKey : '',
-                projectPath: typeof row.projectPath === 'string' ? row.projectPath : '',
-              }
-            })
-          } else if (typeof cfg.projectKey === 'string' && cfg.projectKey) {
-            mappings.value = [{ jiraProjectKey: cfg.projectKey, projectPath: '' }]
+      const typed = cfg as { projectMappings?: unknown[]; projectKey?: string } | null
+      if (typed?.projectMappings && Array.isArray(typed.projectMappings) && typed.projectMappings.length > 0) {
+        mappings.value = typed.projectMappings.map((m: unknown) => {
+          const row = m as Record<string, unknown>
+          return {
+            jiraProjectKey: typeof row.jiraProjectKey === 'string' ? row.jiraProjectKey : '',
+            projectPath: typeof row.projectPath === 'string' ? row.projectPath : '',
           }
-        }
-      } catch {
-        // non-fatal
+        })
+      } else if (typeof typed?.projectKey === 'string' && typed.projectKey) {
+        mappings.value = [{ jiraProjectKey: typed.projectKey, projectPath: '' }]
       }
 
       if (mappings.value.length === 0) {
@@ -124,7 +122,10 @@ async function save() {
       <form class="p-4 space-y-4" @submit.prevent="save">
         <div class="space-y-2">
           <div class="grid grid-cols-[1fr_1fr_auto] gap-2 text-xs font-medium text-muted-foreground px-0.5">
-            <span>Jira Project Key</span>
+            <span class="flex items-center gap-1.5">
+              Jira Project
+              <span v-if="loadingJiraProjects" class="text-[10px] font-normal italic">loading…</span>
+            </span>
             <span>Local Project</span>
             <span />
           </div>
@@ -134,12 +135,25 @@ async function save() {
             :key="i"
             class="grid grid-cols-[1fr_1fr_auto] gap-2 items-center"
           >
-            <input
+            <!-- Jira project dropdown populated from jira project list -->
+            <select
               v-model="row.jiraProjectKey"
-              type="text"
-              placeholder="e.g. GTS"
               class="bg-background border border-border rounded px-2 py-1.5 text-sm font-mono outline-none focus:ring-1 focus:ring-ring w-full"
-            />
+              :disabled="loadingJiraProjects"
+            >
+              <option value="">— select —</option>
+              <option v-for="p in jiraProjects" :key="p.key" :value="p.key">
+                {{ p.key }}{{ p.name !== p.key ? ` — ${p.name}` : '' }}
+              </option>
+              <!-- Preserve any existing value that didn't come back from the CLI -->
+              <option
+                v-if="row.jiraProjectKey && !jiraProjects.some((p) => p.key === row.jiraProjectKey)"
+                :value="row.jiraProjectKey"
+              >
+                {{ row.jiraProjectKey }}
+              </option>
+            </select>
+
             <select
               v-model="row.projectPath"
               class="bg-background border border-border rounded px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring w-full"

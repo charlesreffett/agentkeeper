@@ -46,6 +46,7 @@ import {
   type StartSessionParams,
   type WorkItemCreateParams,
   type WorkItemStatus,
+  type JiraProject,
 } from '../shared/ipc-contract'
 
 /**
@@ -301,6 +302,9 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.workItemsTransition, id, name) as Promise<void>,
     create: (params: WorkItemCreateParams) =>
       invoke(IPC_CHANNELS.workItemsCreate, params) as Promise<never>,
+  },
+  jira: {
+    listProjects: () => invoke(IPC_CHANNELS.jiraListProjects) as Promise<JiraProject[]>,
   },
   remotes: {
     detect: (projectPath: string) =>

@@ -37,6 +37,7 @@ import {
   mergePR as ghMergePR,
   submitReview as ghSubmitReview,
 } from '@agentkeeper/plugin-github/src/github-cli'
+import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
@@ -1045,6 +1046,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+
+  ipcMain.handle(IPC_CHANNELS.jiraListProjects, async () => {
+    try {
+      return await jiraListProjects()
+    } catch (err) {
+      console.error('[ipc] jira:listProjects failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
 }
 
 export function wirePluginEventRelay(win: BrowserWindow): void {

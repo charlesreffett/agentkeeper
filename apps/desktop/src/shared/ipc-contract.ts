@@ -59,6 +59,11 @@ export interface RemoteSource {
   url: string
 }
 
+export interface JiraProject {
+  key: string
+  name: string
+}
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 
 export interface RecentProject {
@@ -726,6 +731,9 @@ export interface AgentKeeperApi {
     transition: (id: string, name: string) => Promise<void>
     create: (params: WorkItemCreateParams) => Promise<WorkItem>
   }
+  jira: {
+    listProjects: () => Promise<JiraProject[]>
+  }
   remotes: {
     detect: (projectPath: string) => Promise<RemoteSource[]>
   }
@@ -842,6 +850,7 @@ export const IPC_CHANNELS = {
   workItemsGetTransitions: 'workItems:getTransitions',
   workItemsTransition: 'workItems:transition',
   workItemsCreate: 'workItems:create',
+  jiraListProjects: 'jira:listProjects',
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',

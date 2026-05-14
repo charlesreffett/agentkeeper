@@ -1,7 +1,10 @@
 import { z } from 'zod'
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
-import { checkCliPresent } from './jira-cli'
+import { checkCliPresent, listProjects } from './jira-cli'
 import { JiraWorkItemSource } from './jira-source'
+
+export { listProjects }
+export type { JiraProject } from './jira-cli'
 
 const ProjectMappingSchema = z.object({
   jiraProjectKey: z.string(),
