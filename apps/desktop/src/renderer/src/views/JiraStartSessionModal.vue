@@ -41,6 +41,10 @@ const agencyPrompt = ref('')
 const agencyUseWorktree = ref(false)
 const agencyBranch = ref('')
 
+const projects = ref<Array<{ path: string; name: string; repo: string | null; lastOpenedAt: number }>>([])
+const jiraConfig = ref<{ projectMappings?: Array<{ jiraProjectKey: string; projectPath: string }>; projectKey?: string } | null>(null)
+const selectedProjectPath = ref('')
+
 const starting = ref(false)
 const startError = ref<string | null>(null)
 
@@ -50,10 +54,27 @@ const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 ] as const
 
-
 const defaultPrompt = computed(
   () => `Work on ${props.item.externalRef}: ${props.item.title}`,
 )
+
+function detectProjectPath(): string {
+  const match = props.item.externalRef?.match(/^([A-Z]+)-\d+$/)
+  const prefix = match?.[1]
+  if (prefix && jiraConfig.value?.projectMappings) {
+    const mapping = jiraConfig.value.projectMappings.find(
+      (m) => m.jiraProjectKey === prefix,
+    )
+    if (mapping?.projectPath) return mapping.projectPath
+  }
+  return focusedProject.value?.path ?? ''
+}
+
+const isMappedProject = computed(() => {
+  const match = props.item.externalRef?.match(/^([A-Z]+)-\d+$/)
+  const prefix = match?.[1]
+  return !!(prefix && jiraConfig.value?.projectMappings?.some((m) => m.jiraProjectKey === prefix && m.projectPath))
+})
 
 async function loadRoles(projectPath: string) {
   try {
@@ -88,10 +109,22 @@ watch(
       selectedAgencyId.value = ''
       starting.value = false
       startError.value = null
-      if (focusedProject.value) {
+
+      const projectsList = await window.agentkeeper.projects.list()
+      projects.value = projectsList
+
+      const jiraCfg = (await window.agentkeeper.plugins.getConfig('jira')) as {
+        projectMappings?: Array<{ jiraProjectKey: string; projectPath: string }>
+        projectKey?: string
+      } | null
+      jiraConfig.value = jiraCfg
+
+      selectedProjectPath.value = detectProjectPath()
+
+      if (selectedProjectPath.value) {
         await Promise.all([
-          loadRoles(focusedProject.value.path),
-          loadAgencies(focusedProject.value.path),
+          loadRoles(selectedProjectPath.value),
+          loadAgencies(selectedProjectPath.value),
         ])
         if (agencies.value.length > 0) selectedAgencyId.value = agencies.value[0]!.id
       }
@@ -103,9 +136,19 @@ watch(
   },
 )
 
+async function onProjectChanged() {
+  if (selectedProjectPath.value) {
+    await Promise.all([
+      loadRoles(selectedProjectPath.value),
+      loadAgencies(selectedProjectPath.value),
+    ])
+    if (agencies.value.length > 0) selectedAgencyId.value = agencies.value[0]!.id
+    else selectedAgencyId.value = ''
+  }
+}
+
 async function startSolo() {
-  const proj = focusedProject.value
-  if (!proj) return
+  if (!selectedProjectPath.value) return
   starting.value = true
   startError.value = null
   try {
@@ -113,12 +156,12 @@ async function startSolo() {
     let worktreePath: string | undefined
     let resolvedBranch: string | undefined
     if (useWorktree.value && branch.value.trim()) {
-      const wt = await window.agentkeeper.worktrees.create(proj.path, branch.value.trim())
+      const wt = await window.agentkeeper.worktrees.create(selectedProjectPath.value, branch.value.trim())
       worktreePath = wt.path
       resolvedBranch = wt.branch
     }
     await sessionStore.start({
-      projectPath: proj.path,
+      projectPath: selectedProjectPath.value,
       workItemId: props.item.id,
       workItemKey: props.item.externalRef ?? null,
       workItemTitle: props.item.title ?? null,
@@ -142,8 +185,7 @@ async function startSolo() {
 }
 
 async function startAgency() {
-  const proj = focusedProject.value
-  if (!proj || !selectedAgencyId.value) return
+  if (!selectedProjectPath.value || !selectedAgencyId.value) return
   starting.value = true
   startError.value = null
   try {
@@ -152,12 +194,12 @@ async function startAgency() {
     let worktreePath: string | undefined
     let resolvedBranch: string | undefined
     if (agencyUseWorktree.value && agencyBranch.value.trim()) {
-      const wt = await window.agentkeeper.worktrees.create(proj.path, agencyBranch.value.trim())
+      const wt = await window.agentkeeper.worktrees.create(selectedProjectPath.value, agencyBranch.value.trim())
       worktreePath = wt.path
       resolvedBranch = wt.branch
     }
     await window.agentkeeper.agencies.start({
-      projectPath: proj.path,
+      projectPath: selectedProjectPath.value,
       agencyId: selectedAgencyId.value,
       agencyScope: ag.scope,
       initialPrompt: agencyPrompt.value.trim(),
@@ -216,15 +258,23 @@ async function startAgency() {
         </button>
       </div>
 
-      <!-- Project status banner -->
-      <div
-        v-if="!focusedProject"
-        class="px-4 py-2 text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 border-b border-amber-500/30"
-      >
-        No project focused — select one in the sidebar.
-      </div>
-      <div v-else class="px-4 py-2 text-xs text-muted-foreground border-b border-border">
-        Project: <span class="font-medium text-foreground">{{ focusedProject.name }}</span>
+      <!-- Project selection -->
+      <div class="px-4 py-2 border-b border-border space-y-1">
+        <label class="text-xs font-medium">Project</label>
+        <select
+          v-model="selectedProjectPath"
+          class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:border-ring"
+          @change="onProjectChanged"
+        >
+          <option value="">Select project…</option>
+          <option v-for="p in projects" :key="p.path" :value="p.path">{{ p.name }}</option>
+        </select>
+        <p v-if="isMappedProject && selectedProjectPath" class="text-xs text-muted-foreground">
+          Auto-selected from Jira mapping
+        </p>
+        <p v-else-if="!selectedProjectPath" class="text-xs text-amber-600 dark:text-amber-400">
+          No project selected — add one in the sidebar or configure Jira mappings.
+        </p>
       </div>
 
       <!-- Solo mode -->
@@ -293,7 +343,7 @@ async function startAgency() {
           <Button
             type="submit"
             size="sm"
-            :disabled="starting || !focusedProject || !prompt.trim()"
+            :disabled="starting || !selectedProjectPath || !prompt.trim()"
           >
             {{ starting ? 'Starting…' : 'Start session' }}
           </Button>
@@ -345,7 +395,7 @@ async function startAgency() {
           <Button
             type="submit"
             size="sm"
-            :disabled="starting || !focusedProject || !selectedAgencyId || !agencyPrompt.trim()"
+            :disabled="starting || !selectedProjectPath || !selectedAgencyId || !agencyPrompt.trim()"
           >
             {{ starting ? 'Starting…' : 'Start agency' }}
           </Button>

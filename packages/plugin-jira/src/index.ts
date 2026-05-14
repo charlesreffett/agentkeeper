@@ -3,9 +3,15 @@ import type { Plugin, PluginContext } from '@agentkeeper/sdk'
 import { checkCliPresent } from './jira-cli'
 import { JiraWorkItemSource } from './jira-source'
 
+const ProjectMappingSchema = z.object({
+  jiraProjectKey: z.string(),
+  projectPath: z.string(),
+})
+
 const JiraSettingsSchema = z
   .object({
     projectKey: z.string().optional(),
+    projectMappings: z.array(ProjectMappingSchema).optional().default([]),
     cliPath: z.string().optional(),
   })
   .default({})
@@ -16,7 +22,10 @@ let cancelPolling: (() => void) | null = null
 let pluginCtx: PluginContext<JiraSettings> | null = null
 
 async function startJira(ctx: PluginContext<JiraSettings>): Promise<void> {
-  const source = new JiraWorkItemSource(ctx.config.projectKey)
+  const source = new JiraWorkItemSource(
+    ctx.config.projectMappings ?? [],
+    ctx.config.projectKey,
+  )
   ctx.workItems.register(source)
   cancelPolling = ctx.background.every(5 * 60 * 1000, () => source.refresh())
   ctx.logger.info('jira plugin active')
