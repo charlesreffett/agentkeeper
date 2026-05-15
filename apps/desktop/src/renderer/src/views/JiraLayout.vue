@@ -1,12 +1,34 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, onUnmounted, provide, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Settings } from 'lucide-vue-next'
 import { usePluginHealth } from '@/composables/usePluginHealth'
-import JiraSettingsModal from './JiraSettingsModal.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
+const router = useRouter()
 const { isHealthy } = usePluginHealth('jira')
-const settingsOpen = ref(false)
+
+// Increment when Jira settings change so child views re-fetch configured boards.
+// Sourced from the plugin event bus rather than a local modal, so changes made
+// from the Settings page also propagate.
+const jiraConfigVersion = ref(0)
+provide('jiraConfigVersion', jiraConfigVersion)
+
+let cleanup: (() => void) | null = null
+
+onMounted(() => {
+  cleanup = window.agentkeeper.plugins.onEvent((event, payload) => {
+    const p = payload as { pluginId?: string } | null
+    if (event === 'settings.changed' && p?.pluginId === 'jira') {
+      jiraConfigVersion.value++
+    }
+  })
+})
+
+onUnmounted(() => {
+  cleanup?.()
+  cleanup = null
+})
 </script>
 
 <template>
@@ -23,7 +45,7 @@ const settingsOpen = ref(false)
         <button
           class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
           title="Jira settings"
-          @click="settingsOpen = true"
+          @click="void router.push('/settings?tab=jira')"
         >
           <Settings :size="14" />
         </button>
@@ -33,10 +55,4 @@ const settingsOpen = ref(false)
       <RouterView />
     </div>
   </div>
-
-  <JiraSettingsModal
-    :open="settingsOpen"
-    @close="settingsOpen = false"
-    @saved="() => {}"
-  />
 </template>

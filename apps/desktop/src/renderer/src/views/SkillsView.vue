@@ -2,14 +2,14 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import type { Skill, SkillPreview } from '@shared/ipc-contract'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSkillsDataStore } from '@/stores/skillsData'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import PageHeader from '@/components/PageHeader.vue'
 
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const skillsDataStore = useSkillsDataStore()
-const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+const projectPath = computed(() => focusedProject.value?.path ?? '')
 const { handleAuthError } = useClaudeAuth()
 
 const skills = computed(() => skillsDataStore.skills)
@@ -228,7 +228,7 @@ function toggleExpand(skill: Skill) {
 }
 
 watch(
-  () => projectsStore.focusedProject?.path,
+  () => focusedProject.value?.path,
   async (path) => {
     if (path !== undefined) await skillsDataStore.load(path ?? '')
   },

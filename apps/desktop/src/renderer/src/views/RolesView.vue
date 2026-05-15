@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import {
   ROLE_EFFORT_VALUES,
@@ -8,18 +8,16 @@ import {
   type RoleScope,
 } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
-import { useProjectsStore } from '@/stores/projects'
-import { useRolesDataStore } from '@/stores/rolesData'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useRolesQuery } from '@/composables/useRolesQuery'
 import PageHeader from '@/components/PageHeader.vue'
 import SidebarHeader from '@/components/SidebarHeader.vue'
-import { ScrollText, Plus } from 'lucide-vue-next'
+import { Bot, Plus } from 'lucide-vue-next'
 
-const projectsStore = useProjectsStore()
-const rolesDataStore = useRolesDataStore()
-const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+const { focusedProject } = useProjectsQuery()
+const projectPath = computed(() => focusedProject.value?.path ?? '')
 
-const roles = computed(() => rolesDataStore.roles)
-const loading = computed(() => rolesDataStore.loading)
+const { roles, isLoading: loading, saveRole, removeRole } = useRolesQuery(projectPath)
 const selectedId = ref<string | null>(null)
 const editing = ref(false)
 
@@ -78,15 +76,6 @@ const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
 ] as const
 
-async function refresh() {
-  message.value = null
-  try {
-    rolesDataStore.invalidate()
-    await rolesDataStore.load(projectPath.value)
-  } catch (e) {
-    message.value = e instanceof Error ? e.message : String(e)
-  }
-}
 
 function beginNew() {
   selectedId.value = null
@@ -175,8 +164,7 @@ async function save() {
       allowedTools: parseCsv(allowedToolsText.value),
       systemPrompt: form.value.systemPrompt.trim(),
     }
-    await window.agentkeeper.roles.save(form.value.scope, projectPath.value, draft)
-    await refresh()
+    await saveRole({ scope: form.value.scope, path: projectPath.value, draft })
     editing.value = false
     resetGenerate()
   } catch (e) {
@@ -190,8 +178,7 @@ async function remove(role: Role) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove role "${role.name}" (${role.scope})?`)) return
   try {
-    await window.agentkeeper.roles.remove(role.scope, projectPath.value, role.id)
-    await refresh()
+    await removeRole({ scope: role.scope, path: projectPath.value, id: role.id })
     if (selectedId.value === role.id) cancelEdit()
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
@@ -199,19 +186,12 @@ async function remove(role: Role) {
 }
 
 watch(
-  () => projectsStore.focusedProject?.path,
-  async (path) => {
+  () => focusedProject.value?.path,
+  () => {
     editing.value = false
     selectedId.value = null
-    if (path) await rolesDataStore.load(path)
   },
 )
-
-onMounted(async () => {
-  editing.value = false
-  selectedId.value = null
-  await rolesDataStore.load(projectPath.value)
-})
 </script>
 
 <template>
@@ -223,7 +203,7 @@ onMounted(async () => {
         class="w-64 border-r border-border shrink-0 flex flex-col bg-card/30"
       >
         <SidebarHeader title="Roles">
-          <template #icon><ScrollText class="size-3" /></template>
+          <template #icon><Bot class="size-3" /></template>
           <template #actions>
             <button
               class="p-0.5 text-muted-foreground hover:text-foreground transition-colors rounded"

@@ -2,8 +2,10 @@ import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import type { EventMap } from '@agentkeeper/sdk'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import {
   IPC_CHANNELS,
+  type AddAgentParams,
   type AppSettings,
   type Attachment,
   type CreatePRParams,
@@ -35,29 +37,32 @@ import {
   mergePR as ghMergePR,
   submitReview as ghSubmitReview,
 } from '@agentkeeper/plugin-github/src/github-cli'
+import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
-import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp } from './agent'
 import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, gitDiffStat, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
-import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, startAgency } from './orchestrator'
+import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, startAgency, createProjectMcp, createOrchestratorMcp } from './orchestrator'
 import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
-import { listPlans, getPlan } from './plans'
+import { listPlans, getPlan, createPlan, updatePlan } from './plans'
 import type {
   AgencyDraft,
   AgencyScope,
   FsEntry,
   PermissionMode,
+  PlansCreateInput,
+  PlansUpdateInput,
   ResetRequest,
   RoleEffort,
   RoleDraft,
@@ -206,11 +211,14 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionStart,
     async (_event, params: StartSessionParams) => {
       try {
-        const result = await startSession(params)
-        if (params.localId && params.initialPrompt) {
-          void generateAndPersistSessionTitle(params.localId, params.initialPrompt)
+        const mcp = createProjectMcp(params.projectPath)
+        const agentLocalId = await startSession(params, { mcpServer: mcp })
+        if (params.initialPrompt) {
+          // Title is stored on the session row; for solo sessions agentLocalId = sessionLocalId.
+          const sessionId = params.sessionLocalId ?? agentLocalId
+          void generateAndPersistSessionTitle(sessionId, params.initialPrompt)
         }
-        return result
+        return agentLocalId
       } catch (err) {
         console.error('[ipc] session:start failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -221,14 +229,32 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionInput,
     async (_event, sessionId: string, text: string, attachments?: Attachment[]) => {
       try {
-        // If this session belongs to an agency whose runtime was lost (e.g. after
-        // an app restart), rebuild it before delivering the message so the MCP
-        // send_message tool and peer routing are available from the first turn.
-        const persisted = sessionRegistry.getSession(sessionId)
-        if (persisted?.agencyInstanceId && !isAgencyRuntimeActive(persisted.agencyInstanceId)) {
-          await resumeAgency(persisted.agencyInstanceId)
+        // Resolve to an agentLocalId and ensure the agency runtime is active.
+        // sessionId may be a session UUID (new renderer: agency instanceId or solo UUID)
+        // or an agent UUID (old renderer / direct agent targeting).
+        let agentLocalIdToSend = sessionId
+        let agencySessionId: string | null = null
+
+        const session = sessionRegistry.getSession(sessionId)
+        if (session?.agencyId) {
+          // sessionId is the agency session UUID — find the entry-point agent
+          agencySessionId = sessionId
+          const agents = sessionRegistry.listAgentsBySession(sessionId)
+          const entryAgent = agents.find(a => a.isEntryPoint) ?? agents[0]
+          if (entryAgent) agentLocalIdToSend = entryAgent.localId
+        } else {
+          // sessionId may be an agentLocalId belonging to an agency
+          const agent = sessionRegistry.getAgent(sessionId)
+          if (agent && agent.sessionLocalId !== sessionId) {
+            const parentSession = sessionRegistry.getSession(agent.sessionLocalId)
+            if (parentSession?.agencyId) agencySessionId = agent.sessionLocalId
+          }
         }
-        await sendInput(sessionId, text, attachments)
+
+        if (agencySessionId && !isAgencyRuntimeActive(agencySessionId)) {
+          await resumeAgency(agencySessionId)
+        }
+        await sendInput(agentLocalIdToSend, text, attachments)
       } catch (err) {
         console.error('[ipc] session:input failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -239,7 +265,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionInterrupt,
     async (_event, sessionId: string) => {
       try {
-        await interruptSession(sessionId)
+        return await interruptSession(sessionId)
       } catch (err) {
         console.error('[ipc] session:interrupt failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -712,19 +738,29 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionsResume,
     async (_event, localId: string) => {
       try {
-        const persisted = sessionRegistry.getSession(localId)
-        if (persisted?.agencyInstanceId) {
-          if (!isAgencyRuntimeActive(persisted.agencyInstanceId)) {
-            await resumeAgency(persisted.agencyInstanceId)
+        // localId can be a session UUID (agency instanceId or solo) or an agent UUID.
+        const session = sessionRegistry.getSession(localId)
+        if (session?.agencyId) {
+          // localId is the agency session UUID
+          if (!isAgencyRuntimeActive(localId)) {
+            await resumeAgency(localId)
           }
-          // resumeAgency reuses the original localId when the sdkSessionId lookup
-          // succeeds. Return it so the renderer navigates to the same session entry
-          // it already knows about (resumedFromSdkSessionId is set by store.resume).
-          if (isSessionActive(localId)) return localId
-          // Edge case: agency runtime active but this session's sdkSessionId wasn't
-          // in roleSessionMap (stale registry). Fall through to resumeSession so the
-          // user isn't left with a dead session view.
+          return localId
         }
+
+        // Check if localId is an agentLocalId belonging to an agency
+        const agent = sessionRegistry.getAgent(localId)
+        if (agent && agent.sessionLocalId !== localId) {
+          const parentSession = sessionRegistry.getSession(agent.sessionLocalId)
+          if (parentSession?.agencyId) {
+            if (!isAgencyRuntimeActive(agent.sessionLocalId)) {
+              await resumeAgency(agent.sessionLocalId)
+            }
+            if (isSessionActive(localId)) return localId
+            // Fall through to resumeSession if this agent wasn't re-activated
+          }
+        }
+
         return await resumeSession(localId)
       } catch (err) {
         console.error('[ipc] sessions:resume failed:', err)
@@ -791,6 +827,55 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     (_event, projectPath: string) => sessionRegistry.deleteAllForProject(projectPath),
   )
   ipcMain.handle(
+    IPC_CHANNELS.sessionsGetAgents,
+    (_event, sessionLocalId: string) => sessionRegistry.listAgentsBySession(sessionLocalId),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsListTrackedSdkIds,
+    (_event, projectPath: string) => sessionRegistry.listTrackedSdkIds(projectPath),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsAddAgent,
+    async (_event, sessionLocalId: string, params: AddAgentParams) => {
+      try {
+        const session = sessionRegistry.getSession(sessionLocalId)
+        if (!session) throw new Error(`Session ${sessionLocalId} not found`)
+        const agentLocalId = randomUUID()
+        const mcp = createProjectMcp(session.projectPath)
+        return await startSession(
+          {
+            localId: agentLocalId,
+            agentLocalId,
+            sessionLocalId,
+            projectPath: session.projectPath,
+            worktreePath: session.worktreePath ?? undefined,
+            ...params,
+          },
+          { mcpServer: mcp },
+        )
+      } catch (err) {
+        console.error('[ipc] sessions:addAgent failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsReconnectMcp,
+    async (_event, agentLocalId: string) => {
+      try {
+        const agent = sessionRegistry.getAgent(agentLocalId)
+        if (!agent?.sdkSessionId) throw new Error(`No SDK session ID for agent ${agentLocalId}`)
+        const persistedSession = sessionRegistry.getSession(agent.sessionLocalId)
+        if (!persistedSession?.agencyId) throw new Error(`Session ${agentLocalId} has no agency — no MCP to reconnect`)
+        const factory = () => createOrchestratorMcp(persistedSession.projectPath, agentLocalId)
+        return await reconnectSessionMcp(agentLocalId, factory)
+      } catch (err) {
+        console.error('[ipc] sessions:reconnectMcp failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
     IPC_CHANNELS.agenciesResume,
     async (_event, instanceId: string) => {
       try {
@@ -854,6 +939,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Plans
   ipcMain.handle(IPC_CHANNELS.plansList, (_e, projectPath: string) => listPlans(projectPath))
   ipcMain.handle(IPC_CHANNELS.plansGet, (_e, projectPath: string, filename: string) => getPlan(projectPath, filename))
+  ipcMain.handle(
+    IPC_CHANNELS.plansCreate,
+    (_e, projectPath: string, data: PlansCreateInput) => createPlan(projectPath, data),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.plansUpdate,
+    (_e, projectPath: string, filename: string, patch: PlansUpdateInput) =>
+      updatePlan(projectPath, filename, patch),
+  )
 
   // Cost ledger + pricing
   ipcMain.handle(IPC_CHANNELS.costsGetDailySummary, (): DayTotal[] =>
@@ -968,6 +1062,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+
+  ipcMain.handle(IPC_CHANNELS.jiraListProjects, async () => {
+    try {
+      return await jiraListProjects()
+    } catch (err) {
+      console.error('[ipc] jira:listProjects failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
 }
 
 export function wirePluginEventRelay(win: BrowserWindow): void {

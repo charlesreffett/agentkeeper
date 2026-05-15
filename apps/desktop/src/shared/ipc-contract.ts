@@ -59,6 +59,11 @@ export interface RemoteSource {
   url: string
 }
 
+export interface JiraProject {
+  key: string
+  name: string
+}
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 
 export interface RecentProject {
@@ -94,6 +99,17 @@ export interface FsEntry {
   name: string
   path: string
   isDirectory: boolean
+}
+
+// ─── Plan todos ─────────────────────────────────────────────────────────────
+
+export type PlanTodoStatus = 'pending' | 'in_progress' | 'completed' | 'partial'
+
+export interface PlanTodo {
+  id: string
+  content: string
+  status: PlanTodoStatus
+  priority?: string
 }
 
 // ─── Sessions (historical, JSONL-backed) ────────────────────────────────────
@@ -168,9 +184,22 @@ export type LiveSessionStatus =
   | 'terminated'
   | 'error'
 
+export interface Agent {
+  localId: string
+  sessionLocalId: string
+  sdkSessionId: string | null
+  roleId: string | null
+  roleName: string | null
+  roleInstanceIndex: number | null
+  initialPrompt: string
+  isEntryPoint: boolean
+  status: LiveSessionStatus
+  startedAt: number
+  lastActivityAt: number
+}
+
 export interface Session {
   localId: string
-  sdkSessionId: string | null
   projectPath: string
   worktreePath: string | null
   branch: string | null
@@ -178,9 +207,6 @@ export interface Session {
   effort: RoleEffort | null
   permissionMode: PermissionMode | null
   initialPrompt: string
-  roleName: string | null
-  roleId: string | null
-  agencyInstanceId: string | null
   agencyName: string | null
   agencyId: string | null
   agencyScope: AgencyScope | null
@@ -190,15 +216,28 @@ export interface Session {
   workItemKey: string | null
   workItemTitle: string | null
   title: string | null
+  planState: PlanTodo[] | null
+  /** Computed — not stored; populated by registry queries. */
+  agentCount?: number
 }
 
 export interface StartSessionParams {
   /**
-   * Caller-supplied id so the renderer can add the session to its store
-   * BEFORE main starts broadcasting status/event messages. If omitted,
-   * main generates one — the value returned from start() is authoritative.
+   * Caller-supplied agent id. For solo sessions this is also the session id.
+   * If omitted, main generates one — the value returned from start() is authoritative.
    */
   localId?: string
+  /**
+   * Pre-supplied agent UUID. When provided the agent is attached to an existing
+   * session instead of creating a new session row.
+   */
+  agentLocalId?: string
+  /**
+   * Attach this agent to an existing session. When set, no session row is
+   * created — only an agents row. Omit for solo sessions (session and agent
+   * share the same UUID).
+   */
+  sessionLocalId?: string
   /** The logical project the session belongs to (the main repo root). */
   projectPath: string
   /**
@@ -213,8 +252,6 @@ export interface StartSessionParams {
   /** Role-derived options — appended to the default Claude Code preset. */
   systemPromptAppend?: string
   allowedTools?: string[]
-  /** Membership in an agency run, if applicable — tagged by the orchestrator. */
-  agencyInstanceId?: string
   roleId?: string
   /** 1-based instance index within the role. */
   roleInstanceIndex?: number
@@ -237,6 +274,19 @@ export interface StartSessionParams {
   roleName?: string
   /** Agency display name — persisted for the same reason. */
   agencyName?: string
+  /** Whether this agent is the entry point (received the user's original prompt). */
+  isEntryPoint?: boolean
+}
+
+export interface AddAgentParams {
+  roleName?: string
+  roleId?: string
+  initialPrompt: string
+  model?: string
+  effort?: RoleEffort
+  permissionMode?: PermissionMode
+  systemPromptAppend?: string
+  allowedTools?: string[]
 }
 
 // ─── Worktrees ──────────────────────────────────────────────────────────────
@@ -348,6 +398,7 @@ export interface StartAgencyParams {
   agencyId: string
   agencyScope: AgencyScope
   initialPrompt: string
+  initialAttachments?: Attachment[]
   useWorktree: boolean
   branch?: string
   model?: string
@@ -356,7 +407,10 @@ export interface StartAgencyParams {
 }
 
 export interface AgencyInstanceSession {
+  /** Agent UUID. */
   localId: string
+  /** Session UUID — all agents in the same agency share this. */
+  sessionLocalId: string
   roleId: string        // base role id, e.g. "developer"
   instanceId: string    // qualified: "developer-1", "developer-2", etc.
   instanceIndex: number // 1-based
@@ -378,11 +432,15 @@ export interface AgencyInstance {
 /** SDK message forwarded to renderer as-is (plain object, structured-clone-safe). */
 export interface LiveSessionEvent {
   sessionId: string
+  /** Agent that produced this event. Present for all agent-originated events. */
+  agentLocalId?: string
   message: unknown
 }
 
 export interface LiveSessionStatusUpdate {
   sessionId: string
+  /** Present = agent-level status update; absent = session-level update. */
+  agentLocalId?: string
   status?: LiveSessionStatus
   sdkSessionId?: string
   error?: string
@@ -398,6 +456,7 @@ export interface LiveSessionStats {
   /** Token + cost usage for the completed turn. */
   turnUsage: {
     sessionId: string
+    agentLocalId: string
     inputTokens: number
     outputTokens: number
     cacheReadInputTokens: number
@@ -490,6 +549,12 @@ export interface Plan {
   steps: PlanStep[]
 }
 
+export type PlansCreateInput = Omit<Plan, 'filename' | 'filePath' | 'createdAt' | 'updatedAt' | 'sessionIds'> & {
+  sessionIds?: string[]
+}
+
+export type PlansUpdateInput = Partial<Omit<Plan, 'filename' | 'filePath' | 'createdAt'>>
+
 // ─── Session stats ───────────────────────────────────────────────────────────
 
 export interface SessionStatRow {
@@ -557,7 +622,7 @@ export interface AgentKeeperApi {
     ) => Promise<SessionTranscript | null>
     start: (params: StartSessionParams) => Promise<string>
     sendInput: (sessionId: string, text: string, attachments?: Attachment[]) => Promise<void>
-    interrupt: (sessionId: string) => Promise<void>
+    interrupt: (sessionId: string) => Promise<boolean>
     terminate: (sessionId: string) => Promise<void>
     onEvent: (callback: (event: LiveSessionEvent) => void) => () => void
     onStatus: (
@@ -574,6 +639,10 @@ export interface AgentKeeperApi {
     deleteHistorical: (projectPath: string, sessionId: string) => Promise<void>
     deleteAllHistorical: (projectPath: string) => Promise<void>
     deleteAllPersisted: (projectPath: string) => Promise<void>
+    getAgents: (sessionLocalId: string) => Promise<Agent[]>
+    addAgent: (sessionLocalId: string, params: AddAgentParams) => Promise<string>
+    listTrackedSdkIds: (projectPath: string) => Promise<string[]>
+    reconnectMcp: (agentLocalId: string) => Promise<void>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -663,6 +732,9 @@ export interface AgentKeeperApi {
     transition: (id: string, name: string) => Promise<void>
     create: (params: WorkItemCreateParams) => Promise<WorkItem>
   }
+  jira: {
+    listProjects: () => Promise<JiraProject[]>
+  }
   remotes: {
     detect: (projectPath: string) => Promise<RemoteSource[]>
   }
@@ -697,6 +769,8 @@ export interface AgentKeeperApi {
   plans: {
     list: (projectPath: string) => Promise<Plan[]>
     get: (projectPath: string, filename: string) => Promise<Plan | null>
+    create: (projectPath: string, data: PlansCreateInput) => Promise<Plan>
+    update: (projectPath: string, filename: string, patch: PlansUpdateInput) => Promise<Plan | null>
   }
   costs: {
     getDailySummary: () => Promise<DayTotal[]>
@@ -777,6 +851,7 @@ export const IPC_CHANNELS = {
   workItemsGetTransitions: 'workItems:getTransitions',
   workItemsTransition: 'workItems:transition',
   workItemsCreate: 'workItems:create',
+  jiraListProjects: 'jira:listProjects',
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',
@@ -802,6 +877,10 @@ export const IPC_CHANNELS = {
   sessionsDeleteHistorical: 'sessions:deleteHistorical',
   sessionsDeleteAllHistorical: 'sessions:deleteAllHistorical',
   sessionsDeleteAllPersisted: 'sessions:deleteAllPersisted',
+  sessionsGetAgents: 'sessions:getAgents',
+  sessionsAddAgent: 'sessions:addAgent',
+  sessionsListTrackedSdkIds: 'sessions:listTrackedSdkIds',
+  sessionsReconnectMcp: 'sessions:reconnectMcp',
   agenciesResume: 'agencies:resume',
   dialogOpenFiles: 'dialog:openFiles',
   gitGetBranch: 'git:getBranch',
@@ -814,6 +893,8 @@ export const IPC_CHANNELS = {
   fsListDirectory: 'fs:listDirectory',
   plansList: 'plans:list',
   plansGet: 'plans:get',
+  plansCreate: 'plans:create',
+  plansUpdate: 'plans:update',
   costsGetDailySummary: 'costs:getDailySummary',
   costsAddLegacy: 'costs:addLegacy',
   pricingRefresh: 'pricing:refresh',

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, computed, toRaw } from 'vue'
 import { OctagonX, Plus, SquareSlash, SendHorizontal } from 'lucide-vue-next'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
 import type { Attachment } from '../../../shared/ipc-contract'
@@ -25,9 +25,9 @@ const text = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const attachments = ref<Attachment[]>([])
 
-const projectsStore = useProjectsStore()
+const { projects, focusedProject } = useProjectsQuery()
 const resolvedProjectPath = computed(
-  () => props.projectPath ?? projectsStore.focusedProject?.path ?? '',
+  () => props.projectPath ?? focusedProject.value?.path ?? '',
 )
 
 const isMac = /Mac/i.test(navigator.platform)
@@ -124,7 +124,7 @@ const sendHint = computed(() =>
 
 const projectName = computed(() => {
   const path = resolvedProjectPath.value
-  const match = projectsStore.projects.find((p) => p.path === path)
+  const match = projects.value.find((p) => p.path === path)
   return match?.name ?? path.split('/').filter(Boolean).pop() ?? ''
 })
 
@@ -195,6 +195,8 @@ async function handlePaste(event: ClipboardEvent) {
 defineExpose({
   getText: () => text.value,
   setText: (v: string) => { text.value = v },
+  getAttachments: () => attachments.value.map(toRaw),
+  setAttachments: (v: Attachment[]) => { attachments.value = v },
 })
 </script>
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { Bot, ChevronDown, ChevronRight, Plus, SlidersHorizontal } from 'lucide-vue-next'
 import { usePluginHealth } from '@/composables/usePluginHealth'
@@ -144,13 +145,42 @@ function isDone(item: WorkItem): boolean {
 
 const jiraItems = computed(() => allItems.value.filter((i) => i.source === 'jira'))
 
+const configuredBoards = ref<Array<{ jiraProjectKey: string; projectPath: string }>>([])
+
+async function loadConfiguredBoards() {
+  try {
+    const cfg = (await window.agentkeeper.plugins.getConfig('jira')) as {
+      projectMappings?: Array<{ jiraProjectKey: string; projectPath: string }>
+    } | null
+    configuredBoards.value = cfg?.projectMappings ?? []
+  } catch {
+    configuredBoards.value = []
+  }
+}
+
 const allBoards = computed(() => {
-  const m = new Map<string, number>()
+  // Issue counts from loaded data
+  const counts = new Map<string, number>()
   for (const item of jiraItems.value) {
     const k = boardOf(item)
-    if (k) m.set(k, (m.get(k) ?? 0) + 1)
+    if (k) counts.set(k, (counts.get(k) ?? 0) + 1)
   }
-  return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, count]) => ({ key, count }))
+
+  // Configured mappings are the canonical board list
+  const seen = new Set<string>()
+  const boards: Array<{ key: string; count: number }> = []
+  for (const { jiraProjectKey: key } of configuredBoards.value) {
+    if (seen.has(key)) continue
+    seen.add(key)
+    boards.push({ key, count: counts.get(key) ?? 0 })
+  }
+
+  // Auto-discovered boards not in config (legacy / unconfigured data)
+  for (const [key, count] of counts.entries()) {
+    if (!seen.has(key)) boards.push({ key, count })
+  }
+
+  return boards.sort((a, b) => a.key.localeCompare(b.key))
 })
 
 function toggleBoard(k: string) {
@@ -273,11 +303,18 @@ async function load() {
   }
 }
 
+const jiraConfigVersion = inject<Ref<number>>('jiraConfigVersion', ref(0))
+watch(jiraConfigVersion, () => { void loadConfiguredBoards() })
+
 let unsub: (() => void) | null = null
 onMounted(() => {
   void load()
+  void loadConfiguredBoards()
   unsub = window.agentkeeper.plugins.onEvent((ev) => {
-    if (ev === 'plugin.healthy') void load()
+    if (ev === 'plugin.healthy') {
+      void load()
+      void loadConfiguredBoards()
+    }
   })
 })
 onUnmounted(() => unsub?.())

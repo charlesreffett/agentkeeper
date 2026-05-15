@@ -15,11 +15,11 @@ export class JiraWorkItemSource implements WorkItemSource {
   readonly label = 'Jira'
 
   private cache: WorkItem[] = []
-  private readonly projectKey: string | undefined
 
-  constructor(projectKey?: string) {
-    this.projectKey = projectKey
-  }
+  constructor(
+    private projectMappings: Array<{ jiraProjectKey: string; projectPath: string }> = [],
+    private legacyProjectKey?: string,
+  ) {}
 
   async list(): Promise<WorkItem[]> {
     if (this.cache.length === 0) {
@@ -52,8 +52,8 @@ export class JiraWorkItemSource implements WorkItemSource {
   }
 
   async create(params: WorkItemCreateParams): Promise<WorkItem> {
-    const key = this.projectKey
-    if (!key) throw new Error('Set a project key in Jira settings before creating issues.')
+    const key = this.legacyProjectKey ?? this.projectMappings[0]?.jiraProjectKey
+    if (!key) throw new Error('No Jira project key configured — add a mapping in Jira settings.')
     const raw = await createIssue(key, params)
     const item = mapToWorkItem(raw)
     this.cache.push(item)
@@ -62,7 +62,16 @@ export class JiraWorkItemSource implements WorkItemSource {
 
   async refresh(): Promise<void> {
     try {
-      const raw = await listIssues(this.projectKey)
+      const keys = this.projectMappings.map((m) => m.jiraProjectKey)
+      let raw: Awaited<ReturnType<typeof listIssues>>
+      if (keys.length > 0) {
+        const results = await Promise.all(keys.map((k) => listIssues(k)))
+        raw = results.flat()
+      } else if (this.legacyProjectKey) {
+        raw = await listIssues(this.legacyProjectKey)
+      } else {
+        raw = await listIssues()
+      }
       this.cache = raw.map(mapToWorkItem)
     } catch (err) {
       console.error('[jira] refresh failed:', err)

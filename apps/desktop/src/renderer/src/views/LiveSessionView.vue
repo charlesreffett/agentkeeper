@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -7,8 +7,6 @@ import {
   KeyRound,
   LayoutGrid,
   MoreHorizontal,
-  PanelBottomClose,
-  PanelBottomOpen,
 } from 'lucide-vue-next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Transcript from '@/components/transcript/Transcript.vue'
@@ -16,10 +14,10 @@ import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
-import AgentTreePanel from '@/components/session/AgentTreePanel.vue'
+import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import {
   DEFAULT_VERBOSITY_STATE,
   MODE_DEFAULTS,
@@ -42,18 +40,29 @@ const props = defineProps<{
 
 const router = useRouter()
 const store = useSessionStore()
-const projectsStore = useProjectsStore()
+const { projects } = useProjectsQuery()
 const messageInputRef = ref<InstanceType<typeof MessageInput> | null>(null)
 
-// Root session — fixed to props.liveId. Used for header title, project name, agency group key.
+// Root session — fixed to props.liveId. Used for header title, project name, agent list.
 const rootSession = computed(() => store.getSession(props.liveId))
 
 // Selected agent — switches when user clicks a row in the agent tree.
-// All transcript/status/input operations target this session.
-const selectedAgentLocalId = ref(props.liveId)
+// For solo sessions agentLocalId === sessionLocalId, so getSession falls through correctly.
+const selectedAgentLocalId = ref(
+  rootSession.value?.agents.find(a => a.isEntryPoint)?.localId ?? props.liveId,
+)
 const session = computed(
+  // For solo sessions: getSession(agentLocalId) === rootSession.
+  // For agency sessions: agentLocalId is not a session key → falls back to rootSession.
   () => store.getSession(selectedAgentLocalId.value) ?? rootSession.value,
 )
+
+// Events for the currently selected agent's stream.
+const agentEvents = computed(() => {
+  const root = rootSession.value
+  if (!root) return session.value?.events ?? []
+  return root.agentEvents[selectedAgentLocalId.value] ?? root.events
+})
 
 // ─── Project / title ────────────────────────────────────────────────────────
 
@@ -61,7 +70,7 @@ const session = computed(
 const sessionProjectName = computed(() => {
   const path = rootSession.value?.projectPath ?? ''
   return (
-    projectsStore.projects.find((p) => p.path === path)?.name ??
+    projects.value.find((p) => p.path === path)?.name ??
     path.split('/').filter(Boolean).pop() ??
     ''
   )
@@ -70,7 +79,7 @@ const sessionProjectName = computed(() => {
 const sessionTitle = computed(() => {
   const s = rootSession.value
   if (!s) return ''
-  return s.title ?? s.agencyName ?? s.roleName ?? s.initialPrompt ?? props.liveId
+  return s.title ?? s.agencyName ?? s.initialPrompt ?? props.liveId
 })
 
 // ─── Scroll tracking ────────────────────────────────────────────────────────
@@ -88,7 +97,7 @@ const BOTTOM_THRESHOLD = 64
 
 const newMessageCount = computed(() =>
   hasNewMessages.value
-    ? Math.max(0, (session.value?.events.length ?? 0) - firstNewEventsLength.value)
+    ? Math.max(0, agentEvents.value.length - firstNewEventsLength.value)
     : 0,
 )
 
@@ -117,7 +126,7 @@ function goToNewMessages() {
 }
 
 watch(
-  () => session.value?.events.length ?? 0,
+  () => agentEvents.value.length,
   (newLen, oldLen) => {
     if (isAtBottom.value) {
       void scrollToBottom()
@@ -129,11 +138,13 @@ watch(
   },
 )
 
-// When the route session changes, reset the selected agent to match.
+// When the route changes, reset historical events and selected agent to the entry-point agent.
 watch(
   () => props.liveId,
-  (newId) => {
-    selectedAgentLocalId.value = newId
+  () => {
+    historicalEvents.value = []
+    const ep = store.getSession(props.liveId)?.agents.find(a => a.isEntryPoint)
+    selectedAgentLocalId.value = ep?.localId ?? props.liveId
   },
 )
 
@@ -143,16 +154,17 @@ const turnStartedAt = ref<number | null>(null)
 const turnEndedAt = ref<number | null>(null)
 
 // When the selected agent changes (route change OR tree click), reset UI state
-// and save/restore draft messages for the respective sessions.
+// and save/restore draft messages via the root session (draft keyed by sessionLocalId).
 watch(
   selectedAgentLocalId,
-  (newId, oldId) => {
-    if (oldId && messageInputRef.value) {
-      store.setDraftMessage(oldId, messageInputRef.value.getText())
+  (_newId, _oldId) => {
+    if (_oldId && messageInputRef.value) {
+      store.setDraftMessage(props.liveId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
     }
     void nextTick(() => {
-      const s = store.getSession(newId)
+      const s = store.getSession(props.liveId)
       messageInputRef.value?.setText(s?.draftMessage ?? '')
+      messageInputRef.value?.setAttachments(s?.draftAttachments ?? [])
     })
     // Reset scroll and turn timing when switching agents.
     isAtBottom.value = true
@@ -166,18 +178,20 @@ watch(
 
 onBeforeUnmount(() => {
   if (messageInputRef.value) {
-    store.setDraftMessage(selectedAgentLocalId.value, messageInputRef.value.getText())
+    store.setDraftMessage(props.liveId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
   }
 })
 
-onMounted(async () => {
-  const s = session.value
-  if (s?.resumedFromSdkSessionId) {
+// Reactive watch handles both sync (historical) and async (persisted) cases,
+// and also fires on sidebar navigation when the same component instance is reused.
+watch(
+  () => session.value?.resumedFromSdkSessionId,
+  async (sdkId) => {
+    if (!sdkId) return
+    const s = session.value
+    if (!s) return
     try {
-      const transcript = await window.agentkeeper.sessions.read(
-        s.projectPath,
-        s.resumedFromSdkSessionId,
-      )
+      const transcript = await window.agentkeeper.sessions.read(s.projectPath, sdkId)
       if (transcript) {
         historicalEvents.value = transcript.events
         void scrollToBottom()
@@ -185,8 +199,9 @@ onMounted(async () => {
     } catch {
       // non-fatal — live events still work
     }
-  }
-})
+  },
+  { immediate: true },
+)
 
 // ─── Draft / send ───────────────────────────────────────────────────────────
 
@@ -215,8 +230,8 @@ async function onSend(text: string, attachments: Attachment[]) {
     }
     return
   }
-  store.setDraftMessage(selectedAgentLocalId.value, '')
-  void store.send(selectedAgentLocalId.value, text, attachments)
+  store.setDraftMessage(props.liveId, '')
+  void store.send(props.liveId, text, attachments)
 }
 
 async function onStop() {
@@ -357,38 +372,12 @@ const verbosityState = ref<VerbosityState>({
   toggles: { ...DEFAULT_VERBOSITY_STATE.toggles },
 })
 
-const totalHiddenCount = computed(() => {
-  const s = session.value
-  if (!s) return 0
-  return computeHiddenCount(s.events, verbosityState.value)
-})
+const totalHiddenCount = computed(() =>
+  computeHiddenCount(agentEvents.value, verbosityState.value)
+)
 
 function onShowAll() {
   verbosityState.value = { mode: 'verbose', toggles: { ...MODE_DEFAULTS.verbose } }
-}
-
-// ─── Status bar collapse (persisted via localStorage) ────────────────────────
-
-const STATUS_BAR_KEY = 'agentkeeper.ui.statusBarExpanded'
-
-function readStatusBarExpanded(): boolean {
-  try {
-    const v = localStorage.getItem(STATUS_BAR_KEY)
-    return v === null ? true : v !== 'false'
-  } catch {
-    return true
-  }
-}
-
-const statusBarExpanded = ref(readStatusBarExpanded())
-
-function toggleStatusBar() {
-  statusBarExpanded.value = !statusBarExpanded.value
-  try {
-    localStorage.setItem(STATUS_BAR_KEY, String(statusBarExpanded.value))
-  } catch {
-    // localStorage unavailable — non-fatal
-  }
 }
 
 // ─── Side panel collapse (persisted via localStorage) ────────────────────────
@@ -444,8 +433,9 @@ watch(
 const currentToolName = computed((): string | null => {
   const s = session.value
   if (!s || (s.status !== 'running' && s.status !== 'starting')) return null
-  for (let i = s.events.length - 1; i >= 0; i--) {
-    const evt = s.events[i]
+  const evts = agentEvents.value
+  for (let i = evts.length - 1; i >= 0; i--) {
+    const evt = evts[i]
     if (!evt) continue
     for (let j = evt.content.length - 1; j >= 0; j--) {
       const block = evt.content[j]
@@ -460,21 +450,19 @@ const currentToolName = computed((): string | null => {
 <template>
   <div v-if="session" class="h-full flex overflow-hidden">
 
-    <!-- ── Left column: Agent Tree ─────────────────────────────────────────── -->
-    <AgentTreePanel
+    <!-- ── Left column: Sessions list ────────────────────────────────────── -->
+    <SessionsSidebar
       :collapsed="leftCollapsed"
-      :root-session-id="props.liveId"
-      :selected-id="selectedAgentLocalId"
+      :active-id="props.liveId"
       @collapse="setLeftCollapsed(true)"
       @expand="setLeftCollapsed(false)"
-      @update:selected-id="selectedAgentLocalId = $event"
     />
 
     <!-- ── Center column: Chat ────────────────────────────────────────────── -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
       <!-- Header -->
-      <header class="border-b border-border px-3 py-2 shrink-0 flex items-center gap-2">
+      <header class="border-b border-border px-3 h-10 shrink-0 flex items-center gap-2">
         <!-- Back to sessions list -->
         <button
           class="shrink-0 p-1 -ml-1 rounded text-muted-foreground hover:text-foreground transition-colors"
@@ -577,14 +565,6 @@ const currentToolName = computed((): string | null => {
         v-if="!isDraft"
         class="border-b border-border/50 px-4 py-1.5 shrink-0 flex items-center justify-between"
       >
-        <button
-          class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors select-none"
-          :title="statusBarExpanded ? 'Collapse status bar' : 'Expand status bar'"
-          @click="toggleStatusBar"
-        >
-          <PanelBottomClose v-if="statusBarExpanded" class="size-3.5" />
-          <PanelBottomOpen v-else class="size-3.5" />
-        </button>
         <VerbosityFilter
           :model-value="verbosityState"
           :hidden-count="totalHiddenCount"
@@ -607,7 +587,7 @@ const currentToolName = computed((): string | null => {
             <Transcript
               v-if="isResumed && historicalEvents.length"
               :events="historicalEvents"
-              :role-name="session.roleName ?? null"
+              :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
               :verbosity-state="verbosityState"
               @show-all="onShowAll"
             />
@@ -620,8 +600,8 @@ const currentToolName = computed((): string | null => {
               <span class="flex-1 border-t border-border" />
             </div>
             <Transcript
-              :events="session.events"
-              :role-name="session.roleName ?? null"
+              :events="agentEvents"
+              :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
               :verbosity-state="verbosityState"
               @show-all="onShowAll"
             />
@@ -660,9 +640,9 @@ const currentToolName = computed((): string | null => {
         </Transition>
       </div>
 
-      <!-- Processing status bar — outside scroll, always visible when expanded -->
+      <!-- Processing status bar -->
       <SessionStatusBar
-        v-if="!isDraft && statusBarExpanded"
+        v-if="!isDraft"
         :status="session.status"
         :current-tool-name="currentToolName"
         :turn-started-at="turnStartedAt"
@@ -677,7 +657,7 @@ const currentToolName = computed((): string | null => {
         :enter-to-send="props.enterToSend"
         :send-modifier="props.sendModifier"
         :project-path="session.projectPath"
-        :role-name="session.roleName"
+        :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
         :agency-name="session.agencyName"
         :placeholder="
           isDraft
@@ -740,8 +720,10 @@ const currentToolName = computed((): string | null => {
     <ContextPanel
       :collapsed="rightCollapsed"
       :root-session-id="props.liveId"
+      :selected-id="selectedAgentLocalId"
       @collapse="setRightCollapsed(true)"
       @expand="setRightCollapsed(false)"
+      @update:selected-id="selectedAgentLocalId = $event"
     />
 
   </div>

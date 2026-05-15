@@ -10,8 +10,8 @@ const route = useRoute()
 const router = useRouter()
 const sessionStore = useSessionStore()
 
-const id = route.params.id as string
-const session = computed(() => sessionStore.getSession(id))
+const id = computed(() => route.params.id as string)
+const session = computed(() => sessionStore.getSession(id.value))
 
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',

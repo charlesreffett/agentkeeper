@@ -1,13 +1,8 @@
 import { computed } from 'vue'
 import type { ComputedRef } from 'vue'
-import type { TranscriptEvent } from '@shared/ipc-contract'
+import type { PlanTodo, PlanTodoStatus, TranscriptEvent } from '@shared/ipc-contract'
 
-export interface PlanTodo {
-  id: string
-  content: string
-  status: 'pending' | 'in_progress' | 'completed'
-  priority?: string
-}
+export type { PlanTodo, PlanTodoStatus }
 
 export interface PlanProgress {
   hasPlan: boolean
@@ -41,12 +36,36 @@ function isValidTodo(v: unknown): v is PlanTodo {
   return typeof o['content'] === 'string' && typeof o['status'] === 'string'
 }
 
+function todosToProgress(todos: PlanTodo[]): PlanProgress {
+  const totalCount = todos.length
+  const completedCount = todos.filter((t) => t.status === 'completed').length
+
+  const activeIdx = todos.findIndex((t) => t.status === 'in_progress' || t.status === 'partial')
+  const activeTodo = activeIdx !== -1 ? todos[activeIdx]! : null
+  const activeTodoIndex = activeIdx !== -1 ? activeIdx + 1 : 0
+
+  const allDone = totalCount > 0 && completedCount === totalCount
+  const lastCompletedTodo = allDone ? (todos[todos.length - 1] ?? null) : null
+
+  return {
+    hasPlan: true,
+    todos,
+    totalCount,
+    completedCount,
+    activeTodo,
+    activeTodoIndex,
+    allDone,
+    lastCompletedTodo,
+  }
+}
+
 export function usePlanProgress(
-  getSession: () => { events: TranscriptEvent[] },
+  getSession: () => { events: TranscriptEvent[]; planState: PlanTodo[] | null },
 ): ComputedRef<PlanProgress> {
   return computed(() => {
-    const { events } = getSession()
+    const { events, planState } = getSession()
 
+    // Scan live events first — most recent TodoWrite wins.
     for (let i = events.length - 1; i >= 0; i--) {
       const evt = events[i]
       if (!evt || evt.role !== 'assistant') continue
@@ -67,27 +86,14 @@ export function usePlanProgress(
           }
         })
 
-        const totalCount = todos.length
-        const completedCount = todos.filter((t) => t.status === 'completed').length
-
-        const activeIdx = todos.findIndex((t) => t.status === 'in_progress')
-        const activeTodo = activeIdx !== -1 ? todos[activeIdx]! : null
-        const activeTodoIndex = activeIdx !== -1 ? activeIdx + 1 : 0
-
-        const allDone = totalCount > 0 && completedCount === totalCount
-        const lastCompletedTodo = allDone ? (todos[todos.length - 1] ?? null) : null
-
-        return {
-          hasPlan: true,
-          todos,
-          totalCount,
-          completedCount,
-          activeTodo,
-          activeTodoIndex,
-          allDone,
-          lastCompletedTodo,
-        }
+        return todosToProgress(todos)
       }
+    }
+
+    // Fall back to persisted planState when events are empty (e.g. on first load
+    // before the user navigates into the session detail).
+    if (planState && planState.length > 0) {
+      return todosToProgress(planState)
     }
 
     return NO_PLAN

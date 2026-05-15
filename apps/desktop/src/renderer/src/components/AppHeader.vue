@@ -16,12 +16,12 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useLayoutStore } from '@/stores/layout'
 import { cn } from '@/lib/utils'
 import type { RecentProject } from '@shared/ipc-contract'
 
-const projectsStore = useProjectsStore()
+const { projects, focusedProject, add, remove, setFocused, rename: renameProject, pickAndAdd } = useProjectsQuery()
 const layoutStore = useLayoutStore()
 
 const branch = ref<string>('—')
@@ -34,13 +34,13 @@ const renameDirFlag = ref(false)
 const renameInput = ref<HTMLInputElement | null>(null)
 
 const focusedName = computed(() => {
-  const p = projectsStore.focusedProject
+  const p = focusedProject.value
   if (!p) return 'No project'
   return p.path.split('/').pop() ?? p.path
 })
 
 const sortedProjects = computed(() =>
-  [...projectsStore.projects].sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0)),
+  [...projects.value].sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0)),
 )
 
 async function loadBranch(path: string | undefined) {
@@ -59,14 +59,14 @@ async function loadBranch(path: string | undefined) {
 async function openLocalProject() {
   const path = await window.agentkeeper.projects.pickFolder()
   if (path) {
-    await projectsStore.add(path)
-    await projectsStore.setFocused(path)
+    await add(path)
+    await setFocused(path)
   }
   popoverOpen.value = false
 }
 
 function selectProject(path: string) {
-  void projectsStore.setFocused(path)
+  void setFocused(path)
   popoverOpen.value = false
 }
 
@@ -86,14 +86,14 @@ function cancelRename() {
 
 async function confirmRename() {
   if (!renameTarget.value || !renameName.value.trim()) return
-  await projectsStore.rename(renameTarget.value.path, renameName.value.trim(), renameDirFlag.value)
+  await renameProject({ oldPath: renameTarget.value.path, newName: renameName.value.trim(), renameDir: renameDirFlag.value })
   renameOpen.value = false
   renameTarget.value = null
 }
 
-onMounted(() => loadBranch(projectsStore.focusedProject?.path))
+onMounted(() => loadBranch(focusedProject.value?.path))
 watch(
-  () => projectsStore.focusedProject?.path,
+  () => focusedProject.value?.path,
   (path) => loadBranch(path),
 )
 </script>
@@ -131,7 +131,7 @@ watch(
           <button
             class="size-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             title="Add project"
-            @click="void projectsStore.pickAndAdd()"
+            @click="void pickAndAdd()"
           >
             <Plus class="h-3 w-3" />
           </button>
@@ -144,7 +144,7 @@ watch(
             v-for="project in sortedProjects"
             :key="project.path"
             class="group flex items-center w-full px-2 py-1.5 text-sm rounded transition-colors hover:bg-accent"
-            :class="{ 'bg-accent/50': projectsStore.focusedProject?.path === project.path }"
+            :class="{ 'bg-accent/50': focusedProject?.path === project.path }"
           >
             <button
               class="flex items-center gap-2 flex-1 min-w-0 text-left"
@@ -164,7 +164,7 @@ watch(
             <button
               class="size-5 flex items-center justify-center rounded text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-background transition-colors shrink-0"
               title="Remove"
-              @click.stop="void projectsStore.remove(project.path)"
+              @click.stop="void remove(project.path)"
             >
               <X class="h-3 w-3" />
             </button>

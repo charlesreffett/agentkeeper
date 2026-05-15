@@ -40,20 +40,6 @@ const error = ref<string | null>(null)
 const persistedSessions = ref<Session[]>([])
 const expiryDays = ref<number | null>(14)
 
-const standaloneSessions = computed(() =>
-  persistedSessions.value.filter((s) => !s.agencyInstanceId),
-)
-
-const agencyGroups = computed(() => {
-  const groups = new Map<string, Session[]>()
-  for (const s of persistedSessions.value) {
-    if (!s.agencyInstanceId) continue
-    let list = groups.get(s.agencyInstanceId)
-    if (!list) { list = []; groups.set(s.agencyInstanceId, list) }
-    list.push(s)
-  }
-  return groups
-})
 
 // ─── Confirmation dialog ─────────────────────────────────────────────────────
 
@@ -173,22 +159,11 @@ function liveStatusDot(s: LiveSession): string {
 }
 
 // ─── Draft-message cross-reference ───────────────────────────────────────────
-// Persisted sessions record both localId and sdkSessionId, letting us map a
-// historical JSONL id (= sdkSessionId) back to the localId that keyed the
-// localStorage draft entry.
 
-const persistedBySdkId = computed(() => {
-  const map = new Map<string, string>()
-  for (const s of persistedSessions.value) {
-    if (s.sdkSessionId) map.set(s.sdkSessionId, s.localId)
-  }
-  return map
-})
-
-function historicalDraftMessage(s: SessionSummary): string {
-  const localId = persistedBySdkId.value.get(s.id)
-  if (!localId) return ''
-  return localStorage.getItem(`agentkeeper:draft:${localId}`) ?? ''
+function historicalDraftMessage(_s: SessionSummary): string {
+  // sdkSessionId was removed from Session in the session-agent split; can no
+  // longer map JSONL ids back to persisted localIds from this side.
+  return ''
 }
 
 function persistedDraftMessage(s: Session): string {
@@ -227,13 +202,6 @@ function openSession(s: Session) {
   emit('selectLive', store.getSession(localId)!)
 }
 
-function openAgency(agencyInstanceId: string) {
-  const members = agencyGroups.value.get(agencyInstanceId) ?? []
-  const localId = store.openPersistedAgency(members)
-  const session = store.getSession(localId)
-  if (session) emit('selectLive', session)
-}
-
 function confirmDismissSession(s: Session) {
   requestConfirm(
     'Remove session?',
@@ -245,24 +213,8 @@ function confirmDismissSession(s: Session) {
   )
 }
 
-function confirmDismissAgency(agencyInstanceId: string) {
-  const members = agencyGroups.value.get(agencyInstanceId) ?? []
-  const entrySession = members.find((s) => !s.initialPrompt.startsWith('Agency "'))
-  const name = entrySession?.initialPrompt.split('\n')[0] ?? 'Agency session'
-  requestConfirm(
-    'Remove agency session?',
-    `"${name}" will be removed from the list.`,
-    async () => {
-      for (const s of members) {
-        persistedSessions.value = persistedSessions.value.filter((x) => x.localId !== s.localId)
-        await window.agentkeeper.sessions.deletePersisted(s.localId)
-      }
-    },
-  )
-}
-
 function confirmRemoveAllPersisted() {
-  const count = standaloneSessions.value.length + agencyGroups.value.size
+  const count = persistedSessions.value.length
   requestConfirm(
     'Remove all previous sessions?',
     `${count} session${count !== 1 ? 's' : ''} will be permanently removed.`,
@@ -278,20 +230,11 @@ async function touchSession(localId: string) {
   await loadPersisted()
 }
 
-async function touchAgency(agencyInstanceId: string) {
-  const members = agencyGroups.value.get(agencyInstanceId) ?? []
-  for (const s of members) {
-    await window.agentkeeper.sessions.touchPersisted(s.localId)
-  }
-  await loadPersisted()
-}
-
 // ─── Selection ────────────────────────────────────────────────────────────────
 
 const selectionMode = ref(false)
 const selectedHistorical = ref(new Set<string>())
 const selectedPersisted = ref(new Set<string>())
-const selectedAgencies = ref(new Set<string>())
 const selectedLive = ref(new Set<string>())
 
 const dismissableLive = computed(() => liveForProject.value.filter(canDismissLive))
@@ -300,7 +243,6 @@ const totalSelected = computed(
   () =>
     selectedHistorical.value.size +
     selectedPersisted.value.size +
-    selectedAgencies.value.size +
     selectedLive.value.size,
 )
 
@@ -312,9 +254,8 @@ const allHistoricalSelected = computed(
 
 const allPersistedSelected = computed(
   () =>
-    standaloneSessions.value.length > 0 &&
-    standaloneSessions.value.every((s) => selectedPersisted.value.has(s.localId)) &&
-    [...agencyGroups.value.keys()].every((id) => selectedAgencies.value.has(id)),
+    persistedSessions.value.length > 0 &&
+    persistedSessions.value.every((s) => selectedPersisted.value.has(s.localId)),
 )
 
 const allLiveSelected = computed(
@@ -335,12 +276,6 @@ function togglePersisted(id: string) {
   selectedPersisted.value = s
 }
 
-function toggleAgency(id: string) {
-  const s = new Set(selectedAgencies.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  selectedAgencies.value = s
-}
-
 function toggleLive(id: string) {
   const s = new Set(selectedLive.value)
   s.has(id) ? s.delete(id) : s.add(id)
@@ -355,10 +290,8 @@ function toggleAllHistorical() {
 function toggleAllPersisted() {
   if (allPersistedSelected.value) {
     selectedPersisted.value = new Set()
-    selectedAgencies.value = new Set()
   } else {
-    selectedPersisted.value = new Set(standaloneSessions.value.map((s) => s.localId))
-    selectedAgencies.value = new Set(agencyGroups.value.keys())
+    selectedPersisted.value = new Set(persistedSessions.value.map((s) => s.localId))
   }
 }
 
@@ -369,8 +302,7 @@ function toggleAllLive() {
 
 function selectAll() {
   selectedHistorical.value = new Set(historical.value.map((s) => s.id))
-  selectedPersisted.value = new Set(standaloneSessions.value.map((s) => s.localId))
-  selectedAgencies.value = new Set(agencyGroups.value.keys())
+  selectedPersisted.value = new Set(persistedSessions.value.map((s) => s.localId))
   selectedLive.value = new Set(dismissableLive.value.map((s) => s.localId))
 }
 
@@ -378,7 +310,6 @@ function exitSelectionMode() {
   selectionMode.value = false
   selectedHistorical.value = new Set()
   selectedPersisted.value = new Set()
-  selectedAgencies.value = new Set()
   selectedLive.value = new Set()
 }
 
@@ -395,13 +326,6 @@ async function deleteSelected() {
       for (const localId of selectedPersisted.value) {
         persistedSessions.value = persistedSessions.value.filter((s) => s.localId !== localId)
         await window.agentkeeper.sessions.deletePersisted(localId)
-      }
-      for (const instanceId of selectedAgencies.value) {
-        const members = agencyGroups.value.get(instanceId) ?? []
-        for (const s of members) {
-          persistedSessions.value = persistedSessions.value.filter((x) => x.localId !== s.localId)
-          await window.agentkeeper.sessions.deletePersisted(s.localId)
-        }
       }
       for (const localId of selectedLive.value) {
         store.dismiss(localId)
@@ -488,7 +412,7 @@ async function deleteSelected() {
           :message-count="s.isDraft ? null : s.events.length"
           :model="s.model"
           :branch="s.branch"
-          :role-name="s.roleName"
+          :role-name="s.agents.find(a => a.isEntryPoint)?.roleName ?? null"
           :agency-name="s.agencyName"
           :is-selected="store.currentLiveId === s.localId"
           :can-dismiss="canDismissLive(s)"
@@ -569,7 +493,7 @@ async function deleteSelected() {
 
     <!-- Previous (registry-persisted, resumable) -->
     <section
-      v-if="standaloneSessions.length || agencyGroups.size"
+      v-if="persistedSessions.length"
       class="shrink-0 border-t border-border"
     >
       <div class="px-4 py-2 border-b border-border flex items-center justify-between">
@@ -599,9 +523,8 @@ async function deleteSelected() {
         </div>
       </div>
       <ul class="overflow-y-auto max-h-64">
-        <!-- Standalone sessions -->
         <SessionListItem
-          v-for="s in standaloneSessions"
+          v-for="s in persistedSessions"
           :key="s.localId"
           :title="s.initialPrompt.split('\n')[0] || '(no prompt)'"
           status-dot="bg-muted-foreground/40"
@@ -609,7 +532,7 @@ async function deleteSelected() {
           :draft-message="persistedDraftMessage(s)"
           :model="s.model"
           :branch="s.branch"
-          :role-name="s.roleName"
+          :agency-name="s.agencyId ? (s.agencyName ?? undefined) : undefined"
           :last-activity-at="s.lastActivityAt"
           :show-checkbox="selectionMode"
           :checked="selectedPersisted.has(s.localId)"
@@ -643,49 +566,6 @@ async function deleteSelected() {
             }}
           </div>
         </SessionListItem>
-
-        <!-- Agencies -->
-        <template v-for="[instanceId, members] in agencyGroups" :key="instanceId">
-          <SessionListItem
-            title-prefix="◎"
-            :title="members.find(s => !s.initialPrompt.startsWith('Agency &quot;'))?.initialPrompt.split('\n')[0] ?? members[0]?.agencyName ?? 'Agency session'"
-            status-dot="bg-muted-foreground/40"
-            status-label="Inactive"
-            :branch="members.find(s => !s.initialPrompt.startsWith('Agency &quot;'))?.branch ?? members[0]?.branch ?? null"
-            :last-activity-at="Math.max(...members.map(s => s.lastActivityAt))"
-            :show-checkbox="selectionMode"
-            :checked="selectedAgencies.has(instanceId)"
-            can-dismiss
-            @click="selectionMode ? undefined : openAgency(instanceId)"
-            @dismiss="confirmDismissAgency(instanceId)"
-            @toggle="toggleAgency(instanceId)"
-          >
-            <template #actions>
-              <button
-                v-if="
-                  daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) !== null &&
-                  daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays)! <= 3
-                "
-                class="text-xs px-1.5 py-1 rounded border border-amber-400/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition shrink-0"
-                title="Reset expiry"
-                @click.stop="touchAgency(instanceId)"
-              >
-                Keep
-              </button>
-            </template>
-            <div
-              v-if="
-                daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) !== null &&
-                daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays)! <= 3
-              "
-              class="mt-1 pl-3.5 text-[10px] text-amber-600 dark:text-amber-400 font-medium"
-            >
-              Expires in {{ daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) }} day{{
-                daysRemaining(Math.max(...members.map(s => s.lastActivityAt)), expiryDays) === 1 ? '' : 's'
-              }}
-            </div>
-          </SessionListItem>
-        </template>
       </ul>
     </section>
   </div>

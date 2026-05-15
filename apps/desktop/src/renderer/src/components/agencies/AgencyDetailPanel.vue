@@ -5,16 +5,8 @@
       <h2 class="text-sm font-semibold text-foreground">Agency</h2>
     </div>
 
-    <!-- Metadata (read-only) -->
+    <!-- Read-only metadata -->
     <div class="space-y-3">
-      <div>
-        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">ID</div>
-        <div class="text-xs text-muted-foreground font-mono">{{ agency.id }}</div>
-      </div>
-      <div>
-        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Scope</div>
-        <span class="text-xs px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground font-mono">{{ agency.scope }}</span>
-      </div>
       <div>
         <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-0.5">Entry points</div>
         <div class="flex flex-wrap gap-1 mt-1">
@@ -37,6 +29,27 @@
 
     <!-- Editable fields -->
     <div class="space-y-3 border-t border-border pt-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div class="space-y-1">
+          <label class="text-xs font-medium text-muted-foreground">ID</label>
+          <input
+            v-model="form.id"
+            type="text"
+            class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/40"
+          />
+          <div v-if="idError" class="text-xs text-red-400">{{ idError }}</div>
+        </div>
+        <div class="space-y-1">
+          <label class="text-xs font-medium text-muted-foreground">Scope</label>
+          <select
+            v-model="form.scope"
+            class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
+          >
+            <option value="project">Project</option>
+            <option value="global">Global</option>
+          </select>
+        </div>
+      </div>
       <div class="space-y-1">
         <label class="text-xs font-medium text-muted-foreground">Name</label>
         <input
@@ -124,14 +137,23 @@ const emit = defineEmits<{
 
 const confirmDelete = ref(false)
 const nameError = ref<string | null>(null)
+const idError = ref<string | null>(null)
+
+function validId(s: string) {
+  return /^[a-z0-9][a-z0-9-]*$/.test(s)
+}
 
 const form = ref({
+  id: props.agency.id,
   name: props.agency.name,
   description: props.agency.description,
-  notes: props.agency.notes,
+  notes: (props.agency.notes ?? '').trimStart(),
+  scope: props.agency.scope,
 })
 
 const isDirty = computed(() =>
+  form.value.id.trim() !== props.agency.id ||
+  form.value.scope !== props.agency.scope ||
   form.value.name.trim() !== props.agency.name ||
   form.value.description.trim() !== props.agency.description ||
   form.value.notes.trim() !== props.agency.notes
@@ -139,11 +161,14 @@ const isDirty = computed(() =>
 
 function resetForm() {
   form.value = {
+    id: props.agency.id,
     name: props.agency.name,
     description: props.agency.description,
-    notes: props.agency.notes,
+    notes: (props.agency.notes ?? '').trimStart(),
+    scope: props.agency.scope,
   }
   nameError.value = null
+  idError.value = null
 }
 
 watch(() => props.agency.id, () => {
@@ -155,12 +180,21 @@ watch(
   () => props.agency,
   (newAgency, oldAgency) => {
     const formMatchesOld =
+      form.value.id.trim() === oldAgency.id &&
+      form.value.scope === oldAgency.scope &&
       form.value.name.trim() === oldAgency.name &&
       form.value.description.trim() === oldAgency.description &&
       form.value.notes.trim() === oldAgency.notes
     if (formMatchesOld) {
-      form.value = { name: newAgency.name, description: newAgency.description, notes: newAgency.notes }
+      form.value = {
+        id: newAgency.id,
+        scope: newAgency.scope,
+        name: newAgency.name,
+        description: newAgency.description,
+        notes: (newAgency.notes ?? '').trimStart(),
+      }
       nameError.value = null
+      idError.value = null
     }
   },
 )
@@ -175,8 +209,15 @@ function save() {
     return
   }
   nameError.value = null
+  if (!form.value.id.trim() || !validId(form.value.id.trim())) {
+    idError.value = 'ID must be lowercase letters, digits, or dashes.'
+    return
+  }
+  idError.value = null
   const draft: Agency = {
     ...props.agency,
+    id: form.value.id.trim(),
+    scope: form.value.scope,
     name: form.value.name.trim(),
     description: form.value.description.trim(),
     notes: form.value.notes.trim(),

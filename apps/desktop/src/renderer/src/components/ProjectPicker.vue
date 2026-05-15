@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import type { RecentProject } from '@shared/ipc-contract'
 
 const props = defineProps<{
@@ -14,15 +14,15 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-const projectsStore = useProjectsStore()
+const { projects, focusedProject, pickAndAdd } = useProjectsQuery()
 const dialog = ref<HTMLDialogElement | null>(null)
 const selected = ref<RecentProject | null>(null)
 const search = ref('')
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
-  if (!q) return projectsStore.projects
-  return projectsStore.projects.filter(
+  if (!q) return projects.value
+  return projects.value.filter(
     (p) =>
       p.name.toLowerCase().includes(q) ||
       p.path.toLowerCase().includes(q) ||
@@ -36,9 +36,9 @@ watch(
     if (isOpen) {
       search.value = ''
       const target = props.preselected
-        ? projectsStore.projects.find((p) => p.path === props.preselected) ?? null
+        ? projects.value.find((p) => p.path === props.preselected) ?? null
         : null
-      selected.value = target ?? projectsStore.focusedProject
+      selected.value = target ?? focusedProject.value
       await nextTick()
       dialog.value?.showModal()
     } else {
@@ -48,9 +48,9 @@ watch(
 )
 
 async function addAndSelect() {
-  const before = projectsStore.projects.map((p) => p.path)
-  await projectsStore.pickAndAdd()
-  const added = projectsStore.projects.find((p) => !before.includes(p.path))
+  const before = projects.value.map((p) => p.path)
+  await pickAndAdd()
+  const added = projects.value.find((p) => !before.includes(p.path))
   if (added) selected.value = added
 }
 

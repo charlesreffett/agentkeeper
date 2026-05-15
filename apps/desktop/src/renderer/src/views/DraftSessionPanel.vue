@@ -8,13 +8,13 @@ import {
   type RoleEffort,
 } from '@shared/ipc-contract'
 import type { LiveSession } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 
 const props = defineProps<{
   session: LiveSession
 }>()
 
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 
 const roles = ref<Role[]>([])
 const agencies = ref<Agency[]>([])
@@ -96,7 +96,7 @@ watch(
 )
 
 watch(
-  () => projectsStore.focusedProject?.path,
+  () => focusedProject.value?.path,
   (newPath) => {
     if (newPath && newPath !== props.session.projectPath) {
       props.session.projectPath = newPath

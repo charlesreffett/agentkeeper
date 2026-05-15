@@ -29,6 +29,20 @@
       "when": 1778230332976,
       "tag": "0003_cost_breakdown",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1778230332977,
+      "tag": "0004_plan_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1778230332978,
+      "tag": "0005_session_agent_split",
+      "breakpoints": true
     }
   ]
 }

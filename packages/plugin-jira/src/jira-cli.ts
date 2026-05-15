@@ -13,6 +13,23 @@ const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
 
 const execFileAsync = promisify(execFile)
 
+export interface JiraProject {
+  key: string
+  name: string
+}
+
+export async function listProjects(): Promise<JiraProject[]> {
+  try {
+    const { stdout } = await execFileAsync('jira', ['project', 'list', '--raw', '--limit', '500'])
+    const data = JSON.parse(stdout.trim()) as Array<{ key?: string; name?: string }>
+    return data
+      .filter((p): p is { key: string; name?: string } => typeof p.key === 'string' && p.key.length > 0)
+      .map((p) => ({ key: p.key, name: p.name ?? p.key }))
+  } catch {
+    return []
+  }
+}
+
 export interface RawJiraIssue {
   key: string
   summary?: string

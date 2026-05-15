@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
-import { useSessionsListStore } from '@/stores/sessionsList'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { projectColor } from '@/lib/projectColor'
 import { useTimeSeries } from '@/composables/useTimeSeries'
 import SparklineChart from '@/components/SparklineChart.vue'
 import DonutChart from '@/components/DonutChart.vue'
 
 const sessionStore = useSessionStore()
-const projectsStore = useProjectsStore()
-const sessionsListStore = useSessionsListStore()
+const { projects } = useProjectsQuery()
+const { persistedSessions } = useSessionsListQuery(projects)
 
 const runningCount = computed(() => sessionStore.statusCounts.running)
 const totalCount = computed(() => sessionStore.visibleSessions.length)
@@ -18,7 +18,7 @@ const activeSparkline = useTimeSeries(() => runningCount.value, { intervalMs: 30
 
 const subAgentStats = computed(() => {
   const runningSessions = sessionStore.visibleSessions.filter(
-    (s) => (s.status === 'running' || s.status === 'starting') && s.agencyInstanceId,
+    (s) => (s.status === 'running' || s.status === 'starting') && s.agencyId,
   )
   return {
     total: runningSessions.reduce((sum, s) => sum + sessionStore.subAgentCount(s), 0),
@@ -52,6 +52,17 @@ const displayLabel = computed(() => {
 const displayTokens = computed(() => displayDay.value?.tokens ?? tokenStats.value.tokensToday)
 const displayCost = computed(() => displayDay.value?.costUsd ?? tokenStats.value.costUsdToday)
 
+const displayBreakdown = computed(() => {
+  const day = displayDay.value
+  if (!day) return null
+  return {
+    inputTokens: day.inputTokens,
+    outputTokens: day.outputTokens,
+    cacheReadTokens: day.cacheReadTokens,
+    cacheCreationTokens: day.cacheCreationTokens,
+  }
+})
+
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`
@@ -68,12 +79,12 @@ const projectSegments = computed(() => {
   for (const s of sessionStore.visibleSessions) {
     pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
   }
-  for (const s of sessionsListStore.persistedSessions) {
-    if (!liveIds.has(s.localId) && !s.agencyInstanceId) {
+  for (const s of persistedSessions.value) {
+    if (!liveIds.has(s.localId)) {
       pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
     }
   }
-  return projectsStore.projects
+  return projects.value
     .filter((p) => pathCounts.has(p.path))
     .map((p) => ({
       label: p.name,
@@ -125,14 +136,30 @@ const projectTotal = computed(() =>
         <span class="text-3xl font-bold leading-none">{{ formatTokens(displayTokens) }}</span>
         <span class="text-sm text-muted-foreground">{{ formatCost(displayCost) }}</span>
       </div>
-      <SparklineChart
-        :data="tokenSparkline"
-        :hovered-index="hoveredDayIndex"
-        color="#f59e0b"
-        :height="36"
-        class="mt-auto"
-        @hover="hoveredDayIndex = $event"
-      />
+      <div class="relative mt-auto">
+        <div
+          v-if="displayBreakdown"
+          class="absolute top-full mt-1.5 left-0 right-0 bg-popover text-popover-foreground border rounded-md shadow-md text-xs p-2 pointer-events-none"
+        >
+          <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+            <span class="text-muted-foreground">Input</span>
+            <span class="text-right tabular-nums">{{ displayBreakdown.inputTokens.toLocaleString() }}</span>
+            <span class="text-muted-foreground">Output</span>
+            <span class="text-right tabular-nums">{{ displayBreakdown.outputTokens.toLocaleString() }}</span>
+            <span class="text-muted-foreground">Cache read</span>
+            <span class="text-right tabular-nums">{{ displayBreakdown.cacheReadTokens.toLocaleString() }}</span>
+            <span class="text-muted-foreground">Cache write</span>
+            <span class="text-right tabular-nums">{{ displayBreakdown.cacheCreationTokens.toLocaleString() }}</span>
+          </div>
+        </div>
+        <SparklineChart
+          :data="tokenSparkline"
+          :hovered-index="hoveredDayIndex"
+          color="#f59e0b"
+          :height="36"
+          @hover="hoveredDayIndex = $event"
+        />
+      </div>
     </div>
 
     <!-- Card 4: By Project -->

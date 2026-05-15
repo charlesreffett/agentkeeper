@@ -1,0 +1,86 @@
+{
+  "title": "Session-Agent Decoupling",
+  "externalRef": "session-agent-decoupling",
+  "workItemId": "",
+  "prompt": "Decouple sessions from agents so that a Session = unit of work (one DB row in the sessions list) and an Agent = individual Claude instance running within a session. A session holds 1..N agents, eliminating fragile entry-point heuristics, dedup logic, and overflow agent leakage in the UI.",
+  "status": "complete",
+  "estimatedMinutes": 455,
+  "createdAt": "2026-05-12T00:00:00.000Z",
+  "updatedAt": "2026-05-13T04:04:23.755Z",
+  "sessionIds": [],
+  "steps": [
+    {
+      "id": 1,
+      "title": "DB schema + migration 0005",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 20,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    },
+    {
+      "id": 2,
+      "title": "IPC contract — Agent type + updated Session + new channels",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 15,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    },
+    {
+      "id": 3,
+      "title": "session-registry.ts — add agents read/write layer",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 20,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    },
+    {
+      "id": 4,
+      "title": "agent.ts — ActiveSession + startSession + consumeStream",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 25,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    },
+    {
+      "id": 5,
+      "title": "orchestrator.ts — startAgency, spawnOverflow, injectAndWait, resumeAgency",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 30,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    },
+    {
+      "id": 6,
+      "title": "ipc.ts + preload — new sessionsGetAgents and sessionsAddAgent handlers",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 15,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    },
+    {
+      "id": 7,
+      "title": "Renderer sessions store — remove dedup, add agents + agentEvents",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 25,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    },
+    {
+      "id": 8,
+      "title": "UI views — SessionsList, SessionsView, ContextPanel, LiveSessionView",
+      "summary": "Removed agencyGroups/agencyInstanceId from all UI views. SessionsList and SessionsView render all persisted sessions uniformly. ContextPanel uses session.agents array. LiveSessionView sources transcript from agentEvents[selectedAgentLocalId]. MonitorView and StatsCards updated for new Session shape. TokenStats and DayUsage interfaces moved to module scope. Legacy import updated for new sessions table schema.",
+      "model": "claude-opus-4-5",
+      "estimatedMinutes": 30,
+      "agent": "main",
+      "parallel": false,
+      "status": "complete"
+    }
+  ]
+}

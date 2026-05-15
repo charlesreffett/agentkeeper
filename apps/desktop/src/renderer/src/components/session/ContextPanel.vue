@@ -1,23 +1,24 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ChevronLeft, ChevronRight, FileCode2, GitBranch, Layers, Tag } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, CornerDownRight, FileCode2, GitBranch, Layers, Tag, User2 } from 'lucide-vue-next'
 import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import { formatRelativeTime, shortModel } from '@/lib/format'
-import type { GitDiffStatFile } from '@shared/ipc-contract'
+import type { Agent, GitDiffStatFile, LiveSessionStatus } from '@shared/ipc-contract'
 import type { WorkItem } from '@shared/ipc-contract'
 import type { PRDetail } from '@shared/github-types'
 
 const props = defineProps<{
   collapsed: boolean
   rootSessionId: string
+  selectedId: string
 }>()
-defineEmits<{ collapse: []; expand: [] }>()
+defineEmits<{ collapse: []; expand: []; 'update:selectedId': [id: string] }>()
 
 const store = useSessionStore()
-const projectsStore = useProjectsStore()
+const { projects } = useProjectsQuery()
 
 const { isHealthy: githubHealthy } = usePluginHealth('github')
 const { isHealthy: jiraHealthy } = usePluginHealth('jira')
@@ -26,27 +27,105 @@ const rootSession = computed(() => store.getSession(props.rootSessionId))
 
 // Repo slug ('owner/repo') from the project registry, used for PR lookups.
 const githubRepo = computed(
-  () => projectsStore.projects.find((p) => p.path === rootSession.value?.projectPath)?.repo ?? null,
+  () => projects.value.find((p) => p.path === rootSession.value?.projectPath)?.repo ?? null,
 )
+
+// ─── Agent list ───────────────────────────────────────────────────────────────
+
+const agents = computed((): Agent[] => rootSession.value?.agents ?? [])
+
+const selectedAgent = computed(() =>
+  agents.value.find(a => a.localId === props.selectedId) ??
+  agents.value.find(a => a.isEntryPoint) ?? null
+)
+
+function isEntryPoint(a: Agent): boolean {
+  return a.isEntryPoint
+}
+
+function rowLabel(a: Agent): string {
+  if (isEntryPoint(a)) {
+    const title = rootSession.value?.title ?? rootSession.value?.agencyPrompt ?? rootSession.value?.initialPrompt
+    return title ? `Main · ${title}` : 'Main'
+  }
+  return a.roleName ?? 'Agent'
+}
+
+function statusDotClass(status: LiveSessionStatus): string {
+  switch (status) {
+    case 'running':
+    case 'starting':
+      return 'bg-emerald-500 animate-pulse'
+    case 'idle':
+    case 'suspended':
+      return 'bg-amber-500'
+    case 'blocked':
+      return 'bg-blue-500'
+    case 'completed':
+    case 'terminated':
+      return 'bg-muted-foreground/40'
+    case 'error':
+      return 'bg-destructive'
+    default:
+      return 'bg-muted-foreground/40'
+  }
+}
+
+function statusLabel(status: LiveSessionStatus): string {
+  switch (status) {
+    case 'starting':   return 'Starting'
+    case 'running':    return 'Running'
+    case 'idle':       return 'Idle'
+    case 'suspended':  return 'Suspended'
+    case 'blocked':    return 'Blocked'
+    case 'completed':  return 'Completed'
+    case 'terminated': return 'Terminated'
+    case 'error':      return 'Error'
+    default:           return ''
+  }
+}
+
+function statusTextClass(status: LiveSessionStatus): string {
+  switch (status) {
+    case 'running':
+    case 'starting':
+      return 'text-emerald-500'
+    case 'idle':
+    case 'suspended':
+      return 'text-amber-500'
+    case 'blocked':
+      return 'text-blue-500'
+    case 'error':
+      return 'text-destructive'
+    default:
+      return 'text-muted-foreground'
+  }
+}
+
+function agentTokens(agentLocalId: string): number {
+  return (
+    (store.agentTokens[agentLocalId]?.tokens ?? 0) +
+    (store.sessionRunTokens[agentLocalId] ?? 0) +
+    (store.sessionOutputEstimates[agentLocalId] ?? 0)
+  )
+}
+
+function agentName(a: Agent): string {
+  if (isEntryPoint(a)) return a.roleName ?? 'Main agent'
+  return a.roleName ?? 'Agent'
+}
 
 // ─── Derived stats ────────────────────────────────────────────────────────────
 
 const turnCount = computed(() => {
-  const fromEvents = rootSession.value?.events.filter((e) => e.kind === 'assistant').length ?? 0
+  const agentEvts = rootSession.value?.agentEvents[props.selectedId] ?? []
+  const fromEvents = agentEvts.filter((e) => e.kind === 'assistant').length
   const persisted = store.sessionTurns[props.rootSessionId] ?? 0
-  // Use whichever is larger: events-based is accurate for live sessions,
-  // persisted is accurate after a restart when events haven't been loaded yet.
   return Math.max(fromEvents, persisted)
 })
 
-const tokenData = computed(() => store.sessionTokens[props.rootSessionId])
-const tokens = computed(
-  () =>
-    (tokenData.value?.tokens ?? 0) +
-    (store.sessionRunTokens[props.rootSessionId] ?? 0) +
-    (store.sessionOutputEstimates[props.rootSessionId] ?? 0),
-)
-const costUsd = computed(() => tokenData.value?.costUsd ?? 0)
+const tokens = computed(() => agentTokens(props.selectedId))
+const costUsd = computed(() => store.agentTokens[props.selectedId]?.costUsd ?? 0)
 
 function formatCost(usd: number): string {
   if (usd === 0) return '$0.00'
@@ -198,6 +277,20 @@ function truncatePath(filePath: string): string {
 function openUrl(url: string) {
   if (url) window.open(url, '_blank')
 }
+
+const reconnectingMcp = ref(false)
+
+async function reconnectMcp() {
+  if (!selectedAgent.value) return
+  reconnectingMcp.value = true
+  try {
+    await window.agentkeeper.sessions.reconnectMcp(selectedAgent.value.localId)
+  } catch (err) {
+    console.error('[ContextPanel] reconnectMcp failed:', err)
+  } finally {
+    reconnectingMcp.value = false
+  }
+}
 </script>
 
 <template>
@@ -222,7 +315,7 @@ function openUrl(url: string) {
   >
     <!-- Panel header -->
     <div
-      class="px-3 py-2 shrink-0 flex items-center justify-between border-b border-border bg-background z-10"
+      class="px-3 h-10 shrink-0 flex items-center justify-between border-b border-border bg-background z-10"
     >
       <span
         class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"
@@ -241,6 +334,93 @@ function openUrl(url: string) {
 
     <!-- Scrollable sections -->
     <div class="flex-1 overflow-y-auto divide-y divide-border/40">
+
+      <!-- ── SESSION ──────────────────────────────────────────────────────────── -->
+      <section class="px-3 py-3">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2">
+          Session
+        </div>
+
+        <!-- Agent rows (only shown when there are multiple agents) -->
+        <div v-if="agents.length > 1" class="mb-2.5 -mx-1">
+          <button
+            v-for="a in agents"
+            :key="a.localId"
+            class="w-full flex items-center gap-1.5 px-2 py-1 text-left rounded transition-colors"
+            :class="a.localId === selectedId
+              ? 'bg-muted text-foreground'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'"
+            @click="$emit('update:selectedId', a.localId)"
+          >
+            <User2 v-if="isEntryPoint(a)" class="size-3 shrink-0 text-primary/80" />
+            <CornerDownRight v-else class="size-3 shrink-0 ml-2 opacity-50" />
+            <span class="flex-1 text-[11px] font-medium truncate">{{ rowLabel(a) }}</span>
+            <span class="size-1.5 rounded-full shrink-0" :class="statusDotClass(a.status)" />
+          </button>
+        </div>
+
+        <!-- Selected agent identity (name + subtitle) — only when there are sub-agents -->
+        <div v-if="selectedAgent && agents.length > 1" class="mb-2.5">
+          <div class="text-xs font-semibold text-foreground leading-snug">
+            {{ agentName(selectedAgent) }}
+          </div>
+          <div class="text-[11px] text-muted-foreground truncate mt-0.5 leading-snug">
+            {{ selectedAgent.isEntryPoint
+              ? (rootSession?.title ?? rootSession?.agencyPrompt ?? selectedAgent.initialPrompt)
+              : selectedAgent.initialPrompt }}
+          </div>
+        </div>
+
+        <!-- Stats (for selected agent) -->
+        <div class="space-y-1 text-[11px]">
+          <!-- Status row — only when there are sub-agents (otherwise redundant with header badge) -->
+          <div v-if="agents.length > 1 && selectedAgent" class="flex items-center justify-between gap-2">
+            <span class="text-muted-foreground shrink-0">Status</span>
+            <span class="font-medium flex items-center gap-1 truncate" :class="statusTextClass(selectedAgent.status)">
+              <span class="size-1.5 rounded-full shrink-0" :class="statusDotClass(selectedAgent.status)" />
+              {{ statusLabel(selectedAgent.status) }}
+            </span>
+          </div>
+          <!-- Reconnect MCP button — shown for agency agents in error state that have an SDK session -->
+          <div
+            v-if="agents.length > 1 && selectedAgent?.status === 'error' && selectedAgent?.sdkSessionId && rootSession?.agencyId"
+            class="pt-0.5"
+          >
+            <button
+              class="w-full text-[11px] px-2 py-1 rounded bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50"
+              :disabled="reconnectingMcp"
+              @click="reconnectMcp"
+            >
+              {{ reconnectingMcp ? 'Reconnecting…' : 'Reconnect MCP' }}
+            </button>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-muted-foreground shrink-0">Model</span>
+            <span class="font-mono text-primary truncate text-right">{{ shortModel(rootSession?.model ?? null) ?? '—' }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-muted-foreground shrink-0">Turns</span>
+            <span class="tabular-nums text-foreground">{{ turnCount }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-muted-foreground shrink-0 flex items-center gap-1">
+              Tokens
+              <TokenBreakdownPopover :session-id="props.rootSessionId" side="left" />
+            </span>
+            <span class="tabular-nums text-foreground">{{ tokens.toLocaleString() }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-muted-foreground shrink-0">Cost</span>
+            <span class="tabular-nums text-foreground">{{ formatCost(costUsd) }}</span>
+          </div>
+          <div class="flex items-start justify-between gap-2">
+            <span class="text-muted-foreground shrink-0">Started</span>
+            <span class="text-foreground text-right">
+              {{ selectedAgent ? formatRelativeTime(selectedAgent.startedAt) : '—' }}
+            </span>
+          </div>
+        </div>
+      </section>
 
       <!-- ── JIRA TICKET ────────────────────────────────────────────────────── -->
       <section v-if="rootSession?.workItemKey" class="px-3 py-3">
@@ -394,43 +574,6 @@ function openUrl(url: string) {
         </div>
       </section>
 
-      <!-- ── SESSION ────────────────────────────────────────────────────────── -->
-      <section class="px-3 py-3">
-        <div
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2"
-        >
-          Session
-        </div>
-        <div class="space-y-1 text-[11px]">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-muted-foreground shrink-0">Model</span>
-            <span class="font-mono text-primary truncate text-right">
-              {{ shortModel(rootSession?.model ?? null) ?? '—' }}
-            </span>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-muted-foreground shrink-0">Turns</span>
-            <span class="tabular-nums text-foreground">{{ turnCount }}</span>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-muted-foreground shrink-0">Tokens</span>
-            <span class="tabular-nums text-foreground">{{ tokens.toLocaleString() }}</span>
-          </div>
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-muted-foreground shrink-0 flex items-center gap-1">
-              Cost
-              <TokenBreakdownPopover :session-id="rootSessionId" side="left" />
-            </span>
-            <span class="tabular-nums text-foreground">{{ formatCost(costUsd) }}</span>
-          </div>
-          <div class="flex items-start justify-between gap-2">
-            <span class="text-muted-foreground shrink-0">Started</span>
-            <span class="text-foreground text-right">
-              {{ rootSession ? formatRelativeTime(rootSession.startedAt) : '—' }}
-            </span>
-          </div>
-        </div>
-      </section>
     </div>
   </div>
 </template>

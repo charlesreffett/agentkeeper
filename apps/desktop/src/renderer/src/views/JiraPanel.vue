@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Settings } from 'lucide-vue-next'
 import JiraIssueDetail from './JiraIssueDetail.vue'
-import JiraSettingsModal from './JiraSettingsModal.vue'
 import type { WorkItem } from '@shared/ipc-contract'
+
+const router = useRouter()
 
 const props = defineProps<{
   open: boolean
@@ -21,7 +23,6 @@ const loading = ref(false)
 const filter = ref('')
 const selectedId = ref<string | null>(null)
 const cliMissing = ref(false)
-const settingsOpen = ref(false)
 
 const statusLabel: Record<string, string> = {
   backlog: 'Backlog',
@@ -131,7 +132,7 @@ onUnmounted(() => {
           <button
             class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
             title="Jira settings"
-            @click="settingsOpen = true"
+            @click="void router.push('/settings?tab=jira')"
           >
             <Settings :size="14" />
           </button>
@@ -213,9 +214,4 @@ onUnmounted(() => {
     </div>
   </dialog>
 
-  <JiraSettingsModal
-    :open="settingsOpen"
-    @close="settingsOpen = false"
-    @saved="loadIssues"
-  />
 </template>

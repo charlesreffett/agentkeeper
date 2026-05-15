@@ -5,10 +5,10 @@ import AppHeader from '@/components/AppHeader.vue'
 import RightPanel from '@/components/RightPanel.vue'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { useLayoutStore } from '@/stores/layout'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 
 const layoutStore = useLayoutStore()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 </script>
 
 <template>
@@ -25,7 +25,7 @@ const projectsStore = useProjectsStore()
         </div>
         <RightPanel
           v-if="layoutStore.rightPanelOpen"
-          :project-path="projectsStore.focusedProject?.path ?? ''"
+          :project-path="focusedProject?.path ?? ''"
         />
       </div>
     </SidebarInset>

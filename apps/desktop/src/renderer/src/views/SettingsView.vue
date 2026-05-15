@@ -1,24 +1,74 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useQueryClient } from '@tanstack/vue-query'
+import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 import { useLayoutStore } from '@/stores/layout'
-import { useProjectsStore } from '@/stores/projects'
-import { useAppSettingsStore } from '@/stores/appSettings'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useSettingsQuery } from '@/composables/useSettingsQuery'
+import { queryKeys } from '@/lib/queryKeys'
+import { pluginSettingsPanels } from '@/lib/pluginSettingsPanels'
 import PageHeader from '@/components/PageHeader.vue'
 
+const route = useRoute()
+const router = useRouter()
+const queryClient = useQueryClient()
 const layoutStore = useLayoutStore()
-const projectsStore = useProjectsStore()
-const appSettingsStore = useAppSettingsStore()
-const projectPath = computed(() => projectsStore.focusedProject?.path ?? '')
+const { focusedProject } = useProjectsQuery()
+const {
+  settings: storedSettings,
+  apiKeyStored: storedApiKeyStored,
+  isLoading,
+  invalidateAll,
+} = useSettingsQuery()
+const projectPath = computed(() => focusedProject.value?.path ?? '')
+
+// ─── Tab routing ──────────────────────────────────────────────────────────────
+
+const tabs = computed(() => [
+  { id: 'general', label: 'General' },
+  ...pluginSettingsPanels.map((p) => ({ id: p.id, label: p.label })),
+])
+
+const activeTab = ref((route.query.tab as string | undefined) ?? 'general')
+
+watch(
+  () => route.query.tab,
+  (tab) => { activeTab.value = (tab as string | undefined) ?? 'general' },
+)
+
+function selectTab(id: string) {
+  activeTab.value = id
+  void router.replace({ query: id === 'general' ? {} : { tab: id } })
+}
+
+const activePluginPanel = computed(() =>
+  pluginSettingsPanels.find((p) => p.id === activeTab.value),
+)
+
+// ─── General tab: app settings ────────────────────────────────────────────────
 
 const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
 
 const apiKeyInput = ref('')
 const keyStored = ref(false)
 const settings = ref<AppSettings | null>(null)
+const baseline = ref<AppSettings | null>(null)
 const saving = ref(false)
-const message = ref<string | null>(null)
+
+const DIRTY_FIELDS = [
+  'defaultModel', 'defaultEffort', 'defaultUseWorktree',
+  'enterToSend', 'sendModifier', 'sessionExpiryDays',
+] as const satisfies ReadonlyArray<keyof AppSettings>
+
+const isDirty = computed(() => {
+  if (activeTab.value !== 'general') return false
+  if (apiKeyInput.value.trim()) return true
+  if (!settings.value || !baseline.value) return false
+  return DIRTY_FIELDS.some((f) => settings.value![f] !== baseline.value![f])
+})
 
 const isMac = /Mac/i.test(navigator.platform)
 const capturing = ref(false)
@@ -53,32 +103,6 @@ const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
 ] as const
 
-const githubRepos = ref<string[]>([])
-const newRepoInput = ref('')
-const newRepoError = ref<string | null>(null)
-
-async function addRepo() {
-  const val = newRepoInput.value.trim()
-  newRepoError.value = null
-  if (!val) return
-  if (!OWNER_REPO_RE.test(val)) {
-    newRepoError.value = 'Must be owner/repo format, e.g. anthropics/claude-code.'
-    return
-  }
-  if (githubRepos.value.includes(val)) {
-    newRepoError.value = 'Repo already added.'
-    return
-  }
-  githubRepos.value = [...githubRepos.value, val]
-  await window.agentkeeper.github.setConfig({ repos: githubRepos.value })
-  newRepoInput.value = ''
-}
-
-async function removeRepo(repo: string) {
-  githubRepos.value = githubRepos.value.filter((r) => r !== repo)
-  await window.agentkeeper.github.setConfig({ repos: githubRepos.value })
-}
-
 // Danger-zone state
 const resetAppSettingsSel = ref(false)
 const resetProjectSel = ref(false)
@@ -93,53 +117,56 @@ const canReset = computed(
     resetGlobalSel.value,
 )
 
-function seedFromStore() {
-  const s = appSettingsStore.settings
+function seedFromQuery() {
+  const s = storedSettings.value
   if (s) {
-    if (!s.defaultEffort || !ROLE_EFFORT_VALUES.includes(s.defaultEffort)) {
-      s.defaultEffort = 'medium'
-    }
-    settings.value = { ...s }
+    const effort = ROLE_EFFORT_VALUES.includes(s.defaultEffort) ? s.defaultEffort : 'medium'
+    const seeded = { ...s, defaultEffort: effort }
+    settings.value = seeded
+    baseline.value = { ...seeded }
   }
-  keyStored.value = appSettingsStore.apiKeyStored
-  githubRepos.value = appSettingsStore.githubConfig.repos ?? []
+  if (storedApiKeyStored.value != null) keyStored.value = storedApiKeyStored.value
 }
 
-// Called after user saves — forces a fresh fetch, resets UI state.
-async function refresh() {
-  appSettingsStore.invalidate()
-  await appSettingsStore.load()
-  seedFromStore()
+watch(storedSettings, (s) => {
+  if (s) seedFromQuery()
+}, { immediate: true })
+
+watch(storedApiKeyStored, (v) => {
+  if (v != null) keyStored.value = v
+})
+
+function cancel() {
+  if (baseline.value) settings.value = { ...baseline.value }
   apiKeyInput.value = ''
-  message.value = null
-  newRepoInput.value = ''
-  newRepoError.value = null
+  router.back()
 }
 
 async function save() {
   saving.value = true
-  message.value = null
   try {
     if (apiKeyInput.value.trim()) {
-      await window.agentkeeper.secrets.set(
-        'anthropicApiKey',
-        apiKeyInput.value.trim(),
-      )
+      await window.agentkeeper.secrets.set('anthropicApiKey', apiKeyInput.value.trim())
+      queryClient.setQueryData(queryKeys.settings.secrets(), true)
+      apiKeyInput.value = ''
     }
     if (settings.value) {
-      await window.agentkeeper.settings.set({
+      const toSave: Partial<AppSettings> = {
         defaultModel: settings.value.defaultModel,
         defaultEffort: settings.value.defaultEffort,
         defaultUseWorktree: settings.value.defaultUseWorktree,
         enterToSend: settings.value.enterToSend,
         sendModifier: settings.value.sendModifier,
         sessionExpiryDays: settings.value.sessionExpiryDays,
-      })
+      }
+      await window.agentkeeper.settings.set(toSave)
+      queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
     }
-    message.value = 'Saved.'
-    await refresh()
+    toast.success('Settings saved')
   } catch (e) {
-    message.value = e instanceof Error ? e.message : String(e)
+    toast.error('Failed to save settings', {
+      description: e instanceof Error ? e.message : String(e),
+    })
   } finally {
     saving.value = false
   }
@@ -147,7 +174,9 @@ async function save() {
 
 async function clearKey() {
   await window.agentkeeper.secrets.delete('anthropicApiKey')
-  await refresh()
+  queryClient.setQueryData(queryKeys.settings.secrets(), false)
+  keyStored.value = false
+  invalidateAll()
 }
 
 async function onReset() {
@@ -187,362 +216,338 @@ async function onReset() {
     resetAppSettingsSel.value = false
     resetProjectSel.value = false
     resetGlobalSel.value = false
-    await refresh()
+    invalidateAll()
   } catch (err) {
     resetMessage.value = err instanceof Error ? err.message : String(err)
   } finally {
     resetting.value = false
   }
 }
-
-onMounted(async () => {
-  // Join the in-flight prefetch if it started, or fetch now if not yet triggered.
-  // Intentionally NOT invalidating — prefetched data is good to use.
-  await appSettingsStore.load()
-  seedFromStore()
-})
 </script>
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
     <PageHeader title="Settings" />
-    <div class="flex-1 overflow-y-auto">
-    <div v-if="appSettingsStore.loading && !settings" class="flex items-center justify-center h-32 text-sm text-muted-foreground">
-      Loading…
-    </div>
-    <div v-else class="p-6 space-y-5 max-w-lg">
 
-      <div class="space-y-3">
-        <label class="text-sm font-medium">Authentication</label>
-        <div
-          class="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed space-y-1"
-        >
-          <p class="text-foreground font-medium">
-            If you have a Claude Pro or Max plan
-          </p>
-          <p class="text-muted-foreground">
-            Run <code class="font-mono bg-background px-1 rounded">claude login</code>
-            in a terminal once. The app shares those credentials — no API key
-            needed here.
-          </p>
-        </div>
-        <div class="space-y-2">
-          <p class="text-xs text-muted-foreground">
-            Or, if you have an Anthropic Console account, paste an API key below
-            (stored in your OS keychain via keytar):
-          </p>
-          <input
-            v-model="apiKeyInput"
-            type="password"
-            autocomplete="off"
-            :placeholder="
-              keyStored
-                ? '•••••••••• (key set) — enter new to replace'
-                : 'sk-ant-… (optional)'
-            "
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-          />
-          <div v-if="keyStored" class="flex items-center justify-between">
-            <span class="text-xs text-muted-foreground">
-              API key is configured.
-            </span>
-            <button
-              class="text-xs text-destructive hover:underline"
-              @click="clearKey"
-            >
-              Remove key
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="settings" class="space-y-2">
-        <label class="text-sm font-medium">Default model</label>
-        <select
-          v-model="settings.defaultModel"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-        >
-          <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
-            {{ m.label }}
-          </option>
-        </select>
-      </div>
-
-      <div v-if="settings" class="space-y-2">
-        <label class="text-sm font-medium">Default effort</label>
-        <p class="text-xs text-muted-foreground">
-          Baseline effort level for new sessions. A selected role can
-          override this, and you can override either from the New Session
-          dialog.
-        </p>
-        <select
-          v-model="settings.defaultEffort"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-        >
-          <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
-            {{ e }}
-          </option>
-        </select>
-      </div>
-
-      <div v-if="settings" class="space-y-2">
-        <label class="text-sm font-medium">Sessions</label>
-        <label class="flex items-start gap-3 cursor-pointer select-none group">
-          <div class="relative mt-0.5 shrink-0">
-            <input
-              v-model="settings.defaultUseWorktree"
-              type="checkbox"
-              class="sr-only peer"
-            />
-            <div
-              class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors"
-            />
-            <div
-              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4"
-            />
-          </div>
-          <div class="text-xs leading-relaxed">
-            <div class="font-medium text-foreground">Use worktree by default</div>
-            <div class="text-muted-foreground">
-              When on: new sessions default to an isolated git worktree.<br />
-              When off (default): sessions run in the project directory.
-            </div>
-          </div>
-        </label>
-      </div>
-
-      <div v-if="settings" class="space-y-2">
-        <label class="text-sm font-medium">Message sending</label>
-        <label class="flex items-start gap-3 cursor-pointer select-none group">
-          <div class="relative mt-0.5 shrink-0">
-            <input
-              v-model="settings.enterToSend"
-              type="checkbox"
-              class="sr-only peer"
-            />
-            <div
-              class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors"
-            />
-            <div
-              class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4"
-            />
-          </div>
-          <div class="text-xs leading-relaxed">
-            <div class="font-medium text-foreground">Enter to send</div>
-            <div class="text-muted-foreground">
-              When on: Enter sends, modifier+Enter inserts a newline.<br />
-              When off (default): modifier+Enter sends, Enter inserts a newline.
-            </div>
-          </div>
-        </label>
-        <div class="space-y-1.5 pt-1">
-          <label class="text-xs font-medium">Send modifier key</label>
-          <div
-            tabindex="0"
-            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm cursor-pointer select-none focus:outline-none focus:border-ring transition-colors"
-            @keydown.prevent="captureModifier"
-            @focus="capturing = true"
-            @blur="capturing = false"
-          >
-            <span>{{ modifierLabel }}</span>
-            <span v-if="capturing" class="text-muted-foreground italic ml-2">— press to change</span>
-          </div>
-          <p class="text-[11px] text-muted-foreground">
-            Press ⌘, Ctrl, Alt, or ⇧ Shift to set. Press Esc to reset to system default.
-          </p>
-        </div>
-      </div>
-
-      <div class="space-y-2">
-        <label class="text-sm font-medium">GitHub repositories</label>
-        <p class="text-xs text-muted-foreground">
-          Repos scoped for GitHub PR and issue operations.
-        </p>
-        <div v-if="githubRepos.length > 0" class="flex flex-wrap gap-2">
-          <span
-            v-for="repo in githubRepos"
-            :key="repo"
-            class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-muted text-foreground"
-          >
-            <span class="font-mono">{{ repo }}</span>
-            <button
-              class="ml-1 text-muted-foreground hover:text-destructive transition-colors leading-none"
-              @click="void removeRepo(repo)"
-            >×</button>
-          </span>
-        </div>
-        <div class="flex gap-2">
-          <input
-            v-model="newRepoInput"
-            type="text"
-            placeholder="owner/repo"
-            class="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-            @blur="void addRepo()"
-            @keydown.enter.prevent="void addRepo()"
-            @input="newRepoError = null"
-          />
-        </div>
-        <p v-if="newRepoError" class="text-xs text-amber-600 dark:text-amber-400">{{ newRepoError }}</p>
-      </div>
-
-      <div v-if="settings" class="space-y-2">
-        <label class="text-sm font-medium">Session history</label>
-        <p class="text-xs text-muted-foreground">
-          Persisted sessions older than this threshold are removed at startup.
-        </p>
-        <select
-          :value="settings.sessionExpiryDays === null ? 'never' : String(settings.sessionExpiryDays)"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-          @change="
-            (e) => {
-              const v = (e.target as HTMLSelectElement).value
-              settings!.sessionExpiryDays = v === 'never' ? null : Number(v)
-            }
-          "
-        >
-          <option value="1">1 day</option>
-          <option value="3">3 days</option>
-          <option value="7">7 days</option>
-          <option value="14">14 days (default)</option>
-          <option value="21">21 days</option>
-          <option value="30">30 days</option>
-          <option value="never">Never</option>
-        </select>
-      </div>
-
-      <div
-        v-if="message"
-        class="text-xs text-muted-foreground rounded-md bg-muted/40 px-3 py-2"
+    <!-- Tab bar -->
+    <div class="shrink-0 flex border-b border-border px-4 gap-1">
+      <button
+        v-for="tab in tabs"
+        :key="tab.id"
+        class="px-3 py-2 text-sm transition-colors relative"
+        :class="
+          activeTab === tab.id
+            ? 'text-foreground font-medium after:absolute after:bottom-0 after:inset-x-0 after:h-0.5 after:bg-primary'
+            : 'text-muted-foreground hover:text-foreground'
+        "
+        @click="selectTab(tab.id)"
       >
-        {{ message }}
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto">
+      <!-- Plugin tab panels -->
+      <div v-if="activePluginPanel" class="p-6 max-w-2xl">
+        <component :is="activePluginPanel.component" />
       </div>
 
-      <div class="space-y-2">
-        <label class="text-sm font-medium">Appearance</label>
-        <div class="flex gap-2">
-          <button
-            class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
-            :class="
-              layoutStore.theme === 'light'
-                ? 'border-ring bg-primary text-primary-foreground'
-                : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
-            "
-            @click="void layoutStore.setTheme('light')"
-          >
-            Light
-          </button>
-          <button
-            class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
-            :class="
-              layoutStore.theme === 'dark'
-                ? 'border-ring bg-primary text-primary-foreground'
-                : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
-            "
-            @click="void layoutStore.setTheme('dark')"
-          >
-            Dark
-          </button>
+      <!-- General tab -->
+      <div v-else>
+        <div v-if="isLoading && !settings" class="flex items-center justify-center h-32 text-sm text-muted-foreground">
+          Loading…
+        </div>
+        <div v-else class="p-6 space-y-6 max-w-2xl">
+
+          <!-- Authentication -->
+          <section class="space-y-3">
+            <h2 class="text-sm font-semibold">Authentication</h2>
+            <div class="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed space-y-1">
+              <p class="text-foreground font-medium">Claude Pro or Max plan</p>
+              <p class="text-muted-foreground">
+                Run <code class="font-mono bg-background px-1 rounded">claude login</code>
+                in a terminal once. The app shares those credentials — no API key needed here.
+              </p>
+            </div>
+            <div class="space-y-2">
+              <p class="text-xs text-muted-foreground">
+                Anthropic Console key (stored in OS keychain via keytar):
+              </p>
+              <input
+                v-model="apiKeyInput"
+                type="password"
+                autocomplete="off"
+                :placeholder="
+                  keyStored
+                    ? '•••••••••• (key set) — enter new to replace'
+                    : 'sk-ant-… (optional)'
+                "
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+              />
+              <div v-if="keyStored" class="flex items-center justify-between">
+                <span class="text-xs text-muted-foreground">API key is configured.</span>
+                <button class="text-xs text-destructive hover:underline" @click="clearKey">
+                  Remove key
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- General settings table -->
+          <section v-if="settings" class="space-y-3">
+            <h2 class="text-sm font-semibold">General</h2>
+            <div class="rounded-lg border divide-y">
+
+              <!-- Default model -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Default model</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Baseline model for new sessions; overridable per session.
+                  </p>
+                </div>
+                <select
+                  v-model="settings.defaultModel"
+                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                >
+                  <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
+                    {{ m.label }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- Default effort -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Default effort</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Thinking budget for new sessions; overridable per session or role.
+                  </p>
+                </div>
+                <select
+                  v-model="settings.defaultEffort"
+                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                >
+                  <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+                    {{ e }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- Use worktree -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Use worktree by default</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    New sessions run in an isolated git worktree. Overridable per session.
+                  </p>
+                </div>
+                <label class="relative shrink-0 cursor-pointer">
+                  <input v-model="settings.defaultUseWorktree" type="checkbox" class="sr-only peer" />
+                  <div class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors" />
+                  <div class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4" />
+                </label>
+              </div>
+
+              <!-- Session expiry -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Session history</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Persisted sessions older than this are pruned at startup.
+                  </p>
+                </div>
+                <select
+                  :value="settings.sessionExpiryDays === null ? 'never' : String(settings.sessionExpiryDays)"
+                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                  @change="
+                    (e) => {
+                      const v = (e.target as HTMLSelectElement).value
+                      settings!.sessionExpiryDays = v === 'never' ? null : Number(v)
+                    }
+                  "
+                >
+                  <option value="1">1 day</option>
+                  <option value="3">3 days</option>
+                  <option value="7">7 days</option>
+                  <option value="14">14 days (default)</option>
+                  <option value="21">21 days</option>
+                  <option value="30">30 days</option>
+                  <option value="never">Never</option>
+                </select>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- Message sending -->
+          <section v-if="settings" class="space-y-3">
+            <h2 class="text-sm font-semibold">Message sending</h2>
+            <div class="rounded-lg border divide-y">
+
+              <!-- Enter to send -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Enter to send</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    When on: Enter sends, modifier+Enter inserts a newline.<br />
+                    When off: modifier+Enter sends, Enter inserts a newline.
+                  </p>
+                </div>
+                <label class="relative shrink-0 cursor-pointer">
+                  <input v-model="settings.enterToSend" type="checkbox" class="sr-only peer" />
+                  <div class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors" />
+                  <div class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4" />
+                </label>
+              </div>
+
+              <!-- Send modifier -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Send modifier key</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Click the field then press ⌘, Ctrl, Alt, or ⇧ Shift to set. Esc to reset.
+                  </p>
+                </div>
+                <div
+                  tabindex="0"
+                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm cursor-pointer select-none focus:outline-none focus:border-ring transition-colors"
+                  @keydown.prevent="captureModifier"
+                  @focus="capturing = true"
+                  @blur="capturing = false"
+                >
+                  <span>{{ modifierLabel }}</span>
+                  <span v-if="capturing" class="text-muted-foreground italic ml-1 text-xs">— press key</span>
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- Appearance -->
+          <section class="space-y-3">
+            <h2 class="text-sm font-semibold">Appearance</h2>
+            <div class="flex gap-2">
+              <button
+                class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
+                :class="
+                  layoutStore.theme === 'light'
+                    ? 'border-ring bg-primary text-primary-foreground'
+                    : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+                "
+                @click="void layoutStore.setTheme('light')"
+              >
+                Light
+              </button>
+              <button
+                class="flex-1 rounded-md border px-3 py-2 text-sm transition-colors"
+                :class="
+                  layoutStore.theme === 'dark'
+                    ? 'border-ring bg-primary text-primary-foreground'
+                    : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+                "
+                @click="void layoutStore.setTheme('dark')"
+              >
+                Dark
+              </button>
+            </div>
+          </section>
+
+          <!-- Danger zone -->
+          <details class="group rounded-md border border-destructive/40 bg-destructive/5">
+            <summary
+              class="cursor-pointer select-none px-3 py-2 text-sm font-medium flex items-center justify-between"
+            >
+              <span>Danger zone</span>
+              <span class="text-xs text-muted-foreground group-open:hidden">click to expand</span>
+            </summary>
+            <div class="px-3 pb-3 pt-1 space-y-3">
+              <p class="text-xs text-muted-foreground">
+                Resets are permanent. Worktrees and Claude Code state
+                (<code class="font-mono">~/.claude/</code>) are never touched.
+              </p>
+
+              <div class="space-y-2">
+                <label class="flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    v-model="resetAppSettingsSel"
+                    type="checkbox"
+                    class="size-4 mt-0.5 rounded border-input shrink-0"
+                  />
+                  <div class="text-xs min-w-0">
+                    <div class="font-medium text-foreground">App settings</div>
+                    <div class="text-muted-foreground">
+                      Default model, default effort, and the API key stored in the OS keychain.
+                    </div>
+                  </div>
+                </label>
+
+                <label
+                  v-if="projectPath"
+                  class="flex items-start gap-2 cursor-pointer select-none"
+                >
+                  <input
+                    v-model="resetProjectSel"
+                    type="checkbox"
+                    class="size-4 mt-0.5 rounded border-input shrink-0"
+                  />
+                  <div class="text-xs min-w-0">
+                    <div class="font-medium text-foreground">Project role &amp; agency definitions</div>
+                    <div class="text-muted-foreground font-mono truncate">
+                      {{ projectPath }}/.agentkeeper/
+                    </div>
+                    <div class="text-muted-foreground mt-0.5">
+                      Restore with <code class="font-mono">git checkout .agentkeeper</code> if needed.
+                    </div>
+                  </div>
+                </label>
+
+                <label class="flex items-start gap-2 cursor-pointer select-none">
+                  <input
+                    v-model="resetGlobalSel"
+                    type="checkbox"
+                    class="size-4 mt-0.5 rounded border-input shrink-0"
+                  />
+                  <div class="text-xs min-w-0">
+                    <div class="font-medium text-foreground">Global role &amp; agency definitions</div>
+                    <div class="text-muted-foreground font-mono">~/.agentkeeper/</div>
+                  </div>
+                </label>
+              </div>
+
+              <div
+                v-if="resetMessage"
+                class="text-xs rounded-md bg-background/60 border border-border px-3 py-2"
+              >
+                {{ resetMessage }}
+              </div>
+
+              <div class="flex items-center justify-end">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  :disabled="!canReset || resetting"
+                  @click="onReset"
+                >
+                  {{ resetting ? 'Resetting…' : 'Reset selected' }}
+                </Button>
+              </div>
+            </div>
+          </details>
+
         </div>
       </div>
-
-      <details class="group rounded-md border border-destructive/40 bg-destructive/5">
-        <summary
-          class="cursor-pointer select-none px-3 py-2 text-sm font-medium flex items-center justify-between"
-        >
-          <span>Danger zone</span>
-          <span class="text-xs text-muted-foreground group-open:hidden">
-            click to expand
-          </span>
-        </summary>
-        <div class="px-3 pb-3 pt-1 space-y-3">
-          <p class="text-xs text-muted-foreground">
-            Resets are permanent. Worktrees and Claude Code state
-            (<code class="font-mono">~/.claude/</code>) are never touched.
-          </p>
-
-          <div class="space-y-2">
-            <label class="flex items-start gap-2 cursor-pointer select-none">
-              <input
-                v-model="resetAppSettingsSel"
-                type="checkbox"
-                class="size-4 mt-0.5 rounded border-input shrink-0"
-              />
-              <div class="text-xs min-w-0">
-                <div class="font-medium text-foreground">App settings</div>
-                <div class="text-muted-foreground">
-                  Default model, default effort, and the API key stored in the
-                  OS keychain.
-                </div>
-              </div>
-            </label>
-
-            <label
-              v-if="projectPath"
-              class="flex items-start gap-2 cursor-pointer select-none"
-            >
-              <input
-                v-model="resetProjectSel"
-                type="checkbox"
-                class="size-4 mt-0.5 rounded border-input shrink-0"
-              />
-              <div class="text-xs min-w-0">
-                <div class="font-medium text-foreground">
-                  Project role &amp; agency definitions
-                </div>
-                <div class="text-muted-foreground font-mono truncate">
-                  {{ projectPath }}/.agentkeeper/
-                </div>
-                <div class="text-muted-foreground mt-0.5">
-                  These are usually committed to git — restore with
-                  <code class="font-mono">git checkout .agentkeeper</code>
-                  if you regret it.
-                </div>
-              </div>
-            </label>
-
-            <label class="flex items-start gap-2 cursor-pointer select-none">
-              <input
-                v-model="resetGlobalSel"
-                type="checkbox"
-                class="size-4 mt-0.5 rounded border-input shrink-0"
-              />
-              <div class="text-xs min-w-0">
-                <div class="font-medium text-foreground">
-                  Global role &amp; agency definitions
-                </div>
-                <div class="text-muted-foreground font-mono">
-                  ~/.agentkeeper/
-                </div>
-              </div>
-            </label>
-          </div>
-
-          <div
-            v-if="resetMessage"
-            class="text-xs rounded-md bg-background/60 border border-border px-3 py-2"
-          >
-            {{ resetMessage }}
-          </div>
-
-          <div class="flex items-center justify-end">
-            <Button
-              variant="destructive"
-              size="sm"
-              :disabled="!canReset || resetting"
-              @click="onReset"
-            >
-              {{ resetting ? 'Resetting…' : 'Reset selected' }}
-            </Button>
-          </div>
-        </div>
-      </details>
-
-      <footer class="flex items-center justify-end gap-2 pt-2">
-        <Button size="sm" :disabled="saving" @click="save">
-          {{ saving ? 'Saving…' : 'Save' }}
-        </Button>
-      </footer>
     </div>
-    </div>
+
+    <!-- Sticky footer: Save/Cancel only shown on General tab -->
+    <footer
+      v-if="activeTab === 'general'"
+      class="shrink-0 border-t bg-background px-6 py-3 flex items-center justify-end gap-2"
+    >
+      <Button variant="ghost" size="sm" @click="cancel">Cancel</Button>
+      <Button size="sm" :disabled="saving || !isDirty" @click="save">
+        {{ saving ? 'Saving…' : 'Save' }}
+      </Button>
+    </footer>
   </div>
 </template>

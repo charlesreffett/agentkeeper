@@ -2,14 +2,14 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { Bot, Sparkles, User } from 'lucide-vue-next'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore, relativeTime } from '@/stores/jiraActivity'
 import JiraStartSessionModal from './JiraStartSessionModal.vue'
 import type { IssueTransition, WorkItem, WorkItemStatus } from '@shared/ipc-contract'
 
 const route = useRoute()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 const activityStore = useJiraActivityStore()
 
@@ -134,52 +134,48 @@ async function setStatus(newStatus: WorkItemStatus) {
 async function planWithClaude() {
   if (!item.value) return
   planError.value = null
-  const focusedProject = projectsStore.focusedProject
-  if (!focusedProject) {
+  const focused = focusedProject.value
+  if (!focused) {
     planError.value = 'Focus a project in the sidebar before planning.'
     return
   }
   planRunning.value = true
   const cur = item.value
-  const now = new Date().toISOString()
+  const externalRef = cur.externalRef
+  try {
+    await window.agentkeeper.plans.create(focused.path, {
+      title: `${cur.externalRef}: ${cur.title}`,
+      externalRef: cur.externalRef,
+      workItemId: cur.id,
+      status: 'drafting',
+      estimatedMinutes: 0,
+      steps: [],
+    })
+  } catch (err) {
+    console.warn('[JiraIssueView] plan stub creation failed (non-fatal):', err)
+  }
   const planningPrompt = `Analyze this Jira ticket and create a detailed implementation plan.
 Ticket: ${cur.externalRef} — ${cur.title}${cur.body ? '\nDescription:\n' + cur.body : ''}
 
-Create the directory .agentkeeper/plans/ if needed, then write the plan to .agentkeeper/plans/${cur.externalRef}-plan.json.
+A draft plan has been created at .agentkeeper/plans/${externalRef}-plan.json (status: "drafting").
 
-The file must contain valid JSON with this exact structure:
-{
-  "title": "${cur.externalRef}: ${cur.title}",
-  "externalRef": "${cur.externalRef}",
-  "workItemId": "${cur.id}",
-  "status": "planned",
-  "createdAt": "${now}",
-  "updatedAt": "${now}",
-  "sessionIds": [],
-  "estimatedMinutes": <sum of all step estimatedMinutes>,
-  "steps": [
-    {
-      "id": 1,
-      "title": "concise actionable step title",
-      "model": "claude-haiku-4-5",
-      "estimatedMinutes": 10,
-      "agent": "explorer",
-      "parallel": false,
-      "status": "pending"
-    }
-  ]
-}
+Research the codebase thoroughly, then call mcp__agentkeeper__update_plan with:
+- filename: "${externalRef}-plan.json"
+- status: "planned"
+- estimatedMinutes: <sum of all step estimates>
+- steps: array of 4–8 focused, concrete implementation steps
 
-Guidance for each step:
-- model: "claude-haiku-4-5" for fast reads/audits/simple tasks, "claude-sonnet-4-5" for implementation/refactoring, "claude-opus-4-5" for complex architecture or test strategy
-- agent: "explorer" for codebase analysis, "main" for implementation, "qa" for testing/verification, "doc" for documentation
+For each step:
+- model: "claude-haiku-4-5" for fast reads/audits, "claude-sonnet-4-5" for implementation/refactoring, "claude-opus-4-5" for complex architecture
+- agent: "explorer" for codebase analysis, "main" for implementation, "qa" for testing, "doc" for documentation
 - parallel: true if this step can safely run concurrently with adjacent steps
-- estimatedMinutes: realistic estimate based on complexity
+- estimatedMinutes: realistic estimate
+- instructions: specific actionable instructions for the agent that will execute this step
 
-Aim for 4-8 focused, concrete steps. Make each step title specific and actionable.`
+Do not use the Write tool for the plan. Use mcp__agentkeeper__update_plan only.`
   try {
     await sessionStore.start({
-      projectPath: focusedProject.path,
+      projectPath: focused.path,
       workItemId: cur.id,
       initialPrompt: planningPrompt,
     })

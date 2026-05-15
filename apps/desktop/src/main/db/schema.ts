@@ -2,7 +2,6 @@ import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 export const sessions = sqliteTable('sessions', {
   localId: text('local_id').primaryKey(),
-  sdkSessionId: text('sdk_session_id'),
   projectPath: text('project_path').notNull(),
   worktreePath: text('worktree_path'),
   branch: text('branch'),
@@ -10,16 +9,27 @@ export const sessions = sqliteTable('sessions', {
   effort: text('effort'),
   permissionMode: text('permission_mode'),
   initialPrompt: text('initial_prompt').notNull().default(''),
-  roleName: text('role_name'),
-  roleId: text('role_id'),
-  agencyInstanceId: text('agency_instance_id'),
   agencyName: text('agency_name'),
   agencyId: text('agency_id'),
   agencyScope: text('agency_scope'),
-  roleInstanceIndex: integer('role_instance_index'),
   title: text('title'),
   workItemKey: text('work_item_key'),
   workItemTitle: text('work_item_title'),
+  planState: text('plan_state'),
+  status: text('status').notNull().default('idle'),
+  startedAt: integer('started_at').notNull(),
+  lastActivityAt: integer('last_activity_at').notNull(),
+})
+
+export const agents = sqliteTable('agents', {
+  localId: text('local_id').primaryKey(),
+  sessionLocalId: text('session_local_id').notNull().references(() => sessions.localId, { onDelete: 'cascade' }),
+  sdkSessionId: text('sdk_session_id'),
+  roleId: text('role_id'),
+  roleName: text('role_name'),
+  roleInstanceIndex: integer('role_instance_index'),
+  initialPrompt: text('initial_prompt').notNull().default(''),
+  isEntryPoint: integer('is_entry_point').notNull().default(0),
   status: text('status').notNull().default('idle'),
   startedAt: integer('started_at').notNull(),
   lastActivityAt: integer('last_activity_at').notNull(),
@@ -64,6 +74,7 @@ export const appState = sqliteTable('app_state', {
 
 export const sessionStats = sqliteTable('session_stats', {
   sessionLocalId: text('session_local_id').primaryKey(),
+  agentLocalId: text('agent_local_id'),
   totalTokens: integer('total_tokens').notNull().default(0),
   totalCostUsd: real('total_cost_usd').notNull().default(0),
   turnCount: integer('turn_count').notNull().default(0),

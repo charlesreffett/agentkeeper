@@ -3,15 +3,13 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from 'lucide-vue-next'
 import PageHeader from '@/components/PageHeader.vue'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePlansStore } from '@/stores/plans'
 import type { Plan, PlanStatus } from '@shared/ipc-contract'
 
 const router = useRouter()
-const projectsStore = useProjectsStore()
+const { focusedProject } = useProjectsQuery()
 const plansStore = usePlansStore()
-
-const focusedProject = computed(() => projectsStore.focusedProject)
 const plans = computed(() => plansStore.plans)
 const loading = computed(() => plansStore.loading)
 
