@@ -61,6 +61,14 @@ async function loadPlan() {
 
 watch(filename, loadPlan, { immediate: true })
 
+// Reset orphaned running state: status=running but no sessions (e.g. after app restart)
+watch(plan, (p) => {
+  if (p && p.status === 'running' && p.sessionIds.length === 0 && focusedProject.value) {
+    void window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { status: 'planned' })
+      .then((updated) => { if (updated) plan.value = updated })
+  }
+}, { immediate: true })
+
 // Live ingestion of Write tool events (plan appears before file hits disk)
 let unsubEvent: (() => void) | null = null
 
@@ -236,11 +244,16 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
   try {
     const updated = await window.agentkeeper.plans.update(project.path, filename.value, { status: 'running' })
     if (updated) plan.value = updated
-    await sessionStore.start({
+    const localId = await sessionStore.start({
       projectPath: project.path,
       initialPrompt: prompt,
       workItemId: cur.workItemId || undefined,
     })
+    // record session on the plan so we can navigate back to it
+    const withSession = await window.agentkeeper.plans.update(project.path, filename.value, {
+      sessionIds: [...(plan.value?.sessionIds ?? []), localId],
+    })
+    if (withSession) plan.value = withSession
     void router.push('/sessions')
   } catch (err) {
     console.error('Failed to start plan:', err)
@@ -249,6 +262,16 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
   } finally {
     starting.value = false
   }
+}
+
+async function resetToPlanned() {
+  if (!plan.value || !focusedProject.value) return
+  const updated = await window.agentkeeper.plans.update(
+    focusedProject.value.path,
+    filename.value,
+    { status: 'planned' },
+  )
+  if (updated) plan.value = updated
 }
 
 async function replan() {
@@ -352,12 +375,15 @@ The file must be valid JSON with this structure:
             <span v-if="replanError" class="text-xs text-destructive max-w-48 truncate">{{ replanError }}</span>
 
             <!-- Running state: Open session + Pause -->
-            <template v-if="plan.status === 'running'">
+            <template v-if="plan.status === 'running' && plan.sessionIds.length > 0">
               <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
                 <MonitorPlay :size="14" />
                 Open session
               </button>
-              <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
+              <button
+                class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                @click="resetToPlanned"
+              >
                 <Pause :size="14" />
                 Pause
               </button>
