@@ -58,6 +58,7 @@ export interface ActiveSession {
   idleWaiters: Array<(status: LiveSessionStatus) => void>
   interrupted: boolean
   turnCount: number
+  mcpFactory?: NonNullable<InternalStartExtras['mcpFactory']>
 }
 
 /** Optional extras orchestrator passes to startSession that aren't in the
@@ -66,10 +67,15 @@ export interface InternalStartExtras {
   mcpServer?: ReturnType<
     typeof import('@anthropic-ai/claude-agent-sdk').createSdkMcpServer
   >
+  mcpFactory?: () => ReturnType<
+    typeof import('@anthropic-ai/claude-agent-sdk').createSdkMcpServer
+  >
 }
 
 const active = new Map<string, ActiveSession>()
 const restartingIds = new Set<string>()
+const MAX_MCP_RESTARTS = 3
+const mcpRestartCounts = new Map<string, number>()
 
 let workItemRegistry: WorkItemRegistryFull | null = null
 
@@ -274,8 +280,17 @@ async function consumeStream(session: ActiveSession): Promise<void> {
   } catch (err) {
     if (!session.interrupted) {
       const message = err instanceof Error ? err.message : String(err)
-      console.error(`[agent] session ${session.agentLocalId} stream error:`, err)
-      setStatus(session, 'error', message)
+      const restartCount = mcpRestartCounts.get(session.agentLocalId) ?? 0
+      if (session.mcpFactory && restartCount < MAX_MCP_RESTARTS) {
+        mcpRestartCounts.set(session.agentLocalId, restartCount + 1)
+        const delayMs = Math.pow(2, restartCount) * 500
+        console.warn(`[agent] session ${session.agentLocalId} MCP error, reconnecting (${restartCount + 1}/${MAX_MCP_RESTARTS}) in ${delayMs}ms:`, err)
+        setStatus(session, 'error', `MCP disconnected — reconnecting (${restartCount + 1}/${MAX_MCP_RESTARTS})…`)
+        setTimeout(() => void scheduledMcpRestart(session.agentLocalId, session.mcpFactory!), delayMs)
+      } else {
+        console.error(`[agent] session ${session.agentLocalId} stream error:`, err)
+        setStatus(session, 'error', message)
+      }
     }
   } finally {
     const now = Date.now()
@@ -300,6 +315,9 @@ async function consumeStream(session: ActiveSession): Promise<void> {
         : session.planState
     }
     registry.updateSession(session.sessionLocalId, sessionUpdate)
+    if (session.status === 'completed' || session.status === 'idle') {
+      mcpRestartCounts.delete(session.agentLocalId)
+    }
     active.delete(session.agentLocalId)
   }
 }
@@ -449,8 +467,9 @@ export async function startSession(
   if (params.allowedTools && params.allowedTools.length) {
     options!.allowedTools = params.allowedTools
   }
-  if (extras.mcpServer) {
-    options!.mcpServers = { agentkeeper: extras.mcpServer }
+  const mcpServer = extras.mcpServer ?? extras.mcpFactory?.()
+  if (mcpServer) {
+    options!.mcpServers = { agentkeeper: mcpServer }
   }
 
   const q = query({ prompt: input, options })
@@ -479,6 +498,7 @@ export async function startSession(
     idleWaiters: [],
     interrupted: false,
     turnCount: getPersistedTurnCount(agentLocalId),
+    mcpFactory: extras.mcpFactory,
   }
 
   active.set(agentLocalId, session)
@@ -608,6 +628,52 @@ export async function resumeSession(localId: string): Promise<string> {
     resumeSdkSessionId: agent?.sdkSessionId ?? undefined,
     isEntryPoint: agent?.isEntryPoint,
   })
+}
+
+async function scheduledMcpRestart(
+  agentLocalId: string,
+  mcpFactory: NonNullable<InternalStartExtras['mcpFactory']>,
+): Promise<void> {
+  if (restartingIds.has(agentLocalId)) return
+  restartingIds.add(agentLocalId)
+  try {
+    const agent = registry.getAgent(agentLocalId)
+    const persistedSession = registry.getSession(agent?.sessionLocalId ?? agentLocalId)
+    if (!persistedSession || !agent?.sdkSessionId) return
+    await startSession(
+      {
+        localId: agentLocalId,
+        agentLocalId,
+        sessionLocalId: agent.sessionLocalId !== agentLocalId ? agent.sessionLocalId : undefined,
+        projectPath: persistedSession.projectPath,
+        worktreePath: persistedSession.worktreePath ?? undefined,
+        initialPrompt: persistedSession.initialPrompt,
+        model: persistedSession.model ?? undefined,
+        effort: (persistedSession.effort as RoleEffort) ?? undefined,
+        permissionMode: (persistedSession.permissionMode as PermissionMode) ?? undefined,
+        resumeSdkSessionId: agent.sdkSessionId,
+        roleId: agent.roleId ?? undefined,
+        roleName: agent.roleName ?? undefined,
+        agencyName: persistedSession.agencyName ?? undefined,
+        agencyId: persistedSession.agencyId ?? undefined,
+        agencyScope: (persistedSession.agencyScope as AgencyScope) ?? undefined,
+        isEntryPoint: agent.isEntryPoint,
+      },
+      { mcpFactory },
+    )
+  } catch (err) {
+    console.error(`[agent] MCP restart failed for ${agentLocalId}:`, err)
+  } finally {
+    restartingIds.delete(agentLocalId)
+  }
+}
+
+export async function reconnectSessionMcp(
+  agentLocalId: string,
+  mcpFactory: NonNullable<InternalStartExtras['mcpFactory']>,
+): Promise<void> {
+  mcpRestartCounts.delete(agentLocalId)
+  await scheduledMcpRestart(agentLocalId, mcpFactory)
 }
 
 async function restartIdle(

@@ -44,13 +44,13 @@ import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
-import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp } from './agent'
 import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, gitDiffStat, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
 import { deleteAgency, listAgencies, saveAgency } from './agencies'
-import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, startAgency, createProjectMcp } from './orchestrator'
+import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, startAgency, createProjectMcp, createOrchestratorMcp } from './orchestrator'
 import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
@@ -855,6 +855,22 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         )
       } catch (err) {
         console.error('[ipc] sessions:addAgent failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsReconnectMcp,
+    async (_event, agentLocalId: string) => {
+      try {
+        const agent = sessionRegistry.getAgent(agentLocalId)
+        if (!agent?.sdkSessionId) throw new Error(`No SDK session ID for agent ${agentLocalId}`)
+        const persistedSession = sessionRegistry.getSession(agent.sessionLocalId)
+        if (!persistedSession?.agencyId) throw new Error(`Session ${agentLocalId} has no agency — no MCP to reconnect`)
+        const factory = () => createOrchestratorMcp(persistedSession.projectPath, agentLocalId)
+        return await reconnectSessionMcp(agentLocalId, factory)
+      } catch (err) {
+        console.error('[ipc] sessions:reconnectMcp failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

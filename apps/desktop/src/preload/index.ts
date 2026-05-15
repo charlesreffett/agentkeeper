@@ -176,6 +176,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.sessionsAddAgent, sessionLocalId, params) as Promise<string>,
     listTrackedSdkIds: (projectPath: string) =>
       invoke(IPC_CHANNELS.sessionsListTrackedSdkIds, projectPath) as Promise<string[]>,
+    reconnectMcp: (agentLocalId: string) =>
+      invoke(IPC_CHANNELS.sessionsReconnectMcp, agentLocalId) as Promise<void>,
   },
   worktrees: {
     list: (projectPath: string) =>

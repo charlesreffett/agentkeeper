@@ -234,8 +234,6 @@ async function spawnOverflow(
   sessionToRuntimeId.set(localId, runtime.instanceId)
   runtime.busySessions.add(localId)
 
-  const mcp = createOrchestratorMcp(runtime.projectPath, localId)
-
   try {
     await startSession(
       {
@@ -257,7 +255,7 @@ async function spawnOverflow(
         agencyName: runtime.agencyName,
         isEntryPoint: false,
       },
-      { mcpServer: mcp },
+      { mcpFactory: () => createOrchestratorMcp(runtime.projectPath, localId) },
     )
   } catch (err) {
     // Roll back the reservation so the slot doesn't appear permanently occupied.
@@ -382,7 +380,6 @@ async function injectAndWait(
     if (!restart) {
       return `Error: instance "${inst.instanceId}" has no restart context in this agency.`
     }
-    const mcp = createOrchestratorMcp(runtime.projectPath, toSessionId)
     await startSession(
       {
         localId: toSessionId,
@@ -406,7 +403,7 @@ async function injectAndWait(
         agencyName: runtime.agencyName,
         isEntryPoint: persistedAgent.isEntryPoint,
       },
-      { mcpServer: mcp },
+      { mcpFactory: () => createOrchestratorMcp(runtime.projectPath, toSessionId) },
     )
     target = getActiveSession(toSessionId)!
   }
@@ -924,8 +921,6 @@ export async function startAgency(
           ? params.initialPrompt
           : `Agency "${agency.name}" is initializing. Await messages from peers.`
 
-      const mcp = createOrchestratorMcp(params.projectPath, localId)
-
       await startSession(
         {
           localId,
@@ -951,7 +946,7 @@ export async function startAgency(
           agencyName: agency.name,
           isEntryPoint: isEntry && idx === 1,
         },
-        { mcpServer: mcp },
+        { mcpFactory: () => createOrchestratorMcp(params.projectPath, localId) },
       )
 
       // Store per-instance restart params (the preamble varies per instance)
@@ -1115,7 +1110,6 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       })
 
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
-      const mcp = createOrchestratorMcp(projectPath, localId)
 
       await startSession(
         {
@@ -1140,7 +1134,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
           isEntryPoint: isEntry,
           ...(entry.sdkSessionId ? { resumeSdkSessionId: entry.sdkSessionId } : {}),
         },
-        { mcpServer: mcp },
+        { mcpFactory: () => createOrchestratorMcp(projectPath, localId) },
       )
 
       runtime.restartParamsByRole.set(slot.roleId, {

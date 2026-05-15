@@ -277,6 +277,20 @@ function truncatePath(filePath: string): string {
 function openUrl(url: string) {
   if (url) window.open(url, '_blank')
 }
+
+const reconnectingMcp = ref(false)
+
+async function reconnectMcp() {
+  if (!selectedAgent.value) return
+  reconnectingMcp.value = true
+  try {
+    await window.agentkeeper.sessions.reconnectMcp(selectedAgent.value.localId)
+  } catch (err) {
+    console.error('[ContextPanel] reconnectMcp failed:', err)
+  } finally {
+    reconnectingMcp.value = false
+  }
+}
 </script>
 
 <template>
@@ -301,7 +315,7 @@ function openUrl(url: string) {
   >
     <!-- Panel header -->
     <div
-      class="px-3 py-2 shrink-0 flex items-center justify-between border-b border-border bg-background z-10"
+      class="px-3 h-10 shrink-0 flex items-center justify-between border-b border-border bg-background z-10"
     >
       <span
         class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"
@@ -366,6 +380,19 @@ function openUrl(url: string) {
               <span class="size-1.5 rounded-full shrink-0" :class="statusDotClass(selectedAgent.status)" />
               {{ statusLabel(selectedAgent.status) }}
             </span>
+          </div>
+          <!-- Reconnect MCP button — shown for agency agents in error state that have an SDK session -->
+          <div
+            v-if="agents.length > 1 && selectedAgent?.status === 'error' && selectedAgent?.sdkSessionId && rootSession?.agencyId"
+            class="pt-0.5"
+          >
+            <button
+              class="w-full text-[11px] px-2 py-1 rounded bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50"
+              :disabled="reconnectingMcp"
+              @click="reconnectMcp"
+            >
+              {{ reconnectingMcp ? 'Reconnecting…' : 'Reconnect MCP' }}
+            </button>
           </div>
           <div class="flex items-center justify-between gap-2">
             <span class="text-muted-foreground shrink-0">Model</span>
