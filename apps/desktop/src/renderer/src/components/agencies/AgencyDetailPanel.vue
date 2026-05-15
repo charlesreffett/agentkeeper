@@ -147,7 +147,7 @@ const form = ref({
   id: props.agency.id,
   name: props.agency.name,
   description: props.agency.description,
-  notes: props.agency.notes,
+  notes: (props.agency.notes ?? '').trimStart(),
   scope: props.agency.scope,
 })
 
@@ -164,7 +164,7 @@ function resetForm() {
     id: props.agency.id,
     name: props.agency.name,
     description: props.agency.description,
-    notes: props.agency.notes,
+    notes: (props.agency.notes ?? '').trimStart(),
     scope: props.agency.scope,
   }
   nameError.value = null
@@ -191,7 +191,7 @@ watch(
         scope: newAgency.scope,
         name: newAgency.name,
         description: newAgency.description,
-        notes: newAgency.notes,
+        notes: (newAgency.notes ?? '').trimStart(),
       }
       nameError.value = null
       idError.value = null
