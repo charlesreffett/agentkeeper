@@ -20,7 +20,7 @@ export interface JiraProject {
 
 export async function listProjects(): Promise<JiraProject[]> {
   try {
-    const { stdout } = await execFileAsync('jira', ['project', 'list', '--raw'])
+    const { stdout } = await execFileAsync('jira', ['project', 'list', '--raw', '--limit', '500'])
     const data = JSON.parse(stdout.trim()) as Array<{ key?: string; name?: string }>
     return data
       .filter((p): p is { key: string; name?: string } => typeof p.key === 'string' && p.key.length > 0)
