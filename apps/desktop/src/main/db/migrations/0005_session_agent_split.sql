@@ -1,6 +1,5 @@
 -- Migration 0005: session-agent split
 -- Separates agent-level data from sessions into a dedicated agents table.
--- All steps run in a single implicit SQLite transaction (autocommit off during migrate).
 
 -- ── A. DDL ────────────────────────────────────────────────────────────────────
 
@@ -17,8 +16,9 @@ CREATE TABLE IF NOT EXISTS agents (
   started_at            INTEGER NOT NULL,
   last_activity_at      INTEGER NOT NULL
 );
-
+--> statement-breakpoint
 ALTER TABLE session_stats ADD COLUMN agent_local_id TEXT;
+--> statement-breakpoint
 
 -- ── B. Solo sessions (agency_instance_id IS NULL) ─────────────────────────────
 -- One agents row per session; same UUID for both agent and session.
@@ -34,6 +34,7 @@ SELECT
   started_at, last_activity_at
 FROM sessions
 WHERE agency_instance_id IS NULL;
+--> statement-breakpoint
 
 -- ── C. Agency sessions ────────────────────────────────────────────────────────
 
@@ -82,6 +83,7 @@ JOIN sessions ep ON ep.local_id = (
 )
 WHERE s.agency_instance_id IS NOT NULL
 GROUP BY s.agency_instance_id;
+--> statement-breakpoint
 
 -- C1b. Fallback: agency groups where ALL members have placeholder prompts.
 INSERT OR IGNORE INTO sessions (
@@ -92,25 +94,25 @@ INSERT OR IGNORE INTO sessions (
 )
 SELECT
   s.agency_instance_id,
-  any.project_path,
-  any.worktree_path,
-  any.branch,
-  any.model,
-  any.effort,
-  any.permission_mode,
-  any.initial_prompt,
-  any.agency_name,
-  any.agency_id,
-  any.agency_scope,
-  any.title,
-  any.work_item_key,
-  any.work_item_title,
-  any.plan_state,
-  any.status,
+  fallback.project_path,
+  fallback.worktree_path,
+  fallback.branch,
+  fallback.model,
+  fallback.effort,
+  fallback.permission_mode,
+  fallback.initial_prompt,
+  fallback.agency_name,
+  fallback.agency_id,
+  fallback.agency_scope,
+  fallback.title,
+  fallback.work_item_key,
+  fallback.work_item_title,
+  fallback.plan_state,
+  fallback.status,
   (SELECT MIN(started_at) FROM sessions WHERE agency_instance_id = s.agency_instance_id),
   (SELECT MAX(last_activity_at) FROM sessions WHERE agency_instance_id = s.agency_instance_id)
 FROM sessions s
-JOIN sessions any ON any.local_id = (
+JOIN sessions fallback ON fallback.local_id = (
   SELECT local_id FROM sessions
   WHERE agency_instance_id = s.agency_instance_id
   ORDER BY started_at ASC
@@ -118,6 +120,7 @@ JOIN sessions any ON any.local_id = (
 )
 WHERE s.agency_instance_id IS NOT NULL
 GROUP BY s.agency_instance_id;
+--> statement-breakpoint
 
 -- C2. Insert agents rows for all agency member sessions.
 -- Entry point = member whose prompt is NOT a placeholder (earliest started).
@@ -148,6 +151,7 @@ SELECT
   m.last_activity_at
 FROM sessions m
 WHERE m.agency_instance_id IS NOT NULL;
+--> statement-breakpoint
 
 -- C3. Consolidate session_stats: one aggregate row per agency group.
 INSERT OR REPLACE INTO session_stats (session_local_id, total_tokens, total_cost_usd, turn_count, in_progress_tokens, updated_at)
@@ -162,12 +166,14 @@ FROM sessions s
 LEFT JOIN session_stats st ON st.session_local_id = s.local_id
 WHERE s.agency_instance_id IS NOT NULL
 GROUP BY s.agency_instance_id;
+--> statement-breakpoint
 
 -- Delete old per-member stat rows.
 DELETE FROM session_stats
 WHERE session_local_id IN (
   SELECT local_id FROM sessions WHERE agency_instance_id IS NOT NULL
 );
+--> statement-breakpoint
 
 -- C4. Re-key drafts: update draft session_local_id from member localId → agencyInstanceId.
 UPDATE drafts SET session_local_id = (
@@ -176,14 +182,20 @@ UPDATE drafts SET session_local_id = (
 WHERE session_local_id IN (
   SELECT local_id FROM sessions WHERE agency_instance_id IS NOT NULL
 );
+--> statement-breakpoint
 
 -- C5. Delete all agency member sessions rows (agents rows remain via the new agents table).
 DELETE FROM sessions WHERE agency_instance_id IS NOT NULL;
+--> statement-breakpoint
 
 -- ── D. Drop removed columns from sessions ─────────────────────────────────────
 
 ALTER TABLE sessions DROP COLUMN sdk_session_id;
+--> statement-breakpoint
 ALTER TABLE sessions DROP COLUMN role_id;
+--> statement-breakpoint
 ALTER TABLE sessions DROP COLUMN role_name;
+--> statement-breakpoint
 ALTER TABLE sessions DROP COLUMN role_instance_index;
+--> statement-breakpoint
 ALTER TABLE sessions DROP COLUMN agency_instance_id;

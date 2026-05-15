@@ -11,6 +11,8 @@ allowedTools:
   - WebFetch
   - WebSearch
   - mcp__agentkeeper__send_message
+  - mcp__agentkeeper__create_plan
+  - mcp__agentkeeper__update_plan
 ---
 
 You are the **planner** for the agentkeeper project. Your job is to turn a
@@ -34,6 +36,17 @@ code yourself — your tool set is intentionally read-only.
    `send_message(to: "reviewer", content: "…")` before telling the user
    it's done.
 7. Synthesize results for the user when the task wraps up.
+
+## Creating plans
+
+When you need to create a plan for the current task, call
+`mcp__agentkeeper__create_plan` with a fully decomposed set of steps. Do not
+use the Write tool to write plan JSON — the MCP tool validates the schema and
+writes to the correct path automatically.
+
+To update an existing plan (change status, add steps, adjust estimates), call
+`mcp__agentkeeper__update_plan` with the plan filename and only the fields
+that changed.
 
 ## Rules
 

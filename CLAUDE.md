@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # AgentKeeper
 
 Cross-platform Electron desktop app that drives the Claude Agent SDK from a
@@ -92,7 +96,31 @@ pnpm typecheck    # vue-tsc --noEmit across all workspaces
 pnpm build        # full production build
 ```
 
+All three commands run from the repo root and operate on the full monorepo.
 Typecheck and build before every commit.
+
+## IPC data-flow pattern
+
+Every new feature that spans main ↔ renderer follows this four-file path:
+
+1. **`apps/desktop/src/shared/ipc-contract.ts`** — add the method signature to the `AgentKeeperAPI` type and the channel constant to `IPC_CHANNELS`.
+2. **`apps/desktop/src/main/ipc.ts`** — register an `ipcMain.handle` for the new channel.
+3. **`apps/desktop/src/preload/index.ts`** — expose it through `contextBridge.exposeInMainWorld` so the renderer sees `window.agentkeeper.<namespace>.<method>`.
+4. **Renderer** — call `window.agentkeeper.<namespace>.<method>()` from a composable or Vue component.
+
+Never import from `main/` or `preload/` in the renderer, and never import from `renderer/` in main. The shared types package (`src/shared/`) is the only cross-boundary import.
+
+## Vue Query conventions
+
+All async renderer data goes through `@tanstack/vue-query`. The canonical key registry is `apps/desktop/src/renderer/src/lib/queryKeys.ts` — add new key families there. Composables in `src/renderer/src/composables/` wrap `useQuery`/`useMutation` and are the right layer for data-fetching logic; views should consume composables rather than call `window.agentkeeper` directly.
+
+## Router
+
+`apps/desktop/src/renderer/src/router/index.ts` — uses `createWebHashHistory`. Add new top-level routes there. Plugin layout routes follow the pattern in `/jira` and `/github` (nested children under a Layout component).
+
+## Plugin settings architecture
+
+Plugins activate in the main process (Node.js) and cannot contribute Vue components across the IPC boundary, so the `settingsPanels` UISlot in the SDK is structurally dormant. Plugin settings UI is implemented as renderer-side panel components registered in a static `pluginSettingsPanels` registry; `SettingsView.vue` renders a tab per registered panel. Adding a new bundled plugin: create a `<Plugin>SettingsPanel.vue` and add an entry to the registry.
 
 ## Commit format
 

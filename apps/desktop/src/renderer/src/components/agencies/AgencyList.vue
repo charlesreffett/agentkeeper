@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col h-full">
     <SidebarHeader title="Agencies">
-      <template #icon><Users class="size-3" /></template>
+      <template #icon><Network class="size-3" /></template>
       <template #actions>
         <button
           class="p-0.5 text-muted-foreground hover:text-foreground transition-colors rounded"
@@ -48,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import { Users, Plus } from 'lucide-vue-next'
+import { Network, Plus } from 'lucide-vue-next'
 import SidebarHeader from '@/components/SidebarHeader.vue'
 import type { Agency } from '../../../../shared/ipc-contract'
 

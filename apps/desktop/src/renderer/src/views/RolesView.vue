@@ -12,7 +12,7 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import PageHeader from '@/components/PageHeader.vue'
 import SidebarHeader from '@/components/SidebarHeader.vue'
-import { ScrollText, Plus } from 'lucide-vue-next'
+import { Bot, Plus } from 'lucide-vue-next'
 
 const { focusedProject } = useProjectsQuery()
 const projectPath = computed(() => focusedProject.value?.path ?? '')
@@ -203,7 +203,7 @@ watch(
         class="w-64 border-r border-border shrink-0 flex flex-col bg-card/30"
       >
         <SidebarHeader title="Roles">
-          <template #icon><ScrollText class="size-3" /></template>
+          <template #icon><Bot class="size-3" /></template>
           <template #actions>
             <button
               class="p-0.5 text-muted-foreground hover:text-foreground transition-colors rounded"

@@ -2,6 +2,45 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Plan } from '../shared/ipc-contract'
 
+export async function createPlan(
+  projectPath: string,
+  data: Omit<Plan, 'filename' | 'filePath' | 'createdAt' | 'updatedAt' | 'sessionIds'> & {
+    sessionIds?: string[]
+  },
+): Promise<Plan> {
+  const dir = path.join(projectPath, '.agentkeeper', 'plans')
+  await fs.mkdir(dir, { recursive: true })
+  const filename = `${data.externalRef.replace(/[^a-zA-Z0-9-]/g, '-')}-plan.json`
+  const filePath = path.join(dir, filename)
+  const now = new Date().toISOString()
+  const record: Omit<Plan, 'filename' | 'filePath'> = {
+    ...data,
+    sessionIds: data.sessionIds ?? [],
+    createdAt: now,
+    updatedAt: now,
+  }
+  await fs.writeFile(filePath, JSON.stringify(record, null, 2), 'utf-8')
+  return { ...record, filename, filePath }
+}
+
+export async function updatePlan(
+  projectPath: string,
+  filename: string,
+  patch: Partial<Omit<Plan, 'filename' | 'filePath' | 'createdAt'>>,
+): Promise<Plan | null> {
+  const filePath = path.join(projectPath, '.agentkeeper', 'plans', filename)
+  const existing = await readPlanFile(filePath)
+  if (!existing) return null
+  const { filename: _fn, filePath: _fp, ...rest } = existing
+  const updated: Omit<Plan, 'filename' | 'filePath'> = {
+    ...rest,
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  }
+  await fs.writeFile(filePath, JSON.stringify(updated, null, 2), 'utf-8')
+  return { ...updated, filename, filePath }
+}
+
 export async function listPlans(projectPath: string): Promise<Plan[]> {
   const dir = path.join(projectPath, '.agentkeeper', 'plans')
   let entries: string[]
