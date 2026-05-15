@@ -165,6 +165,9 @@ async function onUpdateAgency(draft: Agency) {
   const idChanged = current && draft.id !== current.id
   const scopeChanged = current && draft.scope !== current.scope
 
+  // Write new file first; only delete the old one once the write succeeds.
+  await saveHelper(draft)
+
   if (current && (idChanged || scopeChanged)) {
     await removeAgencyMutation({
       scope: current.scope,
@@ -172,8 +175,6 @@ async function onUpdateAgency(draft: Agency) {
       id: current.id,
     })
   }
-
-  await saveHelper(draft)
 
   if (idChanged) {
     selectedAgencyId.value = draft.id
