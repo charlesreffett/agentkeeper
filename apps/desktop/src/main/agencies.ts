@@ -34,7 +34,7 @@ function parseAgencyFile(
   const end = trimmed.indexOf('\n---', 3)
   if (end === -1) return null
   const fm = trimmed.slice(3, end).replace(/^\r?\n/, '')
-  const body = trimmed.slice(end + 4).replace(/^\r?\n/, '').trimEnd()
+  const body = trimmed.slice(end + 4).replace(/^\r?\n+/, '').trimEnd()
   let parsed: Record<string, unknown>
   try {
     parsed = (parseYaml(fm) ?? {}) as Record<string, unknown>

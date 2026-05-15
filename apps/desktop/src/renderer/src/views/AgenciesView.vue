@@ -161,7 +161,23 @@ async function onDeleteAgency() {
 }
 
 async function onUpdateAgency(draft: Agency) {
+  const current = selectedAgency.value
+  const idChanged = current && draft.id !== current.id
+  const scopeChanged = current && draft.scope !== current.scope
+
+  if (current && (idChanged || scopeChanged)) {
+    await removeAgencyMutation({
+      scope: current.scope,
+      path: focusedProjectPath.value,
+      id: current.id,
+    })
+  }
+
   await saveHelper(draft)
+
+  if (idChanged) {
+    selectedAgencyId.value = draft.id
+  }
 }
 
 watch(
