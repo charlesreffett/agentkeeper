@@ -552,41 +552,39 @@ async function replan() {
   generating.value = true
   const cur = plan.value
   const now = new Date().toISOString()
-  const prompt = `Analyze this ticket and create a detailed implementation plan.
-Ticket: ${cur.externalRef} — ${cur.title}
+  const desc = cur.prompt ? `\nDescription: ${cur.prompt}` : ''
+  const prompt = `Analyze this task and create a revised implementation plan.
+Task: ${cur.externalRef} — ${cur.title}${desc}
 
-Create .agentkeeper/plans/ if needed, then write the plan to .agentkeeper/plans/${cur.externalRef}-plan.json.
+The plan file already exists at .agentkeeper/plans/${cur.filename}.
+Update it by calling the update_plan MCP tool with filename "${cur.filename}" and the revised plan.
 
-The file must be valid JSON with this structure:
+The patch must have this structure:
 {
-  "title": "${cur.externalRef}: ${cur.title}",
-  "externalRef": "${cur.externalRef}",
-  "workItemId": "${cur.workItemId}",
   "status": "planned",
-  "createdAt": "${now}",
   "updatedAt": "${now}",
-  "sessionIds": [],
   "estimatedMinutes": <sum of all step estimatedMinutes>,
   "steps": [
     {
       "id": 1,
       "title": "concise actionable step title",
       "summary": "one-line description of what this step does",
-      "instructions": "detailed instructions for the agent",
+      "instructions": "detailed instructions for the agent executing this step",
       "filesInScope": ["path/to/relevant/file.ts"],
       "model": "claude-haiku-4-5",
       "estimatedMinutes": 10,
-      "agent": "explorer",
+      "agent": "main",
       "parallel": false,
       "status": "pending"
     }
   ]
 }
 
+Guidelines:
 - model: haiku for reads/audits, sonnet for implementation, opus for architecture
 - agent: explorer | main | qa | doc
-- parallel: true if safely concurrent with adjacent steps
-- Aim for 4-8 focused concrete steps`
+- parallel: true if the step can safely run concurrently with its neighbours
+- Aim for 4–8 focused, concrete steps — no filler`
   try {
     await sessionStore.start({
       projectPath: project.path,
