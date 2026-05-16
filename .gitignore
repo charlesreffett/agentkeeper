@@ -19,3 +19,6 @@ build
 # (see main/worktrees.ts → `<projectPath>--worktrees/`), so nothing to ignore
 # for those. `.agentkeeper/` holds committed role/agency definitions — DO NOT
 # ignore it.
+
+# Plans are runtime-generated and must not be committed.
+.agentkeeper/plans/
