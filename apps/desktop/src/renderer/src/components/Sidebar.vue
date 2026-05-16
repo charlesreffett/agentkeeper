@@ -7,7 +7,6 @@ import {
   Activity,
   GitPullRequest,
   Layers,
-  FolderOpen,
   Network,
   Bot,
   Wand2,
@@ -44,7 +43,6 @@ const iconMap: Record<string, Component> = {
   Activity,
   GitPullRequest,
   Layers,
-  FolderOpen,
   Network,
   Bot,
   Wand2,
@@ -58,7 +56,6 @@ const coreItems = [
   { id: 'sessions', label: 'Sessions', icon: 'IconSessions', path: '/sessions' },
   { id: 'monitor', label: 'Monitor', icon: 'Activity', path: '/monitor' },
   { id: 'planner', label: 'Planner', icon: 'Sparkles', path: '/planner' },
-  { id: 'projects', label: 'Projects', icon: 'FolderOpen', path: '/project' },
 ]
 
 const workspaceItems = [

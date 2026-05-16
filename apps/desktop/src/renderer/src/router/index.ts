@@ -1,7 +1,5 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import { useProjectStore } from '@/stores/project'
 import { installPrefetchGuard } from './prefetch'
-import ProjectHome from '@/views/ProjectHome.vue'
 import MonitorView from '@/views/MonitorView.vue'
 import GithubLayout from '@/views/GithubLayout.vue'
 import GithubPRLayout from '@/views/GithubPRLayout.vue'
@@ -28,13 +26,6 @@ const router = createRouter({
     { path: '/', redirect: '/sessions' },
     { path: '/sessions', component: SessionsView },
     { path: '/sessions/:id', component: SessionDetailView },
-    {
-      path: '/project',
-      component: ProjectHome,
-      beforeEnter: () => {
-        if (!useProjectStore().currentProject) return '/'
-      },
-    },
     { path: '/monitor', component: MonitorView },
     { path: '/planner', component: PlannerListView },
     { path: '/planner/:filename', component: PlannerDetailView },

@@ -6,7 +6,6 @@ import { useRouter } from 'vue-router'
 import type { PRComment, PRDetail } from '@shared/github-types'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
-import { useProjectStore } from '@/stores/project'
 
 const route = useRoute()
 const prNumber = computed(() => Number(route.params.number))
@@ -23,7 +22,6 @@ const submitError = ref<string | null>(null)
 const router = useRouter()
 const sessionStore = useSessionStore()
 const { focusedProject } = useProjectsQuery()
-const projectStore = useProjectStore()
 
 const sendingCommentId = ref<number | null>(null)
 const sendingAll = ref(false)
@@ -117,9 +115,7 @@ async function sendCommentToClaude(comment: PRComment) {
     const location = comment.path && comment.line ? `\nFile: ${comment.path}:${comment.line}\n` : ''
     const prompt = `Address the following comment on PR #${prNumber.value} (${prRepo.value}) by @${comment.author}:${location}\n${comment.body}`
     const localId = await sessionStore.start({ projectPath: focused.path, initialPrompt: prompt })
-    projectStore.setProject(focused)
-    await router.push('/project')
-    sessionStore.focus(localId)
+    await router.push(`/sessions/${localId}`)
   } catch (e) {
     claudeError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -145,9 +141,7 @@ async function sendAllToClaude() {
       .join('\n\n---\n\n')
     const prompt = `Address all reviewer comments on PR #${prNumber.value} (${prRepo.value}):\n\n${commentsList}`
     const localId = await sessionStore.start({ projectPath: focused.path, initialPrompt: prompt })
-    projectStore.setProject(focused)
-    await router.push('/project')
-    sessionStore.focus(localId)
+    await router.push(`/sessions/${localId}`)
   } catch (e) {
     claudeError.value = e instanceof Error ? e.message : String(e)
   } finally {
