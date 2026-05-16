@@ -225,6 +225,29 @@ function navigateToPlanStep(filename: string, stepIndex: number) {
   void router.push({ path: `/planner/${filename}`, query: { step: String(stepIndex) } })
 }
 
+let planPollTimer: ReturnType<typeof setInterval> | null = null
+
+function isLinkedPlanRunning(): boolean {
+  if (!linkedPlan.value) return false
+  return linkedPlan.value.status === 'running' ||
+    linkedPlan.value.steps.some(s => s.status === 'running')
+}
+
+function stopPlanPolling() {
+  if (planPollTimer !== null) {
+    clearInterval(planPollTimer)
+    planPollTimer = null
+  }
+}
+
+function startPlanPolling() {
+  if (planPollTimer !== null || !isLinkedPlanRunning()) return
+  planPollTimer = setInterval(async () => {
+    await fetchLinkedPlan()
+    if (!isLinkedPlanRunning()) stopPlanPolling()
+  }, 2000)
+}
+
 const isPlanInterrupted = computed(() => {
   if (!linkedPlan.value || linkedPlan.value.status !== 'running') return false
   const interruptedStatuses: string[] = ['idle', 'suspended', 'error', 'terminated']
@@ -312,15 +335,17 @@ function scheduleFetch() {
   debounceTimer = setTimeout(() => { void fetchDiff() }, 2000)
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (rootSession.value?.worktreePath) void fetchDiff()
   void fetchPR()
   void fetchWorkItem()
-  void fetchLinkedPlan()
+  await fetchLinkedPlan()
+  startPlanPolling()
 })
 
 onUnmounted(() => {
   if (debounceTimer !== null) clearTimeout(debounceTimer)
+  stopPlanPolling()
 })
 
 // Re-fetch git diff ~2 s after the last activity tick
@@ -329,7 +354,8 @@ watch(() => rootSession.value?.lastActivityAt, (val, prev) => {
 })
 
 // Reset and re-fetch everything when the session changes (navigation)
-watch(() => props.rootSessionId, () => {
+watch(() => props.rootSessionId, async () => {
+  stopPlanPolling()
   if (debounceTimer !== null) { clearTimeout(debounceTimer); debounceTimer = null }
   diffFiles.value = []
   prDetail.value = null
@@ -338,7 +364,8 @@ watch(() => props.rootSessionId, () => {
   if (rootSession.value?.worktreePath) void fetchDiff()
   void fetchPR()
   void fetchWorkItem()
-  void fetchLinkedPlan()
+  await fetchLinkedPlan()
+  startPlanPolling()
 })
 
 function truncatePath(filePath: string): string {
