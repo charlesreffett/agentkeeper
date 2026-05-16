@@ -945,8 +945,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.plansUpdate,
-    (_e, projectPath: string, filename: string, patch: PlansUpdateInput) =>
-      updatePlan(projectPath, filename, patch),
+    async (_e, projectPath: string, filename: string, patch: PlansUpdateInput) => {
+      const updated = await updatePlan(projectPath, filename, patch)
+      if (updated) {
+        BrowserWindow.getAllWindows().forEach((win) =>
+          win.webContents.send(IPC_CHANNELS.planUpdated, { projectPath, filename }),
+        )
+      }
+      return updated
+    },
   )
   ipcMain.handle(IPC_CHANNELS.plansDelete, (_e, projectPath: string, filename: string) =>
     deletePlan(projectPath, filename),

@@ -62,8 +62,6 @@ const editingValue = ref('')
 const editingContext = ref<number | null>(null)
 const contextValue = ref('')
 
-// Polling handle while plan is running
-let pollInterval: ReturnType<typeof setInterval> | null = null
 
 async function loadLastSession() {
   const ids = plan.value?.sessionIds
@@ -124,22 +122,6 @@ watch(plan, (p) => {
   }
 }, { immediate: true })
 
-// Poll for plan updates (catches MCP update_plan calls mid-execution)
-watch(
-  () => plan.value?.status,
-  (status) => {
-    if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null }
-    if (status === 'running') {
-      pollInterval = setInterval(async () => {
-        if (!focusedProject.value) return
-        const fresh = await window.agentkeeper.plans.get(focusedProject.value.path, filename.value)
-        if (fresh) { plan.value = fresh; void loadLastSession() }
-      }, 5000)
-    }
-  },
-  { immediate: true },
-)
-
 // Live ingestion of Write tool events (plan appears before file hits disk)
 let unsubEvent: (() => void) | null = null
 let unsubPlanUpdated: (() => void) | null = null
@@ -181,7 +163,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null }
   unsubEvent?.()
   unsubEvent = null
   unsubPlanUpdated?.()
