@@ -815,15 +815,15 @@ Guidelines:
             <div class="px-4 py-3 rounded-r-lg">
               <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Progress</p>
               <div v-if="plan.status === 'drafting'" class="text-sm text-muted-foreground italic">drafting…</div>
-              <div v-else class="flex items-center gap-2">
-                <div class="flex-1 h-1.5 rounded-full bg-muted overflow-hidden min-w-[80px]">
+              <div v-else class="flex flex-col gap-1">
+                <div class="w-full h-1.5 rounded-full bg-muted overflow-hidden min-w-[80px]">
                   <div
                     class="h-full rounded-full transition-all"
                     :class="plan.status === 'complete' ? 'bg-purple-500' : 'bg-green-500'"
                     :style="{ width: `${progressPercent}%` }"
                   />
                 </div>
-                <span class="text-sm font-semibold tabular-nums shrink-0">{{ progressPercent }}%</span>
+                <span class="text-sm font-semibold tabular-nums">{{ progressPercent }}%</span>
               </div>
             </div>
           </div>
