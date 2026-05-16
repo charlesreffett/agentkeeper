@@ -26,6 +26,13 @@ import {
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import type { Plan, PlanStep, PlanStepStatus, Session } from '@shared/ipc-contract'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,9 +52,6 @@ const lastSession = ref<Session | null | undefined>(undefined)
 
 // Which step indices are expanded
 const expandedSteps = ref<Set<number>>(new Set())
-// Which step has context menu open
-const openMenuStep = ref<number | null>(null)
-
 // Inline editing state
 const editingStep = ref<{ index: number; field: 'title' | 'instructions' } | null>(null)
 const editingValue = ref('')
@@ -295,15 +299,6 @@ function toggleStep(index: number) {
   }
 }
 
-function toggleMenu(index: number, event: MouseEvent) {
-  event.stopPropagation()
-  openMenuStep.value = openMenuStep.value === index ? null : index
-}
-
-function closeMenu() {
-  openMenuStep.value = null
-}
-
 // ── Step mutation helpers ─────────────────────────────────────────────────────
 
 async function persistSteps(steps: PlanStep[]) {
@@ -332,7 +327,6 @@ async function toggleApproval(index: number) {
 
 async function toggleParallel(index: number) {
   if (!plan.value) return
-  closeMenu()
   await persistSteps(
     plan.value.steps.map((s, i) =>
       i === index ? { ...s, parallel: !s.parallel } : s,
@@ -342,7 +336,6 @@ async function toggleParallel(index: number) {
 
 async function skipStep(index: number) {
   if (!plan.value) return
-  closeMenu()
   const step = plan.value.steps[index]
   if (!step) return
   const next: PlanStepStatus = step.status === 'skipped' ? 'pending' : 'skipped'
@@ -353,7 +346,6 @@ async function skipStep(index: number) {
 
 async function removeStep(index: number) {
   if (!plan.value) return
-  closeMenu()
   await persistSteps(
     plan.value.steps.filter((_, i) => i !== index).map((s, i) => ({ ...s, id: i + 1 })),
   )
@@ -408,7 +400,6 @@ async function commitEdit() {
 function openContextEditor(index: number) {
   editingContext.value = index
   contextValue.value = plan.value?.steps[index]?.context ?? ''
-  closeMenu()
   expandedSteps.value.add(index)
 }
 
@@ -610,7 +601,7 @@ Guidelines:
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-background" @click="closeMenu">
+  <div class="h-full flex flex-col bg-background">
     <!-- Initial load spinner -->
     <div v-if="loading" class="flex-1 flex items-center justify-center text-sm text-muted-foreground">
       <Loader2 class="size-4 animate-spin mr-2" /> Loading…
@@ -978,68 +969,49 @@ Guidelines:
                       <ChevronDown :size="13" />
                     </button>
                     <!-- Context menu -->
-                    <div class="relative">
-                      <button
-                        class="size-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                        @click="toggleMenu(index, $event)"
-                      >
-                        <MoreHorizontal :size="13" />
-                      </button>
-                      <div
-                        v-if="openMenuStep === index"
-                        class="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-popover shadow-lg z-50 py-1 text-sm"
-                        @click.stop
-                      >
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
                         <button
-                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                          @click="void toggleParallel(index)"
+                          class="size-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
                         >
+                          <MoreHorizontal :size="13" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" class="w-48">
+                        <DropdownMenuItem @click="void toggleParallel(index)">
                           <GitBranch :size="13" class="text-muted-foreground shrink-0" />
                           {{ step.parallel ? 'Make sequential' : 'Mark as parallel' }}
-                        </button>
-                        <button
-                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                          @click="void toggleApproval(index); closeMenu()"
-                        >
+                        </DropdownMenuItem>
+                        <DropdownMenuItem @click="void toggleApproval(index)">
                           <Shield :size="13" class="text-muted-foreground shrink-0" />
                           {{ step.requiresApproval ? 'Remove approval gate' : 'Add approval gate' }}
-                        </button>
-                        <button
-                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                          @click="openContextEditor(index)"
-                        >
+                        </DropdownMenuItem>
+                        <DropdownMenuItem @click="openContextEditor(index)">
                           <MessageSquare :size="13" class="text-muted-foreground shrink-0" />
                           {{ step.context ? 'Edit context' : 'Attach context' }}
-                        </button>
-                        <button
-                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                        >
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled>
                           <Zap :size="13" class="text-muted-foreground shrink-0" />
                           Change model
-                        </button>
-                        <button
-                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                        >
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled>
                           <Play :size="13" class="text-muted-foreground shrink-0" />
                           Run only this step
-                        </button>
-                        <button
-                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                          @click="void skipStep(index)"
-                        >
+                        </DropdownMenuItem>
+                        <DropdownMenuItem @click="void skipStep(index)">
                           <X :size="13" class="text-muted-foreground shrink-0" />
                           {{ step.status === 'skipped' ? 'Unskip step' : 'Skip step' }}
-                        </button>
-                        <div class="my-1 border-t border-border" />
-                        <button
-                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left text-destructive"
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          class="text-destructive focus:text-destructive"
                           @click="void removeStep(index)"
                         >
                           <X :size="13" class="shrink-0" />
                           Remove step
-                        </button>
-                      </div>
-                    </div>
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
 

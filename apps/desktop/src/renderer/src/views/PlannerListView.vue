@@ -5,6 +5,13 @@ import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPla
 import PageHeader from '@/components/PageHeader.vue'
 import NewPlanModal from '@/components/planner/NewPlanModal.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { usePlansStore } from '@/stores/plans'
 import type { Plan, PlanStatus } from '@shared/ipc-contract'
 
@@ -143,49 +150,34 @@ function goToDetail(plan: Plan) {
 
 const showNewPlan = ref(false)
 
-const openMenuFilename = ref<string | null>(null)
-
-function toggleMenu(plan: Plan, event: MouseEvent) {
-  event.stopPropagation()
-  openMenuFilename.value = openMenuFilename.value === plan.filename ? null : plan.filename
-}
-
-function closeMenu() {
-  openMenuFilename.value = null
-}
-
 async function openSession(plan: Plan) {
   const sessionId = plan.sessionIds?.[plan.sessionIds.length - 1]
   if (!sessionId) return
-  closeMenu()
   void router.push(`/sessions/${sessionId}`)
 }
 
 async function pausePlan(plan: Plan) {
   const sessionId = plan.sessionIds?.[plan.sessionIds.length - 1]
   if (!sessionId) return
-  closeMenu()
   await window.agentkeeper.sessions.interrupt(sessionId)
   if (focusedProject.value) void plansStore.refresh(focusedProject.value.path)
 }
 
 async function archivePlan(plan: Plan) {
   if (!focusedProject.value) return
-  closeMenu()
   await window.agentkeeper.plans.update(focusedProject.value.path, plan.filename, { status: 'archived' })
   void plansStore.refresh(focusedProject.value.path)
 }
 
 async function removePlan(plan: Plan) {
   if (!focusedProject.value) return
-  closeMenu()
   await window.agentkeeper.plans.delete(focusedProject.value.path, plan.filename)
   void plansStore.refresh(focusedProject.value.path)
 }
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-background" @click="closeMenu">
+  <div class="h-full flex flex-col bg-background">
     <PageHeader title="Plans" description="Drafted by Claude">
       <template #actions>
         <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
@@ -362,53 +354,52 @@ async function removePlan(plan: Plan) {
             </div>
 
             <!-- Context menu -->
-            <div class="relative" @click.stop>
-              <button
-                class="size-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
-                :class="{ 'bg-muted/60 text-foreground': openMenuFilename === plan.filename }"
-                @click="toggleMenu(plan, $event)"
-              >
-                <MoreHorizontal :size="14" />
-              </button>
-
-              <div
-                v-if="openMenuFilename === plan.filename"
-                class="absolute right-0 top-full mt-1 w-44 rounded-lg border border-border bg-popover shadow-lg z-50 py-1 text-sm"
-              >
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
                 <button
-                  class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                  @click="goToDetail(plan); closeMenu()"
+                  class="size-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+                  @click.stop
                 >
+                  <MoreHorizontal :size="14" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-44">
+                <DropdownMenuItem @click="goToDetail(plan)">
                   <Eye :size="13" class="text-muted-foreground shrink-0" />
                   Open plan
-                </button>
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left" @click="openSession(plan)">
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  :disabled="!plan.sessionIds?.length"
+                  @click="void openSession(plan)"
+                >
                   <MonitorPlay :size="13" class="text-muted-foreground shrink-0" />
                   Open session
-                </button>
-                <button
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   v-if="plan.status === 'running'"
-                  class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
-                  @click="pausePlan(plan)"
+                  @click="void pausePlan(plan)"
                 >
                   <Pause :size="13" class="text-muted-foreground shrink-0" />
                   Pause
-                </button>
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left" @click="goToDetail(plan); closeMenu()">
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="goToDetail(plan)">
                   <RefreshCw :size="13" class="text-muted-foreground shrink-0" />
                   Re-plan
-                </button>
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left" @click="archivePlan(plan)">
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="void archivePlan(plan)">
                   <Archive :size="13" class="text-muted-foreground shrink-0" />
                   Archive
-                </button>
-                <div class="my-1 border-t border-border" />
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left text-destructive" @click="removePlan(plan)">
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  class="text-destructive focus:text-destructive"
+                  @click="void removePlan(plan)"
+                >
                   <X :size="13" class="shrink-0" />
                   Remove plan
-                </button>
-              </div>
-            </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       </template>
