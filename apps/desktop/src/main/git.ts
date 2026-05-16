@@ -17,7 +17,7 @@ export async function getBranch(projectPath: string): Promise<string | null> {
 
 export async function getStatus(projectPath: string): Promise<GitStatus> {
   try {
-    const { stdout } = await execFileAsync('git', ['-C', projectPath, 'status', '--porcelain'])
+    const { stdout } = await execFileAsync('git', ['-C', projectPath, 'status', '--porcelain', '-uall'])
     const staged: GitStatus['staged'] = []
     const unstaged: GitStatus['unstaged'] = []
     const untracked: string[] = []
