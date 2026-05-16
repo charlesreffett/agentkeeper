@@ -33,9 +33,9 @@ export async function updatePlan(
   if (!existing) return null
   const { filename: _fn, filePath: _fp, ...rest } = existing
   const mergedSteps = patch.steps !== undefined
-    ? rest.steps.map(existing => {
-        const update = patch.steps!.find(s => s.id === existing.id)
-        return update ? { ...existing, ...update } : existing
+    ? patch.steps.map(newStep => {
+        const existing = rest.steps.find(s => s.id === newStep.id)
+        return existing ? { ...existing, ...newStep } : newStep
       })
     : rest.steps
   const updated: Omit<Plan, 'filename' | 'filePath'> = {
