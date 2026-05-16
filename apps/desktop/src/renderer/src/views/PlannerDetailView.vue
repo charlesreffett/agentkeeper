@@ -459,7 +459,7 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
       sessionIds: [...(plan.value?.sessionIds ?? []), localId],
     })
     if (withSession) plan.value = withSession
-    void router.push('/sessions')
+    void router.push(`/sessions/${localId}`)
   } catch (err) {
     console.error('Failed to start plan:', err)
     await window.agentkeeper.plans.update(project.path, filename.value, { status: 'planned' }).catch(() => {})
@@ -526,7 +526,7 @@ Execute each step in sequence. Mark steps complete using the update_plan MCP too
       sessionIds: [...(plan.value?.sessionIds ?? []), newLocalId],
     })
     if (withSession) plan.value = withSession
-    void router.push('/sessions')
+    void router.push(`/sessions/${newLocalId}`)
   } catch (err) {
     console.error('Failed to start new plan session:', err)
     await window.agentkeeper.plans.update(project.path, filename.value, { status: 'planned' }).catch(() => {})
@@ -638,7 +638,7 @@ Guidelines:
             <template v-if="plan.status === 'running' && plan.sessionIds.length > 0 && !isInterrupted">
               <button
                 class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
-                @click="void router.push('/sessions')"
+                @click="void router.push(lastSessionId ? `/sessions/${lastSessionId}` : '/sessions')"
               >
                 <MonitorPlay :size="14" />
                 Open session
@@ -704,11 +704,11 @@ Guidelines:
               {{ starting ? 'Starting…' : 'Start all steps' }}
             </button>
 
-            <!-- Complete state: Open session -->
+            <!-- Complete state: Open session (only when a session still exists) -->
             <button
-              v-if="plan.status === 'complete'"
+              v-if="plan.status === 'complete' && lastSessionId"
               class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
-              @click="void router.push('/sessions')"
+              @click="void router.push(`/sessions/${lastSessionId}`)"
             >
               <MonitorPlay :size="14" />
               Open session
@@ -778,7 +778,7 @@ Guidelines:
               <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Planning Model</p>
               <div class="flex items-center gap-1.5">
                 <span class="size-2 rounded-full shrink-0" :class="modelDotClass(singleModel ?? 'sonnet')" />
-                <span class="text-sm font-mono">{{ singleModel ?? 'mixed' }}</span>
+                <span class="text-xs font-mono">{{ singleModel ?? 'mixed' }}</span>
               </div>
             </div>
 
