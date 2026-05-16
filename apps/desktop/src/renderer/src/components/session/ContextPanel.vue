@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, CornerDownRight, FileCode2, GitBranch, Layers, ListTodo, Loader2, Play, Tag, User2 } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, Circle, CircleCheckBig, CornerDownRight, FileCode2, GitBranch, Layers, ListTodo, Loader2, Play, Tag, User2 } from 'lucide-vue-next'
 import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -278,16 +278,6 @@ function planStepStatusClass(status: string): string {
   }
 }
 
-function planStepStatusSymbol(status: string): string {
-  switch (status) {
-    case 'complete':    return '✓'
-    case 'running':     return '●'
-    case 'failed':      return '✗'
-    case 'skipped':     return '—'
-    case 'replanning':  return '↺'
-    default:            return '○'
-  }
-}
 
 function priorityClass(priority: string | undefined): string {
   switch (priority?.toLowerCase()) {
@@ -609,10 +599,11 @@ async function reconnectMcp() {
             @click="navigateToPlanStep(linkedPlan.filename, index)"
           >
             <span
-              class="shrink-0 w-3 text-center leading-none mt-px font-mono text-[10px]"
+              class="shrink-0 flex items-center justify-center w-3 mt-px"
               :class="[planStepStatusClass(step.status), step.status === 'running' ? 'animate-pulse' : '']"
             >
-              {{ planStepStatusSymbol(step.status) }}
+              <CircleCheckBig v-if="step.status === 'complete'" class="size-3" />
+              <Circle v-else class="size-3" />
             </span>
             <span
               class="flex-1 truncate leading-snug"
