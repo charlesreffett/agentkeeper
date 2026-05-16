@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, CornerDownRight, FileCode2, GitBranch, Layers, ListTodo, Tag, User2 } from 'lucide-vue-next'
+import { ChevronLeft, ChevronRight, CornerDownRight, FileCode2, GitBranch, Layers, ListTodo, Loader2, Play, Tag, User2 } from 'lucide-vue-next'
 import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -201,6 +201,7 @@ async function fetchWorkItem() {
 
 const linkedPlan = ref<Plan | null>(null)
 const planLoading = ref(false)
+const resumingPlan = ref(false)
 
 async function fetchLinkedPlan() {
   const projectPath = rootSession.value?.projectPath
@@ -222,6 +223,42 @@ async function fetchLinkedPlan() {
 
 function navigateToPlanStep(filename: string, stepIndex: number) {
   void router.push({ path: `/planner/${filename}`, query: { step: String(stepIndex) } })
+}
+
+const isPlanInterrupted = computed(() => {
+  if (!linkedPlan.value || linkedPlan.value.status !== 'running') return false
+  const interruptedStatuses: string[] = ['idle', 'suspended', 'error', 'terminated']
+  return interruptedStatuses.includes(rootSession.value?.status ?? '')
+})
+
+async function resumePlanFromContext() {
+  const plan = linkedPlan.value
+  const session = rootSession.value
+  if (!plan || !session) return
+
+  // Get sdkSessionId from the entry point agent (already in ContextPanel's agents computed)
+  const entryAgent = agents.value.find(a => a.isEntryPoint) ?? agents.value[0] ?? null
+  const sdkId = entryAgent?.sdkSessionId ?? undefined
+
+  resumingPlan.value = true
+  try {
+    const newLocalId = await store.start({
+      projectPath: session.projectPath,
+      initialPrompt: 'Resume the plan from the last completed step.',
+      resumeSdkSessionId: sdkId,
+      workItemId: plan.workItemId || undefined,
+    })
+    const updated = await window.agentkeeper.plans.update(session.projectPath, plan.filename, {
+      sessionIds: [...(plan.sessionIds ?? []), newLocalId],
+      status: 'running',
+    })
+    if (updated) linkedPlan.value = updated
+    void router.push('/sessions')
+  } catch (err) {
+    console.error('[ContextPanel] resumePlanFromContext failed:', err)
+  } finally {
+    resumingPlan.value = false
+  }
 }
 
 function planStepStatusClass(status: string): string {
@@ -575,6 +612,18 @@ async function reconnectMcp() {
             </span>
           </button>
         </div>
+
+        <!-- Resume button — shown when plan is running but this session stopped -->
+        <button
+          v-if="isPlanInterrupted"
+          class="mt-2 w-full flex items-center justify-center gap-1.5 text-[11px] px-2 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50"
+          :disabled="resumingPlan"
+          @click="resumePlanFromContext"
+        >
+          <Play v-if="!resumingPlan" class="size-3" />
+          <Loader2 v-else class="size-3 animate-spin" />
+          {{ resumingPlan ? 'Resuming…' : 'Resume plan' }}
+        </button>
       </section>
 
       <!-- ── BRANCH & PR ─────────────────────────────────────────────────────── -->

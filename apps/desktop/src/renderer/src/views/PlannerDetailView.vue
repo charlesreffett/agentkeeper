@@ -22,7 +22,7 @@ import {
 } from 'lucide-vue-next'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
-import type { Plan, PlanStep } from '@shared/ipc-contract'
+import type { Plan, PlanStep, Session } from '@shared/ipc-contract'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,11 +36,34 @@ const generating = ref(false)
 const replanning = ref(false)
 const replanError = ref<string | null>(null)
 const starting = ref(false)
+const resuming = ref(false)
+const lastSession = ref<Session | null | undefined>(undefined)
+// undefined = not yet loaded, null = session not found / deleted
 
 // Which step indices are expanded
 const expandedSteps = ref<Set<number>>(new Set())
 // Which step has context menu open
 const openMenuStep = ref<number | null>(null)
+
+async function loadLastSession() {
+  const ids = plan.value?.sessionIds
+  if (!ids || ids.length === 0) { lastSession.value = null; return }
+  const id = ids[ids.length - 1]!
+  const project = focusedProject.value
+  if (!project) { lastSession.value = null; return }
+
+  // Live store first (includes agent data + up-to-date status)
+  const live = sessionStore.getSession(id)
+  if (live) { lastSession.value = live as Session; return }
+
+  // Fall back to DB (persisted sessions after app restart)
+  try {
+    const all = await window.agentkeeper.sessions.listPersisted(project.path)
+    lastSession.value = all.find(s => s.localId === id) ?? null
+  } catch {
+    lastSession.value = null
+  }
+}
 
 async function loadPlan() {
   const project = focusedProject.value
@@ -51,6 +74,7 @@ async function loadPlan() {
     if (result) {
       plan.value = result
       generating.value = false
+      void loadLastSession()
     } else {
       generating.value = true
     }
@@ -78,7 +102,7 @@ watch(
 watch(plan, (p) => {
   if (p && p.status === 'running' && p.sessionIds.length === 0 && focusedProject.value) {
     void window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { status: 'planned' })
-      .then((updated) => { if (updated) plan.value = updated })
+      .then((updated) => { if (updated) { plan.value = updated; void loadLastSession() } })
   }
 }, { immediate: true })
 
@@ -157,6 +181,22 @@ const singleModel = computed(() =>
 const parallelCount = computed(() =>
   plan.value?.steps.filter((s) => s.parallel).length ?? 0,
 )
+
+// Interrupted = plan marked running but last session has stopped
+const isInterrupted = computed(() => {
+  if (!plan.value || plan.value.status !== 'running') return false
+  if (lastSession.value === undefined) return false
+  if (lastSession.value === null) return true // deleted
+  const stoppedStatuses: string[] = ['idle', 'completed', 'terminated', 'error', 'suspended']
+  return stoppedStatuses.includes(lastSession.value.status)
+})
+
+const isSessionDeleted = computed(() => isInterrupted.value && lastSession.value === null)
+
+const lastSessionId = computed(() => {
+  const ids = plan.value?.sessionIds
+  return ids && ids.length > 0 ? ids[ids.length - 1]! : null
+})
 
 // ── Formatters ───────────────────────────────────────────────────────────────
 
@@ -287,6 +327,88 @@ async function resetToPlanned() {
   if (updated) plan.value = updated
 }
 
+async function resumePlanSession() {
+  if (!plan.value || !focusedProject.value || !lastSessionId.value) return
+  const project = focusedProject.value
+  resuming.value = true
+  try {
+    // Get the entry agent's sdkSessionId to resume the conversation history
+    const agents = await window.agentkeeper.sessions.getAgents(lastSessionId.value)
+    const entryAgent = agents.find(a => a.isEntryPoint) ?? agents[0] ?? null
+    const sdkId = entryAgent?.sdkSessionId ?? undefined
+
+    const newLocalId = await sessionStore.start({
+      projectPath: project.path,
+      initialPrompt: 'Resume the plan from the last completed step.',
+      resumeSdkSessionId: sdkId,
+      workItemId: plan.value.workItemId || undefined,
+    })
+    const updated = await window.agentkeeper.plans.update(project.path, filename.value, {
+      sessionIds: [...(plan.value.sessionIds ?? []), newLocalId],
+      status: 'running',
+    })
+    if (updated) plan.value = updated
+    void router.push('/sessions')
+  } catch (err) {
+    console.error('Failed to resume plan:', err)
+  } finally {
+    resuming.value = false
+  }
+}
+
+async function startNewPlanSession() {
+  if (!plan.value || !focusedProject.value) return
+  const project = focusedProject.value
+  const cur = plan.value
+
+  // Only send incomplete steps (not complete or skipped)
+  const incompleteSteps = cur.steps.filter(s => s.status !== 'complete' && s.status !== 'skipped')
+  const stepsText = incompleteSteps
+    .map((s, i) => {
+      const lines = [
+        `${i + 1}. ${s.title} — ${s.summary ?? s.title}`,
+        `   Instructions: ${s.instructions ?? s.title}`,
+      ]
+      if (s.filesInScope?.length) {
+        lines.push(`   Files in scope: ${s.filesInScope.join(', ')}`)
+      }
+      return lines.join('\n')
+    })
+    .join('\n')
+
+  const prompt = `Execute the following remaining implementation plan steps.
+
+Plan: ${cur.title} (${cur.externalRef})
+Note: Some earlier steps have already been completed. Resume from the first step below.
+
+Remaining Steps:
+${stepsText}
+
+Execute each step in sequence. Mark steps complete using the update_plan MCP tool.`
+
+  starting.value = true
+  try {
+    const updated = await window.agentkeeper.plans.update(project.path, filename.value, { status: 'running' })
+    if (updated) plan.value = updated
+    const newLocalId = await sessionStore.start({
+      projectPath: project.path,
+      initialPrompt: prompt,
+      workItemId: cur.workItemId || undefined,
+    })
+    const withSession = await window.agentkeeper.plans.update(project.path, filename.value, {
+      sessionIds: [...(plan.value?.sessionIds ?? []), newLocalId],
+    })
+    if (withSession) plan.value = withSession
+    void router.push('/sessions')
+  } catch (err) {
+    console.error('Failed to start new plan session:', err)
+    await window.agentkeeper.plans.update(project.path, filename.value, { status: 'planned' }).catch(() => {})
+    if (plan.value) plan.value = { ...plan.value, status: 'planned' }
+  } finally {
+    starting.value = false
+  }
+}
+
 async function replan() {
   if (!plan.value) return
   const project = focusedProject.value
@@ -387,9 +509,12 @@ The file must be valid JSON with this structure:
           <div class="flex items-center gap-2 shrink-0">
             <span v-if="replanError" class="text-xs text-destructive max-w-48 truncate">{{ replanError }}</span>
 
-            <!-- Running state: Open session + Pause -->
-            <template v-if="plan.status === 'running' && plan.sessionIds.length > 0">
-              <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
+            <!-- Running state, session active: Open session + Pause -->
+            <template v-if="plan.status === 'running' && plan.sessionIds.length > 0 && !isInterrupted">
+              <button
+                class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                @click="void router.push('/sessions')"
+              >
                 <MonitorPlay :size="14" />
                 Open session
               </button>
@@ -399,6 +524,46 @@ The file must be valid JSON with this structure:
               >
                 <Pause :size="14" />
                 Pause
+              </button>
+            </template>
+
+            <!-- Running state, session interrupted — existing session: Resume -->
+            <template v-else-if="isInterrupted && !isSessionDeleted">
+              <button
+                class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="resuming"
+                @click="resumePlanSession"
+              >
+                <Loader2 v-if="resuming" :size="14" class="animate-spin" />
+                <Play v-else :size="14" />
+                {{ resuming ? 'Resuming…' : 'Resume session' }}
+              </button>
+              <button
+                class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                @click="resetToPlanned"
+              >
+                <Pause :size="14" />
+                Reset
+              </button>
+            </template>
+
+            <!-- Running state, session deleted: Start new session -->
+            <template v-else-if="isInterrupted && isSessionDeleted">
+              <button
+                class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                :disabled="starting"
+                @click="startNewPlanSession"
+              >
+                <Loader2 v-if="starting" :size="14" class="animate-spin" />
+                <Play v-else :size="14" />
+                {{ starting ? 'Starting…' : 'Start new session' }}
+              </button>
+              <button
+                class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                @click="resetToPlanned"
+              >
+                <X :size="14" />
+                Reset
               </button>
             </template>
 
@@ -418,6 +583,7 @@ The file must be valid JSON with this structure:
             <button
               v-if="plan.status === 'complete'"
               class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+              @click="void router.push('/sessions')"
             >
               <MonitorPlay :size="14" />
               Open session
