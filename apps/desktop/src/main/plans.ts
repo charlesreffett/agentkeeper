@@ -80,6 +80,27 @@ export async function getPlan(projectPath: string, filename: string): Promise<Pl
   return readPlanFile(filePath)
 }
 
+// Removes a single session reference from every plan in the project that cites it.
+// Intentionally leaves plan status and step statuses untouched — the UI decides
+// what to offer next (resume, start-new, etc.) based on the remaining sessionIds.
+export async function removeSessionFromPlans(projectPath: string, sessionLocalId: string): Promise<void> {
+  const plans = await listPlans(projectPath)
+  for (const plan of plans) {
+    if (!plan.sessionIds.includes(sessionLocalId)) continue
+    const updated = plan.sessionIds.filter(id => id !== sessionLocalId)
+    await updatePlan(projectPath, plan.filename, { sessionIds: updated })
+  }
+}
+
+// Clears all session references from every plan in the project (used on bulk delete).
+export async function removeAllSessionsFromPlans(projectPath: string): Promise<void> {
+  const plans = await listPlans(projectPath)
+  for (const plan of plans) {
+    if (plan.sessionIds.length === 0) continue
+    await updatePlan(projectPath, plan.filename, { sessionIds: [] })
+  }
+}
+
 async function readPlanFile(filePath: string): Promise<Plan | null> {
   try {
     const raw = await fs.readFile(filePath, 'utf-8')

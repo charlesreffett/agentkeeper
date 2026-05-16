@@ -55,7 +55,7 @@ import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
-import { listPlans, getPlan, createPlan, updatePlan, deletePlan } from './plans'
+import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
 import { startWatching, stopWatching } from './watcher.js'
 import type {
   AgencyDraft,
@@ -771,7 +771,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeletePersisted,
-    (_event, localId: string) => {
+    async (_event, localId: string) => {
+      const session = sessionRegistry.getSession(localId)
+      if (session) {
+        await removeSessionFromPlans(session.projectPath, localId).catch(() => {})
+      }
       sessionRegistry.deleteSession(localId)
     },
   )
@@ -825,7 +829,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeleteAllPersisted,
-    (_event, projectPath: string) => sessionRegistry.deleteAllForProject(projectPath),
+    async (_event, projectPath: string) => {
+      await removeAllSessionsFromPlans(projectPath).catch(() => {})
+      sessionRegistry.deleteAllForProject(projectPath)
+    },
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsGetAgents,
