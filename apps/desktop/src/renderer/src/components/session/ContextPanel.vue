@@ -215,7 +215,8 @@ async function fetchLinkedPlan() {
     ])
     linkedPlan.value = allPlans.find(p => p.sessionIds.some(id => agentIds.has(id))) ?? null
   } catch {
-    linkedPlan.value = null
+    // Transient read errors (e.g. mid-write race) must not wipe the display —
+    // leave the last known plan in place and let the next poll or event recover.
   } finally {
     planLoading.value = false
   }
@@ -229,8 +230,9 @@ let planPollTimer: ReturnType<typeof setInterval> | null = null
 
 function isLinkedPlanRunning(): boolean {
   if (!linkedPlan.value) return false
-  return linkedPlan.value.status === 'running' ||
-    linkedPlan.value.steps.some(s => s.status === 'running')
+  // Use plan-level status so the poll keeps running through the brief gap
+  // between marking one step complete and the next step running.
+  return linkedPlan.value.status === 'running'
 }
 
 function stopPlanPolling() {
@@ -325,17 +327,25 @@ function scheduleFetch() {
   debounceTimer = setTimeout(() => { void fetchDiff() }, 2000)
 }
 
+let unsubPlanUpdated: (() => void) | null = null
+
 onMounted(async () => {
   if (rootSession.value?.worktreePath) void fetchDiff()
   void fetchPR()
   void fetchWorkItem()
   await fetchLinkedPlan()
   startPlanPolling()
+  unsubPlanUpdated = window.agentkeeper.plans.onUpdated(async ({ projectPath: p }) => {
+    if (p !== rootSession.value?.projectPath) return
+    await fetchLinkedPlan()
+    startPlanPolling()
+  })
 })
 
 onUnmounted(() => {
   if (debounceTimer !== null) clearTimeout(debounceTimer)
   stopPlanPolling()
+  unsubPlanUpdated?.()
 })
 
 // Re-fetch git diff ~2 s after the last activity tick
