@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { access } from 'node:fs/promises'
+import { join } from 'node:path'
 import { BrowserWindow } from 'electron'
 import Anthropic from '@anthropic-ai/sdk'
 import { createSdkMcpServer, query, tool, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
@@ -663,6 +665,14 @@ function buildPlanTools(projectPath: string): SdkMcpToolDefinition<any>[] {
         steps: planStepSchema,
       },
       async ({ title, externalRef, workItemId, prompt, estimatedMinutes, steps }) => {
+        const planFilename = `${externalRef.replace(/[^a-zA-Z0-9-]/g, '-')}-plan.json`
+        const planPath = join(projectPath, '.agentkeeper', 'plans', planFilename)
+        try {
+          await access(planPath)
+          return { content: [{ type: 'text', text: `Error: plan file "${planFilename}" already exists. Use update_plan to modify it.` }] }
+        } catch {
+          // file does not exist — safe to create
+        }
         const plan = await createPlan(projectPath, {
           title,
           externalRef,

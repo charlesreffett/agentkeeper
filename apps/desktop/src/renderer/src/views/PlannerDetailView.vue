@@ -545,14 +545,17 @@ async function replan() {
   generating.value = true
   const cur = plan.value
   const now = new Date().toISOString()
-  const desc = cur.prompt ? `\nDescription: ${cur.prompt}` : ''
-  const prompt = `Analyze this task and create a revised implementation plan.
-Task: ${cur.externalRef} — ${cur.title}${desc}
+  const existingSteps = cur.steps.map(s => `  [${s.id}] ${s.title}`).join('\n')
+  const prompt = `Revise the steps of an existing plan. Do NOT call create_plan — the file already exists and must not be recreated.
 
-The plan file already exists at .agentkeeper/plans/${cur.filename}.
-Update it by calling the update_plan MCP tool with filename "${cur.filename}" and the revised plan.
+Plan: ${cur.externalRef} — ${cur.title}
+Original prompt (must not change): "${cur.prompt ?? ''}"
+Current steps:
+${existingSteps}
 
-The patch must have this structure:
+Call update_plan with filename "${cur.filename}" to replace the steps with a better set.
+
+The patch must have exactly this structure (no other top-level keys):
 {
   "status": "planned",
   "updatedAt": "${now}",
@@ -577,7 +580,8 @@ Guidelines:
 - model: haiku for reads/audits, sonnet for implementation, opus for architecture
 - agent: explorer | main | qa | doc
 - parallel: true if the step can safely run concurrently with its neighbours
-- Aim for 4–8 focused, concrete steps — no filler`
+- Aim for 4–8 focused, concrete steps — no filler
+- Do NOT include prompt, title, externalRef, or workItemId in the patch`
   try {
     await sessionStore.start({
       projectPath: project.path,
