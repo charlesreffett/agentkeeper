@@ -52,6 +52,8 @@ const lastSession = ref<Session | null | undefined>(undefined)
 
 // Which step indices are expanded
 const expandedSteps = ref<Set<number>>(new Set())
+// Which step's action dropdown is open (controlled so re-renders don't auto-close it)
+const openStepDropdownIndex = ref<number | null>(null)
 // Inline editing state
 const editingStep = ref<{ index: number; field: 'title' | 'instructions' } | null>(null)
 const editingValue = ref('')
@@ -969,7 +971,10 @@ Guidelines:
                       <ChevronDown :size="13" />
                     </button>
                     <!-- Context menu -->
-                    <DropdownMenu>
+                    <DropdownMenu
+                      :open="openStepDropdownIndex === index"
+                      @update:open="(v: boolean) => { openStepDropdownIndex = v ? index : (null as null) }"
+                    >
                       <DropdownMenuTrigger as-child>
                         <button
                           class="size-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
