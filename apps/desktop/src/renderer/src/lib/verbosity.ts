@@ -36,7 +36,7 @@ export function isBlockVisible(block: ContentBlock, state: VerbosityState): bool
   const { toggles } = state
   switch (block.type) {
     case 'text':
-      return true
+      return block.text.trim().length > 0
     case 'thinking':
       return toggles.thinking
     case 'tool_use':
