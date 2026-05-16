@@ -41,6 +41,16 @@ export async function updatePlan(
   return { ...updated, filename, filePath }
 }
 
+export async function deletePlan(projectPath: string, filename: string): Promise<boolean> {
+  const filePath = path.join(projectPath, '.agentkeeper', 'plans', filename)
+  try {
+    await fs.unlink(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function listPlans(projectPath: string): Promise<Plan[]> {
   const dir = path.join(projectPath, '.agentkeeper', 'plans')
   let entries: string[]

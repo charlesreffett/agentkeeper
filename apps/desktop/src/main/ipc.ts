@@ -55,7 +55,7 @@ import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
-import { listPlans, getPlan, createPlan, updatePlan } from './plans'
+import { listPlans, getPlan, createPlan, updatePlan, deletePlan } from './plans'
 import type {
   AgencyDraft,
   AgencyScope,
@@ -947,6 +947,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.plansUpdate,
     (_e, projectPath: string, filename: string, patch: PlansUpdateInput) =>
       updatePlan(projectPath, filename, patch),
+  )
+  ipcMain.handle(IPC_CHANNELS.plansDelete, (_e, projectPath: string, filename: string) =>
+    deletePlan(projectPath, filename),
   )
 
   // Cost ledger + pricing

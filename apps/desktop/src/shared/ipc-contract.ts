@@ -509,7 +509,7 @@ export interface ResetResult {
 
 // ─── Plans ──────────────────────────────────────────────────────────────────
 
-export type PlanStatus = 'planned' | 'drafting' | 'running' | 'complete'
+export type PlanStatus = 'planned' | 'drafting' | 'running' | 'complete' | 'archived'
 export type PlanStepStatus = 'pending' | 'running' | 'complete' | 'failed' | 'skipped' | 'replanning'
 export type PlanAgentType = 'explorer' | 'main' | 'qa' | 'doc' | string
 
@@ -529,6 +529,10 @@ export interface PlanStep {
   agent: PlanAgentType
   parallel: boolean
   status: PlanStepStatus
+  /** Pause plan execution after this step completes and wait for the user to manually approve continuation. */
+  requiresApproval?: boolean
+  /** User-provided context injected into this step's execution prompt. */
+  context?: string
 }
 
 export interface Plan {
@@ -771,6 +775,7 @@ export interface AgentKeeperApi {
     get: (projectPath: string, filename: string) => Promise<Plan | null>
     create: (projectPath: string, data: PlansCreateInput) => Promise<Plan>
     update: (projectPath: string, filename: string, patch: PlansUpdateInput) => Promise<Plan | null>
+    delete: (projectPath: string, filename: string) => Promise<boolean>
   }
   costs: {
     getDailySummary: () => Promise<DayTotal[]>
@@ -895,6 +900,7 @@ export const IPC_CHANNELS = {
   plansGet: 'plans:get',
   plansCreate: 'plans:create',
   plansUpdate: 'plans:update',
+  plansDelete: 'plans:delete',
   costsGetDailySummary: 'costs:getDailySummary',
   costsAddLegacy: 'costs:addLegacy',
   pricingRefresh: 'pricing:refresh',

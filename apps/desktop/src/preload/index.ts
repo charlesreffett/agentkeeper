@@ -368,6 +368,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.plansCreate, projectPath, data) as Promise<Plan>,
     update: (projectPath: string, filename: string, patch: PlansUpdateInput) =>
       invoke(IPC_CHANNELS.plansUpdate, projectPath, filename, patch) as Promise<Plan | null>,
+    delete: (projectPath: string, filename: string) =>
+      invoke(IPC_CHANNELS.plansDelete, projectPath, filename) as Promise<boolean>,
   },
   costs: {
     getDailySummary: () =>

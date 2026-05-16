@@ -11,7 +11,7 @@ import type { Plan, PlanStatus } from '@shared/ipc-contract'
 const router = useRouter()
 const { focusedProject } = useProjectsQuery()
 const plansStore = usePlansStore()
-const plans = computed(() => plansStore.plans)
+const plans = computed(() => plansStore.plans.filter((p) => p.status !== 'archived'))
 const loading = computed(() => plansStore.loading)
 
 watch(
@@ -152,6 +152,35 @@ function toggleMenu(plan: Plan, event: MouseEvent) {
 
 function closeMenu() {
   openMenuFilename.value = null
+}
+
+async function openSession(plan: Plan) {
+  const sessionId = plan.sessionIds?.[plan.sessionIds.length - 1]
+  if (!sessionId) return
+  closeMenu()
+  void router.push(`/sessions/${sessionId}`)
+}
+
+async function pausePlan(plan: Plan) {
+  const sessionId = plan.sessionIds?.[plan.sessionIds.length - 1]
+  if (!sessionId) return
+  closeMenu()
+  await window.agentkeeper.sessions.interrupt(sessionId)
+  if (focusedProject.value) void plansStore.refresh(focusedProject.value.path)
+}
+
+async function archivePlan(plan: Plan) {
+  if (!focusedProject.value) return
+  closeMenu()
+  await window.agentkeeper.plans.update(focusedProject.value.path, plan.filename, { status: 'archived' })
+  void plansStore.refresh(focusedProject.value.path)
+}
+
+async function removePlan(plan: Plan) {
+  if (!focusedProject.value) return
+  closeMenu()
+  await window.agentkeeper.plans.delete(focusedProject.value.path, plan.filename)
+  void plansStore.refresh(focusedProject.value.path)
 }
 </script>
 
@@ -353,27 +382,28 @@ function closeMenu() {
                   <Eye :size="13" class="text-muted-foreground shrink-0" />
                   Open plan
                 </button>
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
+                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left" @click="openSession(plan)">
                   <MonitorPlay :size="13" class="text-muted-foreground shrink-0" />
                   Open session
                 </button>
                 <button
                   v-if="plan.status === 'running'"
                   class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
+                  @click="pausePlan(plan)"
                 >
                   <Pause :size="13" class="text-muted-foreground shrink-0" />
                   Pause
                 </button>
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
+                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left" @click="goToDetail(plan); closeMenu()">
                   <RefreshCw :size="13" class="text-muted-foreground shrink-0" />
                   Re-plan
                 </button>
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
+                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left" @click="archivePlan(plan)">
                   <Archive :size="13" class="text-muted-foreground shrink-0" />
                   Archive
                 </button>
                 <div class="my-1 border-t border-border" />
-                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left text-destructive">
+                <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left text-destructive" @click="removePlan(plan)">
                   <X :size="13" class="shrink-0" />
                   Remove plan
                 </button>
