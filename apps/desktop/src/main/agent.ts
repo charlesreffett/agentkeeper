@@ -301,7 +301,11 @@ async function consumeStream(session: ActiveSession): Promise<void> {
     })
     // Compute session-level status rollup from all agents.
     const allAgents = registry.listAgentsBySession(session.sessionLocalId)
-      .map((a): Agent => a.localId === session.agentLocalId ? { ...a, status: session.status } : a)
+      .map((a): Agent => {
+        if (a.localId === session.agentLocalId) return { ...a, status: session.status }
+        const live = active.get(a.localId)
+        return live ? { ...a, status: live.status } : a
+      })
     const sessionStatus = registry.computeSessionStatus(allAgents)
     const sessionUpdate: Partial<Session> = {
       status: sessionStatus,
