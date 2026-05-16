@@ -30,5 +30,11 @@ export const usePlansStore = defineStore('plans', () => {
     _promise = null
   }
 
-  return { plans, loading, load, invalidate }
+  function refresh(projectPath: string): Promise<void> {
+    _key = ''
+    _promise = null
+    return load(projectPath)
+  }
+
+  return { plans, loading, load, invalidate, refresh }
 })

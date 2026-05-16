@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from 'lucide-vue-next'
 import PageHeader from '@/components/PageHeader.vue'
+import NewPlanModal from '@/components/planner/NewPlanModal.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePlansStore } from '@/stores/plans'
 import type { Plan, PlanStatus } from '@shared/ipc-contract'
@@ -21,6 +22,52 @@ watch(
   },
   { immediate: true },
 )
+
+// ── Live-refresh ─────────────────────────────────────────────────────────────
+
+const generating = ref(false)
+let pollInterval: ReturnType<typeof setInterval> | null = null
+let unsubEvent: (() => void) | null = null
+
+function tryDetectPlanWrite(raw: unknown): void {
+  if (!raw || typeof raw !== 'object') return
+  const msg = raw as Record<string, unknown>
+  if (msg['type'] !== 'assistant') return
+  const inner = msg['message'] as Record<string, unknown> | undefined
+  if (!inner) return
+  const content = inner['content']
+  if (!Array.isArray(content)) return
+  for (const block of content) {
+    const b = block as Record<string, unknown>
+    if (b['type'] !== 'tool_use' || b['name'] !== 'Write') continue
+    const input = b['input'] as Record<string, unknown> | undefined
+    if (!input) continue
+    const writePath = input['path'] as string | undefined
+    if (!writePath?.includes('.agentkeeper/plans/')) continue
+    generating.value = true
+    if (focusedProject.value) void plansStore.refresh(focusedProject.value.path)
+    break
+  }
+}
+
+onMounted(() => {
+  unsubEvent = window.agentkeeper.sessions.onEvent((event) => {
+    tryDetectPlanWrite(event.message)
+  })
+  pollInterval = setInterval(() => {
+    if (focusedProject.value) void plansStore.refresh(focusedProject.value.path)
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null }
+  unsubEvent?.()
+  unsubEvent = null
+})
+
+watch(plans, (next, prev) => {
+  if (next.length > (prev?.length ?? 0)) generating.value = false
+})
 
 // ── Derived counts ──────────────────────────────────────────────────────────
 
@@ -94,6 +141,8 @@ function goToDetail(plan: Plan) {
 
 // ── Row context menu ─────────────────────────────────────────────────────────
 
+const showNewPlan = ref(false)
+
 const openMenuFilename = ref<string | null>(null)
 
 function toggleMenu(plan: Plan, event: MouseEvent) {
@@ -114,7 +163,10 @@ function closeMenu() {
           <Filter :size="14" />
           Filter
         </button>
-        <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium">
+        <button
+          class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+          @click="showNewPlan = true"
+        >
           <Sparkles :size="14" />
           Plan with Claude
         </button>
@@ -171,6 +223,15 @@ function closeMenu() {
               <span class="text-sm text-muted-foreground">finished</span>
             </div>
           </div>
+        </div>
+
+        <!-- In-progress banner -->
+        <div
+          v-if="generating"
+          class="mb-3 flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-500/10 border border-amber-200/60 dark:border-amber-500/20 rounded-lg px-4 py-2.5"
+        >
+          <Loader2 class="size-3.5 animate-spin shrink-0" />
+          A session is writing a plan — refreshing automatically…
         </div>
 
         <!-- Empty state -->
@@ -323,4 +384,6 @@ function closeMenu() {
       </template>
     </div>
   </div>
+
+  <NewPlanModal :open="showNewPlan" @close="showNewPlan = false" />
 </template>
