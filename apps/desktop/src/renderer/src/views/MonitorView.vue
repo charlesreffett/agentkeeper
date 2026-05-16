@@ -3,30 +3,26 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/sessions'
 import PageHeader from '@/components/PageHeader.vue'
-import { useProjectStore } from '@/stores/project'
 import type { LiveSession } from '@/stores/sessions'
 import { formatRelativeTime, shortModel } from '@/lib/format'
-import type { RecentProject } from '@shared/ipc-contract'
+import { getPlanProgress } from '@/composables/usePlanProgress'
+import type { PlanProgress } from '@/composables/usePlanProgress'
 
 const router = useRouter()
 const store = useSessionStore()
-const projectStore = useProjectStore()
+
+type SessionWithPlan = LiveSession & { plan: PlanProgress }
 
 // Group live sessions by project so the grid gives a quick per-project read.
 const grouped = computed(() => {
-  const byProject = new Map<string, LiveSession[]>()
+  const byProject = new Map<string, SessionWithPlan[]>()
   for (const s of store.liveList) {
     const arr = byProject.get(s.projectPath) ?? []
-    arr.push(s)
+    arr.push({ ...s, plan: getPlanProgress(s) })
     byProject.set(s.projectPath, arr)
   }
   return Array.from(byProject.entries()).sort(([a], [b]) => a.localeCompare(b))
 })
-
-function projectFromPath(p: string): RecentProject {
-  const name = p.split('/').filter(Boolean).pop() ?? p
-  return { path: p, name, repo: null, lastOpenedAt: Date.now() }
-}
 
 function statusTone(s: LiveSession) {
   switch (s.status) {
@@ -89,9 +85,7 @@ const subtitle = computed(() => {
 })
 
 async function openSession(s: LiveSession) {
-  projectStore.setProject(projectFromPath(s.projectPath))
-  await router.push('/project')
-  store.focus(s.localId)
+  await router.push(`/sessions/${s.localId}`)
 }
 </script>
 
@@ -144,6 +138,28 @@ async function openSession(s: LiveSession) {
 
               <div class="text-sm font-medium line-clamp-2 leading-snug min-h-10">
                 {{ titleFor(s) }}
+              </div>
+
+              <div
+                v-if="s.plan.hasPlan"
+                class="rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/30 px-2.5 py-1.5 flex flex-col gap-1"
+              >
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <div class="flex items-center gap-1.5 min-w-0">
+                    <span class="text-amber-500 shrink-0 leading-none">✦</span>
+                    <span class="font-semibold text-foreground/70 shrink-0">PLAN</span>
+                    <span class="text-muted-foreground truncate">
+                      {{ s.plan.activeTodo?.content ?? s.plan.lastCompletedTodo?.content ?? titleFor(s) }}
+                    </span>
+                  </div>
+                  <span class="text-muted-foreground font-mono shrink-0">{{ s.plan.completedCount }}/{{ s.plan.totalCount }}</span>
+                </div>
+                <div class="h-0.5 rounded-full bg-amber-200/60 dark:bg-amber-800/30 overflow-hidden">
+                  <div
+                    class="h-full rounded-full bg-green-500 transition-all duration-300"
+                    :style="{ width: `${s.plan.totalCount > 0 ? (s.plan.completedCount / s.plan.totalCount) * 100 : 0}%` }"
+                  />
+                </div>
               </div>
 
               <div

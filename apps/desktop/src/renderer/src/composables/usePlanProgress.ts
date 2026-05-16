@@ -59,43 +59,48 @@ function todosToProgress(todos: PlanTodo[]): PlanProgress {
   }
 }
 
+export function getPlanProgress(session: {
+  events: TranscriptEvent[]
+  planState: PlanTodo[] | null
+}): PlanProgress {
+  const { events, planState } = session
+
+  // Scan live events first — most recent TodoWrite wins.
+  for (let i = events.length - 1; i >= 0; i--) {
+    const evt = events[i]
+    if (!evt || evt.role !== 'assistant') continue
+
+    for (const b of evt.content) {
+      if (b.type !== 'tool_use' || b.name !== 'TodoWrite') continue
+
+      const input = b.input as { todos?: unknown[] }
+      if (!Array.isArray(input?.todos)) break
+
+      const todos: PlanTodo[] = input.todos.filter(isValidTodo).map((t) => {
+        const raw = t as unknown as Record<string, unknown>
+        return {
+          id: typeof raw['id'] === 'string' ? raw['id'] : String(Math.random()),
+          content: t.content,
+          status: t.status,
+          ...(typeof raw['priority'] === 'string' ? { priority: raw['priority'] } : {}),
+        }
+      })
+
+      return todosToProgress(todos)
+    }
+  }
+
+  // Fall back to persisted planState when events are empty (e.g. on first load
+  // before the user navigates into the session detail).
+  if (planState && planState.length > 0) {
+    return todosToProgress(planState)
+  }
+
+  return NO_PLAN
+}
+
 export function usePlanProgress(
   getSession: () => { events: TranscriptEvent[]; planState: PlanTodo[] | null },
 ): ComputedRef<PlanProgress> {
-  return computed(() => {
-    const { events, planState } = getSession()
-
-    // Scan live events first — most recent TodoWrite wins.
-    for (let i = events.length - 1; i >= 0; i--) {
-      const evt = events[i]
-      if (!evt || evt.role !== 'assistant') continue
-
-      for (const b of evt.content) {
-        if (b.type !== 'tool_use' || b.name !== 'TodoWrite') continue
-
-        const input = b.input as { todos?: unknown[] }
-        if (!Array.isArray(input?.todos)) break
-
-        const todos: PlanTodo[] = input.todos.filter(isValidTodo).map((t) => {
-          const raw = t as unknown as Record<string, unknown>
-          return {
-            id: typeof raw['id'] === 'string' ? raw['id'] : String(Math.random()),
-            content: t.content,
-            status: t.status,
-            ...(typeof raw['priority'] === 'string' ? { priority: raw['priority'] } : {}),
-          }
-        })
-
-        return todosToProgress(todos)
-      }
-    }
-
-    // Fall back to persisted planState when events are empty (e.g. on first load
-    // before the user navigates into the session detail).
-    if (planState && planState.length > 0) {
-      return todosToProgress(planState)
-    }
-
-    return NO_PLAN
-  })
+  return computed(() => getPlanProgress(getSession()))
 }
