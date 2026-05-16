@@ -38,7 +38,7 @@ export function isBlockVisible(block: ContentBlock, state: VerbosityState): bool
     case 'text':
       return block.text.trim().length > 0
     case 'thinking':
-      return toggles.thinking
+      return toggles.thinking && block.thinking.trim().length > 0
     case 'tool_use':
       return toggles.toolCalls
     case 'tool_result':
