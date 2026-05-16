@@ -776,6 +776,7 @@ export interface AgentKeeperApi {
     create: (projectPath: string, data: PlansCreateInput) => Promise<Plan>
     update: (projectPath: string, filename: string, patch: PlansUpdateInput) => Promise<Plan | null>
     delete: (projectPath: string, filename: string) => Promise<boolean>
+    onUpdated: (cb: (data: { projectPath: string; filename: string }) => void) => () => void
   }
   costs: {
     getDailySummary: () => Promise<DayTotal[]>
@@ -901,6 +902,7 @@ export const IPC_CHANNELS = {
   plansCreate: 'plans:create',
   plansUpdate: 'plans:update',
   plansDelete: 'plans:delete',
+  planUpdated: 'plan:updated',
   costsGetDailySummary: 'costs:getDailySummary',
   costsAddLegacy: 'costs:addLegacy',
   pricingRefresh: 'pricing:refresh',

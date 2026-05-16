@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { BrowserWindow } from 'electron'
 import Anthropic from '@anthropic-ai/sdk'
 import { createSdkMcpServer, query, tool, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
 import { z } from 'zod'
@@ -9,6 +10,7 @@ import type {
   RoleSlot,
   StartAgencyParams,
 } from '../shared/ipc-contract'
+import { IPC_CHANNELS } from '../shared/ipc-contract'
 import { listAgencies } from './agencies'
 import { listRoles } from './roles'
 import { createWorktree } from './worktrees'
@@ -692,6 +694,9 @@ function buildPlanTools(projectPath: string): SdkMcpToolDefinition<any>[] {
         }
         const updated = await updatePlan(projectPath, filename, patch)
         if (!updated) return { content: [{ type: 'text', text: `Error: plan file "${filename}" not found.` }] }
+        BrowserWindow.getAllWindows().forEach((win) =>
+          win.webContents.send(IPC_CHANNELS.planUpdated, { projectPath, filename }),
+        )
         return { content: [{ type: 'text', text: JSON.stringify(updated) }] }
       },
     ),

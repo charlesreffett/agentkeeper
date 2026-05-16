@@ -136,6 +136,7 @@ watch(
 
 // Live ingestion of Write tool events (plan appears before file hits disk)
 let unsubEvent: (() => void) | null = null
+let unsubPlanUpdated: (() => void) | null = null
 
 function tryIngestWriteEvent(raw: unknown): void {
   if (!raw || typeof raw !== 'object') return
@@ -165,12 +166,20 @@ onMounted(() => {
   unsubEvent = window.agentkeeper.sessions.onEvent((event) => {
     tryIngestWriteEvent(event.message)
   })
+  unsubPlanUpdated = window.agentkeeper.plans.onUpdated(async ({ projectPath: p, filename: f }) => {
+    const project = focusedProject.value
+    if (!project || p !== project.path || f !== filename.value) return
+    const fresh = await window.agentkeeper.plans.get(p, f)
+    if (fresh) { plan.value = fresh; void loadLastSession() }
+  })
 })
 
 onUnmounted(() => {
   if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null }
   unsubEvent?.()
   unsubEvent = null
+  unsubPlanUpdated?.()
+  unsubPlanUpdated = null
 })
 
 // ── Computed helpers ─────────────────────────────────────────────────────────
