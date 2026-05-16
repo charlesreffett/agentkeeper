@@ -158,7 +158,11 @@ onMounted(() => {
     const project = focusedProject.value
     if (!project || p !== project.path || f !== filename.value) return
     const fresh = await window.agentkeeper.plans.get(p, f)
-    if (fresh) { plan.value = fresh; void loadLastSession() }
+    if (fresh) {
+      plan.value = fresh
+      generating.value = false
+      void loadLastSession()
+    }
   })
 })
 
@@ -743,10 +747,10 @@ Guidelines:
 
       <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
         <!-- Stats card -->
-        <div class="rounded-lg border border-border overflow-hidden">
+        <div class="rounded-lg border border-border">
           <div class="grid grid-cols-6 divide-x divide-border">
             <!-- STATUS -->
-            <div class="px-4 py-3">
+            <div class="px-4 py-3 rounded-l-lg">
               <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Status</p>
               <span
                 class="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium"
@@ -808,7 +812,7 @@ Guidelines:
             </div>
 
             <!-- PROGRESS -->
-            <div class="px-4 py-3">
+            <div class="px-4 py-3 rounded-r-lg">
               <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Progress</p>
               <div v-if="plan.status === 'drafting'" class="text-sm text-muted-foreground italic">drafting…</div>
               <div v-else class="flex items-center gap-2">
