@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { ChevronLeft, ChevronRight, CornerDownRight, FileCode2, GitBranch, Layers, Tag, User2 } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import { ChevronLeft, ChevronRight, CornerDownRight, FileCode2, GitBranch, Layers, ListTodo, Tag, User2 } from 'lucide-vue-next'
 import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import { formatRelativeTime, shortModel } from '@/lib/format'
-import type { Agent, GitDiffStatFile, LiveSessionStatus } from '@shared/ipc-contract'
+import type { Agent, GitDiffStatFile, LiveSessionStatus, Plan } from '@shared/ipc-contract'
 import type { WorkItem } from '@shared/ipc-contract'
 import type { PRDetail } from '@shared/github-types'
 
@@ -19,6 +20,7 @@ defineEmits<{ collapse: []; expand: []; 'update:selectedId': [id: string] }>()
 
 const store = useSessionStore()
 const { projects } = useProjectsQuery()
+const router = useRouter()
 
 const { isHealthy: githubHealthy } = usePluginHealth('github')
 const { isHealthy: jiraHealthy } = usePluginHealth('jira')
@@ -195,6 +197,55 @@ async function fetchWorkItem() {
   }
 }
 
+// ─── Linked plan ─────────────────────────────────────────────────────────────
+
+const linkedPlan = ref<Plan | null>(null)
+const planLoading = ref(false)
+
+async function fetchLinkedPlan() {
+  const projectPath = rootSession.value?.projectPath
+  if (!projectPath) { linkedPlan.value = null; return }
+  planLoading.value = true
+  try {
+    const allPlans = await window.agentkeeper.plans.list(projectPath)
+    const agentIds = new Set([
+      props.rootSessionId,
+      ...(rootSession.value?.agents?.map(a => a.localId) ?? []),
+    ])
+    linkedPlan.value = allPlans.find(p => p.sessionIds.some(id => agentIds.has(id))) ?? null
+  } catch {
+    linkedPlan.value = null
+  } finally {
+    planLoading.value = false
+  }
+}
+
+function navigateToPlanStep(filename: string, stepIndex: number) {
+  void router.push({ path: `/planner/${filename}`, query: { step: String(stepIndex) } })
+}
+
+function planStepStatusClass(status: string): string {
+  switch (status) {
+    case 'complete':    return 'text-emerald-500'
+    case 'running':     return 'text-emerald-500'
+    case 'failed':      return 'text-destructive'
+    case 'skipped':     return 'text-muted-foreground/40'
+    case 'replanning':  return 'text-amber-500'
+    default:            return 'text-muted-foreground/40'
+  }
+}
+
+function planStepStatusSymbol(status: string): string {
+  switch (status) {
+    case 'complete':    return '✓'
+    case 'running':     return '●'
+    case 'failed':      return '✗'
+    case 'skipped':     return '—'
+    case 'replanning':  return '↺'
+    default:            return '○'
+  }
+}
+
 function priorityClass(priority: string | undefined): string {
   switch (priority?.toLowerCase()) {
     case 'highest':
@@ -245,6 +296,7 @@ onMounted(() => {
   if (rootSession.value?.worktreePath) void fetchDiff()
   void fetchPR()
   void fetchWorkItem()
+  void fetchLinkedPlan()
 })
 
 onUnmounted(() => {
@@ -262,9 +314,11 @@ watch(() => props.rootSessionId, () => {
   diffFiles.value = []
   prDetail.value = null
   workItem.value = null
+  linkedPlan.value = null
   if (rootSession.value?.worktreePath) void fetchDiff()
   void fetchPR()
   void fetchWorkItem()
+  void fetchLinkedPlan()
 })
 
 function truncatePath(filePath: string): string {
@@ -470,6 +524,56 @@ async function reconnectMcp() {
               {{ workItem?.storyPoints ?? '—' }}
             </span>
           </div>
+        </div>
+      </section>
+
+      <!-- ── PLAN ─────────────────────────────────────────────────────────────── -->
+      <section v-if="linkedPlan" class="px-3 py-3">
+        <div
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2 flex items-center gap-1.5"
+        >
+          <ListTodo class="size-3" />
+          Plan
+          <span class="ml-auto font-normal normal-case tracking-normal text-muted-foreground">
+            {{ linkedPlan.steps.filter(s => s.status === 'complete').length }}/{{ linkedPlan.steps.length }}
+          </span>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="h-0.5 rounded-full bg-muted overflow-hidden mb-2.5">
+          <div
+            class="h-full rounded-full bg-emerald-500 transition-all duration-300"
+            :style="{ width: `${linkedPlan.steps.length > 0 ? (linkedPlan.steps.filter(s => s.status === 'complete').length / linkedPlan.steps.length) * 100 : 0}%` }"
+          />
+        </div>
+
+        <!-- Plan title -->
+        <div class="text-[11px] font-medium text-foreground leading-snug mb-2 truncate" :title="linkedPlan.title">
+          {{ linkedPlan.title }}
+        </div>
+
+        <!-- Step rows -->
+        <div class="space-y-0.5">
+          <button
+            v-for="(step, index) in linkedPlan.steps"
+            :key="step.id"
+            class="w-full flex items-start gap-1.5 px-1.5 py-1 text-left rounded transition-colors hover:bg-muted/50 text-[11px]"
+            :title="step.title"
+            @click="navigateToPlanStep(linkedPlan.filename, index)"
+          >
+            <span
+              class="shrink-0 w-3 text-center leading-none mt-px font-mono text-[10px]"
+              :class="[planStepStatusClass(step.status), step.status === 'running' ? 'animate-pulse' : '']"
+            >
+              {{ planStepStatusSymbol(step.status) }}
+            </span>
+            <span
+              class="flex-1 truncate leading-snug"
+              :class="step.status === 'complete' ? 'text-muted-foreground line-through' : step.status === 'running' ? 'text-foreground font-medium' : 'text-muted-foreground'"
+            >
+              {{ step.title }}
+            </span>
+          </button>
         </div>
       </section>
 

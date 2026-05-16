@@ -61,6 +61,19 @@ async function loadPlan() {
 
 watch(filename, loadPlan, { immediate: true })
 
+// Auto-expand a step when navigated to via ?step=N (e.g. from ContextPanel)
+watch(
+  () => route.query.step,
+  (val) => {
+    if (val === undefined || val === null) return
+    const idx = parseInt(String(val), 10)
+    if (!isNaN(idx) && idx >= 0) {
+      expandedSteps.value.add(idx)
+    }
+  },
+  { immediate: true },
+)
+
 // Reset orphaned running state: status=running but no sessions (e.g. after app restart)
 watch(plan, (p) => {
   if (p && p.status === 'running' && p.sessionIds.length === 0 && focusedProject.value) {
