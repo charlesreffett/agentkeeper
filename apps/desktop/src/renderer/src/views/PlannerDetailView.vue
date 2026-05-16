@@ -287,7 +287,11 @@ function toggleStep(index: number) {
 async function persistSteps(steps: PlanStep[]) {
   if (!focusedProject.value) return
   const updated = await window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { steps })
-  if (updated) plan.value = updated
+  if (updated) {
+    plan.value = updated
+  } else {
+    console.error('[PlannerDetailView] persistSteps: update returned null — plan file may not exist at', focusedProject.value.path)
+  }
 }
 
 async function moveStep(index: number, dir: -1 | 1) {
@@ -931,7 +935,7 @@ Guidelines:
                         ? 'text-amber-500 hover:bg-amber-500/20'
                         : 'text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/60'"
                       :title="step.requiresApproval ? 'Remove approval gate' : 'Add approval gate — plan pauses after this step'"
-                      @click="void toggleApproval(index)"
+                      @click="toggleApproval(index).catch((e: unknown) => console.error('[PlannerDetailView] toggleApproval failed:', e))"
                     >
                       <Shield :size="12" />
                     </button>
@@ -964,11 +968,11 @@ Guidelines:
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" class="w-48">
-                        <DropdownMenuItem @click="void toggleParallel(index)">
+                        <DropdownMenuItem @click="toggleParallel(index).catch((e: unknown) => console.error('[PlannerDetailView] toggleParallel failed:', e))">
                           <GitBranch :size="13" class="text-muted-foreground shrink-0" />
                           {{ step.parallel ? 'Make sequential' : 'Mark as parallel' }}
                         </DropdownMenuItem>
-                        <DropdownMenuItem @click="void toggleApproval(index)">
+                        <DropdownMenuItem @click="toggleApproval(index).catch((e: unknown) => console.error('[PlannerDetailView] toggleApproval failed:', e))">
                           <Shield :size="13" class="text-muted-foreground shrink-0" />
                           {{ step.requiresApproval ? 'Remove approval gate' : 'Add approval gate' }}
                         </DropdownMenuItem>
@@ -984,14 +988,14 @@ Guidelines:
                           <Play :size="13" class="text-muted-foreground shrink-0" />
                           Run only this step
                         </DropdownMenuItem>
-                        <DropdownMenuItem @click="void skipStep(index)">
+                        <DropdownMenuItem @click="skipStep(index).catch((e: unknown) => console.error('[PlannerDetailView] skipStep failed:', e))">
                           <X :size="13" class="text-muted-foreground shrink-0" />
                           {{ step.status === 'skipped' ? 'Unskip step' : 'Skip step' }}
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           class="text-destructive focus:text-destructive"
-                          @click="void removeStep(index)"
+                          @click="removeStep(index).catch((e: unknown) => console.error('[PlannerDetailView] removeStep failed:', e))"
                         >
                           <X :size="13" class="shrink-0" />
                           Remove step
@@ -1152,7 +1156,7 @@ Guidelines:
                     </button>
                     <button
                       class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
-                      @click.stop="void toggleParallel(index)"
+                      @click.stop="toggleParallel(index).catch((e: unknown) => console.error('[PlannerDetailView] toggleParallel failed:', e))"
                     >
                       <GitBranch :size="11" />
                       {{ step.parallel ? 'Make sequential' : 'Mark as parallel' }}
@@ -1166,7 +1170,7 @@ Guidelines:
                     </button>
                     <button
                       class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
-                      @click.stop="void skipStep(index)"
+                      @click.stop="skipStep(index).catch((e: unknown) => console.error('[PlannerDetailView] skipStep failed:', e))"
                     >
                       <X :size="11" />
                       {{ step.status === 'skipped' ? 'Unskip' : 'Skip' }}
