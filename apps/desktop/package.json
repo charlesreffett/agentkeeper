@@ -24,6 +24,7 @@
     "@vue-flow/core": "^1.41.2",
     "@vueuse/core": "^14.2.1",
     "better-sqlite3": "^12.9.0",
+    "chokidar": "^3.6.0",
     "drizzle-orm": "^0.45.2",
     "keytar": "^7.9.0",
     "pinia": "^3.0.4",

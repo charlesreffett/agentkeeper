@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import GitCommitPanel from '@/components/GitCommitPanel.vue'
 
 const props = defineProps<{ projectPath: string }>()
@@ -104,8 +104,42 @@ const empty = computed(
     gitStatus.value.untracked.length === 0,
 )
 
-onMounted(load)
-watch(() => props.projectPath, load)
+let unsubscribeGitStatus: (() => void) | null = null
+let watchedPath: string | null = null
+
+async function startWatch(projectPath: string): Promise<void> {
+  await window.agentkeeper.fs.watchStart(projectPath)
+  unsubscribeGitStatus = window.agentkeeper.git.onStatusChanged((event) => {
+    if (event.projectPath === projectPath) {
+      load()
+    }
+  })
+  watchedPath = projectPath
+}
+
+async function stopWatch(): Promise<void> {
+  unsubscribeGitStatus?.()
+  unsubscribeGitStatus = null
+  if (watchedPath) {
+    await window.agentkeeper.fs.watchStop(watchedPath)
+    watchedPath = null
+  }
+}
+
+onMounted(async () => {
+  await load()
+  if (props.projectPath) await startWatch(props.projectPath)
+})
+
+watch(() => props.projectPath, async (newPath, oldPath) => {
+  if (oldPath) await stopWatch()
+  await load()
+  if (newPath) await startWatch(newPath)
+})
+
+onUnmounted(async () => {
+  await stopWatch()
+})
 
 function onCommitted() {
   // Refresh status after Claude finishes committing

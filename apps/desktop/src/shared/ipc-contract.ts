@@ -101,6 +101,14 @@ export interface FsEntry {
   isDirectory: boolean
 }
 
+export interface GitStatusChangedEvent {
+  projectPath: string
+}
+
+export interface FsChangedEvent {
+  projectPath: string
+}
+
 // ─── Plan todos ─────────────────────────────────────────────────────────────
 
 export type PlanTodoStatus = 'pending' | 'in_progress' | 'completed' | 'partial'
@@ -766,9 +774,13 @@ export interface AgentKeeperApi {
     commit: (projectPath: string, message: string) => Promise<void>
     push: (projectPath: string) => Promise<string>
     suggestCommits: (projectPath: string) => Promise<CommitSuggestion>
+    onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) => () => void
   }
   fs: {
     listDirectory: (dirPath: string) => Promise<FsEntry[]>
+    watchStart: (projectPath: string) => Promise<void>
+    watchStop: (projectPath: string) => Promise<void>
+    onChanged: (cb: (event: FsChangedEvent) => void) => () => void
   }
   plans: {
     list: (projectPath: string) => Promise<Plan[]>
@@ -897,6 +909,10 @@ export const IPC_CHANNELS = {
   gitPush: 'git:push',
   gitSuggestCommits: 'git:suggestCommits',
   fsListDirectory: 'fs:listDirectory',
+  fsWatchStart: 'fs:watchStart',
+  fsWatchStop: 'fs:watchStop',
+  gitStatusChanged: 'git:statusChanged',
+  fsChanged: 'fs:changed',
   plansList: 'plans:list',
   plansGet: 'plans:get',
   plansCreate: 'plans:create',

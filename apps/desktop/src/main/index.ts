@@ -13,6 +13,7 @@ import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
 import { initDb } from './db/index'
 import { runLegacyImport } from './db/legacy-import'
 import { pruneOrphanedDrafts } from './drafts'
+import { stopAllWatchers, removeSubscriber } from './watcher.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -59,7 +60,10 @@ function createWindow(): BrowserWindow {
   return win
 }
 
-app.on('before-quit', () => flushCostLedger())
+app.on('before-quit', () => {
+  stopAllWatchers()
+  flushCostLedger()
+})
 
 app.whenReady().then(async () => {
   const userData = app.getPath('userData')
@@ -72,6 +76,9 @@ app.whenReady().then(async () => {
   setWorkItemRegistry(registry)
   registerIpcHandlers(registry)
   const win = createWindow()
+  win.webContents.on('destroyed', () => {
+    removeSubscriber(win.webContents.id)
+  })
   wirePluginEventRelay(win)
 
   app.on('activate', () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { ChevronRight, Folder, File } from 'lucide-vue-next'
 
 interface Entry {
@@ -8,19 +8,32 @@ interface Entry {
   isDirectory: boolean
 }
 
-const props = defineProps<{ entry: Entry }>()
+const props = defineProps<{
+  entry: Entry
+  refreshKey?: number
+}>()
 
 const expanded = ref(false)
 const children = ref<Entry[]>([])
+
+async function loadChildren() {
+  const result = await (window.agentkeeper as any).fs?.listDirectory(props.entry.path)
+  if (result) children.value = result
+}
 
 async function toggle() {
   if (!props.entry.isDirectory) return
   expanded.value = !expanded.value
   if (expanded.value && children.value.length === 0) {
-    const result = await (window.agentkeeper as any).fs?.listDirectory(props.entry.path)
-    if (result) children.value = result
+    await loadChildren()
   }
 }
+
+watch(() => props.refreshKey, () => {
+  if (expanded.value && props.entry.isDirectory) {
+    loadChildren()
+  }
+})
 </script>
 
 <template>
@@ -44,6 +57,7 @@ async function toggle() {
         v-for="child in children"
         :key="child.path"
         :entry="child"
+        :refresh-key="refreshKey"
       />
     </div>
   </div>

@@ -14,7 +14,9 @@ import {
   type DraftRecord,
   type LegacyDayEntry,
   type FsEntry,
+  type FsChangedEvent,
   type GitHubConfig,
+  type GitStatusChangedEvent,
   type CommitSuggestion,
   type GitStatus,
   type IssueTransition,
@@ -354,10 +356,18 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.gitPush, projectPath) as Promise<string>,
     suggestCommits: (projectPath: string) =>
       invoke(IPC_CHANNELS.gitSuggestCommits, projectPath) as Promise<CommitSuggestion>,
+    onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) =>
+      onChannel<GitStatusChangedEvent>(IPC_CHANNELS.gitStatusChanged, cb),
   },
   fs: {
     listDirectory: (dirPath: string) =>
       invoke(IPC_CHANNELS.fsListDirectory, dirPath) as Promise<FsEntry[]>,
+    watchStart: (projectPath: string) =>
+      invoke(IPC_CHANNELS.fsWatchStart, projectPath) as Promise<void>,
+    watchStop: (projectPath: string) =>
+      invoke(IPC_CHANNELS.fsWatchStop, projectPath) as Promise<void>,
+    onChanged: (cb: (event: FsChangedEvent) => void) =>
+      onChannel<FsChangedEvent>(IPC_CHANNELS.fsChanged, cb),
   },
   plans: {
     list: (projectPath: string) =>

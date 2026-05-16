@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import FileTreeNode from '@/components/FileTreeNode.vue'
 
 const props = defineProps<{ rootPath: string }>()
@@ -11,6 +11,7 @@ interface Entry {
 }
 
 const entries = ref<Entry[]>([])
+const refreshKey = ref(0)
 
 async function load() {
   if (!props.rootPath) return
@@ -18,8 +19,43 @@ async function load() {
   if (result) entries.value = result
 }
 
-onMounted(load)
-watch(() => props.rootPath, load)
+let unsubscribeFs: (() => void) | null = null
+let watchedPath: string | null = null
+
+async function startWatch(rootPath: string): Promise<void> {
+  await window.agentkeeper.fs.watchStart(rootPath)
+  unsubscribeFs = window.agentkeeper.fs.onChanged((event) => {
+    if (event.projectPath === rootPath) {
+      load()
+      refreshKey.value++
+    }
+  })
+  watchedPath = rootPath
+}
+
+async function stopWatch(): Promise<void> {
+  unsubscribeFs?.()
+  unsubscribeFs = null
+  if (watchedPath) {
+    await window.agentkeeper.fs.watchStop(watchedPath)
+    watchedPath = null
+  }
+}
+
+onMounted(async () => {
+  await load()
+  if (props.rootPath) await startWatch(props.rootPath)
+})
+
+watch(() => props.rootPath, async (newPath, oldPath) => {
+  if (oldPath) await stopWatch()
+  await load()
+  if (newPath) await startWatch(newPath)
+})
+
+onUnmounted(async () => {
+  await stopWatch()
+})
 </script>
 
 <template>
@@ -31,6 +67,7 @@ watch(() => props.rootPath, load)
       v-for="entry in entries"
       :key="entry.path"
       :entry="entry"
+      :refresh-key="refreshKey"
     />
   </div>
 </template>

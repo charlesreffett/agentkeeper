@@ -56,6 +56,7 @@ import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import { listPlans, getPlan, createPlan, updatePlan, deletePlan } from './plans'
+import { startWatching, stopWatching } from './watcher.js'
 import type {
   AgencyDraft,
   AgencyScope,
@@ -934,6 +935,14 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     } catch {
       return []
     }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.fsWatchStart, (event, projectPath: string) => {
+    startWatching(projectPath, event.sender.id)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.fsWatchStop, (event, projectPath: string) => {
+    stopWatching(projectPath, event.sender.id)
   })
 
   // Plans
