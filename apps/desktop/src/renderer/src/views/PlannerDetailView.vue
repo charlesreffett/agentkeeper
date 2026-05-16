@@ -286,7 +286,9 @@ function toggleStep(index: number) {
 
 async function persistSteps(steps: PlanStep[]) {
   if (!focusedProject.value) return
-  const updated = await window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { steps })
+  // JSON round-trip strips Vue reactive Proxy wrappers — contextBridge cannot serialize Proxy objects
+  const rawSteps = JSON.parse(JSON.stringify(steps)) as PlanStep[]
+  const updated = await window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { steps: rawSteps })
   if (updated) {
     plan.value = updated
   } else {
