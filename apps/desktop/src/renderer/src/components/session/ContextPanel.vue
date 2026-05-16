@@ -232,28 +232,11 @@ const isPlanInterrupted = computed(() => {
 })
 
 async function resumePlanFromContext() {
-  const plan = linkedPlan.value
   const session = rootSession.value
-  if (!plan || !session) return
-
-  // Get sdkSessionId from the entry point agent (already in ContextPanel's agents computed)
-  const entryAgent = agents.value.find(a => a.isEntryPoint) ?? agents.value[0] ?? null
-  const sdkId = entryAgent?.sdkSessionId ?? undefined
-
+  if (!session) return
   resumingPlan.value = true
   try {
-    const newLocalId = await store.start({
-      projectPath: session.projectPath,
-      initialPrompt: 'Resume the plan from the last completed step.',
-      resumeSdkSessionId: sdkId,
-      workItemId: plan.workItemId || undefined,
-    })
-    const updated = await window.agentkeeper.plans.update(session.projectPath, plan.filename, {
-      sessionIds: [...(plan.sessionIds ?? []), newLocalId],
-      status: 'running',
-    })
-    if (updated) linkedPlan.value = updated
-    void router.push('/sessions')
+    await window.agentkeeper.sessions.resume(session.localId)
   } catch (err) {
     console.error('[ContextPanel] resumePlanFromContext failed:', err)
   } finally {

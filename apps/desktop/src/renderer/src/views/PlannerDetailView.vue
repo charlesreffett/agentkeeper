@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ArrowLeft,
@@ -19,10 +19,13 @@ import {
   GitBranch,
   Zap,
   File,
+  Shield,
+  Pencil,
+  MessageSquare,
 } from 'lucide-vue-next'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
-import type { Plan, PlanStep, Session } from '@shared/ipc-contract'
+import type { Plan, PlanStep, PlanStepStatus, Session } from '@shared/ipc-contract'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,6 +48,17 @@ const expandedSteps = ref<Set<number>>(new Set())
 // Which step has context menu open
 const openMenuStep = ref<number | null>(null)
 
+// Inline editing state
+const editingStep = ref<{ index: number; field: 'title' | 'instructions' } | null>(null)
+const editingValue = ref('')
+
+// Per-step context editor state
+const editingContext = ref<number | null>(null)
+const contextValue = ref('')
+
+// Polling handle while plan is running
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
 async function loadLastSession() {
   const ids = plan.value?.sessionIds
   if (!ids || ids.length === 0) { lastSession.value = null; return }
@@ -52,11 +66,9 @@ async function loadLastSession() {
   const project = focusedProject.value
   if (!project) { lastSession.value = null; return }
 
-  // Live store first (includes agent data + up-to-date status)
   const live = sessionStore.getSession(id)
   if (live) { lastSession.value = live as Session; return }
 
-  // Fall back to DB (persisted sessions after app restart)
   try {
     const all = await window.agentkeeper.sessions.listPersisted(project.path)
     lastSession.value = all.find(s => s.localId === id) ?? null
@@ -85,7 +97,7 @@ async function loadPlan() {
 
 watch(filename, loadPlan, { immediate: true })
 
-// Auto-expand a step when navigated to via ?step=N (e.g. from ContextPanel)
+// Auto-expand a step when navigated to via ?step=N
 watch(
   () => route.query.step,
   (val) => {
@@ -98,13 +110,29 @@ watch(
   { immediate: true },
 )
 
-// Reset orphaned running state: status=running but no sessions (e.g. after app restart)
+// Reset orphaned running state after app restart
 watch(plan, (p) => {
   if (p && p.status === 'running' && p.sessionIds.length === 0 && focusedProject.value) {
     void window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { status: 'planned' })
       .then((updated) => { if (updated) { plan.value = updated; void loadLastSession() } })
   }
 }, { immediate: true })
+
+// Poll for plan updates (catches MCP update_plan calls mid-execution)
+watch(
+  () => plan.value?.status,
+  (status) => {
+    if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null }
+    if (status === 'running') {
+      pollInterval = setInterval(async () => {
+        if (!focusedProject.value) return
+        const fresh = await window.agentkeeper.plans.get(focusedProject.value.path, filename.value)
+        if (fresh) { plan.value = fresh; void loadLastSession() }
+      }, 5000)
+    }
+  },
+  { immediate: true },
+)
 
 // Live ingestion of Write tool events (plan appears before file hits disk)
 let unsubEvent: (() => void) | null = null
@@ -140,6 +168,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null }
   unsubEvent?.()
   unsubEvent = null
 })
@@ -182,11 +211,10 @@ const parallelCount = computed(() =>
   plan.value?.steps.filter((s) => s.parallel).length ?? 0,
 )
 
-// Interrupted = plan marked running but last session has stopped
 const isInterrupted = computed(() => {
   if (!plan.value || plan.value.status !== 'running') return false
   if (lastSession.value === undefined) return false
-  if (lastSession.value === null) return true // deleted
+  if (lastSession.value === null) return true
   const stoppedStatuses: string[] = ['idle', 'completed', 'terminated', 'error', 'suspended']
   return stoppedStatuses.includes(lastSession.value.status)
 })
@@ -267,6 +295,146 @@ function closeMenu() {
   openMenuStep.value = null
 }
 
+// ── Step mutation helpers ─────────────────────────────────────────────────────
+
+async function persistSteps(steps: PlanStep[]) {
+  if (!focusedProject.value) return
+  const updated = await window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { steps })
+  if (updated) plan.value = updated
+}
+
+async function moveStep(index: number, dir: -1 | 1) {
+  if (!plan.value) return
+  const steps = [...plan.value.steps]
+  const target = index + dir
+  if (target < 0 || target >= steps.length) return
+  ;[steps[index], steps[target]] = [steps[target]!, steps[index]!]
+  await persistSteps(steps.map((s, i) => ({ ...s, id: i + 1 })))
+}
+
+async function toggleApproval(index: number) {
+  if (!plan.value) return
+  await persistSteps(
+    plan.value.steps.map((s, i) =>
+      i === index ? { ...s, requiresApproval: !s.requiresApproval } : s,
+    ),
+  )
+}
+
+async function toggleParallel(index: number) {
+  if (!plan.value) return
+  closeMenu()
+  await persistSteps(
+    plan.value.steps.map((s, i) =>
+      i === index ? { ...s, parallel: !s.parallel } : s,
+    ),
+  )
+}
+
+async function skipStep(index: number) {
+  if (!plan.value) return
+  closeMenu()
+  const step = plan.value.steps[index]
+  if (!step) return
+  const next: PlanStepStatus = step.status === 'skipped' ? 'pending' : 'skipped'
+  await persistSteps(
+    plan.value.steps.map((s, i) => i === index ? { ...s, status: next } : s),
+  )
+}
+
+async function removeStep(index: number) {
+  if (!plan.value) return
+  closeMenu()
+  await persistSteps(
+    plan.value.steps.filter((_, i) => i !== index).map((s, i) => ({ ...s, id: i + 1 })),
+  )
+}
+
+async function addStep() {
+  if (!plan.value) return
+  const newStep: PlanStep = {
+    id: plan.value.steps.length + 1,
+    title: 'New step',
+    summary: '',
+    instructions: '',
+    filesInScope: [],
+    model: 'claude-sonnet-4-5',
+    estimatedMinutes: 15,
+    agent: 'main',
+    parallel: false,
+    status: 'pending',
+  }
+  const steps = [...plan.value.steps, newStep]
+  await persistSteps(steps)
+  const newIndex = steps.length - 1
+  expandedSteps.value.add(newIndex)
+  await nextTick()
+  startEdit(newIndex, 'title')
+}
+
+// ── Inline editing ────────────────────────────────────────────────────────────
+
+function startEdit(index: number, field: 'title' | 'instructions') {
+  const step = plan.value?.steps[index]
+  if (!step) return
+  editingStep.value = { index, field }
+  editingValue.value = field === 'title' ? step.title : (step.instructions ?? '')
+}
+
+async function commitEdit() {
+  const editing = editingStep.value
+  if (!editing || !plan.value) { editingStep.value = null; return }
+  const { index, field } = editing
+  editingStep.value = null
+  if (!editingValue.value.trim()) return
+  await persistSteps(
+    plan.value.steps.map((s, i) =>
+      i === index ? { ...s, [field]: editingValue.value.trim() } : s,
+    ),
+  )
+}
+
+// ── Context injection ─────────────────────────────────────────────────────────
+
+function openContextEditor(index: number) {
+  editingContext.value = index
+  contextValue.value = plan.value?.steps[index]?.context ?? ''
+  closeMenu()
+  expandedSteps.value.add(index)
+}
+
+async function saveContext(index: number) {
+  if (!plan.value) { editingContext.value = null; return }
+  editingContext.value = null
+  await persistSteps(
+    plan.value.steps.map((s, i) =>
+      i === index ? { ...s, context: contextValue.value.trim() || undefined } : s,
+    ),
+  )
+}
+
+// ── Prompt builder helper ─────────────────────────────────────────────────────
+
+function buildStepsText(steps: PlanStep[]): { text: string; hasGates: boolean } {
+  let hasGates = false
+  const text = steps
+    .map((s, i) => {
+      const lines = [
+        `${i + 1}. ${s.title} — ${s.summary ?? s.title}`,
+        `   Instructions: ${s.instructions ?? s.title}`,
+      ]
+      if (s.filesInScope?.length) lines.push(`   Files in scope: ${s.filesInScope.join(', ')}`)
+      if (s.context) lines.push(`   Additional context: ${s.context}`)
+      if (s.requiresApproval) {
+        hasGates = true
+        lines.push(`   ⚠ Approval gate: mark this step complete, set plan status="planned", then stop`)
+      }
+      return lines.join('\n')
+    })
+    .join('\n')
+  return { text, hasGates }
+}
+
 // ── Actions ──────────────────────────────────────────────────────────────────
 
 async function startAllSteps() {
@@ -274,18 +442,10 @@ async function startAllSteps() {
   const project = focusedProject.value
   const cur = plan.value
   starting.value = true
-  const stepsText = cur.steps
-    .map((s, i) => {
-      const lines = [
-        `${i + 1}. ${s.title} — ${s.summary}`,
-        `   Instructions: ${s.instructions}`,
-      ]
-      if (s.filesInScope?.length) {
-        lines.push(`   Files in scope: ${s.filesInScope.join(', ')}`)
-      }
-      return lines.join('\n')
-    })
-    .join('\n')
+  const { text: stepsText, hasGates } = buildStepsText(cur.steps)
+  const gateNote = hasGates
+    ? '\n\nIMPORTANT: Steps marked with ⚠ Approval gate require you to stop after completing them. Mark the step complete, call update_plan with status="planned", then stop. The user will review and manually resume.'
+    : ''
   const prompt = `Execute the following implementation plan step by step.
 
 Plan: ${cur.title} (${cur.externalRef})
@@ -293,7 +453,7 @@ Plan: ${cur.title} (${cur.externalRef})
 Steps:
 ${stepsText}
 
-Execute each step in sequence (run parallel:true steps concurrently where safe). Mark steps complete as you finish each one using the update_plan MCP tool.`
+Execute each step in sequence (run parallel:true steps concurrently where safe). Mark steps complete as you finish each one using the update_plan MCP tool.${gateNote}`
   try {
     const updated = await window.agentkeeper.plans.update(project.path, filename.value, { status: 'running' })
     if (updated) plan.value = updated
@@ -302,7 +462,6 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
       initialPrompt: prompt,
       workItemId: cur.workItemId || undefined,
     })
-    // record session on the plan so we can navigate back to it
     const withSession = await window.agentkeeper.plans.update(project.path, filename.value, {
       sessionIds: [...(plan.value?.sessionIds ?? []), localId],
     })
@@ -328,29 +487,14 @@ async function resetToPlanned() {
 }
 
 async function resumePlanSession() {
-  if (!plan.value || !focusedProject.value || !lastSessionId.value) return
-  const project = focusedProject.value
+  if (!plan.value || !focusedProject.value || !lastSessionId.value || !lastSession.value) return
   resuming.value = true
   try {
-    // Get the entry agent's sdkSessionId to resume the conversation history
-    const agents = await window.agentkeeper.sessions.getAgents(lastSessionId.value)
-    const entryAgent = agents.find(a => a.isEntryPoint) ?? agents[0] ?? null
-    const sdkId = entryAgent?.sdkSessionId ?? undefined
-
-    const newLocalId = await sessionStore.start({
-      projectPath: project.path,
-      initialPrompt: 'Resume the plan from the last completed step.',
-      resumeSdkSessionId: sdkId,
-      workItemId: plan.value.workItemId || undefined,
-    })
-    const updated = await window.agentkeeper.plans.update(project.path, filename.value, {
-      sessionIds: [...(plan.value.sessionIds ?? []), newLocalId],
-      status: 'running',
-    })
-    if (updated) plan.value = updated
-    void router.push('/sessions')
+    sessionStore.openPersisted(lastSession.value as Session)
+    await window.agentkeeper.sessions.resume(lastSessionId.value)
+    void router.push(`/sessions/${lastSessionId.value}`)
   } catch (err) {
-    console.error('Failed to resume plan:', err)
+    console.error('Failed to resume plan session:', err)
   } finally {
     resuming.value = false
   }
@@ -361,21 +505,11 @@ async function startNewPlanSession() {
   const project = focusedProject.value
   const cur = plan.value
 
-  // Only send incomplete steps (not complete or skipped)
   const incompleteSteps = cur.steps.filter(s => s.status !== 'complete' && s.status !== 'skipped')
-  const stepsText = incompleteSteps
-    .map((s, i) => {
-      const lines = [
-        `${i + 1}. ${s.title} — ${s.summary ?? s.title}`,
-        `   Instructions: ${s.instructions ?? s.title}`,
-      ]
-      if (s.filesInScope?.length) {
-        lines.push(`   Files in scope: ${s.filesInScope.join(', ')}`)
-      }
-      return lines.join('\n')
-    })
-    .join('\n')
-
+  const { text: stepsText, hasGates } = buildStepsText(incompleteSteps)
+  const gateNote = hasGates
+    ? '\n\nIMPORTANT: Steps marked with ⚠ Approval gate require you to stop after completing them. Mark the step complete, call update_plan with status="planned", then stop. The user will review and manually resume.'
+    : ''
   const prompt = `Execute the following remaining implementation plan steps.
 
 Plan: ${cur.title} (${cur.externalRef})
@@ -384,7 +518,7 @@ Note: Some earlier steps have already been completed. Resume from the first step
 Remaining Steps:
 ${stepsText}
 
-Execute each step in sequence. Mark steps complete using the update_plan MCP tool.`
+Execute each step in sequence. Mark steps complete using the update_plan MCP tool.${gateNote}`
 
   starting.value = true
   try {
@@ -527,7 +661,7 @@ The file must be valid JSON with this structure:
               </button>
             </template>
 
-            <!-- Running state, session interrupted — existing session: Resume -->
+            <!-- Running state, session interrupted — Resume -->
             <template v-else-if="isInterrupted && !isSessionDeleted">
               <button
                 class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
@@ -589,7 +723,7 @@ The file must be valid JSON with this structure:
               Open session
             </button>
 
-            <!-- Re-plan (all states except drafting mid-regen show it) -->
+            <!-- Re-plan (all states except drafting mid-regen) -->
             <button
               class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               :disabled="replanning"
@@ -643,7 +777,7 @@ The file must be valid JSON with this structure:
                 {{
                   plan.status === 'planned' ? 'Idle' :
                   plan.status === 'drafting' ? 'Planning' :
-                  plan.status === 'running' ? 'Running' : 'Idle'
+                  plan.status === 'running' ? 'Running' : 'Complete'
                 }}
               </span>
             </div>
@@ -720,7 +854,10 @@ The file must be valid JSON with this structure:
                 <span v-if="parallelCount > 0">steps marked parallel run as sub-agents simultaneously</span>
               </span>
             </div>
-            <button class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              @click="void addStep()"
+            >
               <Plus :size="13" />
               Add step
             </button>
@@ -753,12 +890,21 @@ The file must be valid JSON with this structure:
                     <span      v-else>{{ step.id }}</span>
                   </div>
                 </div>
-                <!-- Connector line -->
+                <!-- Connector line (with gate marker when next step needs approval) -->
                 <div
                   v-if="index < plan.steps.length - 1"
-                  class="w-0.5 flex-1 min-h-[16px]"
+                  class="w-0.5 flex-1 min-h-[16px] relative"
                   :class="connectorClass(step)"
-                />
+                >
+                  <!-- Approval gate indicator on the line leading into a gated step -->
+                  <div
+                    v-if="plan.steps[index + 1]?.requiresApproval"
+                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-4 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center"
+                    title="Approval gate — plan pauses here"
+                  >
+                    <Shield :size="8" class="text-amber-500" />
+                  </div>
+                </div>
               </div>
 
               <!-- Card -->
@@ -766,7 +912,7 @@ The file must be valid JSON with this structure:
                 class="flex-1 mb-2 rounded-lg border border-border bg-card overflow-hidden"
                 :class="stepCardBorderClass(step)"
               >
-                <!-- Card header (always visible, clickable) -->
+                <!-- Card header (always visible, clickable to expand) -->
                 <div
                   class="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-muted/20 transition-colors select-none"
                   @click="toggleStep(index)"
@@ -781,7 +927,7 @@ The file must be valid JSON with this structure:
                   <!-- Title -->
                   <span class="flex-1 text-sm font-semibold min-w-0 truncate">{{ step.title }}</span>
 
-                  <!-- Running badge -->
+                  <!-- Running / skipped badges -->
                   <span
                     v-if="step.status === 'running'"
                     class="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20"
@@ -795,20 +941,36 @@ The file must be valid JSON with this structure:
                     skipped
                   </span>
 
-                  <!-- Reorder + menu -->
+                  <!-- Controls row -->
                   <div class="flex items-center gap-0.5 shrink-0" @click.stop>
+                    <!-- Approval gate toggle -->
+                    <button
+                      class="size-6 flex items-center justify-center rounded transition-colors"
+                      :class="step.requiresApproval
+                        ? 'text-amber-500 hover:bg-amber-500/20'
+                        : 'text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/60'"
+                      :title="step.requiresApproval ? 'Remove approval gate' : 'Add approval gate — plan pauses after this step'"
+                      @click="void toggleApproval(index)"
+                    >
+                      <Shield :size="12" />
+                    </button>
+                    <!-- Reorder up -->
                     <button
                       class="size-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30"
                       :disabled="index === 0"
+                      @click="void moveStep(index, -1)"
                     >
                       <ChevronUp :size="13" />
                     </button>
+                    <!-- Reorder down -->
                     <button
                       class="size-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors disabled:opacity-30"
                       :disabled="index === (plan?.steps.length ?? 1) - 1"
+                      @click="void moveStep(index, 1)"
                     >
                       <ChevronDown :size="13" />
                     </button>
+                    <!-- Context menu -->
                     <div class="relative">
                       <button
                         class="size-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
@@ -816,38 +978,56 @@ The file must be valid JSON with this structure:
                       >
                         <MoreHorizontal :size="13" />
                       </button>
-                      <!-- Context menu -->
                       <div
                         v-if="openMenuStep === index"
                         class="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-popover shadow-lg z-50 py-1 text-sm"
                         @click.stop
                       >
-                        <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
-                          <RefreshCw :size="13" class="text-muted-foreground shrink-0" />
-                          Re-plan this step
-                        </button>
-                        <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
+                        <button
+                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
+                          @click="void toggleParallel(index)"
+                        >
                           <GitBranch :size="13" class="text-muted-foreground shrink-0" />
-                          Run in parallel
+                          {{ step.parallel ? 'Make sequential' : 'Mark as parallel' }}
                         </button>
-                        <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
+                        <button
+                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
+                          @click="void toggleApproval(index); closeMenu()"
+                        >
+                          <Shield :size="13" class="text-muted-foreground shrink-0" />
+                          {{ step.requiresApproval ? 'Remove approval gate' : 'Add approval gate' }}
+                        </button>
+                        <button
+                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
+                          @click="openContextEditor(index)"
+                        >
+                          <MessageSquare :size="13" class="text-muted-foreground shrink-0" />
+                          {{ step.context ? 'Edit context' : 'Attach context' }}
+                        </button>
+                        <button
+                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
+                        >
                           <Zap :size="13" class="text-muted-foreground shrink-0" />
                           Change model
                         </button>
-                        <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
+                        <button
+                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
+                        >
                           <Play :size="13" class="text-muted-foreground shrink-0" />
                           Run only this step
                         </button>
-                        <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
+                        <button
+                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left"
+                          @click="void skipStep(index)"
+                        >
                           <X :size="13" class="text-muted-foreground shrink-0" />
-                          Skip step
-                        </button>
-                        <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left">
-                          <File :size="13" class="text-muted-foreground shrink-0" />
-                          Attach context
+                          {{ step.status === 'skipped' ? 'Unskip step' : 'Skip step' }}
                         </button>
                         <div class="my-1 border-t border-border" />
-                        <button class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left text-destructive">
+                        <button
+                          class="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-muted/60 transition-colors text-left text-destructive"
+                          @click="void removeStep(index)"
+                        >
                           <X :size="13" class="shrink-0" />
                           Remove step
                         </button>
@@ -882,20 +1062,99 @@ The file must be valid JSON with this structure:
                     <GitBranch :size="9" />
                     parallel
                   </span>
+                  <span
+                    v-if="step.requiresApproval"
+                    class="ml-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] flex items-center gap-1"
+                  >
+                    <Shield :size="9" />
+                    gate
+                  </span>
+                  <span
+                    v-if="step.context"
+                    class="ml-0.5 text-amber-500/70"
+                    title="Has attached context"
+                  >
+                    <MessageSquare :size="10" />
+                  </span>
                 </div>
 
                 <!-- Expanded content -->
                 <div v-if="expandedSteps.has(index)" class="border-t border-border px-4 py-3 space-y-3">
-                  <!-- Summary -->
+                  <!-- Editable title -->
+                  <div>
+                    <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1">Title</p>
+                    <input
+                      v-if="editingStep?.index === index && editingStep.field === 'title'"
+                      v-model="editingValue"
+                      class="w-full text-sm bg-background border border-border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-ring"
+                      @keydown.enter.prevent="void commitEdit()"
+                      @keydown.escape.prevent="editingStep = null"
+                      @blur="void commitEdit()"
+                      @click.stop
+                    />
+                    <div
+                      v-else
+                      class="group flex items-center gap-1.5 text-sm font-semibold cursor-text hover:bg-muted/40 px-2 py-1 rounded -mx-2 transition-colors"
+                      @click.stop="startEdit(index, 'title')"
+                    >
+                      <span class="flex-1">{{ step.title }}</span>
+                      <Pencil :size="10" class="opacity-0 group-hover:opacity-50 text-muted-foreground shrink-0 transition-opacity" />
+                    </div>
+                  </div>
+
+                  <!-- Summary (read-only) -->
                   <div v-if="step.summary">
                     <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1">Summary</p>
                     <p class="text-sm">{{ step.summary }}</p>
                   </div>
-                  <!-- Full instructions -->
-                  <div v-if="step.instructions">
+
+                  <!-- Editable instructions -->
+                  <div>
                     <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1">Full Instructions</p>
-                    <p class="text-sm text-foreground/80 leading-relaxed">{{ step.instructions }}</p>
+                    <textarea
+                      v-if="editingStep?.index === index && editingStep.field === 'instructions'"
+                      v-model="editingValue"
+                      rows="4"
+                      class="w-full text-sm bg-background border border-border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-ring resize-none"
+                      @keydown.escape.prevent="editingStep = null"
+                      @blur="void commitEdit()"
+                      @click.stop
+                    />
+                    <div
+                      v-else
+                      class="group flex items-start gap-1.5 text-sm text-foreground/80 leading-relaxed cursor-text hover:bg-muted/40 px-2 py-1 rounded -mx-2 transition-colors"
+                      @click.stop="startEdit(index, 'instructions')"
+                    >
+                      <span class="flex-1">{{ step.instructions ?? 'Click to add instructions…' }}</span>
+                      <Pencil :size="10" class="opacity-0 group-hover:opacity-50 text-muted-foreground shrink-0 mt-0.5 transition-opacity" />
+                    </div>
                   </div>
+
+                  <!-- Context injection (shown when set or actively editing) -->
+                  <div v-if="editingContext === index || step.context">
+                    <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1.5">
+                      <MessageSquare :size="10" class="text-amber-500" />
+                      Additional Context
+                    </p>
+                    <textarea
+                      v-if="editingContext === index"
+                      v-model="contextValue"
+                      rows="3"
+                      placeholder="Notes for Claude when executing this step — e.g. existing patterns, gotchas, relevant files…"
+                      class="w-full text-sm bg-background border border-amber-500/30 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-amber-500/50 resize-none"
+                      @keydown.escape.prevent="editingContext = null"
+                      @blur="void saveContext(index)"
+                      @click.stop
+                    />
+                    <div
+                      v-else-if="step.context"
+                      class="text-sm text-foreground/80 leading-relaxed cursor-text hover:bg-muted/40 px-2 py-1 rounded -mx-2 transition-colors"
+                      @click.stop="openContextEditor(index)"
+                    >
+                      {{ step.context }}
+                    </div>
+                  </div>
+
                   <!-- Files in scope -->
                   <div v-if="step.filesInScope?.length">
                     <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1.5">
@@ -915,21 +1174,37 @@ The file must be valid JSON with this structure:
 
                   <!-- Step action buttons -->
                   <div class="flex items-center gap-2 pt-1 flex-wrap">
+                    <button
+                      class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                      @click.stop="startEdit(index, 'instructions')"
+                    >
+                      <Pencil :size="11" />
+                      Edit
+                    </button>
                     <button class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
                       <RefreshCw :size="11" />
                       Re-plan
                     </button>
-                    <button class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
+                    <button
+                      class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                      @click.stop="void toggleParallel(index)"
+                    >
                       <GitBranch :size="11" />
-                      Run in parallel
+                      {{ step.parallel ? 'Make sequential' : 'Mark as parallel' }}
                     </button>
-                    <button class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
-                      <Play :size="11" />
-                      Run only this
+                    <button
+                      class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                      @click.stop="openContextEditor(index)"
+                    >
+                      <MessageSquare :size="11" />
+                      {{ step.context ? 'Edit context' : 'Attach context' }}
                     </button>
-                    <button class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
+                    <button
+                      class="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors"
+                      @click.stop="void skipStep(index)"
+                    >
                       <X :size="11" />
-                      Skip
+                      {{ step.status === 'skipped' ? 'Unskip' : 'Skip' }}
                     </button>
                   </div>
                 </div>
