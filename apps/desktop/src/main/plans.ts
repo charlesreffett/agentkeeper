@@ -32,9 +32,11 @@ export async function updatePlan(
   const existing = await readPlanFile(filePath)
   if (!existing) return null
   const { filename: _fn, filePath: _fp, ...rest } = existing
+  const mergedSteps = patch.steps ?? rest.steps
   const updated: Omit<Plan, 'filename' | 'filePath'> = {
     ...rest,
     ...patch,
+    steps: mergedSteps ?? [],
     updatedAt: new Date().toISOString(),
   }
   await fs.writeFile(filePath, JSON.stringify(updated, null, 2), 'utf-8')
