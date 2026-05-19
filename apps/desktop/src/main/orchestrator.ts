@@ -648,7 +648,7 @@ const planStepSchema = z.array(
 )
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildPlanTools(projectPath: string): SdkMcpToolDefinition<any>[] {
+function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefinition<any>[] {
   return [
     tool(
       'create_plan',
@@ -670,7 +670,17 @@ function buildPlanTools(projectPath: string): SdkMcpToolDefinition<any>[] {
           estimatedMinutes,
           steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' })),
           status: 'planned',
+          sessionIds: sessionId ? [sessionId] : [],
         })
+        if (sessionId) {
+          registry.updateSession(sessionId, {
+            planState: plan.steps.map((s) => ({
+              id: s.id,
+              content: s.title,
+              status: 'pending' as const,
+            })),
+          })
+        }
         return { content: [{ type: 'text', text: JSON.stringify(plan) }] }
       },
     ),
@@ -741,7 +751,7 @@ export function createOrchestratorMcp(
     name: 'agentkeeper',
     version: '1.0.0',
     tools: [
-      ...buildPlanTools(projectPath),
+      ...buildPlanTools(projectPath, sessionId),
       tool(
         'send_message',
         'Send a message to a peer agent by instance id (e.g. "developer-1") or role id (e.g. "developer" for load-balanced delivery). Waits for their reply and returns it as the tool result.',
