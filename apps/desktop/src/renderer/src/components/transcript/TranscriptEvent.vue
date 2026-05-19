@@ -54,6 +54,27 @@ const visibleContent = computed(() =>
   props.event.content.filter((b) => isBlockVisible(b, state.value)),
 )
 
+type BlockGroup =
+  | { kind: 'single'; block: ContentBlock }
+  | { kind: 'images'; blocks: (ContentBlock & { type: 'image' })[] }
+
+const groupedContent = computed((): BlockGroup[] => {
+  const groups: BlockGroup[] = []
+  for (const block of visibleContent.value) {
+    if (block.type === 'image') {
+      const last = groups[groups.length - 1]
+      if (last?.kind === 'images') {
+        last.blocks.push(block as ContentBlock & { type: 'image' })
+      } else {
+        groups.push({ kind: 'images', blocks: [block as ContentBlock & { type: 'image' }] })
+      }
+    } else {
+      groups.push({ kind: 'single', block })
+    }
+  }
+  return groups
+})
+
 // Hidden tool_use blocks within this event — shown as a quiet inline indicator.
 const hiddenToolUseCount = computed(
   () =>
@@ -116,12 +137,20 @@ function blockComponent(block: ContentBlock) {
     v-else-if="isToolResultOnly"
     class="ml-10 space-y-1.5"
   >
-    <component
-      :is="blockComponent(block)"
-      v-for="(block, i) in visibleContent"
-      :key="i"
-      :block="block"
-    />
+    <template v-for="(group, i) in groupedContent" :key="i">
+      <div v-if="group.kind === 'images'" class="flex flex-wrap gap-2">
+        <ImageBlock
+          v-for="(block, j) in group.blocks"
+          :key="j"
+          :block="block"
+        />
+      </div>
+      <component
+        v-else
+        :is="blockComponent(group.block)"
+        :block="group.block"
+      />
+    </template>
   </div>
 
   <!-- ── Normal user / assistant message ────────────────────────────────── -->
@@ -156,12 +185,20 @@ function blockComponent(block: ContentBlock) {
 
       <!-- Blocks -->
       <div class="space-y-2">
-        <component
-          :is="blockComponent(block)"
-          v-for="(block, i) in visibleContent"
-          :key="i"
-          :block="block"
-        />
+        <template v-for="(group, i) in groupedContent" :key="i">
+          <div v-if="group.kind === 'images'" class="flex flex-wrap gap-2">
+            <ImageBlock
+              v-for="(block, j) in group.blocks"
+              :key="j"
+              :block="block"
+            />
+          </div>
+          <component
+            v-else
+            :is="blockComponent(group.block)"
+            :block="group.block"
+          />
+        </template>
         <!-- Hidden tool call hint -->
         <div
           v-if="hiddenToolUseCount > 0"
