@@ -494,11 +494,9 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
         workItemKey: cur.externalRef ?? null,
         workItemTitle: cur.title,
       })
-      const entryPoint = instance.sessions.find(s => s.isEntryPoint)
-      const sessionRef = entryPoint?.localId ?? instance.sessions[0]?.localId
-      if (sessionRef) {
+      if (instance.instanceId) {
         const withSession = await window.agentkeeper.plans.update(project.path, planId.value, {
-          sessionIds: [...(plan.value?.sessionIds ?? []), sessionRef],
+          sessionIds: [...(plan.value?.sessionIds ?? []), instance.instanceId],
         })
         if (withSession) plan.value = withSession
       }
