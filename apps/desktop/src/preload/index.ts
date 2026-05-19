@@ -372,16 +372,16 @@ const api: AgentKeeperApi = {
   plans: {
     list: (projectPath: string) =>
       invoke(IPC_CHANNELS.plansList, projectPath) as Promise<Plan[]>,
-    get: (projectPath: string, filename: string) =>
-      invoke(IPC_CHANNELS.plansGet, projectPath, filename) as Promise<Plan | null>,
+    get: (projectPath: string, id: string) =>
+      invoke(IPC_CHANNELS.plansGet, projectPath, id) as Promise<Plan | null>,
     create: (projectPath: string, data: PlansCreateInput) =>
       invoke(IPC_CHANNELS.plansCreate, projectPath, data) as Promise<Plan>,
-    update: (projectPath: string, filename: string, patch: PlansUpdateInput) =>
-      invoke(IPC_CHANNELS.plansUpdate, projectPath, filename, patch) as Promise<Plan | null>,
-    delete: (projectPath: string, filename: string) =>
-      invoke(IPC_CHANNELS.plansDelete, projectPath, filename) as Promise<boolean>,
-    onUpdated: (cb: (data: { projectPath: string; filename: string }) => void) =>
-      onChannel<{ projectPath: string; filename: string }>(IPC_CHANNELS.planUpdated, cb),
+    update: (projectPath: string, id: string, patch: PlansUpdateInput) =>
+      invoke(IPC_CHANNELS.plansUpdate, projectPath, id, patch) as Promise<Plan | null>,
+    delete: (projectPath: string, id: string) =>
+      invoke(IPC_CHANNELS.plansDelete, projectPath, id) as Promise<boolean>,
+    onUpdated: (cb: (data: { projectPath: string; id: string }) => void) =>
+      onChannel<{ projectPath: string; id: string }>(IPC_CHANNELS.planUpdated, cb),
   },
   costs: {
     getDailySummary: () =>

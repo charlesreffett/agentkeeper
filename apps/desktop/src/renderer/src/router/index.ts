@@ -28,7 +28,7 @@ const router = createRouter({
     { path: '/sessions/:id', component: SessionDetailView },
     { path: '/monitor', component: MonitorView },
     { path: '/planner', component: PlannerListView },
-    { path: '/planner/:filename', component: PlannerDetailView },
+    { path: '/planner/:id', component: PlannerDetailView },
     { path: '/agencies', component: AgenciesView },
     { path: '/roles', component: RolesView },
     { path: '/skills', component: SkillsView },

@@ -954,18 +954,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   // Plans
   ipcMain.handle(IPC_CHANNELS.plansList, (_e, projectPath: string) => listPlans(projectPath))
-  ipcMain.handle(IPC_CHANNELS.plansGet, (_e, projectPath: string, filename: string) => getPlan(projectPath, filename))
+  ipcMain.handle(IPC_CHANNELS.plansGet, (_e, projectPath: string, id: string) => getPlan(projectPath, id))
   ipcMain.handle(
     IPC_CHANNELS.plansCreate,
     (_e, projectPath: string, data: PlansCreateInput) => createPlan(projectPath, data),
   )
   ipcMain.handle(
     IPC_CHANNELS.plansUpdate,
-    (_e, projectPath: string, filename: string, patch: PlansUpdateInput) =>
-      updatePlan(projectPath, filename, patch),
+    (_e, projectPath: string, id: string, patch: PlansUpdateInput) =>
+      updatePlan(projectPath, id, patch),
   )
-  ipcMain.handle(IPC_CHANNELS.plansDelete, (_e, projectPath: string, filename: string) =>
-    deletePlan(projectPath, filename),
+  ipcMain.handle(IPC_CHANNELS.plansDelete, (_e, projectPath: string, id: string) =>
+    deletePlan(projectPath, id),
   )
 
   // Cost ledger + pricing

@@ -222,8 +222,8 @@ async function fetchLinkedPlan() {
   }
 }
 
-function navigateToPlanStep(filename: string, stepIndex: number) {
-  void router.push({ path: `/planner/${filename}`, query: { step: String(stepIndex) } })
+function navigateToPlanStep(id: string, stepIndex: number) {
+  void router.push({ path: `/planner/${id}`, query: { step: String(stepIndex) } })
 }
 
 let planPollTimer: ReturnType<typeof setInterval> | null = null
@@ -606,7 +606,7 @@ async function reconnectMcp() {
             :key="step.id"
             class="w-full flex items-start gap-1.5 px-1.5 py-1 text-left rounded transition-colors hover:bg-muted/50 text-[11px]"
             :title="step.title"
-            @click="navigateToPlanStep(linkedPlan.filename, index)"
+            @click="navigateToPlanStep(linkedPlan.id, index)"
           >
             <span
               class="shrink-0 flex items-center justify-center w-3 mt-px"

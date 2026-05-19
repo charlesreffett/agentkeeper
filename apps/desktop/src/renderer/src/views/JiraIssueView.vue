@@ -141,9 +141,9 @@ async function planWithClaude() {
   }
   planRunning.value = true
   const cur = item.value
-  const externalRef = cur.externalRef
+  let planId: string | null = null
   try {
-    await window.agentkeeper.plans.create(focused.path, {
+    const plan = await window.agentkeeper.plans.create(focused.path, {
       title: `${cur.externalRef}: ${cur.title}`,
       externalRef: cur.externalRef,
       workItemId: cur.id,
@@ -151,16 +151,18 @@ async function planWithClaude() {
       estimatedMinutes: 0,
       steps: [],
     })
+    planId = plan.id
   } catch (err) {
     console.warn('[JiraIssueView] plan stub creation failed (non-fatal):', err)
   }
+  const planRef = planId ? `id "${planId}"` : `externalRef "${cur.externalRef}"`
   const planningPrompt = `Analyze this Jira ticket and create a detailed implementation plan.
 Ticket: ${cur.externalRef} — ${cur.title}${cur.body ? '\nDescription:\n' + cur.body : ''}
 
-A draft plan has been created at .agentkeeper/plans/${externalRef}-plan.json (status: "drafting").
+A draft plan has been created (status: "drafting")${planId ? ` with id "${planId}"` : ''}.
 
 Research the codebase thoroughly, then call mcp__agentkeeper__update_plan with:
-- filename: "${externalRef}-plan.json"
+- ${planRef}
 - status: "planned"
 - estimatedMinutes: <sum of all step estimates>
 - steps: array of 4–8 focused, concrete implementation steps
