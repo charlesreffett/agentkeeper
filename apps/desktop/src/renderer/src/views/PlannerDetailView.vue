@@ -39,7 +39,7 @@ const router = useRouter()
 const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 
-const filename = computed(() => route.params.filename as string)
+const planId = computed(() => route.params.id as string)
 const plan = ref<Plan | null>(null)
 const loading = ref(false)
 const generating = ref(false)
@@ -61,6 +61,13 @@ const editingValue = ref('')
 // Per-step context editor state
 const editingContext = ref<number | null>(null)
 const contextValue = ref('')
+
+// Prompt inline editing
+const editingPrompt = ref(false)
+const editingPromptValue = ref('')
+const canEditPrompt = computed(() =>
+  plan.value?.status !== 'running' && plan.value?.status !== 'complete',
+)
 
 
 async function loadLastSession() {
@@ -86,7 +93,7 @@ async function loadPlan() {
   if (!project) return
   loading.value = true
   try {
-    const result = await window.agentkeeper.plans.get(project.path, filename.value)
+    const result = await window.agentkeeper.plans.get(project.path, planId.value)
     if (result) {
       plan.value = result
       generating.value = false
@@ -99,7 +106,7 @@ async function loadPlan() {
   }
 }
 
-watch(filename, loadPlan, { immediate: true })
+watch(planId, loadPlan, { immediate: true })
 
 // Auto-expand a step when navigated to via ?step=N
 watch(
@@ -117,47 +124,18 @@ watch(
 // Reset orphaned running state after app restart
 watch(plan, (p) => {
   if (p && p.status === 'running' && p.sessionIds.length === 0 && focusedProject.value) {
-    void window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { status: 'planned' })
+    void window.agentkeeper.plans.update(focusedProject.value.path, planId.value, { status: 'planned' })
       .then((updated) => { if (updated) { plan.value = updated; void loadLastSession() } })
   }
 }, { immediate: true })
 
-// Live ingestion of Write tool events (plan appears before file hits disk)
-let unsubEvent: (() => void) | null = null
 let unsubPlanUpdated: (() => void) | null = null
 
-function tryIngestWriteEvent(raw: unknown): void {
-  if (!raw || typeof raw !== 'object') return
-  const msg = raw as Record<string, unknown>
-  if (msg['type'] !== 'assistant') return
-  const inner = msg['message'] as Record<string, unknown> | undefined
-  if (!inner) return
-  const content = inner['content']
-  if (!Array.isArray(content)) return
-  for (const block of content) {
-    const b = block as Record<string, unknown>
-    if (b['type'] !== 'tool_use' || b['name'] !== 'Write') continue
-    const input = b['input'] as Record<string, unknown> | undefined
-    if (!input) continue
-    const writePath = input['path'] as string | undefined
-    if (!writePath?.endsWith(filename.value)) continue
-    try {
-      const data = JSON.parse(input['content'] as string) as Omit<Plan, 'filename' | 'filePath'>
-      plan.value = { ...data, filename: filename.value, filePath: writePath }
-      generating.value = false
-    } catch { /* malformed — disk read will catch it */ }
-    break
-  }
-}
-
 onMounted(() => {
-  unsubEvent = window.agentkeeper.sessions.onEvent((event) => {
-    tryIngestWriteEvent(event.message)
-  })
-  unsubPlanUpdated = window.agentkeeper.plans.onUpdated(async ({ projectPath: p, filename: f }) => {
+  unsubPlanUpdated = window.agentkeeper.plans.onUpdated(async ({ projectPath: p, id: updatedId }) => {
     const project = focusedProject.value
-    if (!project || p !== project.path || f !== filename.value) return
-    const fresh = await window.agentkeeper.plans.get(p, f)
+    if (!project || p !== project.path || updatedId !== planId.value) return
+    const fresh = await window.agentkeeper.plans.get(p, updatedId)
     if (fresh) {
       plan.value = fresh
       generating.value = false
@@ -167,15 +145,13 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  unsubEvent?.()
-  unsubEvent = null
   unsubPlanUpdated?.()
   unsubPlanUpdated = null
 })
 
 // ── Computed helpers ─────────────────────────────────────────────────────────
 
-const planRef = computed(() => plan.value?.planRef ?? filename.value.replace(/-plan\.json$/, '').toUpperCase())
+const planRef = computed(() => plan.value?.planRef ?? plan.value?.externalRef ?? planId.value.slice(0, 8).toUpperCase())
 
 const totalMinutes = computed(() =>
   plan.value?.estimatedMinutes || plan.value?.steps.reduce((s, x) => s + x.estimatedMinutes, 0) || 0,
@@ -292,11 +268,11 @@ async function persistSteps(steps: PlanStep[]) {
   if (!focusedProject.value) return
   // JSON round-trip strips Vue reactive Proxy wrappers — contextBridge cannot serialize Proxy objects
   const rawSteps = JSON.parse(JSON.stringify(steps)) as PlanStep[]
-  const updated = await window.agentkeeper.plans.update(focusedProject.value.path, filename.value, { steps: rawSteps })
+  const updated = await window.agentkeeper.plans.update(focusedProject.value.path, planId.value, { steps: rawSteps })
   if (updated) {
     plan.value = updated
   } else {
-    console.error('[PlannerDetailView] persistSteps: update returned null — plan file may not exist at', focusedProject.value.path)
+    console.error('[PlannerDetailView] persistSteps: update returned null — plan may not exist:', planId.value)
   }
 }
 
@@ -306,7 +282,7 @@ async function moveStep(index: number, dir: -1 | 1) {
   const target = index + dir
   if (target < 0 || target >= steps.length) return
   ;[steps[index], steps[target]] = [steps[target]!, steps[index]!]
-  await persistSteps(steps.map((s, i) => ({ ...s, id: i + 1 })))
+  await persistSteps(steps)
 }
 
 async function toggleApproval(index: number) {
@@ -340,14 +316,14 @@ async function skipStep(index: number) {
 async function removeStep(index: number) {
   if (!plan.value) return
   await persistSteps(
-    plan.value.steps.filter((_, i) => i !== index).map((s, i) => ({ ...s, id: i + 1 })),
+    plan.value.steps.filter((_, i) => i !== index),
   )
 }
 
 async function addStep() {
   if (!plan.value) return
   const newStep: PlanStep = {
-    id: plan.value.steps.length + 1,
+    id: crypto.randomUUID(),
     title: 'New step',
     summary: '',
     instructions: '',
@@ -386,6 +362,24 @@ async function commitEdit() {
       i === index ? { ...s, [field]: editingValue.value.trim() } : s,
     ),
   )
+}
+
+// ── Prompt editing ────────────────────────────────────────────────────────────
+
+function startPromptEdit() {
+  editingPromptValue.value = plan.value?.prompt ?? ''
+  editingPrompt.value = true
+}
+
+async function commitPromptEdit() {
+  editingPrompt.value = false
+  if (!focusedProject.value || !plan.value) return
+  const updated = await window.agentkeeper.plans.update(
+    focusedProject.value.path,
+    planId.value,
+    { prompt: editingPromptValue.value.trim() || undefined },
+  )
+  if (updated) plan.value = updated
 }
 
 // ── Context injection ─────────────────────────────────────────────────────────
@@ -441,28 +435,28 @@ async function startAllSteps() {
     : ''
   const prompt = `Execute the following implementation plan step by step.
 
-Plan: ${cur.title} (${cur.externalRef})
+Plan: ${cur.title} (${cur.externalRef ?? cur.id})
 
 Steps:
 ${stepsText}
 
-Execute each step in sequence (run parallel:true steps concurrently where safe). Mark steps complete as you finish each one using the update_plan MCP tool.${gateNote}`
+Execute each step in sequence (run parallel:true steps concurrently where safe). Mark steps complete as you finish each one using the update_plan MCP tool with id "${cur.id}".${gateNote}`
   try {
-    const updated = await window.agentkeeper.plans.update(project.path, filename.value, { status: 'running' })
+    const updated = await window.agentkeeper.plans.update(project.path, planId.value, { status: 'running' })
     if (updated) plan.value = updated
     const localId = await sessionStore.start({
       projectPath: project.path,
       initialPrompt: prompt,
       workItemId: cur.workItemId || undefined,
     })
-    const withSession = await window.agentkeeper.plans.update(project.path, filename.value, {
+    const withSession = await window.agentkeeper.plans.update(project.path, planId.value, {
       sessionIds: [...(plan.value?.sessionIds ?? []), localId],
     })
     if (withSession) plan.value = withSession
     void router.push(`/sessions/${localId}`)
   } catch (err) {
     console.error('Failed to start plan:', err)
-    await window.agentkeeper.plans.update(project.path, filename.value, { status: 'planned' }).catch(() => {})
+    await window.agentkeeper.plans.update(project.path, planId.value, { status: 'planned' }).catch(() => {})
     if (plan.value) plan.value = { ...plan.value, status: 'planned' }
   } finally {
     starting.value = false
@@ -473,7 +467,7 @@ async function resetToPlanned() {
   if (!plan.value || !focusedProject.value) return
   const updated = await window.agentkeeper.plans.update(
     focusedProject.value.path,
-    filename.value,
+    planId.value,
     { status: 'planned' },
   )
   if (updated) plan.value = updated
@@ -505,31 +499,31 @@ async function startNewPlanSession() {
     : ''
   const prompt = `Execute the following remaining implementation plan steps.
 
-Plan: ${cur.title} (${cur.externalRef})
+Plan: ${cur.title} (${cur.externalRef ?? cur.id})
 Note: Some earlier steps have already been completed. Resume from the first step below.
 
 Remaining Steps:
 ${stepsText}
 
-Execute each step in sequence. Mark steps complete using the update_plan MCP tool.${gateNote}`
+Execute each step in sequence. Mark steps complete using the update_plan MCP tool with id "${cur.id}".${gateNote}`
 
   starting.value = true
   try {
-    const updated = await window.agentkeeper.plans.update(project.path, filename.value, { status: 'running' })
+    const updated = await window.agentkeeper.plans.update(project.path, planId.value, { status: 'running' })
     if (updated) plan.value = updated
     const newLocalId = await sessionStore.start({
       projectPath: project.path,
       initialPrompt: prompt,
       workItemId: cur.workItemId || undefined,
     })
-    const withSession = await window.agentkeeper.plans.update(project.path, filename.value, {
+    const withSession = await window.agentkeeper.plans.update(project.path, planId.value, {
       sessionIds: [...(plan.value?.sessionIds ?? []), newLocalId],
     })
     if (withSession) plan.value = withSession
     void router.push(`/sessions/${newLocalId}`)
   } catch (err) {
     console.error('Failed to start new plan session:', err)
-    await window.agentkeeper.plans.update(project.path, filename.value, { status: 'planned' }).catch(() => {})
+    await window.agentkeeper.plans.update(project.path, planId.value, { status: 'planned' }).catch(() => {})
     if (plan.value) plan.value = { ...plan.value, status: 'planned' }
   } finally {
     starting.value = false
@@ -544,25 +538,23 @@ async function replan() {
   replanning.value = true
   generating.value = true
   const cur = plan.value
-  const now = new Date().toISOString()
-  const existingSteps = cur.steps.map(s => `  [${s.id}] ${s.title}`).join('\n')
-  const prompt = `Revise the steps of an existing plan. Do NOT call create_plan — the file already exists and must not be recreated.
+  const existingSteps = cur.steps.map((s, i) => `  [${i + 1}] ${s.title}`).join('\n')
+  const prompt = `Revise the steps of an existing plan. Do NOT call create_plan — the plan already exists.
 
-Plan: ${cur.externalRef} — ${cur.title}
+Plan id: "${cur.id}"
+Plan: ${cur.externalRef ?? cur.id} — ${cur.title}
 Original prompt (must not change): "${cur.prompt ?? ''}"
 Current steps:
 ${existingSteps}
 
-Call update_plan with filename "${cur.filename}" to replace the steps with a better set.
+Call update_plan with id "${cur.id}" to replace the steps with a better set.
 
 The patch must have exactly this structure (no other top-level keys):
 {
   "status": "planned",
-  "updatedAt": "${now}",
   "estimatedMinutes": <sum of all step estimatedMinutes>,
   "steps": [
     {
-      "id": 1,
       "title": "concise actionable step title",
       "summary": "one-line description of what this step does",
       "instructions": "detailed instructions for the agent executing this step",
@@ -834,9 +826,29 @@ Guidelines:
         </div>
 
         <!-- Prompt -->
-        <div v-if="plan.prompt" class="rounded-lg border border-border px-4 py-3">
+        <div v-if="plan.prompt || canEditPrompt" class="rounded-lg border border-border px-4 py-3">
           <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Prompt</p>
-          <p class="text-sm italic text-foreground/80">{{ plan.prompt }}</p>
+          <textarea
+            v-if="editingPrompt"
+            v-model="editingPromptValue"
+            rows="4"
+            autofocus
+            class="w-full text-sm bg-background border border-border rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-ring resize-none"
+            @keydown.enter.exact.prevent="void commitPromptEdit()"
+            @keydown.escape.prevent="editingPrompt = false"
+            @blur="void commitPromptEdit()"
+          />
+          <div
+            v-else-if="canEditPrompt"
+            class="group flex items-start gap-1.5 text-sm italic text-foreground/80 leading-relaxed cursor-text hover:bg-muted/40 px-2 py-1 rounded -mx-2 transition-colors"
+            @click="startPromptEdit()"
+          >
+            <span class="flex-1" :class="plan.prompt ? '' : 'text-muted-foreground/50 not-italic'">
+              {{ plan.prompt ?? 'Add prompt…' }}
+            </span>
+            <Pencil :size="10" class="opacity-0 group-hover:opacity-50 text-muted-foreground shrink-0 mt-0.5 transition-opacity" />
+          </div>
+          <p v-else class="text-sm italic text-foreground/80">{{ plan.prompt }}</p>
         </div>
 
         <!-- Steps -->
@@ -882,7 +894,7 @@ Guidelines:
                     <X         v-else-if="step.status === 'failed'"    :size="13" />
                     <Minus     v-else-if="step.status === 'skipped'"   :size="13" />
                     <RefreshCw v-else-if="step.status === 'replanning'" :size="11" class="animate-spin" />
-                    <span      v-else>{{ step.id }}</span>
+                    <span      v-else>{{ index + 1 }}</span>
                   </div>
                 </div>
                 <!-- Connector line (with gate marker when next step needs approval) -->
