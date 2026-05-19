@@ -216,6 +216,7 @@ const activeGroupCount = computed(() =>
             <span
               class="truncate text-[11px] font-mono transition-colors"
               :class="group.excluded.has(file) ? 'text-muted-foreground/30 line-through' : 'text-foreground/80 group-hover/file:text-foreground'"
+              :title="file"
             >{{ file }}</span>
           </label>
         </div>
