@@ -43,6 +43,27 @@
       "when": 1778230332978,
       "tag": "0005_session_agent_split",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1778230332979,
+      "tag": "0006_cleanup_orphan_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1778230332980,
+      "tag": "0007_plans_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1747699200,
+      "tag": "0008_plan_agency",
+      "breakpoints": true
     }
   ]
 }

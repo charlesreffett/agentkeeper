@@ -522,7 +522,7 @@ export type PlanStepStatus = 'pending' | 'running' | 'complete' | 'failed' | 'sk
 export type PlanAgentType = 'explorer' | 'main' | 'qa' | 'doc' | string
 
 export interface PlanStep {
-  id: number
+  id: string
   title: string
   /** Brief one-liner shown collapsed and in SUMMARY when expanded. */
   summary?: string
@@ -544,28 +544,42 @@ export interface PlanStep {
 }
 
 export interface Plan {
-  filename: string
-  filePath: string
+  id: string
   /** Short identifier shown as PL-01, PL-02 etc. Derived from list position if absent. */
   planRef?: string
   title: string
   /** The original prompt that triggered planning. */
   prompt?: string
-  externalRef: string
-  workItemId: string
+  externalRef?: string
+  workItemId?: string
+  agencyId?: string | null
+  agencyScope?: AgencyScope | null
   status: PlanStatus
   estimatedMinutes: number
   createdAt: string
   updatedAt: string
+  /** Computed from single session_id column. */
   sessionIds: string[]
   steps: PlanStep[]
 }
 
-export type PlansCreateInput = Omit<Plan, 'filename' | 'filePath' | 'createdAt' | 'updatedAt' | 'sessionIds'> & {
+export type PlansCreateInput = Omit<Plan, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'> & {
   sessionIds?: string[]
 }
 
-export type PlansUpdateInput = Partial<Omit<Plan, 'filename' | 'filePath' | 'createdAt'>>
+export interface PlansStepPatch {
+  status?: PlanStepStatus
+  startedAt?: number | null
+  completedAt?: number | null
+  failedAt?: number | null
+  actualMinutes?: number | null
+}
+
+export type PlansUpdateInput = Partial<Omit<Plan, 'id' | 'createdAt'>> & {
+  /** Atomic single-step update — when provided together with stepId, only that row is updated. */
+  stepId?: string
+  stepPatch?: PlansStepPatch
+}
 
 // ─── Session stats ───────────────────────────────────────────────────────────
 
@@ -784,11 +798,11 @@ export interface AgentKeeperApi {
   }
   plans: {
     list: (projectPath: string) => Promise<Plan[]>
-    get: (projectPath: string, filename: string) => Promise<Plan | null>
+    get: (projectPath: string, id: string) => Promise<Plan | null>
     create: (projectPath: string, data: PlansCreateInput) => Promise<Plan>
-    update: (projectPath: string, filename: string, patch: PlansUpdateInput) => Promise<Plan | null>
-    delete: (projectPath: string, filename: string) => Promise<boolean>
-    onUpdated: (cb: (data: { projectPath: string; filename: string }) => void) => () => void
+    update: (projectPath: string, id: string, patch: PlansUpdateInput) => Promise<Plan | null>
+    delete: (projectPath: string, id: string) => Promise<boolean>
+    onUpdated: (cb: (data: { projectPath: string; id: string }) => void) => () => void
   }
   costs: {
     getDailySummary: () => Promise<DayTotal[]>

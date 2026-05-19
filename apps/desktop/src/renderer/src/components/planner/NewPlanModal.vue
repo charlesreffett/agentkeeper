@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
 
 const props = defineProps<{ open: boolean }>()
@@ -12,10 +13,14 @@ const router = useRouter()
 const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 
+const projectPath = computed(() => focusedProject.value?.path ?? '')
+const { agencies } = useAgenciesQuery(projectPath)
+
 const dialog = ref<HTMLDialogElement | null>(null)
 const title = ref('')
 const externalRef = ref('')
 const description = ref('')
+const selectedAgencyId = ref('')
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
 
@@ -26,6 +31,7 @@ watch(
       title.value = ''
       externalRef.value = ''
       description.value = ''
+      selectedAgencyId.value = ''
       submitting.value = false
       submitError.value = null
       await nextTick()
@@ -43,7 +49,10 @@ async function submit() {
   try {
     const ref = externalRef.value.trim() || `TASK-${Date.now().toString(36).toUpperCase().slice(-5)}`
     const planTitle = `${ref}: ${title.value.trim()}`
-    const now = new Date().toISOString()
+
+    const chosenAgency = selectedAgencyId.value
+      ? agencies.value.find(a => a.id === selectedAgencyId.value)
+      : null
 
     const plan = await window.agentkeeper.plans.create(focusedProject.value.path, {
       title: planTitle,
@@ -53,14 +62,16 @@ async function submit() {
       estimatedMinutes: 0,
       steps: [],
       prompt: description.value.trim() || undefined,
+      agencyId: chosenAgency?.id ?? null,
+      agencyScope: chosenAgency?.scope ?? null,
     })
 
     const desc = description.value.trim()
     const prompt = `Analyze this task and create a detailed implementation plan.
 Task: ${ref} — ${title.value.trim()}${desc ? `\nDescription: ${desc}` : ''}
 
-A draft plan has been created at .agentkeeper/plans/${plan.filename}.
-Update it by calling the update_plan MCP tool with filename "${plan.filename}" and the full plan.
+A draft plan has been created with id "${plan.id}".
+Update it by calling the update_plan MCP tool with id "${plan.id}" and the full plan.
 
 The plan must have this structure:
 {
@@ -68,7 +79,6 @@ The plan must have this structure:
   "estimatedMinutes": <sum of all step estimatedMinutes>,
   "steps": [
     {
-      "id": 1,
       "title": "concise actionable step title",
       "summary": "one-line description of what this step does",
       "instructions": "detailed instructions for the agent executing this step",
@@ -87,7 +97,6 @@ Guidelines:
 - agent: explorer | main | qa | doc
 - parallel: true if the step can safely run concurrently with its neighbours
 - Aim for 4–8 focused, concrete steps — no filler
-- createdAt / updatedAt: use "${now}"
 - Keep externalRef "${ref}", title "${planTitle}", workItemId ""`
 
     await sessionStore.start({
@@ -96,7 +105,7 @@ Guidelines:
     })
 
     emit('close')
-    void router.push(`/planner/${plan.filename}`)
+    void router.push(`/planner/${plan.id}`)
   } catch (err) {
     submitError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -170,6 +179,23 @@ Guidelines:
             placeholder="Any additional context, requirements, or constraints Claude should know about…"
             class="w-full bg-background border border-border rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring resize-none"
           />
+        </div>
+
+        <div class="space-y-1.5">
+          <label class="text-xs font-medium text-foreground" for="plan-agency">
+            Agency
+            <span class="text-xs text-muted-foreground font-normal ml-1">(optional — solo session if blank)</span>
+          </label>
+          <select
+            id="plan-agency"
+            v-model="selectedAgencyId"
+            class="w-full bg-background border border-border rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="">No agency (solo)</option>
+            <option v-for="agency in agencies" :key="agency.id" :value="agency.id">
+              {{ agency.name }}
+            </option>
+          </select>
         </div>
 
         <div v-if="submitError" class="text-xs text-destructive">{{ submitError }}</div>

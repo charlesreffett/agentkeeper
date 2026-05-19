@@ -17,6 +17,8 @@ function rowToPlan(
     prompt: row.prompt ?? undefined,
     externalRef: row.planRef ?? undefined,
     workItemId: row.workItemId ?? undefined,
+    agencyId: row.agencyId ?? null,
+    agencyScope: (row.agencyScope as Plan['agencyScope']) ?? null,
     status: row.status as Plan['status'],
     estimatedMinutes: row.estimatedMinutes,
     createdAt: new Date(row.createdAt).toISOString(),
@@ -68,6 +70,8 @@ export async function createPlan(
     status: data.status ?? 'planned',
     planningModel: null,
     estimatedMinutes: data.estimatedMinutes ?? 0,
+    agencyId: data.agencyId ?? null,
+    agencyScope: data.agencyScope ?? null,
     createdAt: now,
     startedAt: null,
     updatedAt: now,
@@ -180,6 +184,8 @@ export async function updatePlan(
   }
   if (patch.prompt !== undefined) planUpdate.prompt = patch.prompt
   if (patch.title !== undefined) planUpdate.title = patch.title
+  if (patch.agencyId !== undefined) planUpdate.agencyId = patch.agencyId ?? null
+  if (patch.agencyScope !== undefined) planUpdate.agencyScope = patch.agencyScope ?? null
 
   await db.update(plansTable).set(planUpdate).where(eq(plansTable.id, id))
 

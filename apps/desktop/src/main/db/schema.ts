@@ -99,3 +99,43 @@ export const drafts = sqliteTable('drafts', {
   attachments: text('attachments').notNull().default('[]'),
   updatedAt: integer('updated_at').notNull(),
 })
+
+export const plans = sqliteTable('plans', {
+  id: text('id').primaryKey(),
+  projectId: text('project_id').notNull().references(() => projects.path, { onDelete: 'cascade' }),
+  sessionId: text('session_id').references(() => sessions.localId, { onDelete: 'set null' }),
+  workItemId: text('work_item_id'),
+  planRef: text('plan_ref'),
+  title: text('title').notNull(),
+  prompt: text('prompt'),
+  status: text('status').notNull().default('planned'),
+  planningModel: text('planning_model'),
+  estimatedMinutes: integer('estimated_minutes').notNull().default(0),
+  agencyId: text('agency_id'),
+  agencyScope: text('agency_scope'),
+  createdAt: integer('created_at').notNull(),
+  startedAt: integer('started_at'),
+  updatedAt: integer('updated_at').notNull(),
+  completedAt: integer('completed_at'),
+})
+
+export const planSteps = sqliteTable('plan_steps', {
+  id: text('id').primaryKey(),
+  planId: text('plan_id').notNull().references(() => plans.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+  title: text('title').notNull(),
+  summary: text('summary'),
+  instructions: text('instructions'),
+  filesInScope: text('files_in_scope').notNull().default('[]'),
+  model: text('model').notNull(),
+  agent: text('agent').notNull(),
+  estimatedMinutes: integer('estimated_minutes').notNull().default(0),
+  actualMinutes: integer('actual_minutes'),
+  status: text('status').notNull().default('pending'),
+  parallel: integer('parallel').notNull().default(0),
+  requiresApproval: integer('requires_approval').notNull().default(0),
+  context: text('context'),
+  startedAt: integer('started_at'),
+  completedAt: integer('completed_at'),
+  failedAt: integer('failed_at'),
+})
