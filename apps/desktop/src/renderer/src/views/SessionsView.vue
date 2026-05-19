@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { CheckSquare, Filter, Layers, Plus, RefreshCw, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import PageHeader from '@/components/PageHeader.vue'
@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import SessionCard, { type SessionCardData } from '@/components/SessionCard.vue'
 import { useSessionStore } from '@/stores/sessions'
+import { usePlansStore } from '@/stores/plans'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { useProjectStore } from '@/stores/project'
@@ -30,6 +31,39 @@ const sessionStore = useSessionStore()
 const { projects, focusedProject } = useProjectsQuery()
 const projectStore = useProjectStore()
 const queryClient = useQueryClient()
+const plansStore = usePlansStore()
+
+watch(
+  () => focusedProject.value?.path,
+  (path) => { if (path) void plansStore.refresh(path) },
+  { immediate: true },
+)
+
+let unsubPlanUpdated: (() => void) | null = null
+onMounted(() => {
+  unsubPlanUpdated = window.agentkeeper.plans.onUpdated(({ projectPath: p }) => {
+    if (focusedProject.value?.path === p) void plansStore.refresh(p)
+  })
+})
+onUnmounted(() => { unsubPlanUpdated?.(); unsubPlanUpdated = null })
+
+const sessionPlanMap = computed((): Map<string, { planRef: string; stepsCompleted: number; stepsTotal: number }> => {
+  const map = new Map<string, { planRef: string; stepsCompleted: number; stepsTotal: number }>()
+  for (const plan of plansStore.plans) {
+    for (const sid of plan.sessionIds) {
+      const stepsCompleted = plan.steps.filter((s) => s.status === 'complete').length
+      const stepsTotal = plan.steps.length
+      if (stepsTotal > 0) {
+        map.set(sid, {
+          planRef: plan.planRef ?? plan.title,
+          stepsCompleted,
+          stepsTotal,
+        })
+      }
+    }
+  }
+  return map
+})
 
 const { persistedSessions, historicalSessions, isLoading: loading, invalidateAll: invalidateSessionsList } = useSessionsListQuery(projects)
 
@@ -88,6 +122,7 @@ const allSessions = computed((): SessionCardData[] => {
       messageCount: null,
       events: s.events,
       planState: s.planState ?? null,
+      linkedPlan: sessionPlanMap.value.get(s.localId) ?? null,
     }
   })
 
@@ -113,6 +148,7 @@ const allSessions = computed((): SessionCardData[] => {
         messageCount: null,
         events: [],
         planState: s.planState ?? null,
+        linkedPlan: sessionPlanMap.value.get(s.localId) ?? null,
       }
     })
 
@@ -138,6 +174,7 @@ const allSessions = computed((): SessionCardData[] => {
         messageCount: s.messageCount,
         events: [],
         planState: null,
+        linkedPlan: null,
       }
     })
 

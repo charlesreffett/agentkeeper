@@ -27,6 +27,8 @@ export interface SessionCardData {
   events: TranscriptEvent[]
   /** Persisted todo list from DB — used when events are empty (not yet loaded). */
   planState: PlanTodo[] | null
+  /** Structured plan linked to this session (Plans system). Takes priority over todo widget. */
+  linkedPlan: { planRef: string; stepsCompleted: number; stepsTotal: number } | null
 }
 
 interface Props {
@@ -120,9 +122,30 @@ function badgeLabel(status: SessionCardData['status']): string {
       <span class="text-muted-foreground">{{ session.projectName }}</span>
     </span>
 
-    <!-- Plan progress — compact strip: label · current step · count + progress bar -->
+    <!-- Structured plan progress (Plans system) — shown when session is linked to a Plan -->
     <div
-      v-if="plan.hasPlan"
+      v-if="session.linkedPlan && session.linkedPlan.stepsTotal > 0"
+      class="rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/30 px-2.5 py-1.5 flex flex-col gap-1"
+    >
+      <div class="flex items-center justify-between gap-2 text-xs">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="text-amber-500 shrink-0 leading-none">✦</span>
+          <span class="font-semibold text-foreground/70 shrink-0">PLAN</span>
+          <span class="text-muted-foreground truncate">{{ session.linkedPlan.planRef }}</span>
+        </div>
+        <span class="text-muted-foreground font-mono shrink-0">{{ session.linkedPlan.stepsCompleted }}/{{ session.linkedPlan.stepsTotal }}</span>
+      </div>
+      <div class="h-0.5 rounded-full bg-amber-200/60 dark:bg-amber-800/30 overflow-hidden">
+        <div
+          class="h-full rounded-full bg-green-500 transition-all duration-300"
+          :style="{ width: `${(session.linkedPlan.stepsCompleted / session.linkedPlan.stepsTotal) * 100}%` }"
+        />
+      </div>
+    </div>
+
+    <!-- Todo plan progress (PlanTodo system) — only shown when no structured Plan is linked -->
+    <div
+      v-else-if="plan.hasPlan && !session.linkedPlan"
       class="rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/30 px-2.5 py-1.5 flex flex-col gap-1"
     >
       <div class="flex items-center justify-between gap-2 text-xs">
