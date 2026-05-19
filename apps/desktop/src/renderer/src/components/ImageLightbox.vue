@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { ChevronLeft, ChevronRight, X } from 'lucide-vue-next'
-import type { Attachment } from '../../../shared/ipc-contract'
 
 const props = defineProps<{
-  images: Attachment[]
+  images: { src: string; label: string }[]
   initialIndex: number
   open: boolean
 }>()
@@ -50,12 +49,12 @@ onUnmounted(() => document.removeEventListener('keydown', onKeyDown))
         </button>
 
         <img
-          :src="`data:${images[currentIndex]?.mimeType};base64,${images[currentIndex]?.content}`"
-          :alt="images[currentIndex]?.name"
+          :src="images[currentIndex]?.src"
+          :alt="images[currentIndex]?.label"
           class="max-h-[85vh] max-w-[90vw] object-contain rounded-md"
         />
 
-        <p class="text-sm text-white/80 max-w-[60ch] truncate">{{ images[currentIndex]?.name }}</p>
+        <p class="text-sm text-white/80 max-w-[60ch] truncate">{{ images[currentIndex]?.label }}</p>
 
         <div v-if="images.length > 1" class="flex items-center gap-3">
           <button

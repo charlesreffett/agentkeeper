@@ -32,6 +32,10 @@ const imageAttachments = computed(() =>
   attachments.value.filter((a) => a.mimeType.startsWith('image/')),
 )
 
+const lightboxImages = computed(() =>
+  imageAttachments.value.map((a) => ({ src: `data:${a.mimeType};base64,${a.content}`, label: a.name })),
+)
+
 function openLightbox(index: number) {
   lightboxIndex.value = index
   lightboxOpen.value = true
@@ -320,7 +324,7 @@ defineExpose({
   </div>
 
   <ImageLightbox
-    :images="imageAttachments"
+    :images="lightboxImages"
     :initial-index="lightboxIndex"
     :open="lightboxOpen"
     @update:open="lightboxOpen = $event"

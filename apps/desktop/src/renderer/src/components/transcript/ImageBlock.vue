@@ -1,9 +1,12 @@
 <script setup lang="ts">
+import { inject } from 'vue'
 import type { ContentBlock } from '@shared/ipc-contract'
 
 const props = defineProps<{
   block: ContentBlock & { type: 'image' }
 }>()
+
+const openTranscriptLightbox = inject<((src: string) => void) | null>('openTranscriptLightbox', null)
 
 const src = (() => {
   const source = props.block.source as Record<string, unknown> | undefined
@@ -22,7 +25,8 @@ const src = (() => {
   <img
     v-if="src"
     :src="src"
-    class="max-w-full max-h-64 rounded border border-border object-contain"
+    class="w-20 h-20 object-cover rounded border border-border cursor-pointer"
     alt="Attached image"
+    @click="openTranscriptLightbox?.(src!)"
   />
 </template>

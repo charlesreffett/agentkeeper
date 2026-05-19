@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import type { TranscriptEvent } from '@shared/ipc-contract'
+import { computed, provide, ref } from 'vue'
+import type { ContentBlock, TranscriptEvent } from '@shared/ipc-contract'
 import TranscriptEventView from './TranscriptEvent.vue'
+import ImageLightbox from '@/components/ImageLightbox.vue'
 import {
   type VerbosityState,
   DEFAULT_VERBOSITY_STATE,
@@ -34,7 +35,6 @@ const renderItems = computed((): RenderItem[] => {
     const hasVisibleBlock = event.content.some((b) => isBlockVisible(b, state.value))
 
     if (!hasVisibleBlock) {
-      // Entire event hidden by block filters — accumulate hidden tool interactions.
       pendingGap += hiddenToolCount(event.content, state.value)
       continue
     }
@@ -46,12 +46,52 @@ const renderItems = computed((): RenderItem[] => {
 
     items.push({ type: 'event', event })
   }
-  // Trailing hidden events don't get a gap pill — nothing to separate them from.
 
   return items
 })
 
 const hasVisibleContent = computed(() => renderItems.value.length > 0)
+
+function imageBlockSrc(block: ContentBlock & { type: 'image' }): string | null {
+  const source = block.source as Record<string, unknown> | undefined
+  if (!source) return null
+  if (source['type'] === 'base64') return `data:${source['media_type']};base64,${source['data']}`
+  if (source['type'] === 'url') return source['url'] as string
+  return null
+}
+
+const transcriptLightboxImages = computed(() => {
+  const images: { src: string; label: string }[] = []
+  for (const event of props.events) {
+    for (const block of event.content) {
+      if (block.type === 'image') {
+        const src = imageBlockSrc(block as ContentBlock & { type: 'image' })
+        if (src) images.push({ src, label: 'Image' })
+      }
+    }
+  }
+  return images
+})
+
+const transcriptSrcToIndex = computed(() => {
+  const map = new Map<string, number>()
+  transcriptLightboxImages.value.forEach((img, i) => {
+    if (!map.has(img.src)) map.set(img.src, i)
+  })
+  return map
+})
+
+const lightboxOpen = ref(false)
+const lightboxIndex = ref(0)
+
+function openTranscriptLightbox(src: string) {
+  const index = transcriptSrcToIndex.value.get(src)
+  if (index === undefined) return
+  lightboxIndex.value = index
+  lightboxOpen.value = true
+}
+
+provide('openTranscriptLightbox', openTranscriptLightbox)
 </script>
 
 <template>
@@ -96,4 +136,11 @@ const hasVisibleContent = computed(() => renderItems.value.length > 0)
       />
     </template>
   </div>
+
+  <ImageLightbox
+    :images="transcriptLightboxImages"
+    :initial-index="lightboxIndex"
+    :open="lightboxOpen"
+    @update:open="lightboxOpen = $event"
+  />
 </template>
