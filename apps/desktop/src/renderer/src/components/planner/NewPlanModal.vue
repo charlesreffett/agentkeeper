@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
-import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
 
 const props = defineProps<{ open: boolean }>()
@@ -13,14 +12,10 @@ const router = useRouter()
 const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 
-const projectPath = computed(() => focusedProject.value?.path ?? '')
-const { agencies } = useAgenciesQuery(projectPath)
-
 const dialog = ref<HTMLDialogElement | null>(null)
 const title = ref('')
 const externalRef = ref('')
 const description = ref('')
-const selectedAgencyId = ref('')
 const submitting = ref(false)
 const submitError = ref<string | null>(null)
 
@@ -31,7 +26,6 @@ watch(
       title.value = ''
       externalRef.value = ''
       description.value = ''
-      selectedAgencyId.value = ''
       submitting.value = false
       submitError.value = null
       await nextTick()
@@ -50,10 +44,6 @@ async function submit() {
     const ref = externalRef.value.trim() || `TASK-${Date.now().toString(36).toUpperCase().slice(-5)}`
     const planTitle = `${ref}: ${title.value.trim()}`
 
-    const chosenAgency = selectedAgencyId.value
-      ? agencies.value.find(a => a.id === selectedAgencyId.value)
-      : null
-
     const plan = await window.agentkeeper.plans.create(focusedProject.value.path, {
       title: planTitle,
       externalRef: ref,
@@ -62,8 +52,6 @@ async function submit() {
       estimatedMinutes: 0,
       steps: [],
       prompt: description.value.trim() || undefined,
-      agencyId: chosenAgency?.id ?? null,
-      agencyScope: chosenAgency?.scope ?? null,
     })
 
     const desc = description.value.trim()
@@ -179,23 +167,6 @@ Guidelines:
             placeholder="Any additional context, requirements, or constraints Claude should know about…"
             class="w-full bg-background border border-border rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring resize-none"
           />
-        </div>
-
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-foreground" for="plan-agency">
-            Agency
-            <span class="text-xs text-muted-foreground font-normal ml-1">(optional — solo session if blank)</span>
-          </label>
-          <select
-            id="plan-agency"
-            v-model="selectedAgencyId"
-            class="w-full bg-background border border-border rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-          >
-            <option value="">No agency (solo)</option>
-            <option v-for="agency in agencies" :key="agency.id" :value="agency.id">
-              {{ agency.name }}
-            </option>
-          </select>
         </div>
 
         <div v-if="submitError" class="text-xs text-destructive">{{ submitError }}</div>

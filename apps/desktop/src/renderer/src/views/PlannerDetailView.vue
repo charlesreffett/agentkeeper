@@ -74,27 +74,9 @@ const canEditPrompt = computed(() =>
   plan.value?.status !== 'running' && plan.value?.status !== 'complete',
 )
 
-// Agency inline editing
-const editingAgency = ref(false)
-const editingAgencyValue = ref('')
-
-const planAgencyName = computed(() => {
-  const id = plan.value?.agencyId
-  if (!id) return null
-  return agencies.value.find(a => a.id === id)?.name ?? id
-})
-
-async function commitAgencyEdit(newAgencyId: string) {
-  editingAgency.value = false
-  if (!focusedProject.value || !plan.value) return
-  const agency = agencies.value.find(a => a.id === newAgencyId) ?? null
-  const updated = await window.agentkeeper.plans.update(
-    focusedProject.value.path,
-    planId.value,
-    { agencyId: agency?.id ?? null, agencyScope: agency?.scope ?? null },
-  )
-  if (updated) plan.value = updated
-}
+// Start-plan modal state
+const showStartModal = ref(false)
+const startModalAgencyId = ref('')
 
 
 async function loadLastSession() {
@@ -461,7 +443,27 @@ function buildStepsText(steps: PlanStep[]): { text: string; hasGates: boolean } 
 
 // ── Actions ──────────────────────────────────────────────────────────────────
 
-async function startAllSteps() {
+function openStartModal() {
+  startModalAgencyId.value = plan.value?.agencyId ?? ''
+  showStartModal.value = true
+}
+
+async function confirmStart() {
+  if (!plan.value || !focusedProject.value) return
+  showStartModal.value = false
+  const chosenAgency = startModalAgencyId.value
+    ? agencies.value.find(a => a.id === startModalAgencyId.value) ?? null
+    : null
+  // Persist the last-used agency choice
+  const saved = await window.agentkeeper.plans.update(focusedProject.value.path, planId.value, {
+    agencyId: chosenAgency?.id ?? null,
+    agencyScope: chosenAgency?.scope ?? null,
+  })
+  if (saved) plan.value = saved
+  await startAllSteps(chosenAgency?.id ?? null, chosenAgency?.scope ?? null)
+}
+
+async function startAllSteps(agencyId: string | null, agencyScope: AgencyScope | null) {
   if (!plan.value || !focusedProject.value) return
   const project = focusedProject.value
   const cur = plan.value
@@ -482,11 +484,11 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
     const updated = await window.agentkeeper.plans.update(project.path, planId.value, { status: 'running' })
     if (updated) plan.value = updated
 
-    if (cur.agencyId && cur.agencyScope) {
+    if (agencyId && agencyScope) {
       const instance = await window.agentkeeper.agencies.start({
         projectPath: project.path,
-        agencyId: cur.agencyId,
-        agencyScope: cur.agencyScope as AgencyScope,
+        agencyId,
+        agencyScope,
         initialPrompt: prompt,
         useWorktree: false,
         workItemKey: cur.externalRef ?? null,
@@ -752,7 +754,7 @@ Guidelines:
               v-if="plan.status === 'planned'"
               class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
               :disabled="starting"
-              @click="startAllSteps"
+              @click="openStartModal"
             >
               <Loader2 v-if="starting" :size="14" class="animate-spin" />
               <Play v-else :size="14" />
@@ -803,7 +805,7 @@ Guidelines:
       <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-6 flex flex-col gap-4">
         <!-- Stats card -->
         <div class="rounded-lg border border-border">
-          <div class="grid grid-cols-7 divide-x divide-border">
+          <div class="grid grid-cols-6 divide-x divide-border">
             <!-- STATUS -->
             <div class="px-4 py-3 rounded-l-lg">
               <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Status</p>
@@ -848,39 +850,6 @@ Guidelines:
                 {{ plan.externalRef || plan.workItemId }}
               </router-link>
               <span v-else class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground">—</span>
-            </div>
-
-            <!-- AGENCY -->
-            <div class="px-4 py-3">
-              <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Agency</p>
-              <template v-if="editingAgency">
-                <select
-                  class="w-full bg-background border border-border rounded px-1.5 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
-                  :value="plan.agencyId ?? ''"
-                  autofocus
-                  @change="(e) => { void commitAgencyEdit((e.target as HTMLSelectElement).value) }"
-                  @blur="editingAgency = false"
-                >
-                  <option value="">Solo</option>
-                  <option v-for="agency in agencies" :key="agency.id" :value="agency.id">
-                    {{ agency.name }}
-                  </option>
-                </select>
-              </template>
-              <div
-                v-else
-                class="group flex items-center gap-1 cursor-pointer"
-                :class="plan.status !== 'running' && plan.status !== 'complete' ? 'hover:opacity-70' : ''"
-                @click="plan.status !== 'running' && plan.status !== 'complete' ? (editingAgency = true) : undefined"
-              >
-                <span v-if="planAgencyName" class="text-xs font-medium truncate max-w-[100px]">{{ planAgencyName }}</span>
-                <span v-else class="text-xs text-muted-foreground">Solo</span>
-                <Pencil
-                  v-if="plan.status !== 'running' && plan.status !== 'complete'"
-                  :size="9"
-                  class="opacity-0 group-hover:opacity-50 text-muted-foreground shrink-0 transition-opacity"
-                />
-              </div>
             </div>
 
             <!-- ESTIMATED -->
@@ -1293,6 +1262,45 @@ Guidelines:
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+      <!-- Start plan modal -->
+      <div
+        v-if="showStartModal"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+        @click.self="showStartModal = false"
+      >
+        <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm mx-4 p-5 flex flex-col gap-4">
+          <h2 class="text-sm font-semibold">Start plan</h2>
+
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium text-foreground" for="start-agency">Run with</label>
+            <select
+              id="start-agency"
+              v-model="startModalAgencyId"
+              class="w-full bg-background border border-border rounded px-3 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">Solo (no agency)</option>
+              <option v-for="agency in agencies" :key="agency.id" :value="agency.id">
+                {{ agency.name }}
+              </option>
+            </select>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-1">
+            <button
+              class="px-3 py-1.5 text-sm rounded-md border border-border hover:bg-muted/60 transition-colors"
+              @click="showStartModal = false"
+            >
+              Cancel
+            </button>
+            <button
+              class="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+              @click="void confirmStart()"
+            >
+              Start
+            </button>
           </div>
         </div>
       </div>
