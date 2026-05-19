@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { toast } from 'vue-sonner'
 import type { CommitGroup, CommitSuggestion } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -92,6 +93,8 @@ async function commitAll() {
 
   committingIndex.value = -1
   phase.value = 'done'
+  const n = groups.value.filter(g => g.committed).length
+  toast.success(`${n} commit${n === 1 ? '' : 's'} created`)
   emit('committed')
 }
 
@@ -275,10 +278,6 @@ const activeGroupCount = computed(() =>
 
     <!-- Done -->
     <div v-else-if="phase === 'done'" class="py-2 space-y-2">
-      <div class="rounded-md bg-green-500/10 border border-green-500/20 px-3 py-2 text-xs text-green-400">
-        {{ groups.filter(g => g.committed).length }} commit{{ groups.filter(g => g.committed).length === 1 ? '' : 's' }} created ✓
-      </div>
-
       <!-- Push row -->
       <div v-if="!pushOutput" class="flex items-center justify-between gap-2">
         <button
