@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import type { CommitGroup, CommitSuggestion } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const props = defineProps<{ projectPath: string }>()
 const emit = defineEmits<{ committed: [] }>()
@@ -213,11 +214,17 @@ const activeGroupCount = computed(() =>
               class="size-3 rounded shrink-0 accent-primary cursor-pointer"
               @change="toggleFile(idx, file)"
             />
-            <span
-              class="truncate text-[11px] font-mono transition-colors"
-              :class="group.excluded.has(file) ? 'text-muted-foreground/30 line-through' : 'text-foreground/80 group-hover/file:text-foreground'"
-              :title="file"
-            >{{ file }}</span>
+            <Tooltip>
+              <TooltipTrigger as-child>
+                <span
+                  class="truncate text-[11px] font-mono transition-colors"
+                  :class="group.excluded.has(file) ? 'text-muted-foreground/30 line-through' : 'text-foreground/80 group-hover/file:text-foreground'"
+                >{{ file }}</span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="start">
+                <p class="font-mono text-xs">{{ file }}</p>
+              </TooltipContent>
+            </Tooltip>
           </label>
         </div>
       </div>
