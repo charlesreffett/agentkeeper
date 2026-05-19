@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { access } from 'node:fs/promises'
-import { join } from 'node:path'
 import { BrowserWindow } from 'electron'
 import Anthropic from '@anthropic-ai/sdk'
 import { createSdkMcpServer, query, tool, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
@@ -12,7 +10,6 @@ import type {
   RoleSlot,
   StartAgencyParams,
 } from '../shared/ipc-contract'
-import { IPC_CHANNELS } from '../shared/ipc-contract'
 import { listAgencies } from './agencies'
 import { listRoles } from './roles'
 import { createWorktree } from './worktrees'
@@ -27,7 +24,7 @@ import {
 import * as registry from './session-registry'
 import type { Agent, HandoffRecord } from './session-registry'
 import { resolveClaudeAuth } from './secrets'
-import { createPlan, updatePlan } from './plans'
+import { createPlan, updatePlan, getPlanByRef } from './plans'
 
 interface AgencyRoleRestartParams {
   systemPromptAppend: string
@@ -637,7 +634,7 @@ function buildContextPreamble(opts: {
 
 const planStepSchema = z.array(
   z.object({
-    id: z.number(),
+    id: z.string().optional(),
     title: z.string(),
     summary: z.string().optional(),
     instructions: z.string().optional(),
@@ -655,31 +652,23 @@ function buildPlanTools(projectPath: string): SdkMcpToolDefinition<any>[] {
   return [
     tool(
       'create_plan',
-      'Create a structured implementation plan in .agentkeeper/plans/. Use this instead of the Write tool whenever creating a plan.',
+      'Create a structured implementation plan stored in SQLite. Returns an id (UUID) that must be used with update_plan. Do NOT call this if a plan already exists for this task — use update_plan instead.',
       {
         title: z.string(),
-        externalRef: z.string().describe('Ticket or feature ID, e.g. "EJP-45" or "auth-revamp". Used as the filename base.'),
+        externalRef: z.string().describe('Ticket or feature ID, e.g. "EJP-45" or "auth-revamp".'),
         workItemId: z.string().optional(),
         prompt: z.string().optional().describe('Original task description or user request'),
         estimatedMinutes: z.number().describe('Sum of all step estimatedMinutes'),
         steps: planStepSchema,
       },
       async ({ title, externalRef, workItemId, prompt, estimatedMinutes, steps }) => {
-        const planFilename = `${externalRef.replace(/[^a-zA-Z0-9-]/g, '-')}-plan.json`
-        const planPath = join(projectPath, '.agentkeeper', 'plans', planFilename)
-        try {
-          await access(planPath)
-          return { content: [{ type: 'text', text: `Error: plan file "${planFilename}" already exists. Use update_plan to modify it.` }] }
-        } catch {
-          // file does not exist — safe to create
-        }
         const plan = await createPlan(projectPath, {
           title,
           externalRef,
           workItemId: workItemId ?? '',
           prompt,
           estimatedMinutes,
-          steps: steps.map((s) => ({ ...s, status: s.status ?? 'pending' })),
+          steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' })),
           status: 'planned',
         })
         return { content: [{ type: 'text', text: JSON.stringify(plan) }] }
@@ -687,26 +676,47 @@ function buildPlanTools(projectPath: string): SdkMcpToolDefinition<any>[] {
     ),
     tool(
       'update_plan',
-      'Update an existing plan\'s status, steps, or session associations.',
+      'Update an existing plan\'s status, steps, or session associations. Use id (UUID) returned by create_plan. The deprecated filename param is accepted as a fallback for legacy prompts.',
       {
-        filename: z.string().describe('Plan filename, e.g. "EJP-45-plan.json"'),
+        id: z.string().optional().describe('Plan UUID returned by create_plan. Preferred over filename.'),
+        filename: z.string().optional().describe('[Deprecated] Plan filename, e.g. "EJP-45-plan.json". Used only when id is absent.'),
         status: z.enum(['planned', 'drafting', 'running', 'complete']).optional(),
         estimatedMinutes: z.number().optional(),
         steps: planStepSchema.optional(),
         sessionIds: z.array(z.string()).optional(),
+        stepId: z.string().optional().describe('UUID of a single step to update atomically. Provide together with stepPatch.'),
+        stepPatch: z.object({
+          status: z.enum(['pending', 'running', 'complete', 'failed', 'skipped', 'replanning']).optional(),
+          startedAt: z.number().nullable().optional(),
+          completedAt: z.number().nullable().optional(),
+          failedAt: z.number().nullable().optional(),
+          actualMinutes: z.number().nullable().optional(),
+        }).optional().describe('Fields to update on a single step when stepId is provided.'),
       },
-      async ({ filename, steps, ...rest }) => {
+      async ({ id: planId, filename, steps, stepId, stepPatch, ...rest }) => {
+        let resolvedId = planId
+
+        if (!resolvedId && filename) {
+          const planRef = filename.replace(/-plan\.json$/, '')
+          const found = await getPlanByRef(projectPath, planRef)
+          resolvedId = found?.id
+        }
+
+        if (!resolvedId) {
+          const label = planId ?? filename ?? '(none)'
+          return { content: [{ type: 'text', text: `Error: plan "${label}" not found.` }] }
+        }
+
         const patch = {
           ...rest,
           ...(steps !== undefined
-            ? { steps: steps.map((s) => ({ ...s, status: s.status ?? 'pending' as const })) }
+            ? { steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' as const })) }
             : {}),
+          ...(stepId !== undefined ? { stepId } : {}),
+          ...(stepPatch !== undefined ? { stepPatch } : {}),
         }
-        const updated = await updatePlan(projectPath, filename, patch)
-        if (!updated) return { content: [{ type: 'text', text: `Error: plan file "${filename}" not found.` }] }
-        BrowserWindow.getAllWindows().forEach((win) =>
-          win.webContents.send(IPC_CHANNELS.planUpdated, { projectPath, filename }),
-        )
+        const updated = await updatePlan(projectPath, resolvedId, patch)
+        if (!updated) return { content: [{ type: 'text', text: `Error: plan "${resolvedId}" not found.` }] }
         return { content: [{ type: 'text', text: JSON.stringify(updated) }] }
       },
     ),
