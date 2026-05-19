@@ -24,7 +24,7 @@ const loading = computed(() => plansStore.loading)
 watch(
   () => focusedProject.value?.path,
   (path) => {
-    if (path) void plansStore.load(path)
+    if (path) void plansStore.refresh(path)
     else plansStore.invalidate()
   },
   { immediate: true },
@@ -32,48 +32,19 @@ watch(
 
 // ── Live-refresh ─────────────────────────────────────────────────────────────
 
-const generating = ref(false)
-let pollInterval: ReturnType<typeof setInterval> | null = null
-let unsubEvent: (() => void) | null = null
-
-function tryDetectPlanWrite(raw: unknown): void {
-  if (!raw || typeof raw !== 'object') return
-  const msg = raw as Record<string, unknown>
-  if (msg['type'] !== 'assistant') return
-  const inner = msg['message'] as Record<string, unknown> | undefined
-  if (!inner) return
-  const content = inner['content']
-  if (!Array.isArray(content)) return
-  for (const block of content) {
-    const b = block as Record<string, unknown>
-    if (b['type'] !== 'tool_use' || b['name'] !== 'Write') continue
-    const input = b['input'] as Record<string, unknown> | undefined
-    if (!input) continue
-    const writePath = input['path'] as string | undefined
-    if (!writePath?.includes('.agentkeeper/plans/')) continue
-    generating.value = true
-    if (focusedProject.value) void plansStore.refresh(focusedProject.value.path)
-    break
-  }
-}
+let unsubPlanUpdated: (() => void) | null = null
 
 onMounted(() => {
-  unsubEvent = window.agentkeeper.sessions.onEvent((event) => {
-    tryDetectPlanWrite(event.message)
+  unsubPlanUpdated = window.agentkeeper.plans.onUpdated(({ projectPath: p }) => {
+    if (focusedProject.value?.path === p) {
+      void plansStore.refresh(p)
+    }
   })
-  pollInterval = setInterval(() => {
-    if (focusedProject.value) void plansStore.refresh(focusedProject.value.path)
-  }, 5000)
 })
 
 onUnmounted(() => {
-  if (pollInterval !== null) { clearInterval(pollInterval); pollInterval = null }
-  unsubEvent?.()
-  unsubEvent = null
-})
-
-watch(plans, (next, prev) => {
-  if (next.length > (prev?.length ?? 0)) generating.value = false
+  unsubPlanUpdated?.()
+  unsubPlanUpdated = null
 })
 
 // ── Derived counts ──────────────────────────────────────────────────────────
@@ -143,7 +114,7 @@ function progressBarClass(status: PlanStatus): string {
 
 
 function goToDetail(plan: Plan) {
-  void router.push(`/planner/${plan.filename}`)
+  void router.push(`/planner/${plan.id}`)
 }
 
 // ── Row context menu ─────────────────────────────────────────────────────────
@@ -165,13 +136,13 @@ async function pausePlan(plan: Plan) {
 
 async function archivePlan(plan: Plan) {
   if (!focusedProject.value) return
-  await window.agentkeeper.plans.update(focusedProject.value.path, plan.filename, { status: 'archived' })
+  await window.agentkeeper.plans.update(focusedProject.value.path, plan.id, { status: 'archived' })
   void plansStore.refresh(focusedProject.value.path)
 }
 
 async function removePlan(plan: Plan) {
   if (!focusedProject.value) return
-  await window.agentkeeper.plans.delete(focusedProject.value.path, plan.filename)
+  await window.agentkeeper.plans.delete(focusedProject.value.path, plan.id)
   void plansStore.refresh(focusedProject.value.path)
 }
 </script>
@@ -246,15 +217,6 @@ async function removePlan(plan: Plan) {
           </div>
         </div>
 
-        <!-- In-progress banner -->
-        <div
-          v-if="generating"
-          class="mb-3 flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-500/10 border border-amber-200/60 dark:border-amber-500/20 rounded-lg px-4 py-2.5"
-        >
-          <Loader2 class="size-3.5 animate-spin shrink-0" />
-          A session is writing a plan — refreshing automatically…
-        </div>
-
         <!-- Empty state -->
         <div
           v-if="plans.length === 0"
@@ -277,7 +239,7 @@ async function removePlan(plan: Plan) {
           <!-- Rows -->
           <div
             v-for="(plan, index) in plans"
-            :key="plan.filename"
+            :key="plan.id"
             class="grid grid-cols-[2fr_120px_180px_120px_32px] gap-4 items-center px-4 py-3 border-b border-border last:border-b-0 cursor-pointer hover:bg-muted/40 transition-colors"
             :class="rowClass(plan.status)"
             @click="goToDetail(plan)"

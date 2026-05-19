@@ -41,6 +41,7 @@ const sessionStore = useSessionStore()
 
 const planId = computed(() => route.params.id as string)
 const plan = ref<Plan | null>(null)
+const planProjectPath = ref<string | null>(null)
 const loading = ref(false)
 const generating = ref(false)
 const replanning = ref(false)
@@ -91,6 +92,7 @@ async function loadLastSession() {
 async function loadPlan() {
   const project = focusedProject.value
   if (!project) return
+  planProjectPath.value = project.path
   loading.value = true
   try {
     const result = await window.agentkeeper.plans.get(project.path, planId.value)
@@ -133,8 +135,7 @@ let unsubPlanUpdated: (() => void) | null = null
 
 onMounted(() => {
   unsubPlanUpdated = window.agentkeeper.plans.onUpdated(async ({ projectPath: p, id: updatedId }) => {
-    const project = focusedProject.value
-    if (!project || p !== project.path || updatedId !== planId.value) return
+    if (!planProjectPath.value || p !== planProjectPath.value || updatedId !== planId.value) return
     const fresh = await window.agentkeeper.plans.get(p, updatedId)
     if (fresh) {
       plan.value = fresh
