@@ -4,6 +4,7 @@ import { OctagonX, Plus, SquareSlash, SendHorizontal } from 'lucide-vue-next'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'
+import ImageLightbox from '@/components/ImageLightbox.vue'
 import type { Attachment } from '../../../shared/ipc-contract'
 
 const props = defineProps<{
@@ -24,6 +25,17 @@ const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; stop
 const text = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const attachments = ref<Attachment[]>([])
+const lightboxOpen = ref(false)
+const lightboxIndex = ref(0)
+
+const imageAttachments = computed(() =>
+  attachments.value.filter((a) => a.mimeType.startsWith('image/')),
+)
+
+function openLightbox(index: number) {
+  lightboxIndex.value = index
+  lightboxOpen.value = true
+}
 
 const { projects, focusedProject } = useProjectsQuery()
 const resolvedProjectPath = computed(
@@ -214,19 +226,37 @@ defineExpose({
         <div
           class="rounded-lg border border-border bg-background focus-within:border-ring transition"
         >
-          <div v-if="attachments.length > 0" class="flex flex-wrap gap-1 px-3 pt-2">
-            <span
-              v-for="(a, i) in attachments"
-              :key="i"
-              class="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
-            >
-              {{ a.name }}
-              <button
-                type="button"
-                class="text-muted-foreground hover:text-foreground"
-                @click="removeAttachment(i)"
-              >×</button>
-            </span>
+          <div v-if="attachments.length > 0" class="flex flex-wrap gap-1.5 px-3 pt-2">
+            <template v-for="(a, i) in attachments" :key="i">
+              <div
+                v-if="a.mimeType.startsWith('image/')"
+                class="relative group cursor-pointer rounded-md overflow-hidden w-16 h-16 shrink-0"
+                :title="a.name"
+                @click="openLightbox(imageAttachments.indexOf(a))"
+              >
+                <img
+                  :src="`data:${a.mimeType};base64,${a.content}`"
+                  :alt="a.name"
+                  class="w-full h-full object-cover"
+                />
+                <button
+                  type="button"
+                  class="absolute top-0.5 right-0.5 hidden group-hover:flex items-center justify-center w-5 h-5 rounded-full bg-black/60 text-white hover:bg-black/80 text-xs leading-none"
+                  @click.stop="removeAttachment(i)"
+                >×</button>
+              </div>
+              <span
+                v-else
+                class="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs"
+              >
+                {{ a.name }}
+                <button
+                  type="button"
+                  class="text-muted-foreground hover:text-foreground"
+                  @click="removeAttachment(i)"
+                >×</button>
+              </span>
+            </template>
           </div>
           <textarea
             ref="textarea"
@@ -288,4 +318,11 @@ defineExpose({
       </div>
     </div>
   </div>
+
+  <ImageLightbox
+    :images="imageAttachments"
+    :initial-index="lightboxIndex"
+    :open="lightboxOpen"
+    @update:open="lightboxOpen = $event"
+  />
 </template>
