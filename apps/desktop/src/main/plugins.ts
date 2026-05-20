@@ -214,6 +214,7 @@ function buildPluginContext<TSettings>(
     ui: noopUI,
     commands: noopCommands,
     background: buildBackgroundWork(),
+    fetch: globalThis.fetch.bind(globalThis),
   }
 }
 
@@ -272,6 +273,7 @@ async function activatePlugin<TSettings>(
     ui: noopUI,
     commands: noopCommands,
     background: buildBackgroundWork(),
+    fetch: globalThis.fetch.bind(globalThis),
   }
 
   await plugin.activate(ctx)

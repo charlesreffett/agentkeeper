@@ -1,4 +1,3 @@
-import type { z } from 'zod'
 
 // ────────────────────────────────────────────────────────────────────────────
 // Domain primitives
@@ -83,12 +82,11 @@ export interface Job {
 // ────────────────────────────────────────────────────────────────────────────
 
 export interface Plugin<TSettings = unknown> {
-  id: string
-  name?: string
-  version?: string
-  settings?: z.ZodType<TSettings, z.ZodTypeDef, unknown>
   activate(ctx: PluginContext<TSettings>): void | Promise<void>
   deactivate?(): void | Promise<void>
+  onInstall?(ctx: PluginContext<TSettings>): Promise<void>
+  onUpdate?(ctx: PluginContext<TSettings>, previousVersion: string): Promise<void>
+  onUninstall?(ctx: PluginContext<TSettings>): Promise<void>
 }
 
 export interface PluginContext<TSettings = unknown> {
@@ -101,6 +99,7 @@ export interface PluginContext<TSettings = unknown> {
   ui: UIContributions
   commands: CommandRegistry
   background: BackgroundWork
+  fetch(url: string | URL, init?: RequestInit): Promise<Response>
 }
 
 export interface Logger {
@@ -135,6 +134,11 @@ export type EventMap = {
   'plugin.unhealthy': { pluginId: string; reason: string }
   'plugin.healthy': { pluginId: string }
   'settings.changed': { pluginId: string; config: unknown }
+  'plugin.installed': { pluginId: string; version: string }
+  'plugin.updated': { pluginId: string; previousVersion: string; version: string }
+  'plugin.uninstalled': { pluginId: string }
+  'plugin.activated': { pluginId: string }
+  'plugin.deactivated': { pluginId: string }
 }
 
 export type EventHandler<K extends keyof EventMap> = (
@@ -214,3 +218,6 @@ export interface BackgroundWork {
 export function definePlugin<TSettings>(plugin: Plugin<TSettings>): Plugin<TSettings> {
   return plugin
 }
+
+export * from './manifest.js'
+export * from './protocol.js'

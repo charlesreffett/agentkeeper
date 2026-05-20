@@ -26,11 +26,6 @@ async function startGitHub(ctx: PluginContext<GitHubSettings>): Promise<void> {
 }
 
 export const githubPlugin: Plugin<GitHubSettings> = {
-  id: 'github',
-  name: 'GitHub',
-  version: '0.1.0',
-  settings: GitHubSettingsSchema,
-
   async activate(ctx: PluginContext<GitHubSettings>) {
     pluginCtx = ctx
     ctx.ui.contribute('sidebar.primary', {
