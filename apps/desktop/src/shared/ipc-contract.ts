@@ -605,6 +605,10 @@ export interface DayTotal {
   date: string     // YYYY-MM-DD
   costUsd: number
   tokens: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
 }
 
 export interface ModelPricing {

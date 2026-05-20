@@ -22,6 +22,10 @@ export interface DayTotal {
   date: string
   costUsd: number
   tokens: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
 }
 
 // Kept to avoid changing index.ts call sites.
@@ -104,8 +108,12 @@ export function getDailySummary(): DayTotal[] {
   const rows = getDb().select().from(costEntries).all()
   const days: Record<string, DayTotal> = {}
   for (const entry of rows) {
-    if (!days[entry.date]) days[entry.date] = { date: entry.date, costUsd: 0, tokens: 0 }
+    if (!days[entry.date]) days[entry.date] = { date: entry.date, costUsd: 0, tokens: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
     days[entry.date]!.costUsd += entry.costUsd
+    days[entry.date]!.inputTokens += entry.inputTokens
+    days[entry.date]!.outputTokens += entry.outputTokens
+    days[entry.date]!.cacheReadTokens += entry.cacheReadTokens
+    days[entry.date]!.cacheCreationTokens += entry.cacheCreationTokens
     days[entry.date]!.tokens += entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens
   }
   return Object.values(days).sort((a, b) => a.date.localeCompare(b.date))
