@@ -25,7 +25,7 @@ async function startGitHub(ctx: PluginContext<GitHubSettings>): Promise<void> {
   ctx.logger.info(`github plugin active (repo: ${ctx.config.repo})`)
 }
 
-export const githubPlugin: Plugin<GitHubSettings> = {
+const githubPlugin: Plugin<GitHubSettings> = {
   async activate(ctx: PluginContext<GitHubSettings>) {
     pluginCtx = ctx
     ctx.ui.contribute('sidebar.primary', {
@@ -70,3 +70,5 @@ export const githubPlugin: Plugin<GitHubSettings> = {
     pluginCtx = null
   },
 }
+
+export default githubPlugin

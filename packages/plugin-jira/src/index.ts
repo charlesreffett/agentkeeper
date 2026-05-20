@@ -34,7 +34,7 @@ async function startJira(ctx: PluginContext<JiraSettings>): Promise<void> {
   ctx.logger.info('jira plugin active')
 }
 
-export const jiraPlugin: Plugin<JiraSettings> = {
+const jiraPlugin: Plugin<JiraSettings> = {
   async activate(ctx: PluginContext<JiraSettings>) {
     pluginCtx = ctx
     ctx.ui.contribute('sidebar.primary', {
@@ -79,3 +79,5 @@ export const jiraPlugin: Plugin<JiraSettings> = {
     pluginCtx = null
   },
 }
+
+export default jiraPlugin
