@@ -5,12 +5,18 @@ import * as os from 'node:os'
 import * as fs from 'node:fs'
 
 function getSocketPath(): string {
+  // Allow override for custom installs or testing
+  if (process.env['AGENTKEEPER_SOCKET']) return process.env['AGENTKEEPER_SOCKET']
   const platform = process.platform
   if (platform === 'win32') {
     const appData = process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming')
     return path.join(appData, 'desktop', 'agentkeeper-cli.sock')
   }
-  // macOS
+  if (platform === 'linux') {
+    const configHome = process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config')
+    return path.join(configHome, 'desktop', 'agentkeeper-cli.sock')
+  }
+  // macOS default
   return path.join(os.homedir(), 'Library', 'Application Support', 'desktop', 'agentkeeper-cli.sock')
 }
 
