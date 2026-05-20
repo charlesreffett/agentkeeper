@@ -95,6 +95,32 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+// macOS: .akp files opened via Finder before the window is ready
+let pendingAkpPath: string | null = null
+app.on('open-file', (_event, filePath) => {
+  if (!filePath.endsWith('.akp')) return
+  app.whenReady().then(() => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      win.webContents.send('plugin:open-file', filePath)
+    } else {
+      pendingAkpPath = filePath
+    }
+  })
+})
+
+// Windows/Linux: .akp passed as argv in second-instance
+app.on('second-instance', (_event, argv) => {
+  const akp = argv.find((a) => a.endsWith('.akp'))
+  if (!akp) return
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+    win.webContents.send('plugin:open-file', akp)
+  }
+})
+
 app.on('before-quit', () => {
   stopAllWatchers()
   flushCostLedger()
@@ -119,6 +145,15 @@ app.whenReady().then(async () => {
   })
   wirePluginEventRelay(win)
   await startCliSocket()
+
+  // Flush any .akp path queued before the window existed (macOS open-file)
+  if (pendingAkpPath) {
+    const queued = pendingAkpPath
+    pendingAkpPath = null
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('plugin:open-file', queued)
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

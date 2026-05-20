@@ -296,6 +296,8 @@ const api: AgentKeeperApi = {
       ipcRenderer.on(IPC_CHANNELS.pluginEvent, listener)
       return () => ipcRenderer.off(IPC_CHANNELS.pluginEvent, listener)
     },
+    onOpenFile: (handler: (filePath: string) => void): () => void =>
+      onChannel<string>('plugin:open-file', handler),
     list: () => invoke(IPC_CHANNELS.pluginsList) as Promise<PluginRecord[]>,
     install: (akpPath?: string) =>
       invoke(IPC_CHANNELS.pluginsInstall, akpPath) as Promise<void>,

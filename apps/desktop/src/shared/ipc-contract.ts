@@ -777,6 +777,8 @@ export interface AgentKeeperApi {
     getConfig: (pluginId: string) => Promise<unknown>
     setConfig: (pluginId: string, config: unknown) => Promise<void>
     onEvent: (handler: (event: string, payload: unknown) => void) => () => void
+    /** Fires when the OS asks the app to open a .akp file (macOS open-file / Win second-instance). */
+    onOpenFile: (handler: (filePath: string) => void) => () => void
     list: () => Promise<PluginRecord[]>
     install: (akpPath?: string) => Promise<void>
     loadDev: (dirPath?: string) => Promise<void>

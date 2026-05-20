@@ -14,6 +14,7 @@ import {
   Terminal,
   Settings2,
   Map,
+  Puzzle,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import IconSessions from '@/components/icons/IconSessions.vue'
@@ -50,6 +51,7 @@ const iconMap: Record<string, Component> = {
   Terminal,
   Settings2,
   Map,
+  Puzzle,
 }
 
 const coreItems = [
@@ -63,6 +65,7 @@ const workspaceItems = [
   { id: 'roles', label: 'Roles', icon: 'Bot', path: '/roles' },
   { id: 'skills', label: 'Skills', icon: 'Wand2', path: '/skills' },
   { id: 'commands', label: 'Commands', icon: 'Terminal', path: '/commands' },
+  { id: 'plugins', label: 'Plugins', icon: 'Puzzle', path: '/plugins' },
   { id: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
 ]
 
