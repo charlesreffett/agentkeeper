@@ -49,6 +49,8 @@ import {
   type WorkItemCreateParams,
   type WorkItemStatus,
   type JiraProject,
+  type PluginRecord,
+  type UpdateAvailable,
 } from '../shared/ipc-contract'
 
 /**
@@ -294,6 +296,23 @@ const api: AgentKeeperApi = {
       ipcRenderer.on(IPC_CHANNELS.pluginEvent, listener)
       return () => ipcRenderer.off(IPC_CHANNELS.pluginEvent, listener)
     },
+    list: () => invoke(IPC_CHANNELS.pluginsList) as Promise<PluginRecord[]>,
+    install: (akpPath?: string) =>
+      invoke(IPC_CHANNELS.pluginsInstall, akpPath) as Promise<void>,
+    loadDev: (dirPath?: string) =>
+      invoke(IPC_CHANNELS.pluginsLoadDev, dirPath) as Promise<void>,
+    unloadDev: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsUnloadDev, pluginId) as Promise<void>,
+    uninstall: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsUninstall, pluginId) as Promise<void>,
+    enable: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsEnable, pluginId) as Promise<void>,
+    disable: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsDisable, pluginId) as Promise<void>,
+    checkUpdates: () =>
+      invoke(IPC_CHANNELS.pluginsCheckUpdates) as Promise<UpdateAvailable[]>,
+    update: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsUpdate, pluginId) as Promise<void>,
   },
   workItems: {
     list: () => invoke(IPC_CHANNELS.workItemsList) as Promise<never>,

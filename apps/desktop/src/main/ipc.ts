@@ -12,6 +12,7 @@ import {
   type DayTotal,
   type MergeMethod,
   type PRFilters,
+  type PluginSource,
   type RecentProject,
   type ReviewEvent,
   type SecretKeyName,
@@ -40,6 +41,18 @@ import {
 import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
+import {
+  checkForUpdates,
+  disablePlugin,
+  enablePlugin,
+  installPlugin,
+  listPlugins,
+  loadDevPlugin,
+  uninstallPlugin,
+  unloadDevPlugin,
+  updatePlugin,
+} from './plugin-manager.js'
+import { getActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
@@ -617,6 +630,125 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+
+  // Plugin management
+  ipcMain.handle(IPC_CHANNELS.pluginsList, () => {
+    const rows = listPlugins()
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      version: row.version,
+      enabled: row.enabled === 1,
+      source: row.source as PluginSource,
+      status: getActiveHost(row.id) ? 'active' : 'inactive',
+      manifest: JSON.parse(row.manifest),
+    }))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsInstall, async (_event, akpPath?: string) => {
+    try {
+      let filePath = akpPath
+      if (!filePath) {
+        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+        const result = win
+          ? await dialog.showOpenDialog(win, {
+              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+              properties: ['openFile'],
+            })
+          : await dialog.showOpenDialog({
+              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+              properties: ['openFile'],
+            })
+        if (result.canceled || !result.filePaths[0]) return
+        filePath = result.filePaths[0]
+      }
+      await installPlugin(filePath)
+    } catch (err) {
+      console.error('[ipc] plugins:install failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (_event, dirPath?: string) => {
+    try {
+      let resolvedPath = dirPath
+      if (!resolvedPath) {
+        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+        const result = win
+          ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+          : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+        if (result.canceled || !result.filePaths[0]) return
+        resolvedPath = result.filePaths[0]
+      }
+      await loadDevPlugin(resolvedPath)
+    } catch (err) {
+      console.error('[ipc] plugins:loadDev failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsUnloadDev, async (_event, pluginId: string) => {
+    try {
+      await unloadDevPlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:unloadDev failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsUninstall, async (_event, pluginId: string) => {
+    try {
+      await uninstallPlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:uninstall failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsEnable, async (_event, pluginId: string) => {
+    try {
+      await enablePlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:enable failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsDisable, async (_event, pluginId: string) => {
+    try {
+      await disablePlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:disable failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsCheckUpdates, async () => {
+    try {
+      const updates = await checkForUpdates()
+      return updates.map(({ pluginId, currentVersion, availableVersion, releaseNotes }) => ({
+        pluginId,
+        currentVersion,
+        availableVersion,
+        releaseNotes,
+      }))
+    } catch (err) {
+      console.error('[ipc] plugins:checkUpdates failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsUpdate, async (_event, pluginId: string) => {
+    try {
+      const updates = await checkForUpdates()
+      const entry = updates.find((u) => u.pluginId === pluginId)
+      if (!entry) throw new Error(`No update available for plugin ${pluginId}`)
+      await updatePlugin(pluginId, entry.release)
+    } catch (err) {
+      console.error('[ipc] plugins:update failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
 
   // Remote sources
   ipcMain.handle(IPC_CHANNELS.remotesDetect, (_event, projectPath: string) =>
