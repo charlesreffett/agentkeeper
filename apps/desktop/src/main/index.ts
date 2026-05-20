@@ -6,7 +6,7 @@ if (process.env['NODE_ENV'] !== 'production') {
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
-import { activatePlugins } from './plugins'
+import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
 import { setWorkItemRegistry } from './agent'
 import { initPricing } from './pricing'
 import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
@@ -72,8 +72,10 @@ app.whenReady().then(async () => {
   pruneOrphanedDrafts()
   initPricing()
   initCostLedger(userData)
-  const registry = await activatePlugins(app)
+  installBundledPlugins()
+  const registry = new WorkItemRegistryImpl()
   setWorkItemRegistry(registry)
+  await activatePlugins(registry)
   registerIpcHandlers(registry)
   const win = createWindow()
   win.webContents.on('destroyed', () => {
