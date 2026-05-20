@@ -506,13 +506,8 @@ export async function startSession(
   }
 
   active.set(agentLocalId, session)
-  if (isResume) {
-    broadcastStatus({ sessionId: sessionLocalId, agentLocalId, status: 'starting' })
-    setStatus(session, 'idle')
-  } else {
-    broadcastStatus({ sessionId: sessionLocalId, agentLocalId, status: 'starting' })
-    setStatus(session, 'running')
-  }
+  broadcastStatus({ sessionId: sessionLocalId, agentLocalId, status: 'starting' })
+  setStatus(session, 'running')
 
   if (!isResume) {
     broadcastEvent({
