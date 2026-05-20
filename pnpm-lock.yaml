@@ -181,6 +181,15 @@ importers:
 
   packages/sdk:
     dependencies:
+      http-proxy-agent:
+        specifier: ^7.0.0
+        version: 7.0.2
+      https-proxy-agent:
+        specifier: ^7.0.0
+        version: 7.0.6
+      undici:
+        specifier: ^6.0.0
+        version: 6.25.0
       zod:
         specifier: ^3.23.8
         version: 3.25.76
@@ -2871,6 +2880,10 @@ packages:
 
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
+
+  undici@6.25.0:
+    resolution: {integrity: sha512-ZgpWDC5gmNiuY9CnLVXEH8rl50xhRCuLNA97fAUnKi8RRuV4E6KG31pDTsLVUKnohJE0I3XDrTeEydAXRw47xg==}
+    engines: {node: '>=18.17'}
 
   unist-util-is@6.0.1:
     resolution: {integrity: sha512-LsiILbtBETkDz8I9p1dQ0uyRUWuaQzd/cuEeS1hoRSyW5E5XGmTzlwY1OrNzzakGowI9Dr/I8HVaw4hTtnxy8g==}
@@ -5576,6 +5589,8 @@ snapshots:
   uc.micro@2.1.0: {}
 
   undici-types@7.16.0: {}
+
+  undici@6.25.0: {}
 
   unist-util-is@6.0.1:
     dependencies:
