@@ -4,9 +4,12 @@ if (process.env['NODE_ENV'] !== 'production') {
   app.commandLine.appendSwitch('remote-debugging-port', '9223')
 }
 import path from 'node:path'
+import * as net from 'node:net'
+import * as fsp from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
+import { loadDevPlugin, unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
 import { setWorkItemRegistry } from './agent'
 import { initPricing } from './pricing'
 import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
@@ -16,6 +19,38 @@ import { pruneOrphanedDrafts } from './drafts'
 import { stopAllWatchers, removeSubscriber } from './watcher.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+async function startCliSocket(): Promise<void> {
+  const userDataPath = app.getPath('userData')
+  const sockPath = path.join(userDataPath, 'agentkeeper-cli.sock')
+  // Remove stale socket
+  await fsp.unlink(sockPath).catch(() => {})
+
+  const server = net.createServer((socket) => {
+    let buf = ''
+    socket.on('data', (chunk) => {
+      buf += chunk.toString()
+      const nl = buf.indexOf('\n')
+      if (nl === -1) return
+      const line = buf.slice(0, nl)
+      buf = buf.slice(nl + 1)
+      let cmd: { cmd: string; dirPath?: string; pluginId?: string }
+      try { cmd = JSON.parse(line) } catch { socket.write(JSON.stringify({ ok: false, error: 'invalid JSON' }) + '\n'); return }
+      if (cmd.cmd === 'loadDev' && cmd.dirPath) {
+        loadDevPlugin(cmd.dirPath)
+          .then(() => socket.write(JSON.stringify({ ok: true }) + '\n'))
+          .catch((err: Error) => socket.write(JSON.stringify({ ok: false, error: err.message }) + '\n'))
+      } else if (cmd.cmd === 'unloadDev' && cmd.pluginId) {
+        unloadDevPlugin(cmd.pluginId)
+          .then(() => socket.write(JSON.stringify({ ok: true }) + '\n'))
+          .catch((err: Error) => socket.write(JSON.stringify({ ok: false, error: err.message }) + '\n'))
+      } else {
+        socket.write(JSON.stringify({ ok: false, error: `unknown command: ${cmd.cmd}` }) + '\n')
+      }
+    })
+  })
+  server.listen(sockPath)
+}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -63,6 +98,7 @@ function createWindow(): BrowserWindow {
 app.on('before-quit', () => {
   stopAllWatchers()
   flushCostLedger()
+  clearDevPluginRegistry()
 })
 
 app.whenReady().then(async () => {
@@ -82,6 +118,7 @@ app.whenReady().then(async () => {
     removeSubscriber(win.webContents.id)
   })
   wirePluginEventRelay(win)
+  await startCliSocket()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

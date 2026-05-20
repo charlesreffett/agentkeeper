@@ -3,6 +3,7 @@ import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
 import * as os from 'node:os'
 import * as crypto from 'node:crypto'
+import { watch, type FSWatcher } from 'node:fs'
 import { app } from 'electron'
 import AdmZip from 'adm-zip'
 import { PluginManifestSchema, UpdateManifestSchema } from '@agentkeeper/sdk'
@@ -225,4 +226,79 @@ export async function disablePlugin(pluginId: string): Promise<void> {
 export function listPlugins(): { id: string; name: string; version: string; enabled: number; source: string; manifest: string }[] {
   const db = getRawSqlite()
   return db.prepare('SELECT id, name, version, enabled, source, manifest FROM plugin_registry').all() as { id: string; name: string; version: string; enabled: number; source: string; manifest: string }[]
+}
+
+const devWatchers = new Map<string, FSWatcher>()
+
+export async function loadDevPlugin(dirPath: string): Promise<void> {
+  const db = getRawSqlite()
+  const manifestPath = path.join(dirPath, 'manifest.json')
+  const manifestRaw = JSON.parse(await fsp.readFile(manifestPath, 'utf8'))
+  const result = PluginManifestSchema.safeParse(manifestRaw)
+  if (!result.success) throw new Error(`Invalid manifest: ${JSON.stringify(result.error.flatten())}`)
+  const manifest = result.data
+
+  // Deactivate any previous dev instance
+  const existing = getActiveHost(manifest.id)
+  if (existing) {
+    await existing.deactivate()
+    proxyRegistry.get(manifest.id)?.close()
+    proxyRegistry.delete(manifest.id)
+  }
+  devWatchers.get(manifest.id)?.close()
+  devWatchers.delete(manifest.id)
+
+  // Upsert plugin_registry row with source='dev'
+  const row = db.prepare('SELECT id FROM plugin_registry WHERE id = ?').get(manifest.id)
+  if (row) {
+    db.prepare("UPDATE plugin_registry SET version=?, manifest=?, source='dev', dev_path=? WHERE id=?")
+      .run(manifest.version, JSON.stringify(manifestRaw), dirPath, manifest.id)
+  } else {
+    db.prepare(`INSERT INTO plugin_registry (id, name, version, enabled, manifest, source, installed_at, dev_path)
+      VALUES (?, ?, ?, 1, ?, 'dev', ?, ?)`)
+      .run(manifest.id, manifest.name, manifest.version, JSON.stringify(manifestRaw), Date.now(), dirPath)
+  }
+
+  await spawnAndActivate(manifest)
+
+  // File watcher with 300ms debounce
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  const watcher = watch(dirPath, { recursive: true }, (_eventType, filename) => {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(async () => {
+      console.info(`[plugin-dev:${manifest.id}] change detected (${filename ?? '?'}), reloading…`)
+      try {
+        const host = getActiveHost(manifest.id)
+        if (host) await host.deactivate()
+        proxyRegistry.get(manifest.id)?.close()
+        proxyRegistry.delete(manifest.id)
+        // Re-read manifest in case it changed
+        const freshRaw = JSON.parse(await fsp.readFile(manifestPath, 'utf8'))
+        const freshResult = PluginManifestSchema.safeParse(freshRaw)
+        if (!freshResult.success) { console.error(`[plugin-dev:${manifest.id}] manifest invalid after reload`); return }
+        await spawnAndActivate(freshResult.data)
+        console.info(`[plugin-dev:${manifest.id}] reload complete`)
+      } catch (err) {
+        console.error(`[plugin-dev:${manifest.id}] reload failed:`, err)
+      }
+    }, 300)
+  })
+  devWatchers.set(manifest.id, watcher)
+}
+
+export async function unloadDevPlugin(pluginId: string): Promise<void> {
+  const db = getRawSqlite()
+  devWatchers.get(pluginId)?.close()
+  devWatchers.delete(pluginId)
+  const host = getActiveHost(pluginId)
+  if (host) await host.deactivate()
+  proxyRegistry.get(pluginId)?.close()
+  proxyRegistry.delete(pluginId)
+  db.prepare('DELETE FROM plugin_registry WHERE id = ?').run(pluginId)
+}
+
+// Call on app quit to clear ephemeral dev rows
+export function clearDevPluginRegistry(): void {
+  const db = getRawSqlite()
+  db.prepare("DELETE FROM plugin_registry WHERE source = 'dev'").run()
 }
