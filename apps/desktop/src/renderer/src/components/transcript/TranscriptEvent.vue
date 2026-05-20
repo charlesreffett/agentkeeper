@@ -6,7 +6,7 @@ import ToolUseBlock from './ToolUseBlock.vue'
 import ToolResultBlock from './ToolResultBlock.vue'
 import ImageBlock from './ImageBlock.vue'
 import UnknownBlock from './UnknownBlock.vue'
-import { Info } from 'lucide-vue-next'
+import { CornerDownRight, Info } from 'lucide-vue-next'
 import { formatTimestamp, shortModel } from '@/lib/format'
 import { computed } from 'vue'
 import { type VerbosityState, DEFAULT_VERBOSITY_STATE, isBlockVisible } from '@/lib/verbosity'
@@ -36,11 +36,18 @@ const isUser = computed(
 // progress events carry sub-agent activity streams.
 const isSubAgent = computed(() => props.event.kind === 'progress')
 
-// Non-interrupted system events render as slim info bars.
+// Injected opening prompt of a sub-agent session — distinct from both user
+// messages and generic system info bars.
+const isDelegatedTask = computed(
+  () => props.event.systemSubtype === 'delegated-task',
+)
+
+// Non-interrupted, non-delegated system events render as slim info bars.
 const isSystemBar = computed(
   () =>
     props.event.kind === 'system' &&
-    props.event.systemSubtype !== 'interrupted',
+    props.event.systemSubtype !== 'interrupted' &&
+    props.event.systemSubtype !== 'delegated-task',
 )
 
 const displayName = computed(() => {
@@ -130,6 +137,29 @@ function blockComponent(block: ContentBlock) {
     <span class="ml-auto tabular-nums shrink-0">
       {{ formatTimestamp(event.timestamp) }}
     </span>
+  </div>
+
+  <!-- ── Delegated task brief ──────────────────────────────────────────── -->
+  <div
+    v-else-if="isDelegatedTask"
+    class="border-l-2 border-violet-500/40 bg-violet-500/5 rounded-r-md px-3 py-2 space-y-1.5"
+  >
+    <header class="flex items-center gap-1.5 text-xs select-none">
+      <CornerDownRight class="size-3 shrink-0 text-violet-400/70" />
+      <span class="font-medium text-violet-400/70">delegated task</span>
+      <span class="ml-auto tabular-nums text-muted-foreground/50">
+        {{ formatTimestamp(event.timestamp) }}
+      </span>
+    </header>
+    <div class="space-y-1 text-sm text-foreground/70 select-text">
+      <template v-for="(group, i) in groupedContent" :key="i">
+        <component
+          v-if="group.kind === 'single' && group.block.type === 'text'"
+          :is="blockComponent(group.block)"
+          :block="group.block"
+        />
+      </template>
+    </div>
   </div>
 
   <!-- ── Tool-result continuation (no avatar) ───────────────────────────── -->

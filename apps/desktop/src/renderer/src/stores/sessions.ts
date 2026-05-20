@@ -198,7 +198,7 @@ export const useSessionStore = defineStore('sessions', () => {
     staleTime: 60_000,
   }).then(async (rows) => {
     for (const row of rows) {
-      dailyUsage[row.date] = { tokens: row.tokens, costUsd: row.costUsd, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+      dailyUsage[row.date] = { tokens: row.tokens, costUsd: row.costUsd, inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, cacheCreationTokens: row.cacheCreationTokens }
     }
 
     if (!localStorage.getItem('agentkeeper:legacyImported')) {
@@ -1085,8 +1085,29 @@ export const useSessionStore = defineStore('sessions', () => {
     }
 
     // ── Complete message path ───────────────────────────────────────────────
-    const evt = sdkMessageToTranscriptEvent(payload.message)
+    let evt = sdkMessageToTranscriptEvent(payload.message)
     if (!evt) return
+
+    // Reclassify the first user message of a non-entry-point agent as a
+    // delegated-task system event so it doesn't render as a "you" bubble.
+    if (
+      evt.kind === 'user' &&
+      evt.role === 'user' &&
+      evt.content.length > 0 &&
+      !evt.content.every((b) => b.type === 'tool_result')
+    ) {
+      const s = sessions[sessionId]
+      const agent = s?.agents.find((a) => a.localId === agentKey)
+      if (agent && !agent.isEntryPoint) {
+        const prior = s?.agentEvents[agentKey] ?? []
+        const hasSeenUserEvent = prior.some(
+          (e) => e.kind === 'user' || e.systemSubtype === 'delegated-task',
+        )
+        if (!hasSeenUserEvent) {
+          evt = { ...evt, kind: 'system', role: 'system', systemSubtype: 'delegated-task' }
+        }
+      }
+    }
 
     const s = sessions[sessionId]
     if (s) {

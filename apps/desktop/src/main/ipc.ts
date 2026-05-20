@@ -201,8 +201,14 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsRead,
-    (_event, projectPath: string, sessionId: string) =>
-      readSession(projectPath, sessionId),
+    (_event, projectPath: string, sessionId: string) => {
+      // sessionId is the JSONL basename (= SDK session UUID). Check whether
+      // it belongs to a non-entry-point agent so readSession can reclassify
+      // its injected opening prompt as a delegated-task system event.
+      const agent = sessionRegistry.getAgentBySdkId(sessionId)
+      const isSubAgentSession = agent != null && !agent.isEntryPoint
+      return readSession(projectPath, sessionId, isSubAgentSession)
+    },
   )
 
   // Sessions — live. Every handler normalizes its error to a plain message

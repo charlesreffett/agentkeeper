@@ -296,6 +296,7 @@ export async function deleteAllHistoricalSessions(projectPath: string): Promise<
 export async function readSession(
   projectPath: string,
   sessionId: string,
+  isSubAgentSession = false,
 ): Promise<SessionTranscript | null> {
   const filePath = path.join(projectDir(projectPath), `${sessionId}.jsonl`)
   let stat: fs.Stats
@@ -333,6 +334,28 @@ export async function readSession(
     }
     const evt = normalizeEvent(parsed)
     if (evt) events.push(evt)
+  }
+
+  // For sub-agent sessions the first non-tool-result user message is an
+  // injected prompt authored by the parent agent, not the human. Reclassify
+  // it so the renderer can render it distinctly and gate it with the System
+  // toggle instead of displaying it as a "you" message.
+  if (isSubAgentSession) {
+    const idx = events.findIndex(
+      (e) =>
+        e.kind === 'user' &&
+        e.role === 'user' &&
+        e.content.length > 0 &&
+        !e.content.every((b) => b.type === 'tool_result'),
+    )
+    if (idx >= 0) {
+      events[idx] = {
+        ...events[idx]!,
+        kind: 'system',
+        role: 'system',
+        systemSubtype: 'delegated-task',
+      }
+    }
   }
 
   return {
