@@ -8,12 +8,14 @@ import { migrateJsonPlansToDb } from './migrate-plans'
 export type AppDb = BetterSQLite3Database<typeof schema>
 
 let _db: AppDb | null = null
+let _sqlite: InstanceType<typeof Database> | null = null
 const migrationsFolder = path.join(__dirname, 'migrations')
 
 export function initDb(userDataPath: string): void {
   const sqlite = new Database(path.join(userDataPath, 'agentkeeper.db'))
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('foreign_keys = ON')
+  _sqlite = sqlite
   _db = drizzle(sqlite, { schema })
   migrate(_db, { migrationsFolder })
   void migrateJsonPlansToDb(_db).catch((err) => {
@@ -29,4 +31,9 @@ export function runMigrations(): void {
 export function getDb(): AppDb {
   if (!_db) throw new Error('[db] not initialized — call initDb first')
   return _db
+}
+
+export function getRawSqlite(): InstanceType<typeof Database> {
+  if (!_sqlite) throw new Error('[db] not initialized — call initDb first')
+  return _sqlite
 }

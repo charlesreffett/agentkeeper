@@ -40,6 +40,7 @@ import {
 import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
+import { getRawSqlite } from './db/index'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
@@ -118,10 +119,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       recentProjectsStore.add(project)
       // auto-register GitHub repo if detected and not already in config
       if (repo) {
-        const cfg = (await getPluginConfig('github')) as { repos?: string[]; repo?: string }
+        const cfg = (await getPluginConfig('github', getRawSqlite())) as { repos?: string[]; repo?: string }
         const repos: string[] = cfg.repos ?? (cfg.repo ? [cfg.repo] : [])
         if (!repos.includes(repo)) {
-          await setPluginConfig('github', { repos: [...repos, repo] })
+          await setPluginConfig('github', { repos: [...repos, repo] }, getRawSqlite())
         }
       }
       return project
@@ -603,13 +604,13 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   // Plugin config
   ipcMain.handle(IPC_CHANNELS.pluginsConfigGet, (_event, pluginId: string) =>
-    getPluginConfig(pluginId),
+    getPluginConfig(pluginId, getRawSqlite()),
   )
   ipcMain.handle(
     IPC_CHANNELS.pluginsConfigSet,
     async (_event, pluginId: string, config: unknown) => {
       try {
-        return await setPluginConfig(pluginId, config)
+        return await setPluginConfig(pluginId, config, getRawSqlite())
       } catch (err) {
         console.error('[ipc] plugins:config:set failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -624,7 +625,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   // GitHub — config + PR channels
   async function getGithubRepos(): Promise<string[]> {
-    const cfg = (await getPluginConfig('github')) as { repos?: string[]; repo?: string }
+    const cfg = (await getPluginConfig('github', getRawSqlite())) as { repos?: string[]; repo?: string }
     if (cfg.repos) return cfg.repos
     if (cfg.repo) return [cfg.repo]
     return []
@@ -636,7 +637,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(IPC_CHANNELS.githubConfigSet, async (_event, config: { repos: string[] }) => {
     try {
-      return await setPluginConfig('github', config)
+      return await setPluginConfig('github', config, getRawSqlite())
     } catch (err) {
       console.error('[ipc] github:config:set failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))

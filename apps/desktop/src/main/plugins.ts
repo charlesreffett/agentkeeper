@@ -1,7 +1,7 @@
 import { app } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
+import Database from 'better-sqlite3'
+import { getRawSqlite } from './db/index'
 import type {
   BackgroundWork,
   CommandDefinition,
@@ -122,40 +122,22 @@ function buildLogger(pluginId: string): Logger {
   }
 }
 
-function buildKVStore(pluginId: string): ScopedKVStore {
-  const dir = join(app.getPath('userData'), 'plugins', pluginId)
-  const file = join(dir, 'kv.json')
-
-  function read(): Record<string, unknown> {
-    try {
-      return JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>
-    } catch {
-      return {}
-    }
-  }
-
-  function write(data: Record<string, unknown>): void {
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
-  }
-
+function buildSQLiteKVStore(pluginId: string, db: InstanceType<typeof Database>): ScopedKVStore {
   return {
     async get<T>(key: string): Promise<T | undefined> {
-      return read()[key] as T | undefined
+      const row = db.prepare('SELECT value FROM plugin_storage WHERE plugin_id = ? AND key = ?').get(pluginId, key) as { value: string } | undefined
+      if (!row) return undefined
+      return JSON.parse(row.value) as T
     },
-    async set<T>(key: string, value: T): Promise<void> {
-      const data = read()
-      data[key] = value
-      write(data)
+    async set(key: string, value: unknown) {
+      db.prepare('INSERT OR REPLACE INTO plugin_storage (plugin_id, key, value) VALUES (?, ?, ?)').run(pluginId, key, JSON.stringify(value))
     },
-    async delete(key: string): Promise<void> {
-      const data = read()
-      delete data[key]
-      write(data)
+    async delete(key: string) {
+      db.prepare('DELETE FROM plugin_storage WHERE plugin_id = ? AND key = ?').run(pluginId, key)
     },
-    async list(prefix?: string): Promise<string[]> {
-      const keys = Object.keys(read())
-      return prefix ? keys.filter((k) => k.startsWith(prefix)) : keys
+    async list() {
+      const rows = db.prepare('SELECT key FROM plugin_storage WHERE plugin_id = ?').all(pluginId) as { key: string }[]
+      return rows.map((r) => r.key)
     },
   }
 }
@@ -198,51 +180,23 @@ const noopCommands: CommandRegistry = {
   },
 }
 
-function buildPluginContext<TSettings>(
-  pluginId: string,
-  registry: WorkItemRegistryImpl,
-  config: TSettings,
-  storage: ScopedKVStore,
-): PluginContext<TSettings> {
-  return {
-    config,
-    logger: buildLogger(pluginId),
-    storage,
-    secrets: createPluginSecrets(pluginId) as SecretsApi,
-    events: buildEventBus(),
-    workItems: registry,
-    ui: noopUI,
-    commands: noopCommands,
-    background: buildBackgroundWork(),
-    fetch: globalThis.fetch.bind(globalThis),
-  }
-}
-
 // Module-scoped references for IPC access
 let pluginEventBus: EventBus | null = null
-const pluginKVStores = new Map<string, ScopedKVStore>()
 
 export function getPluginEventBus(): EventBus | null {
   return pluginEventBus
 }
 
-export async function getPluginConfig(pluginId: string): Promise<unknown> {
-  const store = pluginKVStores.get(pluginId)
-  if (!store) return {}
-  const keys = await store.list()
-  const config: Record<string, unknown> = {}
-  for (const key of keys) {
-    config[key] = await store.get(key)
-  }
-  return config
+export async function getPluginConfig(pluginId: string, db: InstanceType<typeof Database>): Promise<Record<string, unknown>> {
+  const rows = db.prepare('SELECT key, value FROM plugin_storage WHERE plugin_id = ?').all(pluginId) as { key: string; value: string }[]
+  return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value) as unknown]))
 }
 
-export async function setPluginConfig(pluginId: string, config: unknown): Promise<void> {
-  const store = pluginKVStores.get(pluginId)
-  if (!store) return
+export async function setPluginConfig(pluginId: string, config: unknown, db: InstanceType<typeof Database>): Promise<void> {
   if (config !== null && typeof config === 'object') {
+    const stmt = db.prepare('INSERT OR REPLACE INTO plugin_storage (plugin_id, key, value) VALUES (?, ?, ?)')
     for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
-      await store.set(key, value)
+      stmt.run(pluginId, key, JSON.stringify(value))
     }
   }
   pluginEventBus?.emit('settings.changed', { pluginId, config })
@@ -255,13 +209,9 @@ async function activatePlugin<TSettings>(
   bus: EventBus,
   electronApp: typeof app,
 ): Promise<void> {
-  const kvStore = buildKVStore(pluginId)
-  pluginKVStores.set(pluginId, kvStore)
-
-  const persistedConfig: Record<string, unknown> = {}
-  for (const key of await kvStore.list()) {
-    persistedConfig[key] = await kvStore.get(key)
-  }
+  const rawDb = getRawSqlite()
+  const kvStore = buildSQLiteKVStore(pluginId, rawDb)
+  const persistedConfig = await getPluginConfig(pluginId, rawDb)
 
   const ctx: PluginContext<TSettings> = {
     config: persistedConfig as TSettings,

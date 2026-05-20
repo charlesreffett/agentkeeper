@@ -1,4 +1,4 @@
-import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 
 export const sessions = sqliteTable('sessions', {
   localId: text('local_id').primaryKey(),
@@ -117,6 +117,25 @@ export const plans = sqliteTable('plans', {
   startedAt: integer('started_at'),
   updatedAt: integer('updated_at').notNull(),
   completedAt: integer('completed_at'),
+})
+
+export const pluginStorage = sqliteTable('plugin_storage', {
+  pluginId: text('plugin_id').notNull(),
+  key: text('key').notNull(),
+  value: text('value').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.pluginId, table.key] }),
+}))
+
+export const pluginRegistry = sqliteTable('plugin_registry', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  version: text('version').notNull(),
+  enabled: integer('enabled').notNull().default(1),
+  manifest: text('manifest').notNull(),
+  source: text('source').notNull(),
+  installedAt: integer('installed_at').notNull(),
+  devPath: text('dev_path'),
 })
 
 export const planSteps = sqliteTable('plan_steps', {
