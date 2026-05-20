@@ -50,6 +50,9 @@ importers:
       '@vueuse/core':
         specifier: ^14.2.1
         version: 14.2.1(vue@3.5.32(typescript@5.9.3))
+      adm-zip:
+        specifier: ^0.5.17
+        version: 0.5.17
       better-sqlite3:
         specifier: ^12.9.0
         version: 12.9.0
@@ -99,6 +102,9 @@ importers:
       '@tanstack/query-devtools':
         specifier: ^5
         version: 5.100.10
+      '@types/adm-zip':
+        specifier: ^0.5.8
+        version: 0.5.8
       '@types/better-sqlite3':
         specifier: ^7.6.13
         version: 7.6.13
@@ -1216,6 +1222,9 @@ packages:
     peerDependencies:
       vue: ^2.7.0 || ^3.0.0
 
+  '@types/adm-zip@0.5.8':
+    resolution: {integrity: sha512-RVVH7QvZYbN+ihqZ4kX/dMiowf6o+Jk1fNwiSdx0NahBJLU787zkULhGhJM8mf/obmLGmgdMM0bXsQTmyfbR7Q==}
+
   '@types/better-sqlite3@7.6.13':
     resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
 
@@ -1406,6 +1415,10 @@ packages:
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
+
+  adm-zip@0.5.17:
+    resolution: {integrity: sha512-+Ut8d9LLqwEvHHJl1+PIHqoyDxFgVN847JTVM3Izi3xHDWPE4UtzzXysMZQs64DMcrJfBeS/uoEP4AD3HQHnQQ==}
+    engines: {node: '>=12.0'}
 
   agent-base@7.1.4:
     resolution: {integrity: sha512-MnA+YT8fwfJPgBx3m60MNqakm30XOkyIoH1y6huTQvC0PwZG7ki8NacLBcrPbNoo8vEZy7Jpuk7+jMO+CUovTQ==}
@@ -3796,6 +3809,10 @@ snapshots:
       '@tanstack/virtual-core': 3.14.0
       vue: 3.5.32(typescript@5.9.3)
 
+  '@types/adm-zip@0.5.8':
+    dependencies:
+      '@types/node': 24.12.2
+
   '@types/better-sqlite3@7.6.13':
     dependencies:
       '@types/node': 24.12.2
@@ -4056,6 +4073,8 @@ snapshots:
     dependencies:
       mime-types: 3.0.2
       negotiator: 1.0.0
+
+  adm-zip@0.5.17: {}
 
   agent-base@7.1.4: {}
 

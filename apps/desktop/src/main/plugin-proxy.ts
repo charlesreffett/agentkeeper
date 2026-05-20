@@ -88,7 +88,7 @@ export function createDenyAllProxy(pluginId: string): PluginProxy {
 
 export { DENY_ALL_SENTINEL }
 
-const proxyRegistry = new Map<string, PluginProxy>()
+export const proxyRegistry = new Map<string, PluginProxy>()
 
 export function closeAllProxies(): void {
   for (const proxy of proxyRegistry.values()) {
