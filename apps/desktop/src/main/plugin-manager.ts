@@ -8,7 +8,7 @@ import { app } from 'electron'
 import AdmZip from 'adm-zip'
 import { PluginManifestSchema, UpdateManifestSchema } from '@agentkeeper/sdk'
 import type { PluginManifest, UpdateRelease } from '@agentkeeper/sdk'
-import { spawnAndActivate, getActiveHost } from './plugin-loader.js'
+import { spawnPlugin, activatePlugin, spawnAndActivate, getActiveHost } from './plugin-loader.js'
 import { proxyRegistry } from './plugin-proxy.js'
 import { getRawSqlite } from './db/index.js'
 import { getPluginEventBus } from './plugins.js'
@@ -66,8 +66,9 @@ export async function installPlugin(akpPath: string): Promise<void> {
       VALUES (?, ?, ?, 1, ?, 'local', ?)
     `).run(manifest.id, manifest.name, manifest.version, manifestJson, Date.now())
 
-    await spawnAndActivate(manifest)
+    await spawnPlugin(manifest)
     await getActiveHost(manifest.id)?.install()
+    await activatePlugin(manifest.id)
     getPluginEventBus()?.emit('plugin.installed', { pluginId: manifest.id, version: manifest.version })
   } catch (err) {
     await fsp.rm(tmpDir, { recursive: true, force: true }).catch(() => {})

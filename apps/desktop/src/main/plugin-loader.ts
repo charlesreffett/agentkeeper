@@ -52,7 +52,7 @@ export function buildDormantRegistry(manifests: PluginManifest[]): void {
   }
 }
 
-export async function spawnAndActivate(manifest: PluginManifest, webContents?: Electron.WebContents): Promise<void> {
+export async function spawnPlugin(manifest: PluginManifest, webContents?: Electron.WebContents): Promise<void> {
   const db = getRawSqlite()
   const row = db.prepare('SELECT enabled FROM plugin_registry WHERE id = ?').get(manifest.id) as { enabled: number } | undefined
   if (row && row.enabled === 0) {
@@ -71,18 +71,12 @@ export async function spawnAndActivate(manifest: PluginManifest, webContents?: E
     }
   }
 
-  // Resolve entry path: plugin_registry stores the dir path in dev_path or source path
   const entryPath = resolveEntryPath(manifest)
 
-  // Create proxy
   const hasNetwork = manifest.permissions.includes('network')
   const proxy = hasNetwork
     ? await createPluginProxy(manifest.id, manifest.network?.hosts ?? [])
     : createDenyAllProxy(manifest.id)
-
-  // Load config from plugin_storage
-  const configRows = db.prepare('SELECT key, value FROM plugin_storage WHERE plugin_id = ?').all(manifest.id) as { key: string; value: string }[]
-  const config: Record<string, unknown> = Object.fromEntries(configRows.map(r => [r.key, JSON.parse(r.value) as unknown]))
 
   const bus = getPluginEventBus()
   if (!bus) throw new Error('[plugin-loader] event bus not initialized')
@@ -97,8 +91,23 @@ export async function spawnAndActivate(manifest: PluginManifest, webContents?: E
   )
 
   await host.spawn()
-  await host.activate(config)
   activeHosts.set(manifest.id, host)
+}
+
+export async function activatePlugin(pluginId: string): Promise<void> {
+  const host = activeHosts.get(pluginId)
+  if (!host) throw new Error(`[plugin-loader] no spawned host for plugin: ${pluginId}`)
+  const db = getRawSqlite()
+  const configRows = db.prepare('SELECT key, value FROM plugin_storage WHERE plugin_id = ?').all(pluginId) as { key: string; value: string }[]
+  const config: Record<string, unknown> = Object.fromEntries(configRows.map(r => [r.key, JSON.parse(r.value) as unknown]))
+  await host.activate(config)
+}
+
+export async function spawnAndActivate(manifest: PluginManifest, webContents?: Electron.WebContents): Promise<void> {
+  await spawnPlugin(manifest, webContents)
+  if (activeHosts.has(manifest.id)) {
+    await activatePlugin(manifest.id)
+  }
 }
 
 function resolveEntryPath(manifest: PluginManifest): string {
