@@ -1,10 +1,19 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
 import type { PluginRecord, UpdateAvailable } from '@shared/ipc-contract'
+import type { PluginManifest } from '@agentkeeper/sdk'
 import { Button } from '@/components/ui/button'
-import PageHeader from '@/components/PageHeader.vue'
+import { Switch } from '@/components/ui/switch'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import {
   Sheet,
   SheetContent,
@@ -19,6 +28,13 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import PluginSettingsForm from './PluginSettingsForm.vue'
 
 const queryClient = useQueryClient()
@@ -63,30 +79,134 @@ const { mutate: doUpdate }    = useMutation({ mutationFn: (id: string) => window
 
 // ── Enable / Disable toggle ───────────────────────────────────────────────────
 
-function toggleEnabled(plugin: PluginRecord) {
-  if (plugin.enabled) {
-    doDisable(plugin.id)
-  } else {
-    doEnable(plugin.id)
+// Local switch state — one boolean per plugin id, writable by the Switch v-model.
+// Initialised from query data for newly appearing plugins; existing entries are
+// left alone so a user-initiated toggle isn't clobbered by the next refetch.
+const localEnabled = reactive<Record<string, boolean>>({})
+
+watch(plugins, (list) => {
+  const liveIds = new Set(list?.map(p => p.id) ?? [])
+  for (const p of list ?? []) {
+    if (!(p.id in localEnabled)) localEnabled[p.id] = p.enabled
   }
-}
+  for (const id of Object.keys(localEnabled)) {
+    if (!liveIds.has(id)) delete localEnabled[id]
+  }
+}, { immediate: true })
+
+// Drive mutations whenever a switch is flipped.
+watch(() => ({ ...localEnabled }), (cur, prev) => {
+  for (const [id, enabled] of Object.entries(cur)) {
+    if (id in prev && enabled !== prev[id]) {
+      enabled ? doEnable(id) : doDisable(id)
+    }
+  }
+})
 
 // ── Install ───────────────────────────────────────────────────────────────────
 
+// ── Install dialog ────────────────────────────────────────────────────────────
+
+type InstallStep = 'input' | 'review'
+
+const installDialogOpen = ref(false)
+const installStep = ref<InstallStep>('input')
+const installUrl = ref('')
+const preparing = ref(false)
 const installing = ref(false)
 const installError = ref<string | null>(null)
+const pendingManifest = ref<PluginManifest | null>(null)
+const installToken = ref<string | null>(null)
 
-async function installFromFile() {
+const canContinue = computed(() =>
+  !preparing.value && !installing.value && installUrl.value.trim().length > 0,
+)
+
+const permissionLabels: Record<string, string> = {
+  workItems:  'Read and create work items (Jira / GitHub Issues)',
+  secrets:    'Store credentials in the OS keychain',
+  commands:   'Register slash commands in sessions',
+  sidebar:    'Add entries to the app sidebar',
+  background: 'Run tasks in the background',
+  network:    'Make outbound network requests',
+}
+
+function resetInstallDialog() {
+  installStep.value = 'input'
+  installUrl.value = ''
+  installError.value = null
+  pendingManifest.value = null
+  if (installToken.value) {
+    void window.agentkeeper.plugins.cancelAkpInstall(installToken.value)
+    installToken.value = null
+  }
+}
+
+function openInstallDialog() {
+  resetInstallDialog()
+  installDialogOpen.value = true
+}
+
+// Cancel any pending token when dialog is closed externally (Escape / backdrop)
+watch(installDialogOpen, (open) => { if (!open) resetInstallDialog() })
+
+async function browseForFile() {
+  preparing.value = true
+  installError.value = null
+  try {
+    const filePath = await window.agentkeeper.plugins.pickAkpFile()
+    if (!filePath) return
+    const result = await window.agentkeeper.plugins.prepareAkpInstall({ filePath })
+    pendingManifest.value = result.manifest
+    installToken.value = result.token
+    installStep.value = 'review'
+  } catch (e) {
+    installError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    preparing.value = false
+  }
+}
+
+async function prepareFromUrl() {
+  if (!canContinue.value) return
+  preparing.value = true
+  installError.value = null
+  try {
+    const result = await window.agentkeeper.plugins.prepareAkpInstall({ manifestUrl: installUrl.value.trim() })
+    pendingManifest.value = result.manifest
+    installToken.value = result.token
+    installStep.value = 'review'
+  } catch (e) {
+    installError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    preparing.value = false
+  }
+}
+
+async function confirmInstall() {
+  if (!installToken.value) return
   installing.value = true
   installError.value = null
   try {
-    await window.agentkeeper.plugins.install()
+    await window.agentkeeper.plugins.confirmAkpInstall(installToken.value)
+    installToken.value = null
+    installDialogOpen.value = false
     invalidate()
   } catch (e) {
     installError.value = e instanceof Error ? e.message : String(e)
   } finally {
     installing.value = false
   }
+}
+
+function denyInstall() {
+  if (installToken.value) {
+    void window.agentkeeper.plugins.cancelAkpInstall(installToken.value)
+    installToken.value = null
+  }
+  pendingManifest.value = null
+  installStep.value = 'input'
+  installError.value = null
 }
 
 async function loadDev() {
@@ -141,6 +261,11 @@ function confirmUpdate() {
 
 const settingsPlugin = ref<PluginRecord | null>(null)
 
+// ── Computed counts ───────────────────────────────────────────────────────────
+
+const installedCount = computed(() => plugins.value?.length ?? 0)
+const activeCount = computed(() => plugins.value?.filter(p => p.status === 'active').length ?? 0)
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const sourceBadgeClass: Record<string, string> = {
@@ -149,38 +274,157 @@ const sourceBadgeClass: Record<string, string> = {
   dev:     'bg-orange-500/20 text-orange-400',
 }
 
-const statusDotClass: Record<string, string> = {
-  active:    'bg-green-500',
-  inactive:  'bg-muted-foreground',
-  unhealthy: 'bg-red-500',
+const statusBadgeClass: Record<string, string> = {
+  active:    'bg-green-500/15 text-green-600 dark:text-green-400',
+  inactive:  'bg-muted text-muted-foreground',
+  unhealthy: 'bg-red-500/15 text-red-500',
+}
+
+const AVATAR_COLORS: string[] = ['#3b82f6', '#1e293b', '#7c3aed', '#0d9488', '#ea580c', '#16a34a', '#dc2626']
+
+function pluginAvatarColor(id: string): string {
+  let hash = 0
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffffffff
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]!
+}
+
+function pluginInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(w => w[0]?.toUpperCase() ?? '')
+    .join('')
+}
+
+function openExternal(url: string) {
+  window.open(url, '_blank')
 }
 </script>
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Plugins">
-      <template #actions>
-        <span v-if="installError || mutationError" class="text-xs text-destructive">{{ installError ?? mutationError }}</span>
-        <Button size="sm" variant="outline" :disabled="installing" @click="loadDev">
-          Load dev plugin
-        </Button>
-        <Button size="sm" :disabled="installing" @click="installFromFile">
-          {{ installing ? 'Installing…' : 'Install from file' }}
-        </Button>
-      </template>
-    </PageHeader>
+    <!-- Header -->
+    <div class="px-6 py-4 border-b border-border">
+      <h1 class="text-lg font-semibold">Plugin Management</h1>
+      <p class="text-sm text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</p>
+      <div class="flex items-center gap-2 mt-3">
+        <Button size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
+        <Button size="sm" @click="openInstallDialog">Install from AKP</Button>
+        <span v-if="mutationError" class="text-xs text-destructive">{{ mutationError }}</span>
+      </div>
+    </div>
+
+    <!-- Install dialog -->
+    <Dialog v-model:open="installDialogOpen">
+      <DialogContent class="max-w-[600px]">
+
+        <!-- Step 1: input -->
+        <template v-if="installStep === 'input'">
+          <DialogHeader>
+            <DialogTitle>Install from AKP</DialogTitle>
+            <DialogDescription>
+              Paste a URL to a plugin update manifest, or browse for a <code class="font-mono text-foreground">.akp</code> file on your computer.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div class="flex items-center gap-2">
+            <input
+              v-model="installUrl"
+              type="url"
+              placeholder="https://example.com/my-plugin/update-manifest.json"
+              class="flex-1 h-9 rounded-md border border-input bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              :disabled="preparing"
+              @keydown.enter="prepareFromUrl"
+            />
+            <Button size="sm" variant="outline" :disabled="preparing" @click="browseForFile">
+              Browse…
+            </Button>
+          </div>
+
+          <p v-if="installError" class="text-xs text-destructive -mt-2">{{ installError }}</p>
+
+          <div v-if="installUrl.trim()" class="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5 mt-px shrink-0">
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+              <path d="M12 9v4M12 17h.01"/>
+            </svg>
+            Only install plugins from sources you trust. Plugins run with access to your sessions, secrets, and file system.
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" :disabled="preparing" @click="installDialogOpen = false">Cancel</Button>
+            <Button :disabled="!canContinue" @click="prepareFromUrl">
+              {{ preparing ? 'Loading…' : 'Continue' }}
+            </Button>
+          </DialogFooter>
+        </template>
+
+        <!-- Step 2: permission review -->
+        <template v-else-if="installStep === 'review' && pendingManifest">
+          <DialogHeader>
+            <DialogTitle class="flex items-baseline gap-2">
+              {{ pendingManifest.name }}
+              <span class="font-mono text-sm font-normal text-muted-foreground">v{{ pendingManifest.version }}</span>
+            </DialogTitle>
+            <DialogDescription v-if="pendingManifest.description">
+              {{ pendingManifest.description }}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div class="space-y-4">
+            <div v-if="pendingManifest.permissions.length === 0" class="text-sm text-muted-foreground italic">
+              This plugin requests no special permissions.
+            </div>
+            <template v-else>
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Permissions requested</p>
+              <ul class="space-y-2">
+                <li
+                  v-for="perm in pendingManifest.permissions"
+                  :key="perm"
+                  class="flex items-start gap-2.5 text-sm"
+                >
+                  <span class="text-amber-500 mt-px shrink-0">⚠</span>
+                  <span>{{ permissionLabels[perm] ?? perm }}</span>
+                </li>
+              </ul>
+            </template>
+
+            <div v-if="pendingManifest.network?.hosts?.length">
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Network access</p>
+              <div class="flex flex-wrap gap-1.5">
+                <span
+                  v-for="host in pendingManifest.network.hosts"
+                  :key="host"
+                  class="font-mono text-xs bg-muted/50 rounded px-2 py-0.5"
+                >{{ host }}</span>
+              </div>
+            </div>
+          </div>
+
+          <p v-if="installError" class="text-xs text-destructive">{{ installError }}</p>
+
+          <DialogFooter>
+            <Button variant="outline" :disabled="installing" @click="denyInstall">Deny</Button>
+            <Button :disabled="installing" @click="confirmInstall">
+              {{ installing ? 'Installing…' : 'Install' }}
+            </Button>
+          </DialogFooter>
+        </template>
+
+      </DialogContent>
+    </Dialog>
 
     <div class="flex-1 overflow-y-auto min-h-0">
-      <div v-if="isLoading" class="p-6 text-sm text-muted-foreground animate-pulse">
+      <div class="max-w-[700px] mx-auto px-6 py-4">
+      <div v-if="isLoading" class="text-sm text-muted-foreground animate-pulse">
         Loading plugins…
       </div>
 
       <div
         v-else-if="!plugins || plugins.length === 0"
-        class="p-6 text-sm text-muted-foreground"
+        class="text-sm text-muted-foreground"
       >
-        No plugins installed. Click <strong>Install from file</strong> to add a
-        <code class="font-mono text-foreground">.akp</code> plugin package, or
+        No plugins installed. Click <strong>Install from GitHub</strong> to add a plugin, or
         <strong>Load dev plugin</strong> to point at a local directory during development.
       </div>
 
@@ -188,32 +432,39 @@ const statusDotClass: Record<string, string> = {
         <li
           v-for="plugin in plugins"
           :key="plugin.id"
-          class="px-6 py-4 flex items-start gap-4"
+          class="py-4 flex items-start gap-4"
         >
-          <!-- Icon -->
-          <div class="shrink-0 size-10 rounded-lg overflow-hidden bg-muted/40 flex items-center justify-center">
+          <!-- Avatar -->
+          <div
+            class="shrink-0 size-10 rounded-lg overflow-hidden flex items-center justify-center"
+            :style="plugin.manifest.icon ? {} : { backgroundColor: pluginAvatarColor(plugin.id) }"
+          >
             <img
               v-if="plugin.manifest.icon"
               :src="plugin.manifest.icon"
               :alt="plugin.name"
-              class="size-8 object-contain"
+              class="size-10 object-cover"
             />
-            <!-- puzzle-piece fallback -->
-            <svg v-else xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="size-5 text-muted-foreground">
-              <path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.836l-1.61 1.612a2.415 2.415 0 0 1-1.705.707 2.415 2.415 0 0 1-1.704-.707l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.415 2.415 0 0 1 1 12c0-.617.236-1.234.706-1.704L3.317 8.69a.979.979 0 0 1 .836-.276c.47.07.803.48.968.925a2.501 2.501 0 1 0 3.214-3.214c-.445-.165-.854-.497-.925-.967a.979.979 0 0 1 .276-.837l1.61-1.61a2.415 2.415 0 0 1 1.705-.707 2.415 2.415 0 0 1 1.704.707l1.568 1.567c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02z"/>
-            </svg>
+            <span v-else class="text-white text-sm font-bold leading-none select-none">
+              {{ pluginInitials(plugin.name) }}
+            </span>
           </div>
 
           <!-- Info -->
-          <div class="flex-1 min-w-0 space-y-0.5">
+          <div class="flex-1 min-w-0 space-y-1">
+            <!-- Row 1: name + version + source badge + status badge + update badge -->
             <div class="flex items-center gap-2 flex-wrap">
               <span class="text-sm font-semibold">{{ plugin.name }}</span>
-              <span class="text-xs text-muted-foreground font-mono">v{{ plugin.version }}</span>
+              <span class="text-[11px] font-mono text-muted-foreground">v{{ plugin.version }}</span>
               <span
                 class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                 :class="sourceBadgeClass[plugin.source] ?? 'bg-muted text-muted-foreground'"
               >{{ plugin.source }}</span>
-              <!-- update badge -->
+              <span
+                class="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                :class="statusBadgeClass[plugin.status] ?? 'bg-muted text-muted-foreground'"
+                :title="plugin.status === 'unhealthy' ? (plugin.unhealthyReason ?? plugin.status) : plugin.status"
+              >{{ plugin.status }}</span>
               <button
                 v-if="pendingUpdates.has(plugin.id)"
                 class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
@@ -222,64 +473,74 @@ const statusDotClass: Record<string, string> = {
                 Update available
               </button>
             </div>
-            <p v-if="plugin.manifest.description" class="text-xs text-muted-foreground truncate">
+
+            <!-- Row 2: description -->
+            <p v-if="plugin.manifest.description" class="text-sm text-muted-foreground truncate">
               {{ plugin.manifest.description }}
             </p>
-            <!-- status indicator -->
-            <div class="flex items-center gap-1.5 pt-0.5">
+
+            <!-- Row 3: permissions -->
+            <div v-if="plugin.manifest.permissions?.length" class="flex items-center gap-1.5 flex-wrap">
+              <span class="text-xs text-muted-foreground">Permissions:</span>
               <span
-                class="inline-block size-1.5 rounded-full"
-                :class="statusDotClass[plugin.status] ?? 'bg-muted-foreground'"
-                :title="plugin.status === 'unhealthy' ? plugin.unhealthyReason : plugin.status"
-              />
-              <span class="text-[10px] text-muted-foreground">{{ plugin.status }}</span>
-              <span
-                v-if="plugin.status === 'unhealthy' && plugin.unhealthyReason"
-                class="text-[10px] text-destructive truncate"
-              >— {{ plugin.unhealthyReason }}</span>
+                v-for="perm in plugin.manifest.permissions"
+                :key="perm"
+                class="text-[11px] font-mono px-1.5 py-0.5 rounded border border-border bg-muted/30"
+              >{{ perm }}</span>
             </div>
           </div>
 
-          <!-- Actions -->
-          <div class="shrink-0 flex items-center gap-1.5">
-            <!-- Settings gear -->
-            <button
-              v-if="plugin.manifest.settings_schema"
-              class="p-1.5 rounded hover:bg-muted/60 text-muted-foreground hover:text-foreground transition-colors"
-              title="Plugin settings"
-              @click="settingsPlugin = plugin"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="size-4">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-              </svg>
-            </button>
+          <!-- Controls -->
+          <div class="shrink-0 flex items-center gap-2">
+            <!-- Enable/disable switch -->
+            <Switch
+              v-model="localEnabled[plugin.id]"
+              class="data-[state=checked]:bg-amber-500"
+            />
 
-            <!-- Enable / Disable toggle (hidden for bundled) -->
-            <button
-              v-if="plugin.source !== 'bundled'"
-              class="text-xs px-2.5 py-1 rounded border transition-colors"
-              :class="plugin.enabled
-                ? 'border-border text-muted-foreground hover:text-destructive hover:border-destructive'
-                : 'border-green-500/40 text-green-400 hover:bg-green-500/10'"
-              @click="toggleEnabled(plugin)"
-            >
-              {{ plugin.enabled ? 'Disable' : 'Enable' }}
-            </button>
-
-            <!-- Uninstall (hidden for bundled) -->
-            <Button
-              v-if="plugin.source !== 'bundled'"
-              variant="ghost"
-              size="sm"
-              class="text-xs text-destructive hover:text-destructive"
-              @click="promptUninstall(plugin)"
-            >
-              Remove
-            </Button>
+            <!-- More actions dropdown -->
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button variant="ghost" size="icon" class="size-8 text-muted-foreground">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-4">
+                    <circle cx="12" cy="5" r="1.5"/>
+                    <circle cx="12" cy="12" r="1.5"/>
+                    <circle cx="12" cy="19" r="1.5"/>
+                  </svg>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="w-44">
+                <DropdownMenuItem
+                  v-if="plugin.manifest.homepage_url"
+                  @click="plugin.manifest.homepage_url && openExternal(plugin.manifest.homepage_url)"
+                >
+                  View on GitHub
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  v-if="plugin.manifest.settings_schema"
+                  @click="settingsPlugin = plugin"
+                >
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator v-if="plugin.manifest.homepage_url || plugin.manifest.settings_schema" />
+                <DropdownMenuItem @click="localEnabled[plugin.id] = !localEnabled[plugin.id]">
+                  {{ localEnabled[plugin.id] ? 'Disable' : 'Enable' }}
+                </DropdownMenuItem>
+                <template v-if="plugin.source !== 'bundled'">
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    class="text-destructive focus:text-destructive"
+                    @click="promptUninstall(plugin)"
+                  >
+                    Remove…
+                  </DropdownMenuItem>
+                </template>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </li>
       </ul>
+      </div><!-- /max-w inner -->
     </div>
 
     <!-- Uninstall confirmation -->
