@@ -780,7 +780,12 @@ export interface AgentKeeperApi {
     /** Fires when the OS asks the app to open a .akp file (macOS open-file / Win second-instance). */
     onOpenFile: (handler: (filePath: string) => void) => () => void
     list: () => Promise<PluginRecord[]>
+    pickAkpFile: () => Promise<string | null>
     install: (akpPath?: string) => Promise<void>
+    installFromUrl: (manifestUrl: string) => Promise<void>
+    prepareAkpInstall: (opts: { filePath?: string; manifestUrl?: string }) => Promise<{ manifest: PluginManifest; token: string }>
+    confirmAkpInstall: (token: string) => Promise<void>
+    cancelAkpInstall: (token: string) => Promise<void>
     loadDev: (dirPath?: string) => Promise<void>
     unloadDev: (pluginId: string) => Promise<void>
     uninstall: (pluginId: string) => Promise<void>
@@ -927,7 +932,12 @@ export const IPC_CHANNELS = {
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',
   pluginsList: 'plugins:list',
+  pluginsPickAkpFile: 'plugins:pickAkpFile',
   pluginsInstall: 'plugins:install',
+  pluginsInstallFromUrl: 'plugins:installFromUrl',
+  pluginsPrepareAkpInstall: 'plugins:prepareAkpInstall',
+  pluginsConfirmAkpInstall: 'plugins:confirmAkpInstall',
+  pluginsCancelAkpInstall: 'plugins:cancelAkpInstall',
   pluginsLoadDev: 'plugins:loadDev',
   pluginsUnloadDev: 'plugins:unloadDev',
   pluginsUninstall: 'plugins:uninstall',

@@ -42,12 +42,16 @@ import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import {
+  cancelAkpInstall,
   checkForUpdates,
+  confirmAkpInstall,
   disablePlugin,
   enablePlugin,
   installPlugin,
+  installPluginFromUrl,
   listPlugins,
   loadDevPlugin,
+  prepareAkpInstall,
   uninstallPlugin,
   unloadDevPlugin,
   updatePlugin,
@@ -645,7 +649,21 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }))
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsInstall, async (_event, akpPath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsPickAkpFile, async (): Promise<string | null> => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const result = win
+      ? await dialog.showOpenDialog(win, {
+          filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+          properties: ['openFile'],
+        })
+      : await dialog.showOpenDialog({
+          filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+          properties: ['openFile'],
+        })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsInstall, async (_event, akpPath?: string): Promise<void> => {
     try {
       let filePath = akpPath
       if (!filePath) {
@@ -667,6 +685,37 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       console.error('[ipc] plugins:install failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsInstallFromUrl, async (_event, manifestUrl: string) => {
+    try {
+      await installPluginFromUrl(manifestUrl)
+    } catch (err) {
+      console.error('[ipc] plugins:installFromUrl failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsPrepareAkpInstall, async (_event, opts: { filePath?: string; manifestUrl?: string }) => {
+    try {
+      return await prepareAkpInstall(opts)
+    } catch (err) {
+      console.error('[ipc] plugins:prepareAkpInstall failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsConfirmAkpInstall, async (_event, token: string) => {
+    try {
+      await confirmAkpInstall(token)
+    } catch (err) {
+      console.error('[ipc] plugins:confirmAkpInstall failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsCancelAkpInstall, (_event, token: string) => {
+    cancelAkpInstall(token)
   })
 
   ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (_event, dirPath?: string) => {
@@ -864,7 +913,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
 
   // Session registry — persisted sessions + resume + delete + touch
-  // Prune expired entries once at startup using the current setting.
+  // Reset any sessions left mid-flight by a previous process, then prune old ones.
+  sessionRegistry.resetStaleRunning()
   {
     const { sessionExpiryDays } = settingsStore.get()
     sessionRegistry.pruneExpired(sessionExpiryDays)

@@ -299,8 +299,18 @@ const api: AgentKeeperApi = {
     onOpenFile: (handler: (filePath: string) => void): () => void =>
       onChannel<string>('plugin:open-file', handler),
     list: () => invoke(IPC_CHANNELS.pluginsList) as Promise<PluginRecord[]>,
+    pickAkpFile: () =>
+      invoke(IPC_CHANNELS.pluginsPickAkpFile) as Promise<string | null>,
     install: (akpPath?: string) =>
       invoke(IPC_CHANNELS.pluginsInstall, akpPath) as Promise<void>,
+    installFromUrl: (manifestUrl: string) =>
+      invoke(IPC_CHANNELS.pluginsInstallFromUrl, manifestUrl) as Promise<void>,
+    prepareAkpInstall: (opts: { filePath?: string; manifestUrl?: string }) =>
+      invoke(IPC_CHANNELS.pluginsPrepareAkpInstall, opts) as Promise<{ manifest: import('@agentkeeper/sdk').PluginManifest; token: string }>,
+    confirmAkpInstall: (token: string) =>
+      invoke(IPC_CHANNELS.pluginsConfirmAkpInstall, token) as Promise<void>,
+    cancelAkpInstall: (token: string) =>
+      invoke(IPC_CHANNELS.pluginsCancelAkpInstall, token) as Promise<void>,
     loadDev: (dirPath?: string) =>
       invoke(IPC_CHANNELS.pluginsLoadDev, dirPath) as Promise<void>,
     unloadDev: (pluginId: string) =>
