@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { SwitchRoot, SwitchThumb } from 'reka-ui'
 import { cn } from '@/lib/utils'
 
@@ -8,11 +9,16 @@ const props = defineProps<{
   class?: string
 }>()
 const emit = defineEmits<{ 'update:checked': [value: boolean] }>()
+
+const model = computed({
+  get: () => props.checked ?? false,
+  set: (v: boolean) => emit('update:checked', v),
+})
 </script>
 
 <template>
   <SwitchRoot
-    :model-value="props.checked"
+    v-model="model"
     :disabled="props.disabled"
     :class="cn(
       'peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors',
@@ -21,7 +27,6 @@ const emit = defineEmits<{ 'update:checked': [value: boolean] }>()
       'data-[state=checked]:bg-primary data-[state=unchecked]:bg-input',
       props.class
     )"
-    @update:model-value="emit('update:checked', $event)"
   >
     <SwitchThumb
       class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0"
