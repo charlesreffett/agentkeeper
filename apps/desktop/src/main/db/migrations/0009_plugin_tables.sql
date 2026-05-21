@@ -4,7 +4,7 @@ CREATE TABLE plugin_storage (
   value TEXT NOT NULL,
   PRIMARY KEY (plugin_id, key)
 );
-
+--> statement-breakpoint
 CREATE TABLE plugin_registry (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

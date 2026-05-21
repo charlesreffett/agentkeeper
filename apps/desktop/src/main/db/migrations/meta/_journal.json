@@ -64,6 +64,13 @@
       "when": 1747699200,
       "tag": "0008_plan_agency",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1747785600,
+      "tag": "0009_plugin_tables",
+      "breakpoints": true
     }
   ]
 }

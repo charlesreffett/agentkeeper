@@ -1,4 +1,4 @@
-import { and, desc, eq, isNotNull, lt } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, lt } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencyHandoffs, agents, sessions } from './db/schema'
 import type { Agent, AgencyScope, LiveSessionStatus, PlanTodo, RoleEffort, Session } from '../shared/ipc-contract'
@@ -262,6 +262,21 @@ export function getHandoffsByRole(agencyInstanceId: string): Map<string, Handoff
 }
 
 // ── Maintenance ───────────────────────────────────────────────────────────────
+
+// Reset any sessions/agents that were left in a non-terminal state by a
+// previous app process. Called once at startup before any live agents exist.
+export function resetStaleRunning(): void {
+  const db = getDb()
+  const staleStatuses = ['running', 'starting', 'blocked']
+  db.update(agents)
+    .set({ status: 'terminated' })
+    .where(inArray(agents.status, staleStatuses))
+    .run()
+  db.update(sessions)
+    .set({ status: 'terminated' })
+    .where(inArray(sessions.status, staleStatuses))
+    .run()
+}
 
 export function pruneExpired(thresholdDays: number | null): void {
   if (thresholdDays === null) return
