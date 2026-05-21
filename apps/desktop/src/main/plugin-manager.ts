@@ -39,6 +39,23 @@ async function downloadToTmp(url: string): Promise<string> {
   return tmpPath
 }
 
+// ---- semver helpers ----
+
+function semverGt(a: string, b: string): boolean {
+  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number)
+  const av = parse(a), bv = parse(b)
+  for (let i = 0; i < 3; i++) {
+    const ai = av[i] ?? 0, bi = bv[i] ?? 0
+    if (ai > bi) return true
+    if (ai < bi) return false
+  }
+  return false
+}
+
+function satisfiesMin(appVer: string, minVer: string): boolean {
+  return !semverGt(minVer, appVer)
+}
+
 // ---- main API ----
 
 export async function installPlugin(akpPath: string): Promise<void> {
@@ -76,27 +93,42 @@ export async function installPlugin(akpPath: string): Promise<void> {
   }
 }
 
+export async function installPluginFromUrl(manifestUrl: string): Promise<void> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15_000)
+  let res: Response
+  try {
+    res = await fetch(manifestUrl, { signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
+  if (!res.ok) throw new Error(`Failed to fetch plugin manifest: ${res.status} ${manifestUrl}`)
+
+  const data = UpdateManifestSchema.safeParse(await res.json())
+  if (!data.success) throw new Error('URL did not return a valid plugin update manifest')
+
+  const appVer = app.getVersion()
+  const release = data.data.releases
+    .filter(r => !r.min_app_version || satisfiesMin(appVer, r.min_app_version))
+    .sort((a, b) => (semverGt(a.version, b.version) ? -1 : 1))[0]
+  if (!release) throw new Error('No compatible release found in update manifest')
+
+  const tmpAkp = await downloadToTmp(release.url)
+  try {
+    const actualHash = await sha256File(tmpAkp)
+    if (actualHash !== release.sha256) throw new Error(`SHA-256 mismatch: expected ${release.sha256}, got ${actualHash}`)
+    await installPlugin(tmpAkp)
+  } finally {
+    await fsp.unlink(tmpAkp).catch(() => {})
+  }
+}
+
 export interface UpdateAvailable {
   pluginId: string
   currentVersion: string
   availableVersion: string
   releaseNotes?: string
   release: UpdateRelease
-}
-
-function semverGt(a: string, b: string): boolean {
-  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number)
-  const av = parse(a), bv = parse(b)
-  for (let i = 0; i < 3; i++) {
-    const ai = av[i] ?? 0, bi = bv[i] ?? 0
-    if (ai > bi) return true
-    if (ai < bi) return false
-  }
-  return false
-}
-
-function satisfiesMin(appVer: string, minVer: string): boolean {
-  return !semverGt(minVer, appVer)
 }
 
 export async function checkForUpdates(): Promise<UpdateAvailable[]> {
@@ -183,6 +215,87 @@ export async function updatePlugin(pluginId: string, release: UpdateRelease): Pr
   }
 }
 
+// ---- two-phase install (prepare → confirm/cancel) ----
+
+interface PendingInstall {
+  akpPath: string
+  isTmp: boolean
+}
+
+const pendingInstalls = new Map<string, PendingInstall>()
+
+export async function prepareAkpInstall(opts: { filePath?: string; manifestUrl?: string }): Promise<{ manifest: PluginManifest; token: string }> {
+  let akpPath: string
+  let isTmp = false
+
+  if (opts.filePath) {
+    akpPath = opts.filePath
+  } else if (opts.manifestUrl) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 15_000)
+    let res: Response
+    try {
+      res = await fetch(opts.manifestUrl, { signal: controller.signal })
+    } finally {
+      clearTimeout(timeout)
+    }
+    if (!res.ok) throw new Error(`Failed to fetch plugin manifest: ${res.status}`)
+    const data = UpdateManifestSchema.safeParse(await res.json())
+    if (!data.success) throw new Error('URL did not return a valid plugin update manifest')
+    const appVer = app.getVersion()
+    const release = data.data.releases
+      .filter(r => !r.min_app_version || satisfiesMin(appVer, r.min_app_version))
+      .sort((a, b) => (semverGt(a.version, b.version) ? -1 : 1))[0]
+    if (!release) throw new Error('No compatible release found in update manifest')
+    akpPath = await downloadToTmp(release.url)
+    isTmp = true
+    const actualHash = await sha256File(akpPath)
+    if (actualHash !== release.sha256) {
+      await fsp.unlink(akpPath).catch(() => {})
+      throw new Error(`SHA-256 mismatch: expected ${release.sha256}, got ${actualHash}`)
+    }
+  } else {
+    throw new Error('Must provide filePath or manifestUrl')
+  }
+
+  // Peek at manifest.json without extracting to disk
+  let manifest: PluginManifest
+  try {
+    const zip = new AdmZip(akpPath)
+    const entry = zip.getEntry('manifest.json')
+    if (!entry) throw new Error('manifest.json not found in .akp package')
+    const manifestRaw = JSON.parse(entry.getData().toString('utf8')) as unknown
+    const result = PluginManifestSchema.safeParse(manifestRaw)
+    if (!result.success) throw new Error(`Invalid manifest: ${JSON.stringify(result.error.flatten())}`)
+    manifest = result.data
+  } catch (err) {
+    if (isTmp) await fsp.unlink(akpPath).catch(() => {})
+    throw err
+  }
+
+  const token = crypto.randomUUID()
+  pendingInstalls.set(token, { akpPath, isTmp })
+  return { manifest, token }
+}
+
+export async function confirmAkpInstall(token: string): Promise<void> {
+  const pending = pendingInstalls.get(token)
+  if (!pending) throw new Error('No pending install found — it may have expired')
+  pendingInstalls.delete(token)
+  try {
+    await installPlugin(pending.akpPath)
+  } finally {
+    if (pending.isTmp) await fsp.unlink(pending.akpPath).catch(() => {})
+  }
+}
+
+export function cancelAkpInstall(token: string): void {
+  const pending = pendingInstalls.get(token)
+  if (!pending) return
+  pendingInstalls.delete(token)
+  if (pending.isTmp) void fsp.unlink(pending.akpPath).catch(() => {})
+}
+
 export async function uninstallPlugin(pluginId: string): Promise<void> {
   const db = getRawSqlite()
   const row = db.prepare('SELECT version, source FROM plugin_registry WHERE id = ?').get(pluginId) as { version: string; source: string } | undefined
@@ -227,10 +340,13 @@ export async function disablePlugin(pluginId: string): Promise<void> {
   const db = getRawSqlite()
   db.prepare('UPDATE plugin_registry SET enabled = 0 WHERE id = ?').run(pluginId)
   const host = getActiveHost(pluginId)
-  if (host) await host.deactivate()
-  removeActiveHost(pluginId)
-  proxyRegistry.get(pluginId)?.close()
-  proxyRegistry.delete(pluginId)
+  try {
+    if (host) await host.deactivate()
+  } finally {
+    removeActiveHost(pluginId)
+    proxyRegistry.get(pluginId)?.close()
+    proxyRegistry.delete(pluginId)
+  }
 }
 
 export function listPlugins(): { id: string; name: string; version: string; enabled: number; source: string; manifest: string }[] {
