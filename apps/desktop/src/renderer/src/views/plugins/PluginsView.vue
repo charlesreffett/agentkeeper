@@ -50,10 +50,16 @@ function invalidate() {
 
 // ── Mutations ─────────────────────────────────────────────────────────────────
 
-const { mutate: doEnable }    = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.enable(id),    onSuccess: invalidate })
-const { mutate: doDisable }   = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.disable(id),   onSuccess: invalidate })
-const { mutate: doUninstall } = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.uninstall(id), onSuccess: invalidate })
-const { mutate: doUpdate }    = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.update(id),    onSuccess: invalidate })
+const mutationError = ref<string | null>(null)
+
+function onMutationError(err: unknown) {
+  mutationError.value = err instanceof Error ? err.message : String(err)
+}
+
+const { mutate: doEnable }    = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.enable(id),    onSuccess: invalidate, onError: onMutationError })
+const { mutate: doDisable }   = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.disable(id),   onSuccess: invalidate, onError: onMutationError })
+const { mutate: doUninstall } = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.uninstall(id), onSuccess: invalidate, onError: onMutationError })
+const { mutate: doUpdate }    = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.update(id),    onSuccess: invalidate, onError: onMutationError })
 
 // ── Enable / Disable toggle ───────────────────────────────────────────────────
 
@@ -154,7 +160,7 @@ const statusDotClass: Record<string, string> = {
   <div class="h-full flex flex-col overflow-hidden">
     <PageHeader title="Plugins">
       <template #actions>
-        <span v-if="installError" class="text-xs text-destructive">{{ installError }}</span>
+        <span v-if="installError || mutationError" class="text-xs text-destructive">{{ installError ?? mutationError }}</span>
         <Button size="sm" variant="outline" :disabled="installing" @click="loadDev">
           Load dev plugin
         </Button>

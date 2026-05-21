@@ -157,6 +157,10 @@ export function getActiveHost(pluginId: string): PluginHost | undefined {
   return activeHosts.get(pluginId)
 }
 
+export function removeActiveHost(pluginId: string): void {
+  activeHosts.delete(pluginId)
+}
+
 export async function initPluginLoader(
   workItemRegistry: WorkItemRegistryFull,
   webContents?: Electron.WebContents,

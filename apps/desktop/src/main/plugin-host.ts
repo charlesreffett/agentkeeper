@@ -67,6 +67,9 @@ export class PluginHost {
     this.port.on('message', (e) => this.handlePluginMessage(e.data as PluginToHostMessage))
 
     this.proc.on('exit', (code) => {
+      // Null out handles regardless of exit code so callers can detect a dead host.
+      this.proc = null
+      this.port = null
       if (code !== 0 && code !== null) {
         console.error(`[plugin:${this.manifest.id}] exited with code ${code}`)
         this.eventBus.emit('plugin.unhealthy', { pluginId: this.manifest.id, reason: `Process exited with code ${code}` })
@@ -114,8 +117,9 @@ export class PluginHost {
   }
 
   async uninstall(): Promise<void> {
-    this.port!.postMessage({ type: 'uninstall' } as HostToPluginMessage)
-    await awaitAck(this.port!, 'uninstalled')
+    if (!this.port) return  // process already dead; skip onUninstall IPC
+    this.port.postMessage({ type: 'uninstall' } as HostToPluginMessage)
+    await awaitAck(this.port, 'uninstalled')
   }
 
   private hasPermission(permission: PluginPermission): boolean {

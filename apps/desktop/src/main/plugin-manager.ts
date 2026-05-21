@@ -8,7 +8,7 @@ import { app } from 'electron'
 import AdmZip from 'adm-zip'
 import { PluginManifestSchema, UpdateManifestSchema } from '@agentkeeper/sdk'
 import type { PluginManifest, UpdateRelease } from '@agentkeeper/sdk'
-import { spawnPlugin, activatePlugin, spawnAndActivate, getActiveHost } from './plugin-loader.js'
+import { spawnPlugin, activatePlugin, spawnAndActivate, getActiveHost, removeActiveHost } from './plugin-loader.js'
 import { proxyRegistry } from './plugin-proxy.js'
 import { getRawSqlite } from './db/index.js'
 import { getPluginEventBus } from './plugins.js'
@@ -189,11 +189,19 @@ export async function uninstallPlugin(pluginId: string): Promise<void> {
   if (!row) throw new Error(`Plugin ${pluginId} not found`)
   if (row.source === 'bundled') throw new Error(`Cannot uninstall bundled plugin ${pluginId}`)
 
+  // Dev plugins have a file watcher; close it before touching the host so a
+  // mid-uninstall file event can't re-spawn the plugin.
+  if (row.source === 'dev') {
+    devWatchers.get(pluginId)?.close()
+    devWatchers.delete(pluginId)
+  }
+
   const host = getActiveHost(pluginId)
   if (host) {
     await host.uninstall()
     await host.deactivate()
   }
+  removeActiveHost(pluginId)
   proxyRegistry.get(pluginId)?.close()
   proxyRegistry.delete(pluginId)
 
