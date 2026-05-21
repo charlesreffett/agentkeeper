@@ -207,6 +207,18 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
 
+  packages/plugin-test:
+    dependencies:
+      '@agentkeeper/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
+  packages/plugin-test-v2:
+    dependencies:
+      '@agentkeeper/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
   packages/sdk:
     dependencies:
       http-proxy-agent:
