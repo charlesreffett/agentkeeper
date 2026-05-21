@@ -1,7 +1,12 @@
+import { createRequire } from 'node:module'
 import * as http from 'node:http'
 import * as https from 'node:https'
 import { HttpProxyAgent } from 'http-proxy-agent'
 import { HttpsProxyAgent } from 'https-proxy-agent'
+
+const _require = createRequire(import.meta.url)
+const _http = _require('http') as typeof http
+const _https = _require('https') as typeof https
 import type { PluginToHostMessage, HostToPluginMessage } from './protocol.js'
 import type {
   Plugin,
@@ -32,11 +37,11 @@ if (proxyUrl) {
         throw new Error('NetworkPermissionDenied: plugin has no network permission')
       }
     })()
-    ;(http as unknown as Record<string, unknown>)['globalAgent'] = denyAgent
-    ;(https as unknown as Record<string, unknown>)['globalAgent'] = denyAgent
+    _http.globalAgent = denyAgent as http.Agent
+    _https.globalAgent = denyAgent as unknown as https.Agent
   } else {
-    ;(http as unknown as Record<string, unknown>)['globalAgent'] = new HttpProxyAgent(proxyUrl)
-    ;(https as unknown as Record<string, unknown>)['globalAgent'] = new HttpsProxyAgent(proxyUrl)
+    _http.globalAgent = new HttpProxyAgent(proxyUrl)
+    _https.globalAgent = new HttpsProxyAgent(proxyUrl)
     try {
       const { setGlobalDispatcher, ProxyAgent } = await import('undici')
       setGlobalDispatcher(new ProxyAgent(proxyUrl))
