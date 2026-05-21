@@ -228,6 +228,7 @@ export async function disablePlugin(pluginId: string): Promise<void> {
   db.prepare('UPDATE plugin_registry SET enabled = 0 WHERE id = ?').run(pluginId)
   const host = getActiveHost(pluginId)
   if (host) await host.deactivate()
+  removeActiveHost(pluginId)
   proxyRegistry.get(pluginId)?.close()
   proxyRegistry.delete(pluginId)
 }
@@ -260,7 +261,7 @@ export async function loadDevPlugin(dirPath: string): Promise<void> {
   // Upsert plugin_registry row with source='dev'
   const row = db.prepare('SELECT id FROM plugin_registry WHERE id = ?').get(manifest.id)
   if (row) {
-    db.prepare("UPDATE plugin_registry SET version=?, manifest=?, source='dev', dev_path=? WHERE id=?")
+    db.prepare("UPDATE plugin_registry SET version=?, manifest=?, source='dev', enabled=1, dev_path=? WHERE id=?")
       .run(manifest.version, JSON.stringify(manifestRaw), dirPath, manifest.id)
   } else {
     db.prepare(`INSERT INTO plugin_registry (id, name, version, enabled, manifest, source, installed_at, dev_path)
