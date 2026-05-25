@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
-import { checkCliPresent, listProjects } from './jira-cli'
-import { JiraWorkItemSource } from './jira-source'
+import { checkCliPresent, listProjects } from './jira-cli.js'
+import { JiraWorkItemSource } from './jira-source.js'
 
 export { listProjects }
 export type { JiraProject } from './jira-cli'
@@ -34,12 +34,7 @@ async function startJira(ctx: PluginContext<JiraSettings>): Promise<void> {
   ctx.logger.info('jira plugin active')
 }
 
-export const jiraPlugin: Plugin<JiraSettings> = {
-  id: 'jira',
-  name: 'Jira',
-  version: '0.1.0',
-  settings: JiraSettingsSchema,
-
+const jiraPlugin: Plugin<JiraSettings> = {
   async activate(ctx: PluginContext<JiraSettings>) {
     pluginCtx = ctx
     ctx.ui.contribute('sidebar.primary', {
@@ -84,3 +79,5 @@ export const jiraPlugin: Plugin<JiraSettings> = {
     pluginCtx = null
   },
 }
+
+export default jiraPlugin

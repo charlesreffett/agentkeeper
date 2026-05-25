@@ -3,6 +3,7 @@
 
 import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 export type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus }
+import type { PluginManifest } from '@agentkeeper/sdk'
 import type {
   CheckRun,
   CheckState,
@@ -625,6 +626,29 @@ export interface LegacyDayEntry {
   costUsd: number
 }
 
+// ─── Plugin management ───────────────────────────────────────────────────────
+
+export type PluginSource = 'bundled' | 'local' | 'dev'
+export type PluginStatus = 'active' | 'inactive' | 'unhealthy'
+
+export interface PluginRecord {
+  id: string
+  name: string
+  version: string
+  enabled: boolean
+  source: PluginSource
+  status: PluginStatus
+  unhealthyReason?: string
+  manifest: PluginManifest
+}
+
+export interface UpdateAvailable {
+  pluginId: string
+  currentVersion: string
+  availableVersion: string
+  releaseNotes?: string
+}
+
 // ─── IPC API exposed to renderer as window.agentkeeper ──────────────────────
 
 export interface AgentKeeperApi {
@@ -753,6 +777,22 @@ export interface AgentKeeperApi {
     getConfig: (pluginId: string) => Promise<unknown>
     setConfig: (pluginId: string, config: unknown) => Promise<void>
     onEvent: (handler: (event: string, payload: unknown) => void) => () => void
+    /** Fires when the OS asks the app to open a .akp file (macOS open-file / Win second-instance). */
+    onOpenFile: (handler: (filePath: string) => void) => () => void
+    list: () => Promise<PluginRecord[]>
+    pickAkpFile: () => Promise<string | null>
+    install: (akpPath?: string) => Promise<void>
+    installFromUrl: (manifestUrl: string) => Promise<void>
+    prepareAkpInstall: (opts: { filePath?: string; manifestUrl?: string }) => Promise<{ manifest: PluginManifest; token: string }>
+    confirmAkpInstall: (token: string) => Promise<void>
+    cancelAkpInstall: (token: string) => Promise<void>
+    loadDev: (dirPath?: string) => Promise<void>
+    unloadDev: (pluginId: string) => Promise<void>
+    uninstall: (pluginId: string) => Promise<void>
+    enable: (pluginId: string) => Promise<void>
+    disable: (pluginId: string) => Promise<void>
+    checkUpdates: () => Promise<UpdateAvailable[]>
+    update: (pluginId: string) => Promise<void>
   }
   workItems: {
     list: () => Promise<WorkItem[]>
@@ -891,6 +931,20 @@ export const IPC_CHANNELS = {
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',
+  pluginsList: 'plugins:list',
+  pluginsPickAkpFile: 'plugins:pickAkpFile',
+  pluginsInstall: 'plugins:install',
+  pluginsInstallFromUrl: 'plugins:installFromUrl',
+  pluginsPrepareAkpInstall: 'plugins:prepareAkpInstall',
+  pluginsConfirmAkpInstall: 'plugins:confirmAkpInstall',
+  pluginsCancelAkpInstall: 'plugins:cancelAkpInstall',
+  pluginsLoadDev: 'plugins:loadDev',
+  pluginsUnloadDev: 'plugins:unloadDev',
+  pluginsUninstall: 'plugins:uninstall',
+  pluginsEnable: 'plugins:enable',
+  pluginsDisable: 'plugins:disable',
+  pluginsCheckUpdates: 'plugins:checkUpdates',
+  pluginsUpdate: 'plugins:update',
   githubConfigGet: 'github:config:get',
   githubConfigSet: 'github:config:set',
   githubListPRs: 'github:prs:list',

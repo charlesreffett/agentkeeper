@@ -12,6 +12,7 @@ import {
   type DayTotal,
   type MergeMethod,
   type PRFilters,
+  type PluginSource,
   type RecentProject,
   type ReviewEvent,
   type SecretKeyName,
@@ -40,6 +41,23 @@ import {
 import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
+import {
+  cancelAkpInstall,
+  checkForUpdates,
+  confirmAkpInstall,
+  disablePlugin,
+  enablePlugin,
+  installPlugin,
+  installPluginFromUrl,
+  listPlugins,
+  loadDevPlugin,
+  prepareAkpInstall,
+  uninstallPlugin,
+  unloadDevPlugin,
+  updatePlugin,
+} from './plugin-manager.js'
+import { getActiveHost } from './plugin-loader.js'
+import { getRawSqlite } from './db/index'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
@@ -118,10 +136,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       recentProjectsStore.add(project)
       // auto-register GitHub repo if detected and not already in config
       if (repo) {
-        const cfg = (await getPluginConfig('github')) as { repos?: string[]; repo?: string }
+        const cfg = (await getPluginConfig('github', getRawSqlite())) as { repos?: string[]; repo?: string }
         const repos: string[] = cfg.repos ?? (cfg.repo ? [cfg.repo] : [])
         if (!repos.includes(repo)) {
-          await setPluginConfig('github', { repos: [...repos, repo] })
+          await setPluginConfig('github', { repos: [...repos, repo] }, getRawSqlite())
         }
       }
       return project
@@ -603,19 +621,183 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   // Plugin config
   ipcMain.handle(IPC_CHANNELS.pluginsConfigGet, (_event, pluginId: string) =>
-    getPluginConfig(pluginId),
+    getPluginConfig(pluginId, getRawSqlite()),
   )
   ipcMain.handle(
     IPC_CHANNELS.pluginsConfigSet,
     async (_event, pluginId: string, config: unknown) => {
       try {
-        return await setPluginConfig(pluginId, config)
+        return await setPluginConfig(pluginId, config, getRawSqlite())
       } catch (err) {
         console.error('[ipc] plugins:config:set failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
   )
+
+  // Plugin management
+  ipcMain.handle(IPC_CHANNELS.pluginsList, () => {
+    const rows = listPlugins()
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      version: row.version,
+      enabled: row.enabled === 1,
+      source: row.source as PluginSource,
+      status: getActiveHost(row.id) ? 'active' : (row.enabled === 1 && row.source === 'bundled' ? 'active' : 'inactive'),
+      manifest: JSON.parse(row.manifest),
+    }))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsPickAkpFile, async (): Promise<string | null> => {
+    const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    const result = win
+      ? await dialog.showOpenDialog(win, {
+          filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+          properties: ['openFile'],
+        })
+      : await dialog.showOpenDialog({
+          filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+          properties: ['openFile'],
+        })
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsInstall, async (_event, akpPath?: string): Promise<void> => {
+    try {
+      let filePath = akpPath
+      if (!filePath) {
+        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+        const result = win
+          ? await dialog.showOpenDialog(win, {
+              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+              properties: ['openFile'],
+            })
+          : await dialog.showOpenDialog({
+              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
+              properties: ['openFile'],
+            })
+        if (result.canceled || !result.filePaths[0]) return
+        filePath = result.filePaths[0]
+      }
+      await installPlugin(filePath)
+    } catch (err) {
+      console.error('[ipc] plugins:install failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsInstallFromUrl, async (_event, manifestUrl: string) => {
+    try {
+      await installPluginFromUrl(manifestUrl)
+    } catch (err) {
+      console.error('[ipc] plugins:installFromUrl failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsPrepareAkpInstall, async (_event, opts: { filePath?: string; manifestUrl?: string }) => {
+    try {
+      return await prepareAkpInstall(opts)
+    } catch (err) {
+      console.error('[ipc] plugins:prepareAkpInstall failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsConfirmAkpInstall, async (_event, token: string) => {
+    try {
+      await confirmAkpInstall(token)
+    } catch (err) {
+      console.error('[ipc] plugins:confirmAkpInstall failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsCancelAkpInstall, (_event, token: string) => {
+    cancelAkpInstall(token)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (_event, dirPath?: string) => {
+    try {
+      let resolvedPath = dirPath
+      if (!resolvedPath) {
+        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+        const result = win
+          ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+          : await dialog.showOpenDialog({ properties: ['openDirectory'] })
+        if (result.canceled || !result.filePaths[0]) return
+        resolvedPath = result.filePaths[0]
+      }
+      await loadDevPlugin(resolvedPath)
+    } catch (err) {
+      console.error('[ipc] plugins:loadDev failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsUnloadDev, async (_event, pluginId: string) => {
+    try {
+      await unloadDevPlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:unloadDev failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsUninstall, async (_event, pluginId: string) => {
+    try {
+      await uninstallPlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:uninstall failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsEnable, async (_event, pluginId: string) => {
+    try {
+      await enablePlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:enable failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsDisable, async (_event, pluginId: string) => {
+    try {
+      await disablePlugin(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:disable failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsCheckUpdates, async () => {
+    try {
+      const updates = await checkForUpdates()
+      return updates.map(({ pluginId, currentVersion, availableVersion, releaseNotes }) => ({
+        pluginId,
+        currentVersion,
+        availableVersion,
+        releaseNotes,
+      }))
+    } catch (err) {
+      console.error('[ipc] plugins:checkUpdates failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsUpdate, async (_event, pluginId: string) => {
+    try {
+      const updates = await checkForUpdates()
+      const entry = updates.find((u) => u.pluginId === pluginId)
+      if (!entry) throw new Error(`No update available for plugin ${pluginId}`)
+      await updatePlugin(pluginId, entry.release)
+    } catch (err) {
+      console.error('[ipc] plugins:update failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
 
   // Remote sources
   ipcMain.handle(IPC_CHANNELS.remotesDetect, (_event, projectPath: string) =>
@@ -624,7 +806,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   // GitHub — config + PR channels
   async function getGithubRepos(): Promise<string[]> {
-    const cfg = (await getPluginConfig('github')) as { repos?: string[]; repo?: string }
+    const cfg = (await getPluginConfig('github', getRawSqlite())) as { repos?: string[]; repo?: string }
     if (cfg.repos) return cfg.repos
     if (cfg.repo) return [cfg.repo]
     return []
@@ -636,7 +818,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(IPC_CHANNELS.githubConfigSet, async (_event, config: { repos: string[] }) => {
     try {
-      return await setPluginConfig('github', config)
+      return await setPluginConfig('github', config, getRawSqlite())
     } catch (err) {
       console.error('[ipc] github:config:set failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -731,7 +913,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
 
   // Session registry — persisted sessions + resume + delete + touch
-  // Prune expired entries once at startup using the current setting.
+  // Reset any sessions left mid-flight by a previous process, then prune old ones.
+  sessionRegistry.resetStaleRunning()
   {
     const { sessionExpiryDays } = settingsStore.get()
     sessionRegistry.pruneExpired(sessionExpiryDays)

@@ -34,6 +34,7 @@ const router = createRouter({
     { path: '/skills', component: SkillsView },
     { path: '/commands', component: CommandsView },
     { path: '/settings', component: SettingsView },
+    { path: '/plugins', component: () => import('../views/plugins/PluginsView.vue') },
     {
       path: '/jira',
       component: JiraLayout,

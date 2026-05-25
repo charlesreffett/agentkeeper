@@ -19,7 +19,8 @@ import type {
   ReviewEvent,
 } from './types.js'
 
-const execFileAsync = promisify(execFile)
+const execFileAsync = (file: string, args: string[]) =>
+  promisify(execFile)(file, args, { timeout: 10_000 })
 
 export async function checkCliPresent(): Promise<boolean> {
   try {

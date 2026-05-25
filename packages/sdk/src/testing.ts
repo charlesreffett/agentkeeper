@@ -129,6 +129,7 @@ export function createMockContext<TSettings = unknown>(
       every: () => () => {},
       once: () => () => {},
     },
+    fetch: globalThis.fetch.bind(globalThis),
     _inspect: {
       uiContributions,
       commands,

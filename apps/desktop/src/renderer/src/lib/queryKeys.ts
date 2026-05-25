@@ -29,4 +29,9 @@ export const queryKeys = {
   costs: {
     daily: () => ['costs', 'daily'] as const,
   },
+  plugins: {
+    all: ['plugins'] as const,
+    list: () => ['plugins', 'list'] as const,
+    updates: () => ['plugins', 'updates'] as const,
+  },
 }

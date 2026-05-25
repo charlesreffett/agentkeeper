@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "id": "agentkeeper-test",
+  "name": "AgentKeeper Test Plugin",
+  "version": "2.0.0",
+  "entry": "dist/index.js",
+  "description": "Validates install/update/uninstall/activate/deactivate lifecycle",
+  "author": "AgentKeeper",
+  "activation_events": ["onStartup"],
+  "permissions": ["workItems", "sidebar", "background"]
+}

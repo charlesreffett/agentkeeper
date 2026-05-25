@@ -1,31 +1,21 @@
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import { app } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
 import { EventEmitter } from 'node:events'
+import Database from 'better-sqlite3'
+import { getRawSqlite } from './db/index'
 import type {
-  BackgroundWork,
-  CommandDefinition,
-  CommandRegistry,
   EventBus,
   EventHandler,
   EventMap,
   IssueTransition,
-  Logger,
-  PluginContext,
   ScopedKVStore,
-  SecretsApi,
-  UIContribution,
-  UIContributions,
-  UISlot,
   WorkItem,
   WorkItemCreateParams,
   WorkItemRegistry,
   WorkItemSource,
   WorkItemStatus,
 } from '@agentkeeper/sdk'
-import { jiraPlugin } from '@agentkeeper/plugin-jira'
-import { githubPlugin } from '@agentkeeper/plugin-github'
-import { createPluginSecrets } from './secrets'
 
 export interface WorkItemRegistryFull extends WorkItemRegistry {
   list(): Promise<WorkItem[]>
@@ -36,7 +26,7 @@ export interface WorkItemRegistryFull extends WorkItemRegistry {
   create(params: WorkItemCreateParams): Promise<WorkItem>
 }
 
-class WorkItemRegistryImpl implements WorkItemRegistryFull {
+export class WorkItemRegistryImpl implements WorkItemRegistryFull {
   private readonly sources = new Map<string, WorkItemSource>()
 
   register(source: WorkItemSource): void {
@@ -112,50 +102,22 @@ class WorkItemRegistryImpl implements WorkItemRegistryFull {
   }
 }
 
-function buildLogger(pluginId: string): Logger {
-  const prefix = `[plugin:${pluginId}]`
-  return {
-    debug: (msg, meta) => console.debug(prefix, msg, ...(meta !== undefined ? [meta] : [])),
-    info: (msg, meta) => console.info(prefix, msg, ...(meta !== undefined ? [meta] : [])),
-    warn: (msg, meta) => console.warn(prefix, msg, ...(meta !== undefined ? [meta] : [])),
-    error: (msg, meta) => console.error(prefix, msg, ...(meta !== undefined ? [meta] : [])),
-  }
-}
-
-function buildKVStore(pluginId: string): ScopedKVStore {
-  const dir = join(app.getPath('userData'), 'plugins', pluginId)
-  const file = join(dir, 'kv.json')
-
-  function read(): Record<string, unknown> {
-    try {
-      return JSON.parse(readFileSync(file, 'utf-8')) as Record<string, unknown>
-    } catch {
-      return {}
-    }
-  }
-
-  function write(data: Record<string, unknown>): void {
-    mkdirSync(dir, { recursive: true })
-    writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8')
-  }
-
+function buildSQLiteKVStore(pluginId: string, db: InstanceType<typeof Database>): ScopedKVStore {
   return {
     async get<T>(key: string): Promise<T | undefined> {
-      return read()[key] as T | undefined
+      const row = db.prepare('SELECT value FROM plugin_storage WHERE plugin_id = ? AND key = ?').get(pluginId, key) as { value: string } | undefined
+      if (!row) return undefined
+      return JSON.parse(row.value) as T
     },
-    async set<T>(key: string, value: T): Promise<void> {
-      const data = read()
-      data[key] = value
-      write(data)
+    async set(key: string, value: unknown) {
+      db.prepare('INSERT OR REPLACE INTO plugin_storage (plugin_id, key, value) VALUES (?, ?, ?)').run(pluginId, key, JSON.stringify(value))
     },
-    async delete(key: string): Promise<void> {
-      const data = read()
-      delete data[key]
-      write(data)
+    async delete(key: string) {
+      db.prepare('DELETE FROM plugin_storage WHERE plugin_id = ? AND key = ?').run(pluginId, key)
     },
-    async list(prefix?: string): Promise<string[]> {
-      const keys = Object.keys(read())
-      return prefix ? keys.filter((k) => k.startsWith(prefix)) : keys
+    async list() {
+      const rows = db.prepare('SELECT key FROM plugin_storage WHERE plugin_id = ?').all(pluginId) as { key: string }[]
+      return rows.map((r) => r.key)
     },
   }
 }
@@ -173,123 +135,77 @@ function buildEventBus(): EventBus {
   }
 }
 
-function buildBackgroundWork(): BackgroundWork {
-  return {
-    every(intervalMs: number, fn: () => void | Promise<void>): () => void {
-      const id = setInterval(() => void fn(), intervalMs)
-      return () => clearInterval(id)
-    },
-    once(fn: () => void | Promise<void>, opts?: { delayMs?: number }): () => void {
-      const id = setTimeout(() => void fn(), opts?.delayMs ?? 0)
-      return () => clearTimeout(id)
-    },
-  }
-}
-
-const noopUI: UIContributions = {
-  contribute(_slot: UISlot, _contribution: UIContribution): () => void {
-    return () => {}
-  },
-}
-
-const noopCommands: CommandRegistry = {
-  register(_cmd: CommandDefinition): () => void {
-    return () => {}
-  },
-}
-
-function buildPluginContext<TSettings>(
-  pluginId: string,
-  registry: WorkItemRegistryImpl,
-  config: TSettings,
-  storage: ScopedKVStore,
-): PluginContext<TSettings> {
-  return {
-    config,
-    logger: buildLogger(pluginId),
-    storage,
-    secrets: createPluginSecrets(pluginId) as SecretsApi,
-    events: buildEventBus(),
-    workItems: registry,
-    ui: noopUI,
-    commands: noopCommands,
-    background: buildBackgroundWork(),
-  }
-}
-
 // Module-scoped references for IPC access
 let pluginEventBus: EventBus | null = null
-const pluginKVStores = new Map<string, ScopedKVStore>()
 
 export function getPluginEventBus(): EventBus | null {
   return pluginEventBus
 }
 
-export async function getPluginConfig(pluginId: string): Promise<unknown> {
-  const store = pluginKVStores.get(pluginId)
-  if (!store) return {}
-  const keys = await store.list()
-  const config: Record<string, unknown> = {}
-  for (const key of keys) {
-    config[key] = await store.get(key)
-  }
-  return config
+export async function getPluginConfig(pluginId: string, db: InstanceType<typeof Database>): Promise<Record<string, unknown>> {
+  const rows = db.prepare('SELECT key, value FROM plugin_storage WHERE plugin_id = ?').all(pluginId) as { key: string; value: string }[]
+  return Object.fromEntries(rows.map((r) => [r.key, JSON.parse(r.value) as unknown]))
 }
 
-export async function setPluginConfig(pluginId: string, config: unknown): Promise<void> {
-  const store = pluginKVStores.get(pluginId)
-  if (!store) return
+export async function setPluginConfig(pluginId: string, config: unknown, db: InstanceType<typeof Database>): Promise<void> {
   if (config !== null && typeof config === 'object') {
+    const stmt = db.prepare('INSERT OR REPLACE INTO plugin_storage (plugin_id, key, value) VALUES (?, ?, ?)')
     for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
-      await store.set(key, value)
+      stmt.run(pluginId, key, JSON.stringify(value))
     }
   }
   pluginEventBus?.emit('settings.changed', { pluginId, config })
 }
 
-async function activatePlugin<TSettings>(
-  pluginId: string,
-  plugin: { activate(ctx: PluginContext<TSettings>): void | Promise<void>; deactivate?(): void | Promise<void> },
-  registry: WorkItemRegistryImpl,
-  bus: EventBus,
-  electronApp: typeof app,
-): Promise<void> {
-  const kvStore = buildKVStore(pluginId)
-  pluginKVStores.set(pluginId, kvStore)
-
-  const persistedConfig: Record<string, unknown> = {}
-  for (const key of await kvStore.list()) {
-    persistedConfig[key] = await kvStore.get(key)
+export async function activatePlugins(workItemRegistry: WorkItemRegistryFull): Promise<void> {
+  // Initialize event bus before loader so getPluginEventBus() is non-null during activation
+  if (!pluginEventBus) {
+    pluginEventBus = buildEventBus()
   }
-
-  const ctx: PluginContext<TSettings> = {
-    config: persistedConfig as TSettings,
-    logger: buildLogger(pluginId),
-    storage: kvStore,
-    secrets: createPluginSecrets(pluginId) as SecretsApi,
-    events: bus,
-    workItems: registry,
-    ui: noopUI,
-    commands: noopCommands,
-    background: buildBackgroundWork(),
-  }
-
-  await plugin.activate(ctx)
-
-  electronApp.on('before-quit', () => {
-    void plugin.deactivate?.()
-  })
+  const { initPluginLoader } = await import('./plugin-loader.js')
+  await initPluginLoader(workItemRegistry)
 }
 
-export async function activatePlugins(
-  electronApp: typeof app,
-): Promise<WorkItemRegistryFull> {
-  const registry = new WorkItemRegistryImpl()
-  const bus = buildEventBus()
-  pluginEventBus = bus
+export function installBundledPlugins(): void {
+  const db = getRawSqlite()
+  const isDev = !app.isPackaged
+  // Use app.getAppPath() (= apps/desktop in dev) to reliably find the repo root
+  const repoRoot = isDev ? path.resolve(app.getAppPath(), '../..') : ''
 
-  await activatePlugin('jira', jiraPlugin, registry, bus, electronApp)
-  await activatePlugin('github', githubPlugin, registry, bus, electronApp)
+  const bundled = [
+    {
+      id: 'agentkeeper-github',
+      name: 'GitHub',
+      version: '0.1.0',
+      dirPath: isDev
+        ? path.join(repoRoot, 'packages', 'plugin-github')
+        : path.join(process.resourcesPath, 'plugins', 'plugin-github'),
+    },
+    {
+      id: 'agentkeeper-jira',
+      name: 'Jira',
+      version: '0.1.0',
+      dirPath: isDev
+        ? path.join(repoRoot, 'packages', 'plugin-jira')
+        : path.join(process.resourcesPath, 'plugins', 'plugin-jira'),
+    },
+  ]
 
-  return registry
+  for (const p of bundled) {
+    const manifestPath = path.join(p.dirPath, 'manifest.json')
+    let manifestJson = '{}'
+    try { manifestJson = fs.readFileSync(manifestPath, 'utf8') } catch {}
+
+    const existing = db.prepare('SELECT id FROM plugin_registry WHERE id = ?').get(p.id)
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO plugin_registry (id, name, version, enabled, manifest, source, installed_at, dev_path)
+        VALUES (?, ?, ?, 1, ?, 'bundled', ?, ?)
+      `).run(p.id, p.name, p.version, manifestJson, Date.now(), p.dirPath)
+    } else {
+      // Refresh manifest and dev_path each startup so stale/empty manifests self-heal
+      db.prepare('UPDATE plugin_registry SET manifest = ?, dev_path = ? WHERE id = ?')
+        .run(manifestJson, p.dirPath, p.id)
+    }
+  }
 }

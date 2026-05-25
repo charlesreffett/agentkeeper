@@ -4,9 +4,12 @@ if (process.env['NODE_ENV'] !== 'production') {
   app.commandLine.appendSwitch('remote-debugging-port', '9223')
 }
 import path from 'node:path'
+import * as net from 'node:net'
+import * as fsp from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
-import { activatePlugins } from './plugins'
+import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
+import { loadDevPlugin, unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
 import { setWorkItemRegistry } from './agent'
 import { initPricing } from './pricing'
 import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
@@ -16,6 +19,38 @@ import { pruneOrphanedDrafts } from './drafts'
 import { stopAllWatchers, removeSubscriber } from './watcher.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+async function startCliSocket(): Promise<void> {
+  const userDataPath = app.getPath('userData')
+  const sockPath = path.join(userDataPath, 'agentkeeper-cli.sock')
+  // Remove stale socket
+  await fsp.unlink(sockPath).catch(() => {})
+
+  const server = net.createServer((socket) => {
+    let buf = ''
+    socket.on('data', (chunk) => {
+      buf += chunk.toString()
+      const nl = buf.indexOf('\n')
+      if (nl === -1) return
+      const line = buf.slice(0, nl)
+      buf = buf.slice(nl + 1)
+      let cmd: { cmd: string; dirPath?: string; pluginId?: string }
+      try { cmd = JSON.parse(line) } catch { socket.write(JSON.stringify({ ok: false, error: 'invalid JSON' }) + '\n'); return }
+      if (cmd.cmd === 'loadDev' && cmd.dirPath) {
+        loadDevPlugin(cmd.dirPath)
+          .then(() => socket.write(JSON.stringify({ ok: true }) + '\n'))
+          .catch((err: Error) => socket.write(JSON.stringify({ ok: false, error: err.message }) + '\n'))
+      } else if (cmd.cmd === 'unloadDev' && cmd.pluginId) {
+        unloadDevPlugin(cmd.pluginId)
+          .then(() => socket.write(JSON.stringify({ ok: true }) + '\n'))
+          .catch((err: Error) => socket.write(JSON.stringify({ ok: false, error: err.message }) + '\n'))
+      } else {
+        socket.write(JSON.stringify({ ok: false, error: `unknown command: ${cmd.cmd}` }) + '\n')
+      }
+    })
+  })
+  server.listen(sockPath)
+}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -60,9 +95,36 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+// macOS: .akp files opened via Finder before the window is ready
+let pendingAkpPath: string | null = null
+app.on('open-file', (_event, filePath) => {
+  if (!filePath.endsWith('.akp')) return
+  app.whenReady().then(() => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win) {
+      win.webContents.send('plugin:open-file', filePath)
+    } else {
+      pendingAkpPath = filePath
+    }
+  })
+})
+
+// Windows/Linux: .akp passed as argv in second-instance
+app.on('second-instance', (_event, argv) => {
+  const akp = argv.find((a) => a.endsWith('.akp'))
+  if (!akp) return
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+    win.webContents.send('plugin:open-file', akp)
+  }
+})
+
 app.on('before-quit', () => {
   stopAllWatchers()
   flushCostLedger()
+  clearDevPluginRegistry()
 })
 
 app.whenReady().then(async () => {
@@ -72,14 +134,26 @@ app.whenReady().then(async () => {
   pruneOrphanedDrafts()
   initPricing()
   initCostLedger(userData)
-  const registry = await activatePlugins(app)
+  installBundledPlugins()
+  const registry = new WorkItemRegistryImpl()
   setWorkItemRegistry(registry)
+  await activatePlugins(registry)
   registerIpcHandlers(registry)
   const win = createWindow()
   win.webContents.on('destroyed', () => {
     removeSubscriber(win.webContents.id)
   })
   wirePluginEventRelay(win)
+  await startCliSocket()
+
+  // Flush any .akp path queued before the window existed (macOS open-file)
+  if (pendingAkpPath) {
+    const queued = pendingAkpPath
+    pendingAkpPath = null
+    win.webContents.once('did-finish-load', () => {
+      win.webContents.send('plugin:open-file', queued)
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

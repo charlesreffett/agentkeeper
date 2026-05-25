@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useQuery } from '@tanstack/vue-query'
+import { queryKeys } from '@/lib/queryKeys'
 import {
   LayoutDashboard,
   Grid,
@@ -14,6 +16,7 @@ import {
   Terminal,
   Settings2,
   Map,
+  Puzzle,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import IconSessions from '@/components/icons/IconSessions.vue'
@@ -36,6 +39,17 @@ const route = useRoute()
 const uiStore = useUIContributionsStore()
 const { isHealthy: githubHealthy } = usePluginHealth('github')
 
+const { data: pluginList } = useQuery({
+  queryKey: queryKeys.plugins.list(),
+  queryFn: () => window.agentkeeper.plugins.list(),
+  staleTime: 30_000,
+})
+
+const BUNDLED_SIDEBAR: Record<string, { label: string; icon: string; path: string; order: number }> = {
+  'agentkeeper-github': { label: 'GitHub', icon: 'GitPullRequest', path: '/github/prs', order: 20 },
+  'agentkeeper-jira':   { label: 'Jira',   icon: 'Layers',        path: '/jira',       order: 10 },
+}
+
 const iconMap: Record<string, Component> = {
   IconSessions,
   LayoutDashboard,
@@ -50,6 +64,7 @@ const iconMap: Record<string, Component> = {
   Terminal,
   Settings2,
   Map,
+  Puzzle,
 }
 
 const coreItems = [
@@ -63,7 +78,6 @@ const workspaceItems = [
   { id: 'roles', label: 'Roles', icon: 'Bot', path: '/roles' },
   { id: 'skills', label: 'Skills', icon: 'Wand2', path: '/skills' },
   { id: 'commands', label: 'Commands', icon: 'Terminal', path: '/commands' },
-  { id: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
 ]
 
 const pluginRoutes: Record<string, string> = {
@@ -71,13 +85,27 @@ const pluginRoutes: Record<string, string> = {
   jira: '/jira',
 }
 
-const pluginItems = computed(() =>
-  uiStore.getSlot('sidebar.primary').map((c) => ({
-    ...c,
-    path: pluginRoutes[c.id] ?? `/${c.id}`,
-    unhealthy: c.id === 'github' && !githubHealthy.value,
-  })),
-)
+const pluginItems = computed(() => {
+  // Bundled plugins: derive from DB enabled state so toggle hides/shows the item
+  const fromDb = (pluginList.value ?? [])
+    .filter(p => p.enabled && BUNDLED_SIDEBAR[p.id])
+    .map(p => {
+      const cfg = BUNDLED_SIDEBAR[p.id]!
+      const shortId = p.id.replace('agentkeeper-', '')
+      return { ...cfg, id: shortId, unhealthy: shortId === 'github' && !githubHealthy.value }
+    })
+
+  // Dynamic contributions from actually-running plugin hosts (future / test plugins)
+  const fromContributions = uiStore.getSlot('sidebar.primary')
+    .filter(c => !fromDb.some(d => d.id === c.id))
+    .map(c => ({
+      ...c,
+      path: pluginRoutes[c.id] ?? `/${c.id}`,
+      unhealthy: c.id === 'github' && !githubHealthy.value,
+    }))
+
+  return [...fromDb, ...fromContributions].sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
+})
 
 function isActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')

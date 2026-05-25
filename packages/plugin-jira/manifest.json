@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "agentkeeper-jira",
+  "name": "Jira",
+  "version": "0.1.0",
+  "entry": "dist/index.js",
+  "description": "Jira work items via the jira CLI",
+  "author": "AgentKeeper",
+  "license": "MIT",
+  "activation_events": ["onStartup"],
+  "permissions": ["workItems", "secrets", "sidebar", "background"],
+  "settings_schema": {
+    "type": "object",
+    "properties": {
+      "projectKey": {
+        "type": "string",
+        "title": "Project Key",
+        "description": "Default Jira project key (e.g. MYPROJ)"
+      },
+      "cliPath": {
+        "type": "string",
+        "title": "CLI Path",
+        "description": "Path to jira CLI binary (leave blank to use PATH)"
+      }
+    }
+  }
+}

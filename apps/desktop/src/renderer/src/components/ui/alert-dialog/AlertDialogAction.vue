@@ -7,8 +7,8 @@ const emit = defineEmits<{ click: [] }>()
 const open = inject<Ref<boolean>>('alertDialogOpen')!
 
 function onClick() {
-  open.value = false
   emit('click')
+  open.value = false
 }
 </script>
 

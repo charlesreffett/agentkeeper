@@ -8,7 +8,7 @@ import {
   mapToWorkItem,
   transitionIssue,
   updateIssueStatus,
-} from './jira-cli'
+} from './jira-cli.js'
 
 export class JiraWorkItemSource implements WorkItemSource {
   readonly id = 'jira'
