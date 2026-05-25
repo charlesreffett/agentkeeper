@@ -676,7 +676,10 @@ const streamingEventUuid = computed((): string | undefined => {
               :events="historicalEvents"
               :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
               :verbosity-state="verbosityState"
+              :can-rewrite="!isDraft"
               @show-all="onShowAll"
+              @edit-submit="onEditSubmit"
+              @regenerate="onRegenerate"
             />
             <div
               v-if="isResumed"
@@ -691,7 +694,7 @@ const streamingEventUuid = computed((): string | undefined => {
               :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
               :verbosity-state="verbosityState"
               :streaming-event-uuid="streamingEventUuid"
-              :can-rewrite="!isDraft && session?.status !== 'running' && session?.status !== 'starting'"
+              :can-rewrite="!isDraft"
               @show-all="onShowAll"
               @edit-submit="onEditSubmit"
               @regenerate="onRegenerate"
