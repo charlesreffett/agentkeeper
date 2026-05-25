@@ -11,7 +11,8 @@ const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
   closed: 'Closed',
 }
 
-const execFileAsync = promisify(execFile)
+const execFileAsync = (file: string, args: string[]) =>
+  promisify(execFile)(file, args, { timeout: 10_000 })
 
 export interface JiraProject {
   key: string
