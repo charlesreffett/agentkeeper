@@ -1262,6 +1262,58 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   })
 
+  // ─── Edit / regenerate ──────────────────────────────────────────────────────
+
+  function truncateAgentEventsAt(
+    sessionLocalId: string,
+    agentLocalId: string,
+    fromUuid: string,
+  ): TranscriptEvent[] {
+    const s = sessions[sessionLocalId]
+    if (!s) return []
+    const agentEvts = s.agentEvents[agentLocalId]
+    if (!agentEvts) return []
+    const cutIndex = agentEvts.findIndex((e) => e.uuid === fromUuid)
+    if (cutIndex === -1) return []
+    const removed = agentEvts.splice(cutIndex)
+    const removedUuids = new Set(removed.map((e) => e.uuid))
+    for (let i = s.events.length - 1; i >= 0; i--) {
+      if (removedUuids.has(s.events[i]!.uuid)) s.events.splice(i, 1)
+    }
+    if (streamingPartials[agentLocalId] !== undefined &&
+        streamingPartials[agentLocalId]! >= cutIndex) {
+      delete streamingPartials[agentLocalId]
+    }
+    return removed
+  }
+
+  async function editAndRerun(
+    agentLocalId: string,
+    truncateFromUuid: string,
+    newText: string,
+  ): Promise<TranscriptEvent[]> {
+    const sessionEntry = Object.values(sessions).find((s) =>
+      s.agents.some((a) => a.localId === agentLocalId),
+    )
+    if (!sessionEntry) return []
+    const removed = truncateAgentEventsAt(sessionEntry.localId, agentLocalId, truncateFromUuid)
+    await window.agentkeeper.sessions.editAndRerun(agentLocalId, truncateFromUuid, newText)
+    return removed
+  }
+
+  async function undoEditAndRerun(
+    agentLocalId: string,
+    sessionLocalId: string,
+    removedEvents: TranscriptEvent[],
+  ): Promise<void> {
+    await window.agentkeeper.sessions.undoEditAndRerun(agentLocalId)
+    const s = sessions[sessionLocalId]
+    if (!s || removedEvents.length === 0) return
+    const agentEvts = s.agentEvents[agentLocalId]
+    if (agentEvts) agentEvts.push(...removedEvents)
+    s.events.push(...removedEvents)
+  }
+
   return {
     sessions,
     sessionTokens,
@@ -1269,6 +1321,7 @@ export const useSessionStore = defineStore('sessions', () => {
     sessionTurns,
     sessionRunTokens,
     sessionOutputEstimates,
+    streamingPartials,
     liveList,
     currentLiveId,
     currentSession,
@@ -1295,5 +1348,7 @@ export const useSessionStore = defineStore('sessions', () => {
     tokenStats,
     activeAgentCount,
     runningSessionCount,
+    editAndRerun,
+    undoEditAndRerun,
   }
 })

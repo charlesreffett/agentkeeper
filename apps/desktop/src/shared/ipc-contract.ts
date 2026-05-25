@@ -697,6 +697,8 @@ export interface AgentKeeperApi {
     addAgent: (sessionLocalId: string, params: AddAgentParams) => Promise<string>
     listTrackedSdkIds: (projectPath: string) => Promise<string[]>
     reconnectMcp: (agentLocalId: string) => Promise<void>
+    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string) => Promise<void>
+    undoEditAndRerun: (agentLocalId: string) => Promise<void>
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
@@ -973,6 +975,8 @@ export const IPC_CHANNELS = {
   sessionsAddAgent: 'sessions:addAgent',
   sessionsListTrackedSdkIds: 'sessions:listTrackedSdkIds',
   sessionsReconnectMcp: 'sessions:reconnectMcp',
+  sessionsEditAndRerun: 'sessions:editAndRerun',
+  sessionsUndoEditAndRerun: 'sessions:undoEditAndRerun',
   agenciesResume: 'agencies:resume',
   dialogOpenFiles: 'dialog:openFiles',
   gitGetBranch: 'git:getBranch',

@@ -293,10 +293,55 @@ export async function deleteAllHistoricalSessions(projectPath: string): Promise<
   )
 }
 
+export async function truncateSessionJsonl(
+  projectPath: string,
+  sdkSessionId: string,
+  fromUuid: string,
+): Promise<{ keptCount: number; removedLines: string[] }> {
+  const filePath = path.join(projectDir(projectPath), `${sdkSessionId}.jsonl`)
+  let rawContent: string
+  try {
+    rawContent = await fs.promises.readFile(filePath, 'utf8')
+  } catch {
+    return { keptCount: 0, removedLines: [] }
+  }
+  const allLines = rawContent.split('\n').filter((l) => l.trim())
+  let cutIndex = -1
+  for (let i = 0; i < allLines.length; i++) {
+    try {
+      const obj = JSON.parse(allLines[i]!) as Record<string, unknown>
+      if (obj['uuid'] === fromUuid) { cutIndex = i; break }
+    } catch { /* skip malformed */ }
+  }
+  if (cutIndex === -1) return { keptCount: allLines.length, removedLines: [] }
+  const keptLines = allLines.slice(0, cutIndex)
+  const removedLines = allLines.slice(cutIndex)
+  const tmpPath = `${filePath}.tmp`
+  await fs.promises.writeFile(tmpPath, keptLines.length > 0 ? keptLines.join('\n') + '\n' : '', 'utf8')
+  await fs.promises.rename(tmpPath, filePath)
+  return { keptCount: keptLines.length, removedLines }
+}
+
+export async function restoreSessionJsonl(
+  projectPath: string,
+  sdkSessionId: string,
+  keptCount: number,
+  linesToAppend: string[],
+): Promise<void> {
+  if (linesToAppend.length === 0) return
+  const filePath = path.join(projectDir(projectPath), `${sdkSessionId}.jsonl`)
+  let rawContent = ''
+  try { rawContent = await fs.promises.readFile(filePath, 'utf8') } catch { /* new file */ }
+  const currentLines = rawContent.split('\n').filter((l) => l.trim())
+  const restored = [...currentLines.slice(0, keptCount), ...linesToAppend]
+  const tmpPath = `${filePath}.tmp`
+  await fs.promises.writeFile(tmpPath, restored.join('\n') + '\n', 'utf8')
+  await fs.promises.rename(tmpPath, filePath)
+}
+
 export async function readSession(
   projectPath: string,
   sessionId: string,
-  isSubAgentSession = false,
 ): Promise<SessionTranscript | null> {
   const filePath = path.join(projectDir(projectPath), `${sessionId}.jsonl`)
   let stat: fs.Stats
@@ -334,28 +379,6 @@ export async function readSession(
     }
     const evt = normalizeEvent(parsed)
     if (evt) events.push(evt)
-  }
-
-  // For sub-agent sessions the first non-tool-result user message is an
-  // injected prompt authored by the parent agent, not the human. Reclassify
-  // it so the renderer can render it distinctly and gate it with the System
-  // toggle instead of displaying it as a "you" message.
-  if (isSubAgentSession) {
-    const idx = events.findIndex(
-      (e) =>
-        e.kind === 'user' &&
-        e.role === 'user' &&
-        e.content.length > 0 &&
-        !e.content.every((b) => b.type === 'tool_result'),
-    )
-    if (idx >= 0) {
-      events[idx] = {
-        ...events[idx]!,
-        kind: 'system',
-        role: 'system',
-        systemSubtype: 'delegated-task',
-      }
-    }
   }
 
   return {

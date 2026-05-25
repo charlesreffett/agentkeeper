@@ -15,11 +15,19 @@ const props = defineProps<{
   events: TranscriptEvent[]
   verbosityState?: VerbosityState
   roleName?: string | null
+  streamingEventUuid?: string
+  canRewrite?: boolean
 }>()
 
-const emit = defineEmits<{ 'show-all': [] }>()
+const emit = defineEmits<{
+  'show-all': []
+  'edit-submit': [uuid: string, newText: string]
+  'regenerate': [uuid: string]
+}>()
 
 const state = computed(() => props.verbosityState ?? DEFAULT_VERBOSITY_STATE)
+
+const hoverRewriteUuid = ref<string | null>(null)
 
 type RenderItem =
   | { type: 'event'; event: TranscriptEvent }
@@ -48,6 +56,14 @@ const renderItems = computed((): RenderItem[] => {
   }
 
   return items
+})
+
+// Index of the hovered event in renderItems (for doomed calculation).
+const doomedFromIndex = computed(() => {
+  if (!hoverRewriteUuid.value) return -1
+  return renderItems.value.findIndex(
+    (item) => item.type === 'event' && item.event.uuid === hoverRewriteUuid.value,
+  )
 })
 
 const hasVisibleContent = computed(() => renderItems.value.length > 0)
@@ -133,6 +149,12 @@ provide('openTranscriptLightbox', openTranscriptLightbox)
         :event="item.event"
         :verbosity-state="state"
         :agent-name="roleName ?? undefined"
+        :streaming="item.event.uuid === streamingEventUuid"
+        :is-doomed="doomedFromIndex >= 0 && i > doomedFromIndex"
+        :can-rewrite="canRewrite"
+        @hover-rewrite="hoverRewriteUuid = $event"
+        @edit-submit="(uuid, newText) => emit('edit-submit', uuid, newText)"
+        @regenerate="(uuid) => emit('regenerate', uuid)"
       />
     </template>
   </div>

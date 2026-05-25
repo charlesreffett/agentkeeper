@@ -6,9 +6,9 @@ import ToolUseBlock from './ToolUseBlock.vue'
 import ToolResultBlock from './ToolResultBlock.vue'
 import ImageBlock from './ImageBlock.vue'
 import UnknownBlock from './UnknownBlock.vue'
-import { CornerDownRight, Info } from 'lucide-vue-next'
+import { CornerDownRight, Info, Pencil, RefreshCw } from 'lucide-vue-next'
 import { formatTimestamp, shortModel } from '@/lib/format'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { type VerbosityState, DEFAULT_VERBOSITY_STATE, isBlockVisible } from '@/lib/verbosity'
 
 const props = defineProps<{
@@ -16,12 +16,20 @@ const props = defineProps<{
   verbosityState?: VerbosityState
   /** Display name for the agent that produced this event. Used for sub-agent progress events. */
   agentName?: string | null
+  /** True while this event's text is still streaming — passed to Comark for auto-close mode. */
+  streaming?: boolean
+  isDoomed?: boolean
+  canRewrite?: boolean
+}>()
+
+const emit = defineEmits<{
+  'hover-rewrite': [uuid: string | null]
+  'edit-submit': [uuid: string, newText: string]
+  'regenerate': [uuid: string]
 }>()
 
 const state = computed(() => props.verbosityState ?? DEFAULT_VERBOSITY_STATE)
 
-// user-role events whose content is entirely tool_result blocks are injected
-// by Claude Code after a tool runs — not messages authored by the human.
 const isToolResultOnly = computed(
   () =>
     props.event.role === 'user' &&
@@ -33,11 +41,8 @@ const isUser = computed(
   () => props.event.role === 'user' && !isToolResultOnly.value,
 )
 
-// progress events carry sub-agent activity streams.
 const isSubAgent = computed(() => props.event.kind === 'progress')
 
-// Injected opening prompt of a sub-agent session — distinct from both user
-// messages and generic system info bars.
 const isDelegatedTask = computed(
   () => props.event.systemSubtype === 'delegated-task',
 )
@@ -82,7 +87,13 @@ const groupedContent = computed((): BlockGroup[] => {
   return groups
 })
 
-// Hidden tool_use blocks within this event — shown as a quiet inline indicator.
+function blockExtraProps(block: ContentBlock): Record<string, unknown> {
+  if (block.type === 'text' || block.type === 'thinking') {
+    return { streaming: props.streaming ?? false }
+  }
+  return {}
+}
+
 const hiddenToolUseCount = computed(
   () =>
     props.event.content.filter(
@@ -106,6 +117,34 @@ function blockComponent(block: ContentBlock) {
       return UnknownBlock
   }
 }
+
+// ─── Inline edit ────────────────────────────────────────────────────────────
+
+const editMode = ref(false)
+const editText = ref('')
+
+function startEdit() {
+  const textBlocks = props.event.content.filter(b => b.type === 'text')
+  editText.value = textBlocks.map(b => (b as { type: 'text'; text: string }).text).join('\n')
+  editMode.value = true
+}
+
+function cancelEdit() {
+  editMode.value = false
+  editText.value = ''
+}
+
+function submitEdit() {
+  if (!editText.value.trim()) return
+  emit('edit-submit', props.event.uuid, editText.value.trim())
+  editMode.value = false
+  editText.value = ''
+}
+
+function onEditKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') { cancelEdit(); return }
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { submitEdit() }
+}
 </script>
 
 <template>
@@ -125,7 +164,6 @@ function blockComponent(block: ContentBlock) {
     class="flex items-center gap-2 text-xs text-muted-foreground/60 bg-muted/20 rounded-md px-3 py-1.5 select-none"
   >
     <Info class="size-3 shrink-0 text-muted-foreground/40" />
-    <!-- Render raw text inline to avoid block elements inside the bar -->
     <span class="italic truncate min-w-0 select-text">
       {{
         event.content
@@ -157,6 +195,7 @@ function blockComponent(block: ContentBlock) {
           v-if="group.kind === 'single' && group.block.type === 'text'"
           :is="blockComponent(group.block)"
           :block="group.block"
+          v-bind="blockExtraProps(group.block)"
         />
       </template>
     </div>
@@ -179,12 +218,17 @@ function blockComponent(block: ContentBlock) {
         v-else
         :is="blockComponent(group.block)"
         :block="group.block"
+        v-bind="blockExtraProps(group.block)"
       />
     </template>
   </div>
 
   <!-- ── Normal user / assistant message ────────────────────────────────── -->
-  <article v-else class="flex gap-3">
+  <article
+    v-else
+    class="group flex gap-3 transition-opacity duration-150"
+    :class="isDoomed ? 'opacity-40' : 'opacity-100'"
+  >
     <!-- Avatar -->
     <div
       class="mt-0.5 size-7 rounded-full shrink-0 flex items-center justify-center text-[11px] font-bold text-white select-none"
@@ -195,7 +239,7 @@ function blockComponent(block: ContentBlock) {
 
     <!-- Content column -->
     <div class="flex-1 min-w-0 space-y-2">
-      <!-- Header row: name · sub-agent badge · model · timestamp -->
+      <!-- Header row: name · sub-agent badge · model · timestamp · action buttons -->
       <header class="flex items-center gap-2 text-xs text-muted-foreground leading-none">
         <span class="font-medium text-foreground">{{ displayName }}</span>
         <!-- Sub-agent badge -->
@@ -211,10 +255,52 @@ function blockComponent(block: ContentBlock) {
         <span class="ml-auto tabular-nums text-muted-foreground/50">
           {{ formatTimestamp(event.timestamp) }}
         </span>
+        <!-- Edit button — only for user messages that can be rewritten -->
+        <button
+          v-if="isUser && canRewrite !== false"
+          class="ml-1 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity text-muted-foreground/50 hover:text-foreground"
+          title="Edit message"
+          @mouseenter="emit('hover-rewrite', event.uuid)"
+          @mouseleave="emit('hover-rewrite', null)"
+          @click.stop="startEdit"
+        >
+          <Pencil class="size-3" />
+        </button>
+        <!-- Regenerate button — only for assistant messages that can be rewritten -->
+        <button
+          v-if="!isUser && !isSubAgent && canRewrite !== false"
+          class="ml-1 p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-muted transition-opacity text-muted-foreground/50 hover:text-foreground"
+          title="Regenerate response"
+          @mouseenter="emit('hover-rewrite', event.uuid)"
+          @mouseleave="emit('hover-rewrite', null)"
+          @click.stop="emit('regenerate', event.uuid)"
+        >
+          <RefreshCw class="size-3" />
+        </button>
       </header>
 
-      <!-- Blocks -->
-      <div class="space-y-2">
+      <!-- Edit mode textarea -->
+      <div v-if="editMode" class="space-y-2">
+        <textarea
+          v-model="editText"
+          class="w-full rounded-md border border-border bg-background text-sm text-foreground px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring min-h-[80px]"
+          autofocus
+          @keydown="onEditKeydown"
+        />
+        <div class="flex gap-2 justify-end">
+          <button
+            class="text-xs px-3 py-1 rounded border border-border hover:bg-muted text-muted-foreground"
+            @click="cancelEdit"
+          >Cancel</button>
+          <button
+            class="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90"
+            @click="submitEdit"
+          >Send edit</button>
+        </div>
+      </div>
+
+      <!-- Normal blocks display -->
+      <div v-else class="space-y-2">
         <template v-for="(group, i) in groupedContent" :key="i">
           <div v-if="group.kind === 'images'" class="flex flex-wrap gap-2">
             <ImageBlock
@@ -227,6 +313,7 @@ function blockComponent(block: ContentBlock) {
             v-else
             :is="blockComponent(group.block)"
             :block="group.block"
+            v-bind="blockExtraProps(group.block)"
           />
         </template>
         <!-- Hidden tool call hint -->

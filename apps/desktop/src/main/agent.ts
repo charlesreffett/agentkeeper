@@ -8,6 +8,7 @@ import {
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
 import * as costLedger from './cost-ledger'
+import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
 import { calculateCost, calculateCostBreakdown } from './pricing'
 import { getPersistedTurnCount } from './stats'
 import type {
@@ -74,6 +75,14 @@ export interface InternalStartExtras {
 
 const active = new Map<string, ActiveSession>()
 const restartingIds = new Set<string>()
+
+interface UndoBuffer {
+  projectPath: string
+  sdkSessionId: string
+  keptCount: number
+  removedLines: string[]
+}
+const undoBuffers = new Map<string, UndoBuffer>()
 const MAX_MCP_RESTARTS = 3
 const mcpRestartCounts = new Map<string, number>()
 
@@ -768,4 +777,38 @@ export function listActiveSessions(): Array<{
     model: s.model,
     workItemId: s.workItemId,
   }))
+}
+
+export async function editAndRerun(
+  agentLocalId: string,
+  truncateFromUuid: string,
+  newText: string,
+): Promise<void> {
+  const agent = registry.getAgent(agentLocalId)
+  if (!agent?.sdkSessionId) throw new Error(`agent ${agentLocalId} has no sdkSessionId`)
+  const session = registry.getSession(agent.sessionLocalId)
+  if (!session) throw new Error(`session not found for agent ${agentLocalId}`)
+  await interruptSession(agentLocalId)
+  active.delete(agentLocalId)
+  const { keptCount, removedLines } = await truncateSessionJsonl(
+    session.projectPath,
+    agent.sdkSessionId,
+    truncateFromUuid,
+  )
+  undoBuffers.set(agentLocalId, {
+    projectPath: session.projectPath,
+    sdkSessionId: agent.sdkSessionId,
+    keptCount,
+    removedLines,
+  })
+  await sendInput(agentLocalId, newText)
+}
+
+export async function undoEditAndRerun(agentLocalId: string): Promise<void> {
+  const buf = undoBuffers.get(agentLocalId)
+  if (!buf) return
+  undoBuffers.delete(agentLocalId)
+  await interruptSession(agentLocalId)
+  active.delete(agentLocalId)
+  await restoreSessionJsonl(buf.projectPath, buf.sdkSessionId, buf.keptCount, buf.removedLines)
 }

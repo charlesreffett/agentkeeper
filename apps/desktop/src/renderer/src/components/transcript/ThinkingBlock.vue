@@ -3,7 +3,10 @@ import type { ContentBlock } from '@shared/ipc-contract'
 import { Comark } from '@comark/vue'
 import { transcriptPlugins } from '@/lib/comark-config'
 
-defineProps<{ block: Extract<ContentBlock, { type: 'thinking' }> }>()
+defineProps<{
+  block: Extract<ContentBlock, { type: 'thinking' }>
+  streaming?: boolean
+}>()
 </script>
 
 <template>
@@ -17,7 +20,7 @@ defineProps<{ block: Extract<ContentBlock, { type: 'thinking' }> }>()
     </div>
     <div class="text-sm italic text-muted-foreground/80 select-text leading-relaxed">
       <Suspense>
-        <Comark :markdown="block.thinking" :plugins="transcriptPlugins" />
+        <Comark :markdown="block.thinking" :plugins="transcriptPlugins" :streaming="streaming ?? false" />
         <template #fallback>
           <span class="whitespace-pre-wrap break-words">{{ block.thinking }}</span>
         </template>
