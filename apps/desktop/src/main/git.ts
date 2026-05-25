@@ -79,6 +79,20 @@ export async function push(projectPath: string): Promise<string> {
   }
 }
 
+export async function pull(projectPath: string): Promise<string> {
+  try {
+    const { stdout, stderr } = await execFileAsync('git', ['-C', projectPath, 'pull'])
+    return (stdout + stderr).trim()
+  } catch (err: unknown) {
+    const e = err as { stderr?: string; message?: string }
+    throw new Error(e.stderr?.trim() || e.message || 'git pull failed')
+  }
+}
+
+export async function createBranch(projectPath: string, branchName: string): Promise<void> {
+  await execFileAsync('git', ['-C', projectPath, 'checkout', '-b', branchName])
+}
+
 export async function detectRemoteSources(projectPath: string): Promise<RemoteSource[]> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', projectPath, 'remote', '-v'])

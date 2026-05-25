@@ -59,7 +59,7 @@ import {
 import { getActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index'
 import { detectGithubRepo, recentProjectsStore } from './store'
-import { commit, detectRemoteSources, getBranch, getStatus, push, stageFiles, unstageFiles } from './git'
+import { commit, createBranch, detectRemoteSources, getBranch, getStatus, pull, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp } from './agent'
@@ -1106,6 +1106,14 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   ipcMain.handle(IPC_CHANNELS.gitPush, (_event, projectPath: string) => {
     return push(projectPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitPull, (_event, projectPath: string) => {
+    return pull(projectPath)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitCreateBranch, (_event, projectPath: string, branchName: string) => {
+    return createBranch(projectPath, branchName)
   })
 
   ipcMain.handle(IPC_CHANNELS.gitSuggestCommits, (_event, projectPath: string) => {

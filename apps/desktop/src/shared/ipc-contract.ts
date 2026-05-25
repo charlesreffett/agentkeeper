@@ -831,6 +831,8 @@ export interface AgentKeeperApi {
     unstageFiles: (projectPath: string, files: string[]) => Promise<void>
     commit: (projectPath: string, message: string) => Promise<void>
     push: (projectPath: string) => Promise<string>
+    pull: (projectPath: string) => Promise<string>
+    createBranch: (projectPath: string, branchName: string) => Promise<void>
     suggestCommits: (projectPath: string) => Promise<CommitSuggestion>
     onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) => () => void
   }
@@ -979,6 +981,8 @@ export const IPC_CHANNELS = {
   gitUnstageFiles: 'git:unstageFiles',
   gitCommit: 'git:commit',
   gitPush: 'git:push',
+  gitPull: 'git:pull',
+  gitCreateBranch: 'git:createBranch',
   gitSuggestCommits: 'git:suggestCommits',
   fsListDirectory: 'fs:listDirectory',
   fsWatchStart: 'fs:watchStart',

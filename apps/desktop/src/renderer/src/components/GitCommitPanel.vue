@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { CommitGroup, CommitSuggestion } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
-const props = defineProps<{ projectPath: string }>()
+const props = defineProps<{ projectPath: string; autoAnalyze?: number }>()
 const emit = defineEmits<{ committed: [] }>()
 
 // ─── State machine ──────────────────────────────────────────────────────────
@@ -120,6 +120,12 @@ function reset() {
   pushError.value = ''
   pushing.value = false
 }
+
+watch(() => props.autoAnalyze, (val, old) => {
+  if (val !== old && val && val > 0 && phase.value === 'idle') {
+    void analyze()
+  }
+})
 
 const totalActiveFiles = computed(() =>
   groups.value.reduce((n, g) => n + activeFiles(g).length, 0),

@@ -385,6 +385,10 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.gitCommit, projectPath, message) as Promise<void>,
     push: (projectPath: string) =>
       invoke(IPC_CHANNELS.gitPush, projectPath) as Promise<string>,
+    pull: (projectPath: string) =>
+      invoke(IPC_CHANNELS.gitPull, projectPath) as Promise<string>,
+    createBranch: (projectPath: string, branchName: string) =>
+      invoke(IPC_CHANNELS.gitCreateBranch, projectPath, branchName) as Promise<void>,
     suggestCommits: (projectPath: string) =>
       invoke(IPC_CHANNELS.gitSuggestCommits, projectPath) as Promise<CommitSuggestion>,
     onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) =>

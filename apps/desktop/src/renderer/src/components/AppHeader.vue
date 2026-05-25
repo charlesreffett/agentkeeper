@@ -4,6 +4,7 @@ import {
   FolderOpen,
   ChevronDown,
   GitBranch,
+  GitPullRequest,
   Folder,
   Moon,
   PanelRight,
@@ -13,6 +14,7 @@ import {
   Puzzle,
   Settings,
   Settings2,
+  GitCommitHorizontal,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -22,16 +24,20 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useLayoutStore } from '@/stores/layout'
+import { useRightPanelStore } from '@/stores/rightPanel'
 import { useRouter } from 'vue-router'
 import { cn } from '@/lib/utils'
+import { toast } from 'vue-sonner'
 import type { RecentProject } from '@shared/ipc-contract'
 
 const { projects, focusedProject, add, remove, setFocused, rename: renameProject, pickAndAdd } = useProjectsQuery()
 const layoutStore = useLayoutStore()
+const rightPanelStore = useRightPanelStore()
 const router = useRouter()
 
 const branch = ref<string>('—')
@@ -63,6 +69,52 @@ async function loadBranch(path: string | undefined) {
     branch.value = result ?? '—'
   } catch {
     branch.value = '—'
+  }
+}
+
+const showNewBranch = ref(false)
+const newBranchName = ref('')
+const newBranchInput = ref<HTMLInputElement | null>(null)
+
+async function gitPull() {
+  const path = focusedProject.value?.path
+  if (!path) return
+  try {
+    await (window.agentkeeper as any).git.pull(path)
+    toast.success('git pull succeeded')
+    await loadBranch(path)
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'git pull failed')
+  }
+}
+
+function openCommit() {
+  if (!layoutStore.rightPanelOpen) layoutStore.toggleRightPanel()
+  rightPanelStore.openGitChanges()
+}
+
+function openNewBranch() {
+  newBranchName.value = ''
+  showNewBranch.value = true
+  nextTick(() => newBranchInput.value?.focus())
+}
+
+function cancelNewBranch() {
+  showNewBranch.value = false
+  newBranchName.value = ''
+}
+
+async function confirmNewBranch() {
+  const path = focusedProject.value?.path
+  const name = newBranchName.value.trim()
+  if (!path || !name) return
+  try {
+    await (window.agentkeeper as any).git.createBranch(path, name)
+    branch.value = name
+    showNewBranch.value = false
+    newBranchName.value = ''
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : 'Failed to create branch')
   }
 }
 
@@ -185,11 +237,32 @@ watch(
 
     <Separator orientation="vertical" class="h-4 mx-1" />
 
-    <!-- Branch display -->
-    <div class="flex items-center gap-1.5">
-      <GitBranch class="h-3.5 w-3.5 text-muted-foreground" />
-      <span class="text-xs text-muted-foreground">{{ branch }}</span>
-    </div>
+    <!-- Branch dropdown -->
+    <DropdownMenu>
+      <DropdownMenuTrigger as-child>
+        <Button variant="ghost" class="h-7 px-2 text-xs gap-1.5 text-muted-foreground font-normal" style="-webkit-app-region: no-drag">
+          <GitBranch class="h-3.5 w-3.5 shrink-0" />
+          <span>{{ branch }}</span>
+          <ChevronDown class="h-3 w-3 shrink-0" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" style="-webkit-app-region: no-drag">
+        <DropdownMenuItem class="gap-2" @click="gitPull">
+          <GitPullRequest class="h-4 w-4" />
+          git pull
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem class="gap-2" @click="openCommit">
+          <GitCommitHorizontal class="h-4 w-4" />
+          Commit
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem class="gap-2" @click="openNewBranch">
+          <Plus class="h-4 w-4" />
+          New Branch…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
 
     <!-- Right side -->
     <div class="ml-auto flex items-center gap-1">
@@ -278,6 +351,37 @@ watch(
             @click="confirmRename"
           >
             Rename
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- New Branch dialog -->
+    <div v-if="showNewBranch" class="fixed inset-0 z-50 flex items-center justify-center">
+      <div class="absolute inset-0 bg-black/20 backdrop-blur-md" @click="cancelNewBranch" />
+      <div class="relative bg-card border border-border rounded-lg shadow-xl p-4 w-72 flex flex-col gap-3">
+        <div class="text-sm font-medium">New branch</div>
+        <input
+          ref="newBranchInput"
+          v-model="newBranchName"
+          type="text"
+          placeholder="branch-name"
+          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+          @keydown.enter="confirmNewBranch"
+          @keydown.escape="cancelNewBranch"
+        />
+        <div class="flex justify-end gap-2">
+          <button
+            class="px-3 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            @click="cancelNewBranch"
+          >
+            Cancel
+          </button>
+          <button
+            class="px-3 py-1.5 rounded text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+            :disabled="!newBranchName.trim()"
+            @click="confirmNewBranch"
+          >
+            Create
           </button>
         </div>
       </div>

@@ -2,7 +2,7 @@
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import GitCommitPanel from '@/components/GitCommitPanel.vue'
 
-const props = defineProps<{ projectPath: string }>()
+const props = defineProps<{ projectPath: string; autoAnalyze?: number }>()
 
 interface Change {
   path: string
@@ -153,6 +153,7 @@ function onCommitted() {
     <GitCommitPanel
       v-if="props.projectPath"
       :project-path="props.projectPath"
+      :auto-analyze="props.autoAnalyze"
       @committed="onCommitted"
     />
 
