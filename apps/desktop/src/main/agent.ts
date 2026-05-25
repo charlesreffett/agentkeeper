@@ -303,35 +303,43 @@ async function consumeStream(session: ActiveSession): Promise<void> {
     }
   } finally {
     const now = Date.now()
-    // Update agent row in DB.
-    registry.updateAgent(session.agentLocalId, {
-      status: session.status,
-      lastActivityAt: now,
-    })
-    // Compute session-level status rollup from all agents.
-    const allAgents = registry.listAgentsBySession(session.sessionLocalId)
-      .map((a): Agent => {
-        if (a.localId === session.agentLocalId) return { ...a, status: session.status }
-        const live = active.get(a.localId)
-        return live ? { ...a, status: live.status } : a
+    // Guard against clobbering a replacement session started by editAndRerun.
+    // active.delete + sendInput in editAndRerun can race with this finally block:
+    // the new ActiveSession may already occupy the same key by the time we land here.
+    const isStillOwner = active.get(session.agentLocalId) === session
+    if (isStillOwner || !active.has(session.agentLocalId)) {
+      // Update agent row in DB.
+      registry.updateAgent(session.agentLocalId, {
+        status: session.status,
+        lastActivityAt: now,
       })
-    const sessionStatus = registry.computeSessionStatus(allAgents)
-    const sessionUpdate: Partial<Session> = {
-      status: sessionStatus,
-      lastActivityAt: now,
+      // Compute session-level status rollup from all agents.
+      const allAgents = registry.listAgentsBySession(session.sessionLocalId)
+        .map((a): Agent => {
+          if (a.localId === session.agentLocalId) return { ...a, status: session.status }
+          const live = active.get(a.localId)
+          return live ? { ...a, status: live.status } : a
+        })
+      const sessionStatus = registry.computeSessionStatus(allAgents)
+      const sessionUpdate: Partial<Session> = {
+        status: sessionStatus,
+        lastActivityAt: now,
+      }
+      if (session.planState) {
+        const hasInProgress = session.status !== 'completed' &&
+          session.planState.some(t => t.status === 'in_progress')
+        sessionUpdate.planState = hasInProgress
+          ? session.planState.map(t => t.status === 'in_progress' ? { ...t, status: 'partial' as const } : t)
+          : session.planState
+      }
+      registry.updateSession(session.sessionLocalId, sessionUpdate)
     }
-    if (session.planState) {
-      const hasInProgress = session.status !== 'completed' &&
-        session.planState.some(t => t.status === 'in_progress')
-      sessionUpdate.planState = hasInProgress
-        ? session.planState.map(t => t.status === 'in_progress' ? { ...t, status: 'partial' as const } : t)
-        : session.planState
-    }
-    registry.updateSession(session.sessionLocalId, sessionUpdate)
     if (session.status === 'completed' || session.status === 'idle') {
       mcpRestartCounts.delete(session.agentLocalId)
     }
-    active.delete(session.agentLocalId)
+    if (isStillOwner) {
+      active.delete(session.agentLocalId)
+    }
   }
 }
 
