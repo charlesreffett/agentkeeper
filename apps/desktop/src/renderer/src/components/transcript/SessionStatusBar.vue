@@ -1,15 +1,28 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import type { PropType } from 'vue'
 import { CheckCircle2, Loader2 } from 'lucide-vue-next'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
 import { toolDisplayName } from '@/lib/verbosity'
 
-const props = defineProps<{
-  status: LiveSessionStatus
-  currentToolName: string | null
-  turnStartedAt: number | null
-  turnEndedAt: number | null
-}>()
+const props = defineProps({
+  status: {
+    type: String as PropType<LiveSessionStatus>,
+    required: true,
+  },
+  currentTool: {
+    type: Object as PropType<{ name: string; input: unknown } | null>,
+    default: null,
+  },
+  turnStartedAt: {
+    type: Number as PropType<number | null>,
+    default: null,
+  },
+  turnEndedAt: {
+    type: Number as PropType<number | null>,
+    default: null,
+  },
+})
 
 // Ticks every second while running to keep the elapsed display live.
 const now = ref(Date.now())
@@ -41,13 +54,36 @@ function formatDuration(ms: number): string {
   return m > 0 ? `${m}m ${s % 60}s` : `${s}s`
 }
 
+function basename(p: string) {
+  return p.split('/').pop() ?? p
+}
+
+function truncate(s: string, n: number) {
+  return s.length > n ? s.slice(0, n) + '…' : s
+}
+
 const isActive = computed(
   () => props.status === 'running' || props.status === 'starting',
 )
 
-const toolLabel = computed(() =>
-  props.currentToolName ? `${toolDisplayName(props.currentToolName)}…` : 'Working…',
-)
+const toolLabel = computed(() => {
+  if (!props.currentTool) return 'Working…'
+  const { name, input } = props.currentTool
+  const base = toolDisplayName(name)
+  if (input && typeof input === 'object') {
+    const o = input as Record<string, unknown>
+    const detail =
+      typeof o['file_path'] === 'string' ? basename(o['file_path'] as string) :
+      typeof o['pattern'] === 'string' ? `'${o['pattern']}'` :
+      typeof o['query'] === 'string' ? `'${o['query']}'` :
+      typeof o['path'] === 'string' ? basename(o['path'] as string) :
+      typeof o['url'] === 'string' ? new URL(o['url'] as string).hostname :
+      typeof o['command'] === 'string' ? truncate(o['command'] as string, 40) :
+      null
+    if (detail) return `${base} ${detail}`
+  }
+  return `${base}…`
+})
 
 const elapsedText = computed(() =>
   props.turnStartedAt ? formatDuration(now.value - props.turnStartedAt) : '',

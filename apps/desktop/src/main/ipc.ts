@@ -62,7 +62,7 @@ import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, createBranch, detectRemoteSources, getBranch, getStatus, pull, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
-import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp, editAndRerun, undoEditAndRerun } from './agent'
 import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, gitDiffStat, listWorktrees, removeWorktree } from './worktrees'
@@ -219,14 +219,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsRead,
-    (_event, projectPath: string, sessionId: string) => {
-      // sessionId is the JSONL basename (= SDK session UUID). Check whether
-      // it belongs to a non-entry-point agent so readSession can reclassify
-      // its injected opening prompt as a delegated-task system event.
-      const agent = sessionRegistry.getAgentBySdkId(sessionId)
-      const isSubAgentSession = agent != null && !agent.isEntryPoint
-      return readSession(projectPath, sessionId, isSubAgentSession)
-    },
+    (_event, projectPath: string, sessionId: string) => readSession(projectPath, sessionId),
   )
 
   // Sessions — live. Every handler normalizes its error to a plain message
@@ -1068,6 +1061,28 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         return await reconnectSessionMcp(agentLocalId, factory)
       } catch (err) {
         console.error('[ipc] sessions:reconnectMcp failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsEditAndRerun,
+    async (_event, agentLocalId: string, truncateFromUuid: string, newText: string) => {
+      try {
+        await editAndRerun(agentLocalId, truncateFromUuid, newText)
+      } catch (err) {
+        console.error('[ipc] sessions:editAndRerun failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.sessionsUndoEditAndRerun,
+    async (_event, agentLocalId: string) => {
+      try {
+        await undoEditAndRerun(agentLocalId)
+      } catch (err) {
+        console.error('[ipc] sessions:undoEditAndRerun failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

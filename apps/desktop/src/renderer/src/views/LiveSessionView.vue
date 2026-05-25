@@ -32,6 +32,17 @@ import {
   type TranscriptEvent,
 } from '@shared/ipc-contract'
 
+interface UndoBuf {
+  agentLocalId: string
+  sessionLocalId: string
+  events: TranscriptEvent[]
+  count: number
+  timerId: ReturnType<typeof setTimeout> | null
+}
+
+const undoBuf = ref<UndoBuf | null>(null)
+const rewriteError = ref<string | null>(null)
+
 const props = defineProps<{
   liveId: string
   enterToSend?: boolean
@@ -238,6 +249,71 @@ async function onStop() {
   await store.interrupt(selectedAgentLocalId.value)
 }
 
+// ─── Edit / regenerate / undo ────────────────────────────────────────────────
+
+async function onEditSubmit(uuid: string, newText: string) {
+  const agentLocalId = selectedAgentLocalId.value
+  rewriteError.value = null
+  try {
+    const removed = await store.editAndRerun(agentLocalId, uuid, newText)
+    if (undoBuf.value?.timerId) clearTimeout(undoBuf.value.timerId)
+    undoBuf.value = {
+      agentLocalId,
+      sessionLocalId: props.liveId,
+      events: removed,
+      count: removed.length,
+      timerId: setTimeout(() => { undoBuf.value = null }, 10_000),
+    }
+  } catch (e) {
+    rewriteError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function onRegenerate(assistantEventUuid: string) {
+  const agentLocalId = selectedAgentLocalId.value
+  const events = agentEvents.value
+  const assistantIdx = events.findIndex((e) => e.uuid === assistantEventUuid)
+  if (assistantIdx === -1) return
+  let userEvent: TranscriptEvent | null = null
+  for (let i = assistantIdx - 1; i >= 0; i--) {
+    const ev = events[i]!
+    if (ev.role === 'user' && ev.content.some((b) => b.type === 'text')) {
+      userEvent = ev
+      break
+    }
+  }
+  if (!userEvent) return
+  const textContent = userEvent.content
+    .filter((b) => b.type === 'text')
+    .map((b) => (b as { type: 'text'; text: string }).text)
+    .join('\n')
+  rewriteError.value = null
+  try {
+    const removed = await store.editAndRerun(agentLocalId, userEvent.uuid, textContent)
+    if (undoBuf.value?.timerId) clearTimeout(undoBuf.value.timerId)
+    undoBuf.value = {
+      agentLocalId,
+      sessionLocalId: props.liveId,
+      events: removed,
+      count: removed.length,
+      timerId: setTimeout(() => { undoBuf.value = null }, 10_000),
+    }
+  } catch (e) {
+    rewriteError.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function onUndo() {
+  if (!undoBuf.value) return
+  const buf = undoBuf.value
+  if (buf.timerId) clearTimeout(buf.timerId)
+  undoBuf.value = null
+  try {
+    await store.undoEditAndRerun(buf.agentLocalId, buf.sessionLocalId, buf.events)
+  } catch (e) {
+    rewriteError.value = e instanceof Error ? e.message : String(e)
+  }
+}
 
 // ─── Session state helpers ───────────────────────────────────────────────────
 
@@ -430,7 +506,7 @@ watch(
 
 // Turn timing is reset in the selectedAgentLocalId watcher above.
 
-const currentToolName = computed((): string | null => {
+const currentTool = computed((): { name: string; input: unknown } | null => {
   const s = session.value
   if (!s || (s.status !== 'running' && s.status !== 'starting')) return null
   const evts = agentEvents.value
@@ -439,10 +515,21 @@ const currentToolName = computed((): string | null => {
     if (!evt) continue
     for (let j = evt.content.length - 1; j >= 0; j--) {
       const block = evt.content[j]
-      if (block?.type === 'tool_use') return block.name
+      if (block?.type === 'tool_use') return { name: block.name, input: block.input }
     }
   }
   return null
+})
+
+const streamingEventUuid = computed((): string | undefined => {
+  const s = session.value
+  if (!s || (s.status !== 'running' && s.status !== 'starting')) return undefined
+  const evts = agentEvents.value
+  for (let i = evts.length - 1; i >= 0; i--) {
+    const evt = evts[i]
+    if (evt && evt.role === 'assistant') return evt.uuid
+  }
+  return undefined
 })
 
 </script>
@@ -603,7 +690,11 @@ const currentToolName = computed((): string | null => {
               :events="agentEvents"
               :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
               :verbosity-state="verbosityState"
+              :streaming-event-uuid="streamingEventUuid"
+              :can-rewrite="!isTerminal && !isDraft"
               @show-all="onShowAll"
+              @edit-submit="onEditSubmit"
+              @regenerate="onRegenerate"
             />
           </template>
         </div>
@@ -644,7 +735,7 @@ const currentToolName = computed((): string | null => {
       <SessionStatusBar
         v-if="!isDraft"
         :status="session.status"
-        :current-tool-name="currentToolName"
+        :current-tool="currentTool"
         :turn-started-at="turnStartedAt"
         :turn-ended-at="turnEndedAt"
       />
@@ -732,4 +823,43 @@ const currentToolName = computed((): string | null => {
   <div v-else class="h-full flex items-center justify-center text-muted-foreground text-sm">
     Session not found.
   </div>
+
+  <!-- Rewrite error -->
+  <Transition
+    enter-active-class="transition-all duration-200 ease-out"
+    enter-from-class="opacity-0 translate-y-2"
+    leave-active-class="transition-all duration-150 ease-in"
+    leave-to-class="opacity-0 translate-y-2"
+  >
+    <div
+      v-if="rewriteError"
+      class="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm text-destructive shadow-lg"
+    >
+      {{ rewriteError }}
+      <button class="ml-2 underline" @click="rewriteError = null">Dismiss</button>
+    </div>
+  </Transition>
+
+  <!-- Undo toast -->
+  <Transition
+    enter-active-class="transition-all duration-200 ease-out"
+    enter-from-class="opacity-0 translate-y-2"
+    leave-active-class="transition-all duration-150 ease-in"
+    leave-to-class="opacity-0 translate-y-2"
+  >
+    <div
+      v-if="undoBuf"
+      class="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-border bg-popover px-4 py-2.5 text-sm shadow-lg"
+    >
+      <span class="text-muted-foreground">
+        {{ undoBuf.count }} {{ undoBuf.count === 1 ? 'message' : 'messages' }} removed.
+      </span>
+      <button
+        class="font-medium text-foreground underline underline-offset-2 hover:text-primary"
+        @click="onUndo"
+      >
+        Undo
+      </button>
+    </div>
+  </Transition>
 </template>
