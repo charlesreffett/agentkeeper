@@ -92,7 +92,7 @@
 /* Shiki v4 dual-theme: light color is a direct inline style on spans; dark overrides via CSS var.
    Hardcoded bg/fg for material-theme-lighter (light) and material-theme-palenight (dark)
    because preStyles:true is required to get --shiki-light-bg, which we don't enable. */
-.shiki { background-color: #FAFAFA; color: #546E7A; }
+.shiki { background-color: #FAFAFA; color: #546E7A; overflow-x: auto; max-width: 100%; }
 .dark .shiki { background-color: #292D3E !important; color: #EEFFFF !important; }
 .dark .shiki span { color: var(--shiki-dark) !important; }
 
