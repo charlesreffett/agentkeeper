@@ -691,7 +691,7 @@ const streamingEventUuid = computed((): string | undefined => {
               :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
               :verbosity-state="verbosityState"
               :streaming-event-uuid="streamingEventUuid"
-              :can-rewrite="!isTerminal && !isDraft"
+              :can-rewrite="!isDraft && session?.status !== 'running' && session?.status !== 'starting'"
               @show-all="onShowAll"
               @edit-submit="onEditSubmit"
               @regenerate="onRegenerate"
