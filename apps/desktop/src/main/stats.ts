@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, gt, sql } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { sessionStats, appState } from './db/schema'
 import { getSessionTokenBreakdowns } from './cost-ledger'
@@ -72,6 +72,18 @@ export function getPersistedTurnCount(sessionLocalId: string): number {
 
 export function isStatsImported(): boolean {
   return !!getDb().select().from(appState).where(eq(appState.key, 'statsImported')).get()
+}
+
+export function flushInProgressTokens(): void {
+  getDb()
+    .update(sessionStats)
+    .set({
+      totalTokens: sql`${sessionStats.totalTokens} + ${sessionStats.inProgressTokens}`,
+      inProgressTokens: 0,
+      updatedAt: Date.now(),
+    })
+    .where(gt(sessionStats.inProgressTokens, 0))
+    .run()
 }
 
 export function markStatsImported(): void {

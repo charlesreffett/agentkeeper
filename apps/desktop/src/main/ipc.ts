@@ -22,7 +22,7 @@ import {
 } from '../shared/ipc-contract'
 import * as costLedger from './cost-ledger'
 import { getDraft, setDraft, clearDraft } from './drafts'
-import { getAllStats, upsertStats, markStatsImported, isStatsImported } from './stats'
+import { getAllStats, upsertStats, markStatsImported, isStatsImported, flushInProgressTokens } from './stats'
 import { getDb, runMigrations } from './db/index'
 import { sql } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
@@ -908,6 +908,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Session registry — persisted sessions + resume + delete + touch
   // Reset any sessions left mid-flight by a previous process, then prune old ones.
   sessionRegistry.resetStaleRunning()
+  flushInProgressTokens()
   {
     const { sessionExpiryDays } = settingsStore.get()
     sessionRegistry.pruneExpired(sessionExpiryDays)
