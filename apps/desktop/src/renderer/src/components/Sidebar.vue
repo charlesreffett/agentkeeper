@@ -78,8 +78,6 @@ const workspaceItems = [
   { id: 'roles', label: 'Roles', icon: 'Bot', path: '/roles' },
   { id: 'skills', label: 'Skills', icon: 'Wand2', path: '/skills' },
   { id: 'commands', label: 'Commands', icon: 'Terminal', path: '/commands' },
-  { id: 'plugins', label: 'Plugins', icon: 'Puzzle', path: '/plugins' },
-  { id: 'settings', label: 'Settings', icon: 'Settings2', path: '/settings' },
 ]
 
 const pluginRoutes: Record<string, string> = {
