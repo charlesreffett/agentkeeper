@@ -886,10 +886,27 @@ export const useSessionStore = defineStore('sessions', () => {
     draft.branch = branch ?? null
     draft.initialPrompt = trimmedPrompt
     draft.status = 'starting'
-    draft.lastActivityAt = Date.now()
-    // Update the solo agent's initialPrompt
-    const soloAgent = draft.agents[0]
-    if (soloAgent) {
+    const now = Date.now()
+    draft.lastActivityAt = now
+    // Ensure the solo agent entry exists (draft sessions start with agents: []).
+    let soloAgent = draft.agents[0]
+    if (!soloAgent) {
+      soloAgent = {
+        localId,
+        sessionLocalId: localId,
+        sdkSessionId: null,
+        roleId: role?.id ?? null,
+        roleName: role?.name ?? null,
+        roleInstanceIndex: null,
+        initialPrompt: trimmedPrompt,
+        isEntryPoint: true,
+        status: 'starting',
+        startedAt: now,
+        lastActivityAt: now,
+      }
+      draft.agents.push(soloAgent)
+      if (!draft.agentEvents[localId]) draft.agentEvents[localId] = []
+    } else {
       soloAgent.initialPrompt = trimmedPrompt
       if (role) {
         soloAgent.roleId = role.id
