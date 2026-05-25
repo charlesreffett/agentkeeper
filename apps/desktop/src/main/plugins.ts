@@ -169,7 +169,8 @@ export async function activatePlugins(workItemRegistry: WorkItemRegistryFull): P
 export function installBundledPlugins(): void {
   const db = getRawSqlite()
   const isDev = !app.isPackaged
-  const repoRoot = isDev ? new URL('../../../../..', import.meta.url).pathname : ''
+  // Use app.getAppPath() (= apps/desktop in dev) to reliably find the repo root
+  const repoRoot = isDev ? path.resolve(app.getAppPath(), '../..') : ''
 
   const bundled = [
     {
@@ -191,15 +192,20 @@ export function installBundledPlugins(): void {
   ]
 
   for (const p of bundled) {
+    const manifestPath = path.join(p.dirPath, 'manifest.json')
+    let manifestJson = '{}'
+    try { manifestJson = fs.readFileSync(manifestPath, 'utf8') } catch {}
+
     const existing = db.prepare('SELECT id FROM plugin_registry WHERE id = ?').get(p.id)
     if (!existing) {
-      const manifestPath = path.join(p.dirPath, 'manifest.json')
-      let manifestJson = '{}'
-      try { manifestJson = fs.readFileSync(manifestPath, 'utf8') } catch {}
       db.prepare(`
         INSERT INTO plugin_registry (id, name, version, enabled, manifest, source, installed_at, dev_path)
         VALUES (?, ?, ?, 1, ?, 'bundled', ?, ?)
       `).run(p.id, p.name, p.version, manifestJson, Date.now(), p.dirPath)
+    } else {
+      // Refresh manifest and dev_path each startup so stale/empty manifests self-heal
+      db.prepare('UPDATE plugin_registry SET manifest = ?, dev_path = ? WHERE id = ?')
+        .run(manifestJson, p.dirPath, p.id)
     }
   }
 }

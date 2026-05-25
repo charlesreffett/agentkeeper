@@ -330,9 +330,39 @@ export async function uninstallPlugin(pluginId: string): Promise<void> {
 export async function enablePlugin(pluginId: string): Promise<void> {
   const db = getRawSqlite()
   db.prepare('UPDATE plugin_registry SET enabled = 1 WHERE id = ?').run(pluginId)
-  const row = db.prepare('SELECT manifest FROM plugin_registry WHERE id = ?').get(pluginId) as { manifest: string } | undefined
+
+  const row = db.prepare('SELECT manifest, dev_path FROM plugin_registry WHERE id = ?').get(pluginId) as
+    { manifest: string; dev_path: string | null } | undefined
   if (!row) throw new Error(`Plugin ${pluginId} not found`)
-  const manifest = PluginManifestSchema.parse(JSON.parse(row.manifest))
+
+  // For bundled/dev plugins, re-read manifest from disk to recover from stale DB values
+  let manifestRaw: unknown = JSON.parse(row.manifest)
+  if (row.dev_path) {
+    try {
+      const fresh = JSON.parse(fs.readFileSync(path.join(row.dev_path, 'manifest.json'), 'utf8'))
+      manifestRaw = fresh
+      db.prepare('UPDATE plugin_registry SET manifest = ? WHERE id = ?')
+        .run(JSON.stringify(fresh), pluginId)
+    } catch { /* keep manifestRaw from DB */ }
+  }
+
+  const result = PluginManifestSchema.safeParse(manifestRaw)
+  if (!result.success) {
+    console.warn(`[plugin-manager] ${pluginId}: invalid manifest, enabled in DB only`)
+    return
+  }
+  const manifest = result.data
+
+  // Skip spawning if the entry file doesn't exist (e.g. bundled plugin not yet built)
+  const entryFullPath = row.dev_path
+    ? path.join(row.dev_path, manifest.entry)
+    : path.join(app.getPath('userData'), 'plugins', 'installed', `${pluginId}@${manifest.version}`, manifest.entry)
+
+  if (!fs.existsSync(entryFullPath)) {
+    console.info(`[plugin-manager] ${pluginId}: entry not found at ${entryFullPath}, enabled in DB only`)
+    return
+  }
+
   await spawnAndActivate(manifest)
 }
 

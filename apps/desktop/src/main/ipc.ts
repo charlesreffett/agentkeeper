@@ -644,7 +644,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       version: row.version,
       enabled: row.enabled === 1,
       source: row.source as PluginSource,
-      status: getActiveHost(row.id) ? 'active' : 'inactive',
+      status: getActiveHost(row.id) ? 'active' : (row.enabled === 1 && row.source === 'bundled' ? 'active' : 'inactive'),
       manifest: JSON.parse(row.manifest),
     }))
   })
