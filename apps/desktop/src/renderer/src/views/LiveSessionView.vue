@@ -685,36 +685,45 @@ const streamingEventUuid = computed((): string | undefined => {
           </div>
           <DraftSessionPanel v-if="isDraft" :session="session" />
           <template v-else>
-            <!-- Historical transcript: fixed height, VList scrolls within it -->
-            <div
-              v-if="isResumed && historicalEvents.length"
-              class="flex-none h-[35%] min-h-0"
-            >
-              <Transcript
-                :events="historicalEvents"
-                :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
-                :verbosity-state="verbosityState"
-                :can-rewrite="!isDraft"
-                @show-all="onShowAll"
-                @edit-submit="onEditSubmit"
-                @regenerate="onRegenerate"
-              />
-            </div>
-            <div
-              v-if="isResumed"
-              class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none shrink-0"
-            >
-              <span class="flex-1 border-t border-border" />
-              <span>— Resumed —</span>
-              <span class="flex-1 border-t border-border" />
-            </div>
-            <!-- Live transcript: fills remaining space, owns its own VList scroll -->
+            <!--
+              Split layout only when both halves have content — i.e. a true resume where the
+              session was continued with new messages after the historical run.  When agentEvents
+              is empty (evicted session, or session that never produced live events after resume),
+              collapse to a single full-height transcript so the user doesn't see a huge blank area.
+            -->
+            <template v-if="isResumed && agentEvents.length > 0">
+              <!-- Historical transcript: fixed height, VList scrolls within it -->
+              <div
+                v-if="historicalEvents.length"
+                class="flex-none h-[35%] min-h-0"
+              >
+                <Transcript
+                  :events="historicalEvents"
+                  :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
+                  :verbosity-state="verbosityState"
+                  :can-rewrite="!isDraft"
+                  @show-all="onShowAll"
+                  @edit-submit="onEditSubmit"
+                  @regenerate="onRegenerate"
+                />
+              </div>
+              <div
+                v-if="historicalEvents.length"
+                class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none shrink-0"
+              >
+                <span class="flex-1 border-t border-border" />
+                <span>— Resumed —</span>
+                <span class="flex-1 border-t border-border" />
+              </div>
+            </template>
+            <!-- Main transcript: live events normally; falls back to historicalEvents when
+                 agentEvents is empty (evicted completed session re-opened from disk). -->
             <Transcript
               ref="transcriptRef"
-              :events="agentEvents"
+              :events="isResumed && agentEvents.length === 0 ? historicalEvents : agentEvents"
               :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
               :verbosity-state="verbosityState"
-              :streaming-event-uuid="streamingEventUuid"
+              :streaming-event-uuid="agentEvents.length > 0 ? streamingEventUuid : undefined"
               :can-rewrite="!isDraft"
               class="flex-1 min-h-0"
               @show-all="onShowAll"
