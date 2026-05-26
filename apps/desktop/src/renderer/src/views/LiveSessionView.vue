@@ -804,7 +804,7 @@ const streamingEventUuid = computed((): string | undefined => {
       class="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-border bg-popover px-4 py-2.5 text-sm shadow-lg"
     >
       <span class="text-muted-foreground">
-        {{ undoBuf.count }} {{ undoBuf.count === 1 ? 'message' : 'messages' }} removed.
+        Response removed.
       </span>
       <button
         class="font-medium text-foreground underline underline-offset-2 hover:text-primary"
