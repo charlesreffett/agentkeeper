@@ -16,8 +16,10 @@ import MessageInput from '@/components/MessageInput.vue'
 import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
 import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
+import { useQuery } from '@tanstack/vue-query'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { queryKeys } from '@/lib/queryKeys'
 import {
   DEFAULT_VERBOSITY_STATE,
   MODE_DEFAULTS,
@@ -198,25 +200,32 @@ onBeforeUnmount(() => {
   }
 })
 
-// Reactive watch handles both sync (historical) and async (persisted) cases,
-// and also fires on sidebar navigation when the same component instance is reused.
-watch(
-  () => session.value?.resumedFromSdkSessionId,
-  async (sdkId) => {
-    if (!sdkId) return
+// Historical transcript — cached with Vue Query so repeat navigation is instant.
+const transcriptQuery = useQuery({
+  queryKey: computed(() =>
+    queryKeys.sessions.transcript(
+      session.value?.projectPath ?? '',
+      session.value?.resumedFromSdkSessionId ?? '',
+    )
+  ),
+  queryFn: async () => {
     const s = session.value
-    if (!s) return
-    try {
-      const transcript = await window.agentkeeper.sessions.read(s.projectPath, sdkId)
-      if (transcript) {
-        historicalEvents.value = transcript.events
-        void scrollToBottom()
-      }
-    } catch {
-      // non-fatal — live events still work
+    if (!s?.resumedFromSdkSessionId) return null
+    return window.agentkeeper.sessions.read(s.projectPath, s.resumedFromSdkSessionId)
+  },
+  enabled: computed(() => !!session.value?.resumedFromSdkSessionId),
+  staleTime: 5 * 60 * 1000,
+  gcTime: 10 * 60 * 1000,
+})
+
+watch(
+  () => transcriptQuery.data.value,
+  (transcript) => {
+    if (transcript) {
+      historicalEvents.value = transcript.events
+      void scrollToBottom()
     }
   },
-  { immediate: true },
 )
 
 // ─── Draft / send ───────────────────────────────────────────────────────────
