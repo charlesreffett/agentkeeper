@@ -79,7 +79,7 @@ function statusLabel(status: LiveSessionStatus): string {
     case 'running':    return 'Running'
     case 'idle':       return 'Idle'
     case 'suspended':  return 'Suspended'
-    case 'blocked':    return 'Blocked'
+    case 'blocked':    return 'Waiting'
     case 'completed':  return 'Completed'
     case 'terminated': return 'Terminated'
     case 'error':      return 'Error'

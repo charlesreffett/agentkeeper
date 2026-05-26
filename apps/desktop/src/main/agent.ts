@@ -622,6 +622,12 @@ export function waitForNextIdle(
   return new Promise((resolve) => s.idleWaiters.push(resolve))
 }
 
+export function setAgentStatus(sessionId: string, status: LiveSessionStatus): void {
+  const s = active.get(sessionId)
+  if (!s) return
+  setStatus(s, status)
+}
+
 export async function resumeSession(localId: string): Promise<string> {
   const agent = registry.getAgent(localId)
   const persistedSession = registry.getSession(agent?.sessionLocalId ?? localId)

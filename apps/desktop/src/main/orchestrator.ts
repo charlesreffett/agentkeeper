@@ -17,6 +17,7 @@ import {
   broadcastStatus,
   getActiveSession,
   sendInput,
+  setAgentStatus,
   startSession,
   waitForNextIdle,
   interruptSession,
@@ -489,10 +490,12 @@ async function routeMessage(
     }
 
     addWait(fromSessionId, targetInst.localId)
+    setAgentStatus(fromSessionId, 'blocked')
     try {
       return await injectAndWait(runtime, targetInst, wrapMessage(fromInst.instanceId, content))
     } finally {
       removeWait(fromSessionId, targetInst.localId)
+      setAgentStatus(fromSessionId, 'running')
     }
   }
 
@@ -546,7 +549,12 @@ async function routeMessage(
     })
   }
 
-  return findOrSpawnAndDeliver()
+  setAgentStatus(fromSessionId, 'blocked')
+  try {
+    return await findOrSpawnAndDeliver()
+  } finally {
+    setAgentStatus(fromSessionId, 'running')
+  }
 }
 
 function wrapMessage(fromInstanceId: string, content: string): string {
