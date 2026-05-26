@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, reactive, ref, toRaw } from 'vue'
+import { computed, reactive, ref, toRaw, watch } from 'vue'
 import type {
   Agency,
   Agent,
@@ -1105,8 +1105,11 @@ export const useSessionStore = defineStore('sessions', () => {
     let evt = sdkMessageToTranscriptEvent(payload.message)
     if (!evt) return
 
-    // Reclassify the first user message of a non-entry-point agent as a
-    // delegated-task system event so it doesn't render as a "you" bubble.
+    // Reclassify non-human user messages so they don't render as "you" bubbles.
+    // Two cases:
+    //   1. Sidechain messages (parent_tool_use_id set) are sub-agent prompts spawned
+    //      by the Agent tool — always reclassify, regardless of entry-point status.
+    //   2. First user message of a non-entry-point or unregistered agency agent.
     if (
       evt.kind === 'user' &&
       evt.role === 'user' &&
@@ -1115,14 +1118,19 @@ export const useSessionStore = defineStore('sessions', () => {
     ) {
       const s = sessions[sessionId]
       const agent = s?.agents.find((a) => a.localId === agentKey)
-      if (agent && !agent.isEntryPoint) {
+
+      let shouldReclassify = false
+      if (evt.isSidechain) {
+        shouldReclassify = true
+      } else if (agent ? !agent.isEntryPoint : agentKey !== sessionId) {
         const prior = s?.agentEvents[agentKey] ?? []
-        const hasSeenUserEvent = prior.some(
+        shouldReclassify = !prior.some(
           (e) => e.kind === 'user' || e.systemSubtype === 'delegated-task',
         )
-        if (!hasSeenUserEvent) {
-          evt = { ...evt, kind: 'system', role: 'system', systemSubtype: 'delegated-task' }
-        }
+      }
+
+      if (shouldReclassify) {
+        evt = { ...evt, kind: 'system', role: 'system', systemSubtype: 'delegated-task' }
       }
     }
 
@@ -1330,6 +1338,18 @@ export const useSessionStore = defineStore('sessions', () => {
     if (agentEvts) agentEvts.push(...removedEvents)
     s.events.push(...removedEvents)
   }
+
+  watch(currentLiveId, () => {
+    const nonEvictable = new Set(['running', 'starting', 'blocked'])
+    for (const [id, s] of Object.entries(sessions)) {
+      if (id === currentLiveId.value) continue
+      if (nonEvictable.has(s.status)) continue
+      s.events = []
+      for (const key of Object.keys(s.agentEvents)) {
+        s.agentEvents[key] = []
+      }
+    }
+  })
 
   return {
     sessions,
