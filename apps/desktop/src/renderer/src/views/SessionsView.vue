@@ -96,10 +96,10 @@ function pathToProjectName(projectPath: string): string {
 
 const allSessions = computed((): SessionCardData[] => {
   const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
-  // SDK session ids already opened in-memory via openHistorical → skip in historical
+  // SDK session ids already opened in-memory → skip duplicates in the historical list
   const liveResumeSdkIds = new Set(
     Object.values(sessionStore.sessions)
-      .map((s) => s.resumedFromSdkSessionId)
+      .flatMap((s) => s.agents.map((a) => a.sdkSessionId))
       .filter((id): id is string => id !== null),
   )
 

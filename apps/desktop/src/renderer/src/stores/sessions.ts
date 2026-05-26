@@ -1145,7 +1145,7 @@ export const useSessionStore = defineStore('sessions', () => {
     // Two cases:
     //   1. Sidechain messages (parent_tool_use_id set) are sub-agent prompts spawned
     //      by the Agent tool — always reclassify, regardless of entry-point status.
-    //   2. First user message of a non-entry-point or unregistered agency agent.
+    //   2. First user message of a non-entry-point agent.
     if (
       evt.kind === 'user' &&
       evt.role === 'user' &&
@@ -1158,8 +1158,8 @@ export const useSessionStore = defineStore('sessions', () => {
       let shouldReclassify = false
       if (evt.isSidechain) {
         shouldReclassify = true
-      } else if (agent ? !agent.isEntryPoint : agentKey !== sessionId) {
-        const prior = s?.agentEvents[agentKey] ?? []
+      } else if (s && (agent ? !agent.isEntryPoint : agentKey !== sessionId)) {
+        const prior = s.agentEvents[agentKey] ?? []
         shouldReclassify = !prior.some(
           (e) => e.kind === 'user' || e.systemSubtype === 'delegated-task',
         )
