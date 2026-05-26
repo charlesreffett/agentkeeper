@@ -104,14 +104,6 @@ function statusTextClass(status: LiveSessionStatus): string {
   }
 }
 
-function agentTokens(agentLocalId: string): number {
-  return (
-    (store.agentTokens[agentLocalId]?.tokens ?? 0) +
-    (store.sessionRunTokens[agentLocalId] ?? 0) +
-    (store.sessionOutputEstimates[agentLocalId] ?? 0)
-  )
-}
-
 function agentName(a: Agent): string {
   if (isEntryPoint(a)) return a.roleName ?? 'Main agent'
   return a.roleName ?? 'Agent'
@@ -126,8 +118,14 @@ const turnCount = computed(() => {
   return Math.max(fromEvents, persisted)
 })
 
-const tokens = computed(() => agentTokens(props.selectedId))
-const costUsd = computed(() => store.agentTokens[props.selectedId]?.costUsd ?? 0)
+// Session-level totals persist across restarts; add the selected agent's
+// currently-streaming partial on top for a live running estimate.
+const tokens = computed(() => {
+  const base = store.sessionTokens[props.rootSessionId]?.tokens ?? 0
+  const inFlight = (store.sessionRunTokens[props.selectedId] ?? 0) + (store.sessionOutputEstimates[props.selectedId] ?? 0)
+  return base + inFlight
+})
+const costUsd = computed(() => store.sessionTokens[props.rootSessionId]?.costUsd ?? 0)
 
 function formatCost(usd: number): string {
   if (usd === 0) return '$0.00'
