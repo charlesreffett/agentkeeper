@@ -62,6 +62,7 @@ const rootSession = computed(() => store.getSession(props.liveId))
 const selectedAgentLocalId = ref(
   rootSession.value?.agents.find(a => a.isEntryPoint)?.localId ?? props.liveId,
 )
+const prevLiveId = ref(props.liveId)
 const session = computed(
   // For solo sessions: getSession(agentLocalId) === rootSession.
   // For agency sessions: agentLocalId is not a session key → falls back to rootSession.
@@ -95,7 +96,13 @@ const sessionTitle = computed(() => {
 
 // ─── Scroll tracking ────────────────────────────────────────────────────────
 
-const scroller = ref<HTMLElement | null>(null)
+interface TranscriptExpose {
+  scrollToEnd: () => void
+  scrollTo: (offset: number) => void
+  getScrollMetrics: () => { offset: number; scrollSize: number; viewportSize: number } | null
+}
+
+const transcriptRef = ref<TranscriptExpose | null>(null)
 const historicalEvents = ref<TranscriptEvent[]>([])
 const isResumed = computed(() => !!session.value?.resumedFromSdkSessionId)
 
@@ -112,10 +119,10 @@ const newMessageCount = computed(() =>
     : 0,
 )
 
-function onScroll() {
-  const el = scroller.value
-  if (!el) return
-  isAtBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < BOTTOM_THRESHOLD
+function onTranscriptScroll(offset: number) {
+  const metrics = transcriptRef.value?.getScrollMetrics()
+  if (!metrics) return
+  isAtBottom.value = metrics.scrollSize - offset - metrics.viewportSize < BOTTOM_THRESHOLD
   if (isAtBottom.value && hasNewMessages.value) {
     hasNewMessages.value = false
   }
@@ -124,15 +131,12 @@ function onScroll() {
 async function scrollToBottom() {
   await nextTick()
   requestAnimationFrame(() => {
-    const el = scroller.value
-    if (el) el.scrollTop = el.scrollHeight
+    transcriptRef.value?.scrollToEnd()
   })
 }
 
 function goToNewMessages() {
-  const el = scroller.value
-  if (!el) return
-  el.scrollTo({ top: Math.max(0, firstNewScrollHeight.value - 40), behavior: 'smooth' })
+  transcriptRef.value?.scrollTo(Math.max(0, firstNewScrollHeight.value - 40))
   hasNewMessages.value = false
 }
 
@@ -142,7 +146,7 @@ watch(
     if (isAtBottom.value) {
       void scrollToBottom()
     } else if (!hasNewMessages.value) {
-      firstNewScrollHeight.value = scroller.value?.scrollHeight ?? 0
+      firstNewScrollHeight.value = transcriptRef.value?.getScrollMetrics()?.scrollSize ?? 0
       firstNewEventsLength.value = oldLen
       hasNewMessages.value = true
     }
@@ -170,8 +174,9 @@ watch(
   selectedAgentLocalId,
   (_newId, _oldId) => {
     if (_oldId && messageInputRef.value) {
-      store.setDraftMessage(props.liveId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
+      store.setDraftMessage(prevLiveId.value, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
     }
+    prevLiveId.value = props.liveId
     void nextTick(() => {
       const s = store.getSession(props.liveId)
       messageInputRef.value?.setText(s?.draftMessage ?? '')
@@ -659,10 +664,10 @@ const streamingEventUuid = computed((): string | undefined => {
         />
       </div>
 
-      <!-- Transcript scrollable area -->
+      <!-- Transcript area -->
       <div class="flex-1 relative min-h-0">
-        <div ref="scroller" class="h-full overflow-y-auto" @scroll.passive="onScroll">
-          <div v-if="session.error || promoteError" class="max-w-4xl mx-auto p-6">
+        <div class="h-full flex flex-col overflow-hidden">
+          <div v-if="session.error || promoteError" class="max-w-4xl mx-auto p-6 w-full shrink-0">
             <div
               class="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
             >
@@ -671,33 +676,42 @@ const streamingEventUuid = computed((): string | undefined => {
           </div>
           <DraftSessionPanel v-if="isDraft" :session="session" />
           <template v-else>
-            <Transcript
+            <!-- Historical transcript: fixed height, VList scrolls within it -->
+            <div
               v-if="isResumed && historicalEvents.length"
-              :events="historicalEvents"
-              :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
-              :verbosity-state="verbosityState"
-              :can-rewrite="!isDraft"
-              @show-all="onShowAll"
-              @edit-submit="onEditSubmit"
-              @regenerate="onRegenerate"
-            />
+              class="flex-none h-[35%] min-h-0"
+            >
+              <Transcript
+                :events="historicalEvents"
+                :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
+                :verbosity-state="verbosityState"
+                :can-rewrite="!isDraft"
+                @show-all="onShowAll"
+                @edit-submit="onEditSubmit"
+                @regenerate="onRegenerate"
+              />
+            </div>
             <div
               v-if="isResumed"
-              class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none"
+              class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none shrink-0"
             >
               <span class="flex-1 border-t border-border" />
               <span>— Resumed —</span>
               <span class="flex-1 border-t border-border" />
             </div>
+            <!-- Live transcript: fills remaining space, owns its own VList scroll -->
             <Transcript
+              ref="transcriptRef"
               :events="agentEvents"
               :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
               :verbosity-state="verbosityState"
               :streaming-event-uuid="streamingEventUuid"
               :can-rewrite="!isDraft"
+              class="flex-1 min-h-0"
               @show-all="onShowAll"
               @edit-submit="onEditSubmit"
               @regenerate="onRegenerate"
+              @scroll="onTranscriptScroll"
             />
           </template>
         </div>
