@@ -16,10 +16,8 @@ import MessageInput from '@/components/MessageInput.vue'
 import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
 import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
-import { useQuery } from '@tanstack/vue-query'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
-import { queryKeys } from '@/lib/queryKeys'
 import {
   DEFAULT_VERBOSITY_STATE,
   MODE_DEFAULTS,
@@ -105,8 +103,6 @@ interface TranscriptExpose {
 }
 
 const transcriptRef = ref<TranscriptExpose | null>(null)
-const historicalEvents = ref<TranscriptEvent[]>([])
-const isResumed = computed(() => !!session.value?.resumedFromSdkSessionId)
 
 const isAtBottom = ref(true)
 const hasNewMessages = ref(false)
@@ -155,20 +151,21 @@ watch(
   },
 )
 
-// When the route changes, reset historical events and selected agent to the entry-point agent.
+// When the route changes, sync currentLiveId so eviction/reload fires, then reset selected agent.
 watch(
   () => props.liveId,
   () => {
-    historicalEvents.value = []
+    store.focus(props.liveId)
     const ep = store.getSession(props.liveId)?.agents.find(a => a.isEntryPoint)
     selectedAgentLocalId.value = ep?.localId ?? props.liveId
   },
+  { immediate: true },
 )
 
 // ─── Processing status bar ───────────────────────────────────────────────────
 
-const turnStartedAt = ref<number | null>(null)
-const turnEndedAt = ref<number | null>(null)
+const turnStartedAt = computed(() => rootSession.value?.currentTurnStartedAt ?? null)
+const turnEndedAt = computed(() => rootSession.value?.currentTurnEndedAt ?? null)
 
 // When the selected agent changes (route change OR tree click), reset UI state
 // and save/restore draft messages via the root session (draft keyed by sessionLocalId).
@@ -184,11 +181,9 @@ watch(
       messageInputRef.value?.setText(s?.draftMessage ?? '')
       messageInputRef.value?.setAttachments(s?.draftAttachments ?? [])
     })
-    // Reset scroll and turn timing when switching agents.
+    // Reset scroll when switching agents.
     isAtBottom.value = true
     hasNewMessages.value = false
-    turnStartedAt.value = null
-    turnEndedAt.value = null
     void scrollToBottom()
   },
   { immediate: true },
@@ -199,34 +194,6 @@ onBeforeUnmount(() => {
     store.setDraftMessage(props.liveId, messageInputRef.value.getText(), messageInputRef.value.getAttachments())
   }
 })
-
-// Historical transcript — cached with Vue Query so repeat navigation is instant.
-const transcriptQuery = useQuery({
-  queryKey: computed(() =>
-    queryKeys.sessions.transcript(
-      session.value?.projectPath ?? '',
-      session.value?.resumedFromSdkSessionId ?? '',
-    )
-  ),
-  queryFn: async () => {
-    const s = session.value
-    if (!s?.resumedFromSdkSessionId) return null
-    return window.agentkeeper.sessions.read(s.projectPath, s.resumedFromSdkSessionId)
-  },
-  enabled: computed(() => !!session.value?.resumedFromSdkSessionId),
-  staleTime: 5 * 60 * 1000,
-  gcTime: 10 * 60 * 1000,
-})
-
-watch(
-  () => transcriptQuery.data.value,
-  (transcript) => {
-    if (transcript) {
-      historicalEvents.value = transcript.events
-      void scrollToBottom()
-    }
-  },
-)
 
 // ─── Draft / send ───────────────────────────────────────────────────────────
 
@@ -504,22 +471,6 @@ function setRightCollapsed(v: boolean) {
   writePanelCollapsed('right', v)
 }
 
-watch(
-  () => session.value?.status,
-  (newStatus, oldStatus) => {
-    const wasActive = oldStatus === 'running' || oldStatus === 'starting'
-    const isNowActive = newStatus === 'running' || newStatus === 'starting'
-    if (isNowActive && !wasActive) {
-      turnStartedAt.value = Date.now()
-      turnEndedAt.value = null
-    } else if (!isNowActive && wasActive) {
-      turnEndedAt.value = Date.now()
-    }
-  },
-)
-
-// Turn timing is reset in the selectedAgentLocalId watcher above.
-
 const currentTool = computed((): { name: string; input: unknown } | null => {
   const s = session.value
   if (!s || (s.status !== 'running' && s.status !== 'starting')) return null
@@ -684,54 +635,20 @@ const streamingEventUuid = computed((): string | undefined => {
             </div>
           </div>
           <DraftSessionPanel v-if="isDraft" :session="session" />
-          <template v-else>
-            <!--
-              Split layout only when both halves have content — i.e. a true resume where the
-              session was continued with new messages after the historical run.  When agentEvents
-              is empty (evicted session, or session that never produced live events after resume),
-              collapse to a single full-height transcript so the user doesn't see a huge blank area.
-            -->
-            <template v-if="isResumed && agentEvents.length > 0">
-              <!-- Historical transcript: fixed height, VList scrolls within it -->
-              <div
-                v-if="historicalEvents.length"
-                class="flex-none h-[35%] min-h-0"
-              >
-                <Transcript
-                  :events="historicalEvents"
-                  :role-name="rootSession?.agents.find(a => a.isEntryPoint)?.roleName ?? null"
-                  :verbosity-state="verbosityState"
-                  :can-rewrite="!isDraft"
-                  @show-all="onShowAll"
-                  @edit-submit="onEditSubmit"
-                  @regenerate="onRegenerate"
-                />
-              </div>
-              <div
-                v-if="historicalEvents.length"
-                class="flex items-center gap-3 px-6 py-2 text-xs text-muted-foreground select-none shrink-0"
-              >
-                <span class="flex-1 border-t border-border" />
-                <span>— Resumed —</span>
-                <span class="flex-1 border-t border-border" />
-              </div>
-            </template>
-            <!-- Main transcript: live events normally; falls back to historicalEvents when
-                 agentEvents is empty (evicted completed session re-opened from disk). -->
-            <Transcript
-              ref="transcriptRef"
-              :events="isResumed && agentEvents.length === 0 ? historicalEvents : agentEvents"
-              :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
-              :verbosity-state="verbosityState"
-              :streaming-event-uuid="agentEvents.length > 0 ? streamingEventUuid : undefined"
-              :can-rewrite="!isDraft"
-              class="flex-1 min-h-0"
-              @show-all="onShowAll"
-              @edit-submit="onEditSubmit"
-              @regenerate="onRegenerate"
-              @scroll="onTranscriptScroll"
-            />
-          </template>
+          <Transcript
+            v-else
+            ref="transcriptRef"
+            :events="agentEvents"
+            :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
+            :verbosity-state="verbosityState"
+            :streaming-event-uuid="streamingEventUuid"
+            :can-rewrite="!isDraft"
+            class="flex-1 min-h-0"
+            @show-all="onShowAll"
+            @edit-submit="onEditSubmit"
+            @regenerate="onRegenerate"
+            @scroll="onTranscriptScroll"
+          />
         </div>
 
         <!-- Floating "N new messages" pill -->

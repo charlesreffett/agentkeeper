@@ -33,6 +33,7 @@ watch(
   (s) => {
     const active = s === 'running' || s === 'starting'
     if (active && !timer) {
+      now.value = Date.now()
       timer = setInterval(() => {
         now.value = Date.now()
       }, 1000)

@@ -39,9 +39,9 @@ export interface LiveSession extends Session {
   agents: Agent[]
   error: string | null
   agencyPrompt: string | null
-  /** sdkSessionId of the entry-point agent (for resume detection). */
-  resumedFromSdkSessionId: string | null
   interruptedAt: number | null
+  currentTurnStartedAt: number | null
+  currentTurnEndedAt: number | null
   isDraft: boolean
   draftConfig: DraftSessionConfig | null
   draftMessage: string
@@ -337,8 +337,9 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: now,
       lastActivityAt: now,
-      resumedFromSdkSessionId: null,
       interruptedAt: null,
+      currentTurnStartedAt: null,
+      currentTurnEndedAt: null,
       workItemKey: plain.workItemKey ?? null,
       workItemTitle: plain.workItemTitle ?? null,
       planState: null,
@@ -494,8 +495,9 @@ export const useSessionStore = defineStore('sessions', () => {
         error: null,
         startedAt: now,
         lastActivityAt: now,
-        resumedFromSdkSessionId: null,
         interruptedAt: null,
+        currentTurnStartedAt: null,
+        currentTurnEndedAt: null,
         workItemKey: entry.workItemKey ?? null,
         workItemTitle: entry.workItemTitle ?? null,
         planState: null,
@@ -536,6 +538,31 @@ export const useSessionStore = defineStore('sessions', () => {
     currentLiveId.value = null
   }
 
+  // Populate agentEvents from the JSONL file written by the SDK for a given agent run.
+  // No-ops if events are already present (live streaming beat us to it).
+  async function loadAgentTranscriptFromDisk(
+    sessionLocalId: string,
+    agentLocalId: string,
+    projectPath: string,
+    sdkSessionId: string,
+  ): Promise<void> {
+    const s = sessions[sessionLocalId]
+    if (!s) return
+    if ((s.agentEvents[agentLocalId]?.length ?? 0) > 0) return
+    try {
+      const transcript = await window.agentkeeper.sessions.read(projectPath, sdkSessionId)
+      if (!transcript?.events.length) return
+      // Re-check after async gap — live streaming may have populated by now.
+      const s2 = sessions[sessionLocalId]
+      if (!s2 || (s2.agentEvents[agentLocalId]?.length ?? 0) > 0) return
+      if (!s2.agentEvents[agentLocalId]) s2.agentEvents[agentLocalId] = []
+      s2.agentEvents[agentLocalId].push(...transcript.events)
+      s2.events.push(...transcript.events)
+    } catch {
+      // Non-fatal — JSONL may not exist for a session that never ran.
+    }
+  }
+
   function openPersisted(persisted: Session): string {
     const localId = persisted.localId
     if (!sessions[localId]) {
@@ -546,8 +573,9 @@ export const useSessionStore = defineStore('sessions', () => {
         agents: [],
         error: null,
         agencyPrompt: null,
-        resumedFromSdkSessionId: null,
         interruptedAt: null,
+        currentTurnStartedAt: null,
+        currentTurnEndedAt: null,
         isDraft: false,
         draftConfig: null,
         draftMessage: '',
@@ -560,16 +588,16 @@ export const useSessionStore = defineStore('sessions', () => {
         if (d.attachments.length > 0) s.draftAttachments = d.attachments
       })
       flushBuffer(localId)
-      // Load agents and populate agentEvents slots
       void window.agentkeeper.sessions.getAgents(localId).then((agentList) => {
         const s = sessions[localId]
         if (!s) return
         s.agents = agentList
         for (const a of agentList) {
           if (!s.agentEvents[a.localId]) s.agentEvents[a.localId] = []
+          if (a.sdkSessionId) {
+            void loadAgentTranscriptFromDisk(localId, a.localId, s.projectPath, a.sdkSessionId)
+          }
         }
-        const entryAgent = agentList.find(a => a.isEntryPoint) ?? agentList[0]
-        if (entryAgent?.sdkSessionId) s.resumedFromSdkSessionId = entryAgent.sdkSessionId
       })
     }
     currentLiveId.value = localId
@@ -586,8 +614,9 @@ export const useSessionStore = defineStore('sessions', () => {
       agents: [],
       error: null,
       agencyPrompt: null,
-      resumedFromSdkSessionId: null,
       interruptedAt: null,
+      currentTurnStartedAt: null,
+      currentTurnEndedAt: null,
       isDraft: false,
       draftConfig: null,
       draftMessage: '',
@@ -600,15 +629,16 @@ export const useSessionStore = defineStore('sessions', () => {
       s.agents = agentList
       for (const a of agentList) {
         if (!s.agentEvents[a.localId]) s.agentEvents[a.localId] = []
+        if (a.sdkSessionId) {
+          void loadAgentTranscriptFromDisk(localId, a.localId, s.projectPath, a.sdkSessionId)
+        }
       }
-      const entryAgent = agentList.find(a => a.isEntryPoint) ?? agentList[0]
-      if (entryAgent?.sdkSessionId) s.resumedFromSdkSessionId = entryAgent.sdkSessionId
     })
   }
 
   function openHistorical(projectPath: string, summary: SessionSummary): string {
     const existing = Object.values(sessions).find(
-      (s) => s.resumedFromSdkSessionId === summary.id,
+      (s) => s.agents.some((a) => a.sdkSessionId === summary.id),
     )
     if (existing) {
       currentLiveId.value = existing.localId
@@ -649,8 +679,9 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: summary.startedAt,
       lastActivityAt: summary.lastActivityAt,
-      resumedFromSdkSessionId: summary.id,
       interruptedAt: null,
+      currentTurnStartedAt: null,
+      currentTurnEndedAt: null,
       workItemKey: null,
       workItemTitle: null,
       planState: null,
@@ -659,6 +690,7 @@ export const useSessionStore = defineStore('sessions', () => {
       draftMessage: '',
       draftAttachments: [],
     }
+    void loadAgentTranscriptFromDisk(localId, localId, projectPath, summary.id)
     currentLiveId.value = localId
     return localId
   }
@@ -712,8 +744,9 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: now,
       lastActivityAt: now,
-      resumedFromSdkSessionId: params.sdkSessionId,
       interruptedAt: null,
+      currentTurnStartedAt: null,
+      currentTurnEndedAt: null,
       workItemKey: null,
       workItemTitle: null,
       planState: null,
@@ -722,6 +755,8 @@ export const useSessionStore = defineStore('sessions', () => {
       draftMessage: '',
       draftAttachments: [],
     }
+    // Load the prior run's transcript before the new SDK run starts streaming.
+    await loadAgentTranscriptFromDisk(localId, localId, params.projectPath, params.sdkSessionId)
     currentLiveId.value = localId
     flushBuffer(localId)
 
@@ -780,8 +815,9 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
-      resumedFromSdkSessionId: null,
       interruptedAt: null,
+      currentTurnStartedAt: null,
+      currentTurnEndedAt: null,
       workItemKey: null,
       workItemTitle: null,
       planState: null,
@@ -1225,6 +1261,7 @@ export const useSessionStore = defineStore('sessions', () => {
   window.agentkeeper.sessions.onStatus((update) => {
     const s = sessions[update.sessionId]
     if (s) {
+      const prevStatus = s.status
       if (update.agentLocalId) {
         // Agent-level update
         const agent = s.agents.find(a => a.localId === update.agentLocalId)
@@ -1247,6 +1284,15 @@ export const useSessionStore = defineStore('sessions', () => {
             (update.status === 'idle' || update.status === 'starting')
           if (!preserveBlocked) s.status = update.status
         }
+      }
+
+      const isNowActive = s.status === 'running' || s.status === 'starting'
+      const wasActive = prevStatus === 'running' || prevStatus === 'starting'
+      if (isNowActive && !wasActive) {
+        s.currentTurnStartedAt = Date.now()
+        s.currentTurnEndedAt = null
+      } else if (!isNowActive && wasActive) {
+        s.currentTurnEndedAt = Date.now()
       }
 
       // Rescue any in-progress tokens on quiescent status
@@ -1347,6 +1393,16 @@ export const useSessionStore = defineStore('sessions', () => {
       s.events = []
       for (const key of Object.keys(s.agentEvents)) {
         s.agentEvents[key] = []
+      }
+    }
+    // Re-load transcript for the newly-active session if events were evicted.
+    const id = currentLiveId.value
+    if (!id) return
+    const s = sessions[id]
+    if (!s) return
+    for (const agent of s.agents) {
+      if (agent.sdkSessionId && !s.agentEvents[agent.localId]?.length) {
+        void loadAgentTranscriptFromDisk(id, agent.localId, s.projectPath, agent.sdkSessionId)
       }
     }
   })
