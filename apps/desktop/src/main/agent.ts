@@ -443,19 +443,25 @@ export async function startSession(
   }
 
   // Register agent row upfront (solo: isEntryPoint=true; agency: caller sets isEntryPoint).
-  registry.registerAgent({
-    localId: agentLocalId,
-    sessionLocalId,
-    sdkSessionId: null,
-    roleId: params.roleId ?? null,
-    roleName: params.roleName ?? null,
-    roleInstanceIndex: params.roleInstanceIndex ?? null,
-    initialPrompt: params.initialPrompt ?? '',
-    isEntryPoint: params.isEntryPoint ?? isNewSession,
-    status: 'starting',
-    startedAt: now,
-    lastActivityAt: now,
-  })
+  // Skip re-registration for existing agents (editAndRerun / sendInput auto-resume) to avoid
+  // zeroing out the stored sdkSessionId before the new one arrives via system/init.
+  if (registry.getAgent(agentLocalId) == null) {
+    registry.registerAgent({
+      localId: agentLocalId,
+      sessionLocalId,
+      sdkSessionId: null,
+      roleId: params.roleId ?? null,
+      roleName: params.roleName ?? null,
+      roleInstanceIndex: params.roleInstanceIndex ?? null,
+      initialPrompt: params.initialPrompt ?? '',
+      isEntryPoint: params.isEntryPoint ?? isNewSession,
+      status: 'starting',
+      startedAt: now,
+      lastActivityAt: now,
+    })
+  } else {
+    registry.updateAgent(agentLocalId, { status: 'starting', lastActivityAt: now })
+  }
 
   const childEnv: Record<string, string | undefined> = {
     ...process.env,
