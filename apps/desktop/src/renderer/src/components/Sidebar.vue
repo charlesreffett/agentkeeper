@@ -17,6 +17,7 @@ import {
   Settings2,
   Map,
   Puzzle,
+  Plug,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import IconSessions from '@/components/icons/IconSessions.vue'
@@ -65,6 +66,7 @@ const iconMap: Record<string, Component> = {
   Settings2,
   Map,
   Puzzle,
+  Plug,
 }
 
 const coreItems = [

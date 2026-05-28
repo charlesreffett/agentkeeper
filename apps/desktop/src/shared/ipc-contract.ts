@@ -781,6 +781,8 @@ export interface AgentKeeperApi {
     onEvent: (handler: (event: string, payload: unknown) => void) => () => void
     /** Fires when the OS asks the app to open a .akp file (macOS open-file / Win second-instance). */
     onOpenFile: (handler: (filePath: string) => void) => () => void
+    /** Fires when a plugin host contributes a UI element to a named slot. */
+    onUiContribution: (handler: (data: { pluginId: string; slot: string; contribution: unknown }) => void) => () => void
     list: () => Promise<PluginRecord[]>
     pickAkpFile: () => Promise<string | null>
     install: (akpPath?: string) => Promise<void>

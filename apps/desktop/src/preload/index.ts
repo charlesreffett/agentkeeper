@@ -302,6 +302,13 @@ const api: AgentKeeperApi = {
     },
     onOpenFile: (handler: (filePath: string) => void): () => void =>
       onChannel<string>('plugin:open-file', handler),
+    onUiContribution: (
+      handler: (data: { pluginId: string; slot: string; contribution: unknown }) => void
+    ): (() => void) =>
+      onChannel<{ pluginId: string; slot: string; contribution: unknown }>(
+        'plugin:ui-contribution',
+        handler
+      ),
     list: () => invoke(IPC_CHANNELS.pluginsList) as Promise<PluginRecord[]>,
     pickAkpFile: () =>
       invoke(IPC_CHANNELS.pluginsPickAkpFile) as Promise<string | null>,

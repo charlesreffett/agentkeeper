@@ -5,14 +5,18 @@ import AppLayout from '@/components/AppLayout.vue'
 import { Toaster } from '@/components/ui/sonner'
 import QueryDevtools from '@/components/QueryDevtools.vue'
 import { useLayoutStore } from '@/stores/layout'
+import { useUIContributionsStore } from '@/stores/uiContributions'
+import type { UISlot, UIContribution } from '@agentkeeper/sdk'
 import { queryKeys } from '@/lib/queryKeys'
 
 const isDev = import.meta.env.DEV
 
 const layoutStore = useLayoutStore()
+const uiStore = useUIContributionsStore()
 const queryClient = useQueryClient()
 
 let cleanupOpenFile: (() => void) | null = null
+let cleanupUiContribution: (() => void) | null = null
 
 onMounted(async () => {
   const settings = await window.agentkeeper.settings.get()
@@ -27,10 +31,15 @@ onMounted(async () => {
       console.error('[plugins] open-file install failed', e)
     }
   })
+
+  cleanupUiContribution = window.agentkeeper.plugins.onUiContribution(({ slot, contribution }) => {
+    uiStore.contribute(slot as UISlot, contribution as UIContribution)
+  })
 })
 
 onUnmounted(() => {
   cleanupOpenFile?.()
+  cleanupUiContribution?.()
 })
 </script>
 
