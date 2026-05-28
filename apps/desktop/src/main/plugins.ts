@@ -189,6 +189,14 @@ export function installBundledPlugins(): void {
         ? path.join(repoRoot, 'packages', 'plugin-jira')
         : path.join(process.resourcesPath, 'plugins', 'plugin-jira'),
     },
+    {
+      id: 'agentkeeper-test',
+      name: 'Test Plugin',
+      version: '1.0.0',
+      dirPath: isDev
+        ? path.join(repoRoot, 'packages', 'plugin-test')
+        : path.join(process.resourcesPath, 'plugins', 'plugin-test'),
+    },
   ]
 
   for (const p of bundled) {

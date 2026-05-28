@@ -174,6 +174,26 @@ export async function initPluginLoader(
   _workItemRegistry = workItemRegistry
   const userDataPath = app.getPath('userData')
   const manifests = await scanPluginDirectories(userDataPath)
+
+  // Also activate DB-registered plugins with dev_path (bundled and dev-loaded)
+  const db = getRawSqlite()
+  const devRows = db.prepare(
+    "SELECT manifest, dev_path FROM plugin_registry WHERE enabled = 1 AND dev_path IS NOT NULL"
+  ).all() as { manifest: string; dev_path: string }[]
+
+  for (const row of devRows) {
+    try {
+      const raw = JSON.parse(row.manifest) as unknown
+      const result = PluginManifestSchema.safeParse(raw)
+      if (!result.success) continue
+      const m = result.data
+      if (manifests.some(existing => existing.id === m.id)) continue
+      const entryFull = path.join(row.dev_path, m.entry)
+      if (!fs.existsSync(entryFull)) continue
+      manifests.push(m)
+    } catch { /* skip malformed rows */ }
+  }
+
   buildDormantRegistry(manifests)
   await fireActivationEvent('onStartup', webContents)
 
