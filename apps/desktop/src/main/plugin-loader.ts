@@ -161,6 +161,12 @@ export function removeActiveHost(pluginId: string): void {
   activeHosts.delete(pluginId)
 }
 
+export function setWebContentsOnActiveHosts(wc: Electron.WebContents): void {
+  for (const host of activeHosts.values()) {
+    host.setWebContents(wc)
+  }
+}
+
 export async function initPluginLoader(
   workItemRegistry: WorkItemRegistryFull,
   webContents?: Electron.WebContents,

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
 import { loadDevPlugin, unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
+import { setWebContentsOnActiveHosts } from './plugin-loader.js'
 import { setWorkItemRegistry } from './agent'
 import { initPricing } from './pricing'
 import { init as initCostLedger, flush as flushCostLedger } from './cost-ledger'
@@ -140,6 +141,7 @@ app.whenReady().then(async () => {
   await activatePlugins(registry)
   registerIpcHandlers(registry)
   const win = createWindow()
+  setWebContentsOnActiveHosts(win.webContents)
   win.webContents.on('destroyed', () => {
     removeSubscriber(win.webContents.id)
   })

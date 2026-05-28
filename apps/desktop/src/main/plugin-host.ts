@@ -35,6 +35,7 @@ export class PluginHost {
   private port: Electron.MessagePortMain | null = null
   private timers = new Map<string, ReturnType<typeof setInterval>>()
   private eventListeners = new Map<string, () => void>()
+  private pendingUiContributions: Array<{ slot: string; contribution: unknown }> = []
 
   constructor(
     private readonly manifest: PluginManifest,
@@ -42,7 +43,7 @@ export class PluginHost {
     private readonly proxyUrl: string,
     private readonly eventBus: EventBus,
     private readonly workItemRegistry: WorkItemRegistryFull,
-    private readonly webContents?: Electron.WebContents,
+    private webContents?: Electron.WebContents,
   ) {}
 
   async spawn(): Promise<void> {
@@ -86,6 +87,16 @@ export class PluginHost {
     this.port!.postMessage(msg)
     await awaitAck(this.port!, 'activated', 30_000)
     this.eventBus.emit('plugin.activated', { pluginId: this.manifest.id })
+  }
+
+  setWebContents(wc: Electron.WebContents): void {
+    this.webContents = wc
+    for (const { slot, contribution } of this.pendingUiContributions) {
+      if (!wc.isDestroyed()) {
+        wc.send('plugin:ui-contribution', { pluginId: this.manifest.id, slot, contribution })
+      }
+    }
+    this.pendingUiContributions = []
   }
 
   async deactivate(): Promise<void> {
@@ -362,11 +373,15 @@ export class PluginHost {
       // --- UI ---
       case 'ui.contribute': {
         if (!this.hasPermission('sidebar')) break
-        this.webContents?.send('plugin:ui-contribution', {
-          pluginId,
-          slot: msg.slot,
-          contribution: msg.contribution,
-        })
+        if (this.webContents && !this.webContents.isDestroyed()) {
+          this.webContents.send('plugin:ui-contribution', {
+            pluginId,
+            slot: msg.slot,
+            contribution: msg.contribution,
+          })
+        } else {
+          this.pendingUiContributions.push({ slot: msg.slot, contribution: msg.contribution })
+        }
         break
       }
 
