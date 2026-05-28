@@ -49,6 +49,8 @@ const renameName = ref('')
 const renameDirFlag = ref(false)
 const renameInput = ref<HTMLInputElement | null>(null)
 
+const isMacOS = computed(() => navigator.userAgent.includes('Macintosh'))
+
 const focusedName = computed(() => {
   const p = focusedProject.value
   if (!p) return 'No project'
@@ -161,7 +163,7 @@ watch(
 </script>
 
 <template>
-  <header class="h-11 border-b bg-background flex items-center pr-3 pl-2 gap-2 shrink-0" style="-webkit-app-region: drag">
+  <header class="h-11 border-b bg-background flex items-center pr-3 gap-2 shrink-0" :class="isMacOS ? 'pl-[76px]' : 'pl-2'" style="-webkit-app-region: drag">
     <SidebarTrigger style="-webkit-app-region: no-drag" />
     <Separator orientation="vertical" class="h-4" />
     <!-- Project picker -->

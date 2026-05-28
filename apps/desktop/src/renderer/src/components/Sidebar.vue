@@ -27,7 +27,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -116,12 +115,6 @@ function isActive(path: string): boolean {
 
 <template>
   <Sidebar collapsible="icon">
-    <!-- macOS traffic-light zone — drag region, no content -->
-    <SidebarHeader
-      class="h-11 shrink-0 p-0"
-      style="-webkit-app-region: drag"
-    />
-
     <SidebarContent>
       <!-- Core navigation -->
       <SidebarGroup>
