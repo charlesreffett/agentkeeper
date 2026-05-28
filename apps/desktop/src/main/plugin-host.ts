@@ -91,12 +91,19 @@ export class PluginHost {
 
   setWebContents(wc: Electron.WebContents): void {
     this.webContents = wc
-    for (const { slot, contribution } of this.pendingUiContributions) {
-      if (!wc.isDestroyed()) {
-        wc.send('plugin:ui-contribution', { pluginId: this.manifest.id, slot, contribution })
+    const flush = () => {
+      for (const { slot, contribution } of this.pendingUiContributions) {
+        if (!wc.isDestroyed()) {
+          wc.send('plugin:ui-contribution', { pluginId: this.manifest.id, slot, contribution })
+        }
       }
+      this.pendingUiContributions = []
     }
-    this.pendingUiContributions = []
+    if (wc.isLoading()) {
+      wc.once('did-finish-load', flush)
+    } else {
+      flush()
+    }
   }
 
   async deactivate(): Promise<void> {
