@@ -12,6 +12,7 @@
       :default-edge-options="defaultEdgeOptions"
       :is-valid-connection="(conn) => conn.source !== conn.target"
       :connect-on-click="false"
+      :connection-mode="ConnectionMode.Loose"
       :connection-line-component="FloatingConnectionLine"
       @connect="onConnect"
       @edges-change="onEdgesChange"
@@ -29,7 +30,7 @@
 
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
-import { VueFlow, MarkerType, useVueFlow } from '@vue-flow/core'
+import { VueFlow, MarkerType, useVueFlow, ConnectionMode, Position } from '@vue-flow/core'
 import { useLayoutStore } from '@/stores/layout'
 import type {
   Node as VFNode,
@@ -137,17 +138,44 @@ const vfNodes = computed<VFNode[]>(() =>
   })
 )
 
-const vfEdges = computed<VFEdge[]>(() =>
-  props.edges.map(e => {
+// Determine which handles to route from/to based on the dominant direction
+// between node positions. Handle IDs match those declared in node components.
+function getBestHandles(
+  srcPos: { x: number; y: number },
+  tgtPos: { x: number; y: number },
+): { sourceHandle: string; targetHandle: string; sourcePosition: Position; targetPosition: Position } {
+  const dx = tgtPos.x - srcPos.x
+  const dy = tgtPos.y - srcPos.y
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0
+      ? { sourceHandle: 'right', targetHandle: 'left', sourcePosition: Position.Right, targetPosition: Position.Left }
+      : { sourceHandle: 'left', targetHandle: 'right', sourcePosition: Position.Left, targetPosition: Position.Right }
+  } else {
+    return dy >= 0
+      ? { sourceHandle: 'bottom', targetHandle: 'top', sourcePosition: Position.Bottom, targetPosition: Position.Top }
+      : { sourceHandle: 'top', targetHandle: 'bottom', sourcePosition: Position.Top, targetPosition: Position.Bottom }
+  }
+}
+
+const vfEdges = computed<VFEdge[]>(() => {
+  const posMap = new Map(props.nodes.map(n => [n.id, n.position]))
+  return props.edges.map(e => {
     const isSelected = e.id === props.selectedEdgeId
     // Bidirectional edges use indigo; directed edges use sky (target/incoming colour)
     const baseColor = e.isBidirectional ? '#818cf8' : '#38bdf8'
     const selectedColor = e.isBidirectional ? '#a5b4fc' : '#7dd3fc'
     const stroke = isSelected ? selectedColor : baseColor
+    const srcPos = posMap.get(e.source) ?? { x: 0, y: 0 }
+    const tgtPos = posMap.get(e.target) ?? { x: 0, y: 0 }
+    const { sourceHandle, targetHandle, sourcePosition, targetPosition } = getBestHandles(srcPos, tgtPos)
     return {
       id: e.id,
       source: e.source,
       target: e.target,
+      sourceHandle,
+      targetHandle,
+      sourcePosition,
+      targetPosition,
       selected: isSelected,
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
       markerStart: e.isBidirectional
@@ -156,7 +184,7 @@ const vfEdges = computed<VFEdge[]>(() =>
       style: { stroke, strokeWidth: isSelected ? 3 : 2 },
     }
   })
-)
+})
 
 function onConnect(conn: Connection) {
   if (conn.source && conn.target) {

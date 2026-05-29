@@ -6,7 +6,9 @@
       data.isEntryPoint ? 'ring-1 ring-amber-500/50' : '',
     ]"
   >
-    <Handle type="target" :position="Position.Left" class="!bg-sky-400 !border-sky-600 !w-3 !h-3" />
+    <Handle id="top" type="source" :position="Position.Top" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
+    <Handle id="left" type="source" :position="Position.Left" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
+    <Handle id="bottom" type="source" :position="Position.Bottom" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
 
     <!-- Instance label -->
     <div class="text-xs font-medium text-card-foreground/80">{{ data.label }}</div>
@@ -33,7 +35,7 @@
       </svg>
     </button>
 
-    <Handle type="source" :position="Position.Right" class="!bg-amber-400 !border-amber-600 !w-3 !h-3" />
+    <Handle id="right" type="source" :position="Position.Right" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
   </div>
 </template>
 
