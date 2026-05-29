@@ -47,7 +47,6 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import AgencyRoleNode from './AgencyRoleNode.vue'
 import AgencyInstanceNode from './AgencyInstanceNode.vue'
-import FloatingEdge from './FloatingEdge.vue'
 import FloatingConnectionLine from './FloatingConnectionLine.vue'
 import AnyToAnyOverlay from './AnyToAnyOverlay.vue'
 import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
@@ -91,10 +90,10 @@ const nodeTypes: Record<string, any> = {
   instance: markRaw(AgencyInstanceNode),
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const edgeTypes: Record<string, any> = { floating: markRaw(FloatingEdge) }
+const edgeTypes: Record<string, any> = {}
 
 const defaultEdgeOptions = {
-  type: 'floating',
+  type: 'smoothstep',
   markerEnd: { type: MarkerType.ArrowClosed, color: '#38bdf8' },
   style: { stroke: '#38bdf8', strokeWidth: 2 },
   animated: false,
