@@ -95,8 +95,8 @@ const edgeTypes: Record<string, any> = {}
 
 const defaultEdgeOptions = {
   type: 'smoothstep',
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#38bdf8' },
-  style: { stroke: '#38bdf8', strokeWidth: 2 },
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#6b7280' },
+  style: { stroke: '#6b7280', strokeWidth: 2 },
   animated: false,
 }
 
@@ -177,8 +177,8 @@ function facingTargetHandle(srcPos: { x: number; y: number }, tgtPos: { x: numbe
 const vfEdges = computed<VFEdge[]>(() =>
   props.edges.map(e => {
     const isSelected = e.id === props.selectedEdgeId
-    const baseColor = e.isBidirectional ? '#818cf8' : '#38bdf8'
-    const selectedColor = e.isBidirectional ? '#a5b4fc' : '#7dd3fc'
+    const baseColor = '#6b7280'
+    const selectedColor = '#3b82f6'
     const stroke = isSelected ? selectedColor : baseColor
 
     let sourceHandle: string
