@@ -253,149 +253,152 @@ watch(
         </div>
       </aside>
 
-      <main class="flex-1 overflow-y-auto min-w-0">
+      <main class="flex-1 min-w-0" :class="editing ? 'overflow-hidden' : 'overflow-y-auto'">
         <div v-if="!editing" class="h-full flex items-center justify-center text-muted-foreground text-sm p-8">
           Select a role to edit, or create a new one.
         </div>
-        <div v-else class="p-6 space-y-4">
-          <div class="grid grid-cols-2 gap-3">
+        <div v-else class="grid grid-cols-[2fr_3fr] h-full">
+          <!-- Left column: metadata fields -->
+          <div class="overflow-y-auto p-6 space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div class="space-y-1.5">
+                <label class="text-xs font-medium">ID (filename)</label>
+                <input
+                  v-model="form.id"
+                  type="text"
+                  placeholder="developer"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+                />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-medium">Scope</label>
+                <select
+                  v-model="form.scope"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+                >
+                  <option value="project">Project</option>
+                  <option value="global">Global</option>
+                </select>
+              </div>
+            </div>
+
             <div class="space-y-1.5">
-              <label class="text-xs font-medium">ID (filename)</label>
+              <label class="text-xs font-medium">Name</label>
               <input
-                v-model="form.id"
+                v-model="form.name"
                 type="text"
-                placeholder="developer"
+                placeholder="Developer"
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium">Description</label>
+              <input
+                v-model="form.description"
+                type="text"
+                placeholder="Full-stack developer focused on clean code"
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+              />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div class="space-y-1.5">
+                <label class="text-xs font-medium">Default model</label>
+                <select
+                  v-model="form.model"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+                >
+                  <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value || null">
+                    {{ m.label }}
+                  </option>
+                </select>
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-medium">Effort</label>
+                <select
+                  v-model="form.effort"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+                >
+                  <option :value="null">SDK default</option>
+                  <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+                    {{ e }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium">Allowed tools (comma-separated)</label>
+              <input
+                v-model="allowedToolsText"
+                type="text"
+                placeholder="Read, Edit, Write, Bash, Grep"
                 class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
               />
             </div>
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium">Scope</label>
-              <select
-                v-model="form.scope"
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-              >
-                <option value="project">Project</option>
-                <option value="global">Global</option>
-              </select>
+
+            <div class="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
+              <label class="text-xs font-medium text-muted-foreground">Generate with AI</label>
+              <textarea
+                v-model="generatePrompt"
+                rows="2"
+                placeholder='Describe the role, e.g. "A TypeScript developer who writes tests and reviews PRs"'
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-sans resize-none"
+              />
+              <div class="flex items-center gap-3">
+                <Button size="sm" variant="secondary" :disabled="generating || !generatePrompt.trim()" @click="generate">
+                  {{ generating ? 'Generating…' : 'Generate' }}
+                </Button>
+                <span v-if="generateError" class="text-xs text-destructive">{{ generateError }}</span>
+              </div>
             </div>
-          </div>
 
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium">Name</label>
-            <input
-              v-model="form.name"
-              type="text"
-              placeholder="Developer"
-              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-            />
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium">Description</label>
-            <input
-              v-model="form.description"
-              type="text"
-              placeholder="Full-stack developer focused on clean code"
-              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-            />
-          </div>
-
-          <div class="grid grid-cols-2 gap-3">
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium">Default model</label>
-              <select
-                v-model="form.model"
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-              >
-                <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value || null">
-                  {{ m.label }}
-                </option>
-              </select>
+            <div
+              v-if="message"
+              class="text-xs rounded-md bg-muted/40 px-3 py-2"
+              :class="saving ? 'text-muted-foreground' : 'text-destructive'"
+            >
+              {{ message }}
             </div>
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium">Effort</label>
-              <select
-                v-model="form.effort"
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
+
+            <div class="flex items-center justify-between pt-2">
+              <Button
+                v-if="selectedId"
+                variant="ghost"
+                size="sm"
+                class="text-destructive"
+                @click="
+                  () => {
+                    const r = roles.find((x) => x.id === selectedId)
+                    if (r) remove(r)
+                  }
+                "
               >
-                <option :value="null">SDK default</option>
-                <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
-                  {{ e }}
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium">Allowed tools (comma-separated)</label>
-            <input
-              v-model="allowedToolsText"
-              type="text"
-              placeholder="Read, Edit, Write, Bash, Grep"
-              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-            />
-          </div>
-
-          <div class="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
-            <label class="text-xs font-medium text-muted-foreground">Generate with AI</label>
-            <textarea
-              v-model="generatePrompt"
-              rows="2"
-              placeholder='Describe the role, e.g. "A TypeScript developer who writes tests and reviews PRs"'
-              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-sans resize-none"
-            />
-            <div class="flex items-center gap-3">
-              <Button size="sm" variant="secondary" :disabled="generating || !generatePrompt.trim()" @click="generate">
-                {{ generating ? 'Generating…' : 'Generate' }}
+                Delete
               </Button>
-              <span v-if="generateError" class="text-xs text-destructive">{{ generateError }}</span>
+              <div v-else />
+              <div class="flex gap-2">
+                <Button variant="ghost" size="sm" @click="cancelEdit">Cancel</Button>
+                <Button size="sm" :disabled="saving" @click="save">
+                  {{ saving ? 'Saving…' : 'Save' }}
+                </Button>
+              </div>
             </div>
           </div>
 
-          <div class="space-y-1.5">
-            <label class="text-xs font-medium">System prompt</label>
+          <!-- Right column: system prompt -->
+          <div class="flex flex-col p-6 border-l border-border min-h-0">
+            <label class="text-xs font-medium mb-1.5">System prompt</label>
             <textarea
               v-model="form.systemPrompt"
-              rows="10"
               placeholder="You are a senior developer focused on…"
-              class="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-ring font-sans resize-none"
+              class="flex-1 h-full w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm leading-relaxed focus:outline-none focus:border-ring font-sans resize-none"
             />
-            <p class="text-[11px] text-muted-foreground">
+            <p class="text-[11px] text-muted-foreground mt-1.5">
               Appended to Claude Code's default system prompt — you don't
               need to repeat basic behavior.
             </p>
-          </div>
-
-          <div
-            v-if="message"
-            class="text-xs rounded-md bg-muted/40 px-3 py-2"
-            :class="saving ? 'text-muted-foreground' : 'text-destructive'"
-          >
-            {{ message }}
-          </div>
-
-          <div class="flex items-center justify-between pt-2">
-            <Button
-              v-if="selectedId"
-              variant="ghost"
-              size="sm"
-              class="text-destructive"
-              @click="
-                () => {
-                  const r = roles.find((x) => x.id === selectedId)
-                  if (r) remove(r)
-                }
-              "
-            >
-              Delete
-            </Button>
-            <div v-else />
-            <div class="flex gap-2">
-              <Button variant="ghost" size="sm" @click="cancelEdit">Cancel</Button>
-              <Button size="sm" :disabled="saving" @click="save">
-                {{ saving ? 'Saving…' : 'Save' }}
-              </Button>
-            </div>
           </div>
         </div>
       </main>
