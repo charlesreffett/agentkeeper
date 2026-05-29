@@ -138,8 +138,16 @@ const vfNodes = computed<VFNode[]>(() =>
   })
 )
 
-// Determine which handles to route from/to based on the dominant direction
-// between node positions. Handle IDs match those declared in node components.
+const nodePosMap = computed(() => new Map(props.nodes.map(n => [n.id, n.position])))
+
+const HANDLE_TO_POSITION: Record<string, Position> = {
+  top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left,
+}
+const OPPOSITE: Record<string, string> = {
+  top: 'bottom', bottom: 'top', left: 'right', right: 'left',
+}
+
+// For legacy edges without stored handles, infer the best pair from node positions.
 function getBestHandles(
   srcPos: { x: number; y: number },
   tgtPos: { x: number; y: number },
@@ -157,17 +165,40 @@ function getBestHandles(
   }
 }
 
-const vfEdges = computed<VFEdge[]>(() => {
-  const posMap = new Map(props.nodes.map(n => [n.id, n.position]))
-  return props.edges.map(e => {
+// The "facing" handle on the target is the side that points toward the source.
+// e.g. source is above target (dy > 0) → top of target faces the source.
+function facingTargetHandle(srcPos: { x: number; y: number }, tgtPos: { x: number; y: number }): string {
+  const dx = tgtPos.x - srcPos.x
+  const dy = tgtPos.y - srcPos.y
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'left' : 'right'
+  return dy >= 0 ? 'top' : 'bottom'
+}
+
+const vfEdges = computed<VFEdge[]>(() =>
+  props.edges.map(e => {
     const isSelected = e.id === props.selectedEdgeId
-    // Bidirectional edges use indigo; directed edges use sky (target/incoming colour)
     const baseColor = e.isBidirectional ? '#818cf8' : '#38bdf8'
     const selectedColor = e.isBidirectional ? '#a5b4fc' : '#7dd3fc'
     const stroke = isSelected ? selectedColor : baseColor
-    const srcPos = posMap.get(e.source) ?? { x: 0, y: 0 }
-    const tgtPos = posMap.get(e.target) ?? { x: 0, y: 0 }
-    const { sourceHandle, targetHandle, sourcePosition, targetPosition } = getBestHandles(srcPos, tgtPos)
+
+    let sourceHandle: string
+    let targetHandle: string
+    let sourcePosition: Position
+    let targetPosition: Position
+
+    if (e.sourceHandle && e.targetHandle) {
+      // Explicit handles stored at connection time — use them directly.
+      sourceHandle = e.sourceHandle
+      targetHandle = e.targetHandle
+      sourcePosition = HANDLE_TO_POSITION[e.sourceHandle] ?? Position.Right
+      targetPosition = HANDLE_TO_POSITION[e.targetHandle] ?? Position.Left
+    } else {
+      // Legacy edge with no stored handles — infer from positions.
+      const srcPos = nodePosMap.value.get(e.source) ?? { x: 0, y: 0 }
+      const tgtPos = nodePosMap.value.get(e.target) ?? { x: 0, y: 0 }
+      ;({ sourceHandle, targetHandle, sourcePosition, targetPosition } = getBestHandles(srcPos, tgtPos))
+    }
+
     return {
       id: e.id,
       source: e.source,
@@ -184,12 +215,19 @@ const vfEdges = computed<VFEdge[]>(() => {
       style: { stroke, strokeWidth: isSelected ? 3 : 2 },
     }
   })
-})
+)
 
 function onConnect(conn: Connection) {
-  if (conn.source && conn.target) {
-    emit('connection', { sourceId: conn.source, targetId: conn.target })
-  }
+  if (!conn.source || !conn.target) return
+  const sourceHandle = conn.sourceHandle ?? 'right'
+  const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
+  const tgtPos = nodePosMap.value.get(conn.target) ?? { x: 0, y: 0 }
+  const facing = facingTargetHandle(srcPos, tgtPos)
+  const rawTarget = conn.targetHandle ?? facing
+  // Redirect back-side drops: if user released on the handle facing away from the
+  // source, snap to the facing handle instead. Any other explicit choice is kept.
+  const targetHandle = rawTarget === OPPOSITE[facing] ? facing : rawTarget
+  emit('connection', { sourceId: conn.source, targetId: conn.target, sourceHandle, targetHandle })
 }
 
 function onNodeClick({ node }: NodeMouseEvent) {

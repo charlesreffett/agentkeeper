@@ -393,7 +393,7 @@ export interface Agency {
   name: string
   description: string
   roles: RoleSlot[]
-  flows: Array<[string, string]>
+  flows: Array<[string, string, string?, string?]>
   entryPoints: string[]
   notes: string
 }

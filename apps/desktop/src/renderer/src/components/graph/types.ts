@@ -22,6 +22,8 @@ export interface GraphEdge {
   source: string
   target: string
   isBidirectional: boolean
+  sourceHandle?: string
+  targetHandle?: string
 }
 
 export type GraphFlowMode = 'explicit' | 'any-to-any'
@@ -29,6 +31,8 @@ export type GraphFlowMode = 'explicit' | 'any-to-any'
 export interface GraphConnectionRequest {
   sourceId: string
   targetId: string
+  sourceHandle?: string
+  targetHandle?: string
 }
 
 export interface GraphNodeClickEvent {

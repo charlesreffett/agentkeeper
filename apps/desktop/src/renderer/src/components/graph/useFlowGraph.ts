@@ -30,7 +30,7 @@ export function useFlowGraph(
   const selectedEdgeId = ref<string | null>(null)
 
   // Flows added optimistically before the async save + store-reload confirms them.
-  const pendingFlows = ref<Array<[string, string]>>([])
+  const pendingFlows = ref<Array<[string, string, string?, string?]>>([])
   // Flows removed optimistically before the async save + store-reload drops them.
   const pendingRemovals = ref<Array<[string, string]>>([])
   // Roles removed optimistically before the async save + store-reload drops them.
@@ -83,7 +83,7 @@ export function useFlowGraph(
 
   // Merged view: confirmed flows minus pending removals, plus pending additions,
   // minus any flow referencing a role that is pending removal.
-  const effectiveFlows = computed<Array<[string, string]>>(() => {
+  const effectiveFlows = computed<Array<[string, string, string?, string?]>>(() => {
     const base = agency.value?.flows ?? []
     const withoutRemovals = base.filter(
       ([a, b]) => !pendingRemovals.value.some(([x, y]) => a === x && b === y),
@@ -184,7 +184,7 @@ export function useFlowGraph(
     const allEdges: GraphEdge[] = []
     const seen = new Set<string>()
 
-    for (const [src, tgt] of flows) {
+    for (const [src, tgt, srcHandle, tgtHandle] of flows) {
       const sources = resolveEndpoint(src)
       const targets = resolveEndpoint(tgt)
       for (const s of sources) {
@@ -193,7 +193,7 @@ export function useFlowGraph(
           const id = `${s}->${t}`
           if (!seen.has(id)) {
             seen.add(id)
-            allEdges.push({ id, source: s, target: t, isBidirectional: false })
+            allEdges.push({ id, source: s, target: t, isBidirectional: false, sourceHandle: srcHandle, targetHandle: tgtHandle })
           }
         }
       }
@@ -265,11 +265,17 @@ export function useFlowGraph(
     const exists = effectiveFlows.value.some(([a, b]) => a === req.sourceId && b === req.targetId)
     if (exists) return
     // Optimistic update: edge appears immediately via vfEdges / pendingFlows.
-    pendingFlows.value = [...pendingFlows.value, [req.sourceId, req.targetId]]
+    pendingFlows.value = [...pendingFlows.value, [req.sourceId, req.targetId, req.sourceHandle, req.targetHandle]]
     // Build draft from effectiveFlows (confirmed minus removals plus pending) so
     // rapid successive connections don't drop each other, and so we never save
     // stale confirmed-only flows that predate other in-flight additions.
-    const flows = effectiveFlows.value.map(([a, b]) => [a, b] as [string, string])
+    // Strip undefined handle entries so YAML doesn't emit null placeholders.
+    const flows = effectiveFlows.value.map(([a, b, sh, th]) => {
+      const entry: [string, string, string?, string?] = [a, b]
+      if (sh) entry[2] = sh
+      if (th) entry[3] = th
+      return entry
+    })
     const draft = { ...agency.value, flows }
     try {
       await saveAgency(draft)

@@ -65,10 +65,12 @@ function parseAgencyFile(
       })
     : []
   const flowsRaw = Array.isArray(parsed['flows']) ? parsed['flows'] : []
-  const flows: Array<[string, string]> = []
+  const flows: Array<[string, string, string?, string?]> = []
   for (const f of flowsRaw) {
-    if (Array.isArray(f) && f.length === 2 && typeof f[0] === 'string' && typeof f[1] === 'string') {
-      flows.push([f[0], f[1]])
+    if (Array.isArray(f) && f.length >= 2 && typeof f[0] === 'string' && typeof f[1] === 'string') {
+      const srcHandle = typeof f[2] === 'string' ? f[2] : undefined
+      const tgtHandle = typeof f[3] === 'string' ? f[3] : undefined
+      flows.push([f[0], f[1], srcHandle, tgtHandle])
     }
   }
   const entryPoints = Array.isArray(parsed['entryPoints'])
