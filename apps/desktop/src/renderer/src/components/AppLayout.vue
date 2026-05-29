@@ -12,14 +12,14 @@ const { focusedProject } = useProjectsQuery()
 </script>
 
 <template>
-  <div class="h-screen flex flex-col overflow-hidden">
+  <SidebarProvider
+    class="h-screen overflow-hidden flex-col"
+    :style="{ '--sidebar-width': '14rem', '--sidebar-width-icon': '4rem' }"
+  >
     <AppHeader />
-    <SidebarProvider
-      class="flex-1 overflow-hidden"
-      :style="{ '--sidebar-width': '14rem', '--sidebar-width-icon': '4.5rem' }"
-    >
+    <div class="flex flex-1 min-h-0 overflow-hidden [transform:translateZ(0)]">
       <Sidebar />
-      <SidebarInset class="flex flex-col overflow-hidden">
+      <SidebarInset class="flex flex-col overflow-hidden min-h-0">
         <div class="flex flex-1 min-h-0 overflow-hidden">
           <div class="flex-1 min-w-0 overflow-hidden">
             <RouterView />
@@ -30,6 +30,6 @@ const { focusedProject } = useProjectsQuery()
           />
         </div>
       </SidebarInset>
-    </SidebarProvider>
-  </div>
+    </div>
+  </SidebarProvider>
 </template>

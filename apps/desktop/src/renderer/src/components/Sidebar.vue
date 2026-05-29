@@ -126,7 +126,9 @@ function isActive(path: string): boolean {
               :tooltip="item.label"
               @click="void router.push(item.path)"
             >
-              <component :is="iconMap[item.icon]" />
+              <span class="flex w-8 shrink-0 items-center justify-center">
+                <component :is="iconMap[item.icon]" class="size-5" />
+              </span>
               <span>{{ item.label }}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -146,18 +148,20 @@ function isActive(path: string): boolean {
                 :class="item.unhealthy ? 'opacity-50' : ''"
                 @click="void router.push(item.path)"
               >
-                <!-- Relative wrapper preserves the unhealthy amber dot in both expand/collapse -->
-                <div class="relative size-4 shrink-0">
-                  <component
-                    :is="item.icon ? iconMap[item.icon] : null"
-                    v-if="item.icon && iconMap[item.icon]"
-                    class="size-4"
-                  />
-                  <span
-                    v-if="item.unhealthy"
-                    class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-amber-500"
-                  />
-                </div>
+                <!-- Fixed-width cell keeps the icon centered in both expand/collapse -->
+                <span class="flex w-8 shrink-0 items-center justify-center">
+                  <span class="relative size-5">
+                    <component
+                      :is="item.icon ? iconMap[item.icon] : null"
+                      v-if="item.icon && iconMap[item.icon]"
+                      class="size-5"
+                    />
+                    <span
+                      v-if="item.unhealthy"
+                      class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-amber-500"
+                    />
+                  </span>
+                </span>
                 <span>{{ item.label }}</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -176,7 +180,9 @@ function isActive(path: string): boolean {
               :tooltip="item.label"
               @click="void router.push(item.path)"
             >
-              <component :is="iconMap[item.icon]" />
+              <span class="flex w-8 shrink-0 items-center justify-center">
+                <component :is="iconMap[item.icon]" class="size-5" />
+              </span>
               <span>{{ item.label }}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
