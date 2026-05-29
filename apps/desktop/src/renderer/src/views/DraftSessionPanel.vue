@@ -113,7 +113,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="max-w-2xl mx-auto p-6 space-y-4">
+  <div class="w-full max-w-2xl mx-auto p-6 space-y-4">
     <header class="space-y-1">
       <h2 class="text-lg font-semibold">New session</h2>
       <p class="text-xs text-muted-foreground">
@@ -172,8 +172,8 @@ onMounted(() => {
     </div>
 
     <!-- Role + Model row -->
-    <div class="grid grid-cols-2 gap-3">
-      <div v-if="!selectedAgency" class="space-y-1.5">
+    <div v-if="!selectedAgency" class="grid grid-cols-2 gap-3">
+      <div class="space-y-1.5">
         <label class="text-sm font-medium">Role</label>
         <select
           v-model="cfg.roleId"
@@ -185,10 +185,8 @@ onMounted(() => {
           </option>
         </select>
       </div>
-      <div class="space-y-1.5" :class="selectedAgency ? 'col-span-2' : ''">
-        <label class="text-sm font-medium">
-          {{ selectedAgency ? 'Fallback model' : 'Model' }}
-        </label>
+      <div class="space-y-1.5">
+        <label class="text-sm font-medium">Model</label>
         <select
           :value="props.session.model ?? MODEL_OPTIONS[0].value"
           class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
@@ -207,7 +205,7 @@ onMounted(() => {
       {{ selectedRole.description }}
     </p>
 
-    <div class="space-y-1.5">
+    <div v-if="!selectedAgency" class="space-y-1.5">
       <label class="text-sm font-medium">Effort</label>
       <select
         :value="props.session.effort ?? 'medium'"
