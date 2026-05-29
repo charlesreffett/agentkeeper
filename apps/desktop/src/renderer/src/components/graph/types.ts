@@ -21,7 +21,6 @@ export interface GraphEdge {
   id: string         // `${sourceId}->${targetId}`
   source: string
   target: string
-  isBidirectional: boolean
   sourceHandle?: string
   targetHandle?: string
 }

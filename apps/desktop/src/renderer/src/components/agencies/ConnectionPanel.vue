@@ -15,15 +15,11 @@
     <!-- Direction display -->
     <div class="flex items-center gap-2 font-mono text-sm">
       <span class="text-foreground">{{ edge.source }}</span>
-      <span class="text-muted-foreground">{{ edge.isBidirectional ? '↔' : '→' }}</span>
+      <span class="text-muted-foreground">→</span>
       <span class="text-foreground">{{ edge.target }}</span>
     </div>
 
-    <div v-if="edge.isBidirectional" class="text-[10px] text-muted-foreground">
-      Bidirectional — both directions exist
-    </div>
-
-    <!-- Actions -->
+<!-- Actions -->
     <div class="space-y-2">
       <button
         class="w-full text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-3 py-1.5 transition-colors text-left flex items-center gap-2"

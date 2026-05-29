@@ -193,18 +193,13 @@ export function useFlowGraph(
           const id = `${s}->${t}`
           if (!seen.has(id)) {
             seen.add(id)
-            allEdges.push({ id, source: s, target: t, isBidirectional: false, sourceHandle: srcHandle, targetHandle: tgtHandle })
+            allEdges.push({ id, source: s, target: t, sourceHandle: srcHandle, targetHandle: tgtHandle })
           }
         }
       }
     }
 
-    // Second pass: mark bidirectional edges
-    const edgeIdSet = new Set(allEdges.map(e => e.id))
-    return allEdges.map(e => ({
-      ...e,
-      isBidirectional: edgeIdSet.has(`${e.target}->${e.source}`),
-    }))
+    return allEdges
   })
 
   const flowMode = computed<GraphFlowMode>(() =>

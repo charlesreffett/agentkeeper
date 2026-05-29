@@ -177,10 +177,7 @@ function facingTargetHandle(srcPos: { x: number; y: number }, tgtPos: { x: numbe
 const vfEdges = computed<VFEdge[]>(() =>
   props.edges.map(e => {
     const isSelected = e.id === props.selectedEdgeId
-    const baseColor = '#6b7280'
-    const selectedColor = '#3b82f6'
-    const stroke = isSelected ? selectedColor : baseColor
-
+    const stroke = isSelected ? '#3b82f6' : '#6b7280'
     let sourceHandle: string
     let targetHandle: string
     let sourcePosition: Position
@@ -209,9 +206,6 @@ const vfEdges = computed<VFEdge[]>(() =>
       targetPosition,
       selected: isSelected,
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
-      markerStart: e.isBidirectional
-        ? { type: MarkerType.ArrowClosed, color: stroke }
-        : undefined,
       style: { stroke, strokeWidth: isSelected ? 3 : 2 },
     }
   })
