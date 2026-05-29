@@ -172,7 +172,7 @@ onMounted(() => {
     </div>
 
     <!-- Role + Model row -->
-    <div class="grid gap-3" :class="selectedAgency ? 'grid-cols-1' : 'grid-cols-2'">
+    <div class="grid grid-cols-2 gap-3">
       <div v-if="!selectedAgency" class="space-y-1.5">
         <label class="text-sm font-medium">Role</label>
         <select
@@ -185,7 +185,7 @@ onMounted(() => {
           </option>
         </select>
       </div>
-      <div class="space-y-1.5">
+      <div class="space-y-1.5" :class="selectedAgency ? 'col-span-2' : ''">
         <label class="text-sm font-medium">
           {{ selectedAgency ? 'Fallback model' : 'Model' }}
         </label>
