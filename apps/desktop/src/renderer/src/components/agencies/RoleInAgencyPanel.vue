@@ -1,215 +1,243 @@
 <template>
-  <div class="p-4 flex flex-col gap-4">
+  <div class="flex flex-col h-full overflow-y-auto">
     <!-- Header -->
-    <div class="flex items-center justify-between">
-      <h2 class="text-sm font-semibold text-foreground font-mono">{{ roleSlot.roleId }}</h2>
-      <button
-        class="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
-        @click="emit('close')"
-        title="Close"
-      >
-        ×
-      </button>
-    </div>
-
-    <!-- Entry point toggle -->
-    <div class="flex items-center justify-between py-2 border-b border-border">
-      <div>
-        <div class="text-xs font-medium text-foreground">Entry point</div>
-        <div class="text-[10px] text-muted-foreground mt-0.5">Receives the initial user prompt</div>
-      </div>
-      <button
-        class="relative w-9 h-5 rounded-full transition-colors"
-        :class="isEntry ? 'bg-amber-500' : 'bg-secondary'"
-        @click="emit('toggle-entry')"
-      >
-        <span
-          class="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
-          :class="isEntry ? 'left-4' : 'left-0.5'"
-        />
-      </button>
-    </div>
-
-    <!-- Instance count -->
-    <div class="space-y-2">
-      <div class="text-xs font-medium text-muted-foreground">Instance count</div>
-      <div class="flex rounded border border-border overflow-hidden text-xs">
+    <div class="shrink-0 border-b border-border">
+      <div class="flex items-center gap-2 px-4 pt-4 pb-3">
         <button
-          v-for="opt in instanceModes"
-          :key="opt.value"
-          class="flex-1 px-2 py-1.5 transition-colors"
-          :class="mode === opt.value
-            ? 'bg-secondary text-foreground'
-            : 'bg-muted text-muted-foreground hover:bg-secondary'"
-          @click="mode = opt.value"
+          class="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+          @click="emit('close')"
         >
-          {{ opt.label }}
+          <ChevronLeft class="w-4 h-4" />
         </button>
-      </div>
-
-      <div v-if="mode === 'fixed'" class="flex items-center gap-2">
-        <label class="text-xs text-muted-foreground">Count</label>
-        <input
-          v-model.number="fixedCount"
-          type="number"
-          min="1"
-          class="w-16 rounded border border-border bg-muted px-2 py-1 text-xs text-foreground focus:outline-none focus:border-foreground/40"
-        />
-        <button
-          v-if="fixedCount > 1"
-          class="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-          @click="fixedCount = 1"
-          title="Reset to 1"
+        <!-- Icon badge -->
+        <div
+          class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+          :style="{ backgroundColor: accentBg, color: accentFg }"
         >
-          ×1
-        </button>
-      </div>
-
-      <div v-if="mode === 'dynamic'" class="flex items-center gap-3">
-        <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
-          Min
-          <input
-            v-model.number="dynMin"
-            type="number"
-            min="1"
-            class="w-14 rounded border border-border bg-muted px-2 py-1 text-xs text-foreground focus:outline-none focus:border-foreground/40"
-          />
-        </label>
-        <label class="flex items-center gap-1.5 text-xs text-muted-foreground">
-          Max
-          <input
-            v-model.number="dynMax"
-            type="number"
-            min="2"
-            class="w-14 rounded border border-border bg-muted px-2 py-1 text-xs text-foreground focus:outline-none focus:border-foreground/40"
-          />
-        </label>
-      </div>
-
-      <div class="flex items-center gap-2">
-        <button
-          class="text-xs bg-secondary hover:bg-secondary/80 text-secondary-foreground rounded px-3 py-1.5 transition-colors"
-          @click="applyCount"
-        >
-          Apply
-        </button>
-        <button
-          v-if="isDirty"
-          class="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          @click="syncFromSlot"
-          title="Revert to saved"
-        >
-          Reset
-        </button>
-      </div>
-    </div>
-
-    <!-- Connections -->
-    <div class="space-y-3 border-t border-border pt-3">
-      <div>
-        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Incoming flows</div>
-        <div v-if="incoming.length === 0" class="text-xs text-muted-foreground/60">None</div>
-        <div v-else class="flex flex-wrap gap-1">
-          <button
-            v-for="src in incoming"
-            :key="src"
-            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 hover:text-foreground transition-colors"
-            @click="emit('select-edge', `${src}->${roleSlot.roleId}`)"
-          >
-            {{ src }}
-          </button>
+          <component :is="iconComponent" class="w-5 h-5" />
+        </div>
+        <div class="min-w-0">
+          <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none mb-0.5">
+            Agent · This Agency
+          </div>
+          <div class="text-base font-semibold text-foreground leading-tight truncate">
+            {{ role?.name ?? roleSlot.roleId }}
+          </div>
         </div>
       </div>
-      <div>
-        <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1">Outgoing flows</div>
-        <div v-if="outgoing.length === 0" class="text-xs text-muted-foreground/60">None</div>
-        <div v-else class="flex flex-wrap gap-1">
-          <button
-            v-for="tgt in outgoing"
-            :key="tgt"
-            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground hover:bg-secondary/80 hover:text-foreground transition-colors"
-            @click="emit('select-edge', `${roleSlot.roleId}->${tgt}`)"
-          >
-            {{ tgt }}
-          </button>
+    </div>
+
+    <div class="flex-1 px-4 py-4 space-y-6">
+      <!-- PLACEMENT -->
+      <section class="space-y-2">
+        <div class="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+          <Users class="w-3 h-3" />
+          Placement
         </div>
-      </div>
+        <!-- Entry point -->
+        <div class="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5">
+          <div>
+            <div class="text-sm font-medium text-foreground">Entry point</div>
+            <div class="text-[11px] text-muted-foreground mt-0.5">Receives the ticket first</div>
+          </div>
+          <Switch :checked="isEntry" @update:checked="emit('toggle-entry')" />
+        </div>
+        <!-- Open messaging -->
+        <div class="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5">
+          <div>
+            <div class="text-sm font-medium text-foreground">Open messaging</div>
+            <div class="text-[11px] text-muted-foreground mt-0.5">Any-to-any, ignores wired edges</div>
+          </div>
+          <Switch
+            :checked="openMessaging"
+            @update:checked="(val: boolean) => saveSlotPatch({ openMessaging: val || undefined })"
+          />
+        </div>
+      </section>
+
+      <!-- INSTANCES -->
+      <section class="space-y-2">
+        <div class="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+          <Copy class="w-3 h-3" />
+          Instances
+          <span class="normal-case tracking-normal font-normal text-muted-foreground/60">parallel copies</span>
+        </div>
+        <NumberField
+          :model-value="fixedCount"
+          :min="1"
+          :max="99"
+          class="w-fit"
+          @update:model-value="val => setCount(val ?? 1)"
+        >
+          <NumberFieldContent class="w-28">
+            <NumberFieldDecrement />
+            <NumberFieldInput class="text-center font-semibold" />
+            <NumberFieldIncrement />
+          </NumberFieldContent>
+        </NumberField>
+      </section>
+
+      <!-- RUN POLICY -->
+      <section class="space-y-3">
+        <div class="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+          <Activity class="w-3 h-3" />
+          Run policy
+        </div>
+
+        <div class="space-y-1.5">
+          <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">On failure</div>
+          <div class="flex rounded-lg border border-border overflow-hidden text-sm">
+            <button
+              v-for="opt in FAILURE_OPTS"
+              :key="opt.value"
+              class="flex-1 px-2 py-2 transition-colors font-medium"
+              :class="onFailure === opt.value
+                ? 'bg-secondary text-foreground'
+                : 'bg-card text-muted-foreground hover:bg-muted'"
+              @click="saveSlotPatch({ onFailure: opt.value })"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+          <p class="text-[11px] text-muted-foreground">{{ failureDescription }}</p>
+        </div>
+
+        <!-- Pause for review -->
+        <div class="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5">
+          <div>
+            <div class="text-sm font-medium text-foreground">Pause for review</div>
+            <div class="text-[11px] text-muted-foreground mt-0.5">Hold this agent's output for a human before handoff</div>
+          </div>
+          <Switch
+            :checked="pauseForReview"
+            @update:checked="(val: boolean) => saveSlotPatch({ pauseForReview: val || undefined })"
+          />
+        </div>
+      </section>
+
+      <div class="border-t border-border" />
+
+      <!-- Open role editor -->
+      <button
+        class="w-full flex items-center justify-center gap-2 text-sm text-foreground rounded-lg border border-border bg-card hover:bg-muted transition-colors px-4 py-2.5"
+        @click="emit('open-editor', roleSlot.roleId)"
+      >
+        <ExternalLink class="w-3.5 h-3.5" />
+        Open role editor
+      </button>
+
+      <!-- Remove -->
+      <button
+        class="text-sm text-red-500 hover:text-red-400 transition-colors"
+        @click="emit('remove-role', roleSlot.roleId)"
+      >
+        Remove from this agency
+      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import type { Agency, RoleSlot } from '../../../../shared/ipc-contract'
+import { computed, ref, watch, markRaw } from 'vue'
+import {
+  ChevronLeft, Users, Copy, Activity, ExternalLink,
+  Layers, Code2, GitBranch, FlaskConical, Eye,
+  FileText, Shield, Zap, Brain,
+} from 'lucide-vue-next'
+import { Switch } from '@/components/ui/switch'
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from '@/components/ui/number-field'
+import type { Agency, OnFailurePolicy, Role, RoleSlot } from '../../../../shared/ipc-contract'
 
 const props = defineProps<{
   roleSlot: RoleSlot
   agency: Agency
+  role?: Role
 }>()
 
 const emit = defineEmits<{
   (e: 'update-count', mode: 'fixed' | 'dynamic', opts: { count?: number; min?: number; max?: number }): void
+  (e: 'update-slot', patch: Partial<Omit<RoleSlot, 'roleId'>>): void
   (e: 'toggle-entry'): void
   (e: 'close'): void
   (e: 'select-edge', edgeId: string): void
+  (e: 'open-editor', roleId: string): void
+  (e: 'remove-role', roleId: string): void
 }>()
 
-const instanceModes = [
-  { value: 'fixed' as const, label: 'Fixed' },
-  { value: 'dynamic' as const, label: 'Dynamic' },
-]
+// ─── Icon / accent ───────────────────────────────────────────────────────────
 
-const mode = ref<'fixed' | 'dynamic'>('fixed')
-const fixedCount = ref(1)
-const dynMin = ref(1)
-const dynMax = ref(2)
-
-function syncFromSlot() {
-  const s = props.roleSlot
-  if (s.min !== undefined || s.max !== undefined) {
-    mode.value = 'dynamic'
-    dynMin.value = s.min ?? 1
-    dynMax.value = s.max ?? 2
-  } else {
-    mode.value = 'fixed'
-    fixedCount.value = s.count ?? 1
-  }
+const ICON_MAP: Record<string, ReturnType<typeof markRaw>> = {
+  Layers:       markRaw(Layers),
+  Code2:        markRaw(Code2),
+  GitBranch:    markRaw(GitBranch),
+  FlaskConical: markRaw(FlaskConical),
+  Eye:          markRaw(Eye),
+  FileText:     markRaw(FileText),
+  Activity:     markRaw(Activity),
+  Shield:       markRaw(Shield),
+  Zap:          markRaw(Zap),
+  Brain:        markRaw(Brain),
 }
 
-watch(() => props.roleSlot.roleId, syncFromSlot, { immediate: true })
+const ACCENT_PALETTE: Record<string, { bg: string; fg: string }> = {
+  blue:   { bg: 'rgba(59,130,246,0.15)',  fg: '#3b82f6' },
+  orange: { bg: 'rgba(245,158,11,0.15)',  fg: '#f59e0b' },
+  purple: { bg: 'rgba(139,92,246,0.15)',  fg: '#8b5cf6' },
+  teal:   { bg: 'rgba(20,184,166,0.15)',  fg: '#14b8a6' },
+  green:  { bg: 'rgba(34,197,94,0.15)',   fg: '#22c55e' },
+  red:    { bg: 'rgba(239,68,68,0.15)',   fg: '#ef4444' },
+}
+
+const iconComponent = computed(() => ICON_MAP[props.role?.icon ?? ''] ?? Layers)
+const accentBg = computed(() => (ACCENT_PALETTE[props.role?.accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).bg)
+const accentFg = computed(() => (ACCENT_PALETTE[props.role?.accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).fg)
+
+// ─── Placement ───────────────────────────────────────────────────────────────
 
 const isEntry = computed(() => props.agency.entryPoints.includes(props.roleSlot.roleId))
+const openMessaging = computed(() => props.roleSlot.openMessaging ?? false)
 
-const isDirty = computed(() => {
-  const s = props.roleSlot
-  const savedDynamic = s.min !== undefined || s.max !== undefined
-  if (mode.value === 'dynamic') {
-    if (!savedDynamic) return true
-    return dynMin.value !== (s.min ?? 1) || dynMax.value !== (s.max ?? 2)
-  }
-  if (savedDynamic) return true
-  return fixedCount.value !== (s.count ?? 1)
+// ─── Instance count ──────────────────────────────────────────────────────────
+
+const fixedCount = ref(1)
+
+function syncFromSlot() {
+  fixedCount.value = props.roleSlot.count ?? props.roleSlot.min ?? 1
+}
+watch(() => props.roleSlot.roleId, syncFromSlot, { immediate: true })
+watch(() => props.roleSlot.count, syncFromSlot)
+
+function setCount(val: number) {
+  fixedCount.value = val
+  emit('update-count', 'fixed', { count: Math.max(1, val) })
+}
+
+// ─── Run policy ──────────────────────────────────────────────────────────────
+
+const FAILURE_OPTS: { value: OnFailurePolicy; label: string }[] = [
+  { value: 'block',    label: 'Block' },
+  { value: 'continue', label: 'Continue' },
+  { value: 'retry',    label: 'Retry' },
+]
+
+const onFailure = computed<OnFailurePolicy>(() => props.roleSlot.onFailure ?? 'block')
+const pauseForReview = computed(() => props.roleSlot.pauseForReview ?? false)
+
+const failureDescription = computed(() => {
+  if (onFailure.value === 'block')    return 'A failure here halts the whole agency.'
+  if (onFailure.value === 'continue') return 'Other agents proceed; this failure is noted.'
+  return 'The agent is retried up to the run limit before continuing.'
 })
 
-const incoming = computed(() =>
-  props.agency.flows
-    .filter(([, tgt]) => tgt === props.roleSlot.roleId)
-    .map(([src]) => src)
-)
+// ─── Patch helper ────────────────────────────────────────────────────────────
 
-const outgoing = computed(() =>
-  props.agency.flows
-    .filter(([src]) => src === props.roleSlot.roleId)
-    .map(([, tgt]) => tgt)
-)
-
-function applyCount() {
-  if (mode.value === 'fixed') {
-    emit('update-count', 'fixed', { count: Math.max(1, fixedCount.value) })
-  } else {
-    const min = Math.max(1, dynMin.value)
-    const max = Math.max(min + 1, dynMax.value)
-    emit('update-count', 'dynamic', { min, max })
-  }
+function saveSlotPatch(patch: Partial<Omit<RoleSlot, 'roleId'>>) {
+  emit('update-slot', patch)
 }
 </script>

@@ -341,6 +341,14 @@ export function useFlowGraph(
     await saveAgency(draft)
   }
 
+  async function updateRoleSlot(roleId: string, patch: Partial<Omit<RoleSlot, 'roleId'>>) {
+    if (!agency.value) return
+    const newRoles = agency.value.roles.map(slot =>
+      slot.roleId === roleId ? { ...slot, ...patch } : slot
+    )
+    await saveAgency({ ...agency.value, roles: newRoles })
+  }
+
   async function addRole(roleId: string) {
     if (!agency.value) return
     if (agency.value.roles.some(r => r.roleId === roleId)) return
@@ -455,7 +463,7 @@ export function useFlowGraph(
     toggleExpanded,
     addConnection, updateConnection, removeConnection, flipConnection,
     toggleEntryPoint, updateInstanceCount,
-    addRole, removeRole,
+    addRole, removeRole, updateRoleSlot,
     deleteAgency,
   }
 }

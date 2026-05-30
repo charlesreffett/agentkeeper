@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { Agency, AgencyDraft, AgencyScope, RoleSlot } from '../shared/ipc-contract'
+import type { Agency, AgencyDraft, AgencyScope, OnFailurePolicy, RoleSlot } from '../shared/ipc-contract'
 
 const PROJECT_DIR = '.agentkeeper/agencies'
 const GLOBAL_DIR = '.agentkeeper/agencies'
@@ -51,15 +51,19 @@ function parseAgencyFile(
           const obj = r as Record<string, unknown>
           if (typeof obj['id'] !== 'string') return []
           const id = obj['id']
+          const slot: RoleSlot = { roleId: id }
           if (typeof obj['count'] === 'number') {
-            return [{ roleId: id, count: Math.max(1, Math.floor(obj['count'])) }]
+            slot.count = Math.max(1, Math.floor(obj['count']))
+          } else if (typeof obj['min'] === 'number' || typeof obj['max'] === 'number') {
+            slot.min = typeof obj['min'] === 'number' ? Math.max(1, Math.floor(obj['min'])) : 1
+            slot.max = typeof obj['max'] === 'number' ? Math.floor(obj['max']) : (slot.min ?? 1) + 1
           }
-          if (typeof obj['min'] === 'number' || typeof obj['max'] === 'number') {
-            const min = typeof obj['min'] === 'number' ? Math.max(1, Math.floor(obj['min'])) : 1
-            const max = typeof obj['max'] === 'number' ? Math.floor(obj['max']) : min + 1
-            return [{ roleId: id, min, max }]
-          }
-          return [{ roleId: id }]
+          if (obj['openMessaging'] === true) slot.openMessaging = true
+          const onFailureValues: OnFailurePolicy[] = ['block', 'continue', 'retry']
+          if (typeof obj['onFailure'] === 'string' && onFailureValues.includes(obj['onFailure'] as OnFailurePolicy))
+            slot.onFailure = obj['onFailure'] as OnFailurePolicy
+          if (obj['pauseForReview'] === true) slot.pauseForReview = true
+          return [slot]
         }
         return []
       })
@@ -92,14 +96,25 @@ function parseAgencyFile(
 }
 
 function serializeRoleSlot(slot: RoleSlot): string | Record<string, unknown> {
-  if (slot.count !== undefined) {
-    if (slot.count === 1) return slot.roleId
-    return { id: slot.roleId, count: slot.count }
+  const hasExtras = slot.openMessaging || slot.onFailure || slot.pauseForReview
+  if (!hasExtras) {
+    if (slot.count !== undefined) {
+      if (slot.count === 1) return slot.roleId
+      return { id: slot.roleId, count: slot.count }
+    }
+    if (slot.min !== undefined || slot.max !== undefined) {
+      return { id: slot.roleId, min: slot.min, max: slot.max }
+    }
+    return slot.roleId
   }
-  if (slot.min !== undefined || slot.max !== undefined) {
-    return { id: slot.roleId, min: slot.min, max: slot.max }
-  }
-  return slot.roleId
+  const obj: Record<string, unknown> = { id: slot.roleId }
+  if (slot.count !== undefined && slot.count !== 1) obj['count'] = slot.count
+  if (slot.min !== undefined) obj['min'] = slot.min
+  if (slot.max !== undefined) obj['max'] = slot.max
+  if (slot.openMessaging) obj['openMessaging'] = true
+  if (slot.onFailure) obj['onFailure'] = slot.onFailure
+  if (slot.pauseForReview) obj['pauseForReview'] = true
+  return obj
 }
 
 function serializeAgency(a: AgencyDraft): string {

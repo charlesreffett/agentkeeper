@@ -104,10 +104,14 @@
           v-else-if="graph.selectedRoleSlot.value"
           :role-slot="graph.selectedRoleSlot.value"
           :agency="graph.effectiveAgency.value ?? selectedAgency"
+          :role="roles.find(r => r.id === graph.selectedRoleSlot.value?.roleId)"
           @update-count="(mode, opts) => graph.updateInstanceCount(graph.selectedNodeId.value!, mode, opts)"
+          @update-slot="patch => graph.updateRoleSlot(graph.selectedNodeId.value!, patch)"
           @toggle-entry="() => graph.toggleEntryPoint(graph.selectedNodeId.value!)"
           @close="graph.clearSelection"
           @select-edge="graph.selectEdge"
+          @open-editor="openRoleEditor"
+          @remove-role="id => { graph.removeRole(id); graph.clearSelection() }"
         />
         <AgencyDetailPanel
           v-else
@@ -131,6 +135,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { PencilLine, Layers, Plus } from 'lucide-vue-next'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
@@ -190,6 +195,12 @@ async function deleteHelper() {
 }
 
 const graph = useFlowGraph(selectedAgency, saveHelper, deleteHelper)
+
+const router = useRouter()
+
+function openRoleEditor(roleId: string) {
+  router.push({ path: '/roles', query: { select: roleId } })
+}
 
 function selectAgency(id: string) {
   selectedAgencyId.value = id

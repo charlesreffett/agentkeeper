@@ -381,11 +381,16 @@ export interface RolesGenerateResult {
 
 export type AgencyScope = 'project' | 'global'
 
+export type OnFailurePolicy = 'block' | 'continue' | 'retry'
+
 export interface RoleSlot {
   roleId: string
   count?: number   // static — always this many (undefined = 1)
   min?: number     // dynamic floor
   max?: number     // dynamic ceiling
+  openMessaging?: boolean
+  onFailure?: OnFailurePolicy
+  pauseForReview?: boolean
 }
 
 export interface Agency {
