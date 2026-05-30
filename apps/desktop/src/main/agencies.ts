@@ -82,6 +82,21 @@ function parseAgencyFile(
         (r): r is string => typeof r === 'string',
       )
     : []
+  const layoutRaw = parsed['layout']
+  let layout: Record<string, { x: number; y: number }> | undefined
+  if (layoutRaw && typeof layoutRaw === 'object' && !Array.isArray(layoutRaw)) {
+    const entries = Object.entries(layoutRaw as Record<string, unknown>)
+    const parsed2: Record<string, { x: number; y: number }> = {}
+    for (const [k, v] of entries) {
+      if (v && typeof v === 'object') {
+        const pos = v as Record<string, unknown>
+        if (typeof pos['x'] === 'number' && typeof pos['y'] === 'number') {
+          parsed2[k] = { x: pos['x'], y: pos['y'] }
+        }
+      }
+    }
+    if (Object.keys(parsed2).length > 0) layout = parsed2
+  }
   return {
     id: meta.id,
     scope: meta.scope,
@@ -92,6 +107,7 @@ function parseAgencyFile(
     flows,
     entryPoints,
     notes: body,
+    layout,
   }
 }
 
@@ -125,6 +141,7 @@ function serializeAgency(a: AgencyDraft): string {
     flows: a.flows,
     entryPoints: a.entryPoints,
   }
+  if (a.layout && Object.keys(a.layout).length > 0) fm['layout'] = a.layout
   return `---\n${stringifyYaml(fm).trimEnd()}\n---\n\n${(a.notes ?? '').trim()}\n`
 }
 

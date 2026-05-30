@@ -403,6 +403,7 @@ export interface Agency {
   flows: Array<[string, string, string?, string?]>
   entryPoints: string[]
   notes: string
+  layout?: Record<string, { x: number; y: number }>
 }
 
 export type AgencyDraft = Omit<Agency, 'scope' | 'path'>

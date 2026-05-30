@@ -41,11 +41,15 @@ export function useFlowGraph(
 
   // Reset pending and positions when the selected agency changes.
   watch(() => agency.value?.id, () => {
+    if (layoutSaveTimer !== null) {
+      clearTimeout(layoutSaveTimer)
+      layoutSaveTimer = null
+    }
     pendingFlows.value = []
     pendingRemovals.value = []
     pendingRoleRemovals.value = new Set()
     expandedRoles.value = new Set()
-    nodePositions.value = {}
+    nodePositions.value = { ...(agency.value?.layout ?? {}) }
   })
 
   // Once the store confirms pending additions/removals, clear the pending lists.
@@ -78,8 +82,9 @@ export function useFlowGraph(
     { deep: true },
   )
 
-  // Layout persistence: reset when agency changes
+  // Layout persistence: positions are seeded from agency.layout on load.
   const nodePositions = ref<Record<string, { x: number; y: number }>>({})
+  let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   // Merged view: confirmed flows minus pending removals, plus pending additions,
   // minus any flow referencing a role that is pending removal.
@@ -88,7 +93,14 @@ export function useFlowGraph(
     const withoutRemovals = base.filter(
       ([a, b]) => !pendingRemovals.value.some(([x, y]) => a === x && b === y),
     )
-    const merged = [...withoutRemovals, ...pendingFlows.value]
+    // Pending flows may be handle-only updates to an existing edge (same src/tgt,
+    // new handles). Let them supersede the stale base entry so the new handle
+    // renders immediately while the save is in-flight.
+    const pendingKeys = new Set(pendingFlows.value.map(([a, b]) => `${a}->${b}`))
+    const merged = [
+      ...withoutRemovals.filter(([a, b]) => !pendingKeys.has(`${a}->${b}`)),
+      ...pendingFlows.value,
+    ]
     if (pendingRoleRemovals.value.size === 0) return merged
     // Filter out flows where either endpoint belongs to a role being removed.
     // Use getBaseRoleId so instance-level flows (e.g. "developer-2->reviewer-1")
@@ -238,6 +250,13 @@ export function useFlowGraph(
 
   function updateNodePosition(nodeId: string, position: { x: number; y: number }) {
     nodePositions.value = { ...nodePositions.value, [nodeId]: position }
+    if (layoutSaveTimer !== null) clearTimeout(layoutSaveTimer)
+    layoutSaveTimer = setTimeout(() => {
+      layoutSaveTimer = null
+      if (!agency.value) return
+      saveAgency({ ...agency.value, layout: { ...nodePositions.value } })
+        .catch(err => console.error('[useFlowGraph] layout save failed:', err))
+    }, 400)
   }
 
   function toggleExpanded(roleId: string) {
@@ -291,10 +310,18 @@ export function useFlowGraph(
     if (!(oldSrc === req.sourceId && oldTgt === req.targetId)) {
       if (effectiveFlows.value.some(([a, b]) => a === req.sourceId && b === req.targetId)) return
     }
-    // Optimistic: pull old out of pending additions, mark as removal, add new
+    // Optimistic: pull old out of pending additions, add new.
+    // Only mark as a pending removal when src/tgt actually change. For handle-only
+    // updates (same src/tgt) effectiveFlows replaces the base entry via pendingFlows,
+    // so no removal entry is needed. Adding one would cause the edge to vanish:
+    // once the save confirms, the watch clears pendingFlows (src/tgt found in
+    // confirmed) but leaves pendingRemovals intact (src/tgt still in confirmed),
+    // so effectiveFlows would hide the edge permanently until reload.
     pendingFlows.value = pendingFlows.value.filter(([a, b]) => !(a === oldSrc && b === oldTgt))
-    if (!pendingRemovals.value.some(([a, b]) => a === oldSrc && b === oldTgt)) {
-      pendingRemovals.value = [...pendingRemovals.value, [oldSrc, oldTgt]]
+    if (!(oldSrc === req.sourceId && oldTgt === req.targetId)) {
+      if (!pendingRemovals.value.some(([a, b]) => a === oldSrc && b === oldTgt)) {
+        pendingRemovals.value = [...pendingRemovals.value, [oldSrc, oldTgt]]
+      }
     }
     pendingFlows.value = [...pendingFlows.value, [req.sourceId, req.targetId, req.sourceHandle, req.targetHandle]]
     const flows = effectiveFlows.value.map(([a, b, sh, th]) => {
@@ -450,7 +477,10 @@ export function useFlowGraph(
   }
 
   onMounted(() => window.addEventListener('keydown', onWindowKeyDown))
-  onUnmounted(() => window.removeEventListener('keydown', onWindowKeyDown))
+  onUnmounted(() => {
+    window.removeEventListener('keydown', onWindowKeyDown)
+    if (layoutSaveTimer !== null) clearTimeout(layoutSaveTimer)
+  })
 
   return {
     nodes, edges, flowMode,
