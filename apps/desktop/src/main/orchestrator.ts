@@ -7,6 +7,8 @@ import type {
   AgencyInstance,
   AgencyInstanceSession,
   AgencyScope,
+  OnFailurePolicy,
+  RoleEffort,
   RoleSlot,
   StartAgencyParams,
 } from '../shared/ipc-contract'
@@ -70,6 +72,8 @@ interface RuntimeAgency {
   roleSlots: Map<string, RoleSlot>
   allowedFlows: Set<string>
   restartParamsByRole: Map<string, AgencyRoleRestartParams>
+  /** Retry attempt counts per roleId for onFailure:'retry' slots */
+  retryCountByRole: Map<string, number>
 }
 
 const instances = new Map<string, RuntimeAgency>()
@@ -131,7 +135,9 @@ const instanceIdPattern = /^(.+)-(\d+)$/
 
 /** Check whether a flow from fromInstance/fromRole → toTarget is permitted.
  *  Checks four key combinations so instance-level, role-level, and mixed
- *  flow entries all resolve correctly. */
+ *  flow entries all resolve correctly.
+ *  openMessaging on the target role bypasses the flow restriction for inbound
+ *  messages — the target accepts messages from any sender. */
 function isFlowAllowed(
   runtime: RuntimeAgency,
   fromInstanceId: string,
@@ -140,6 +146,7 @@ function isFlowAllowed(
   toRoleId: string,
 ): boolean {
   if (runtime.allowedFlows.size === 0) return true
+  if (runtime.roleSlots.get(toRoleId)?.openMessaging) return true
   return (
     runtime.allowedFlows.has(`${fromInstanceId}->${toTarget}`) ||
     runtime.allowedFlows.has(`${fromRoleId}->${toTarget}`) ||
@@ -247,7 +254,7 @@ async function spawnOverflow(
         initialPrompt: `Agency "${runtime.agencyName}" overflow agent initialized. Await messages from peers.`,
         systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
-        ...(restart.effort ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort } : {}),
+        ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
         ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
         agencyId: runtime.agencyId,
         agencyScope: runtime.agencyScope,
@@ -257,7 +264,13 @@ async function spawnOverflow(
         agencyName: runtime.agencyName,
         isEntryPoint: false,
       },
-      { mcpFactory: () => createOrchestratorMcp(runtime.projectPath, localId) },
+      {
+        mcpFactory: () => createOrchestratorMcp(runtime.projectPath, localId),
+        onTerminalError: () => handleAgentFailure(
+          runtime, roleId, localId,
+          runtime.roleSlots.get(roleId)?.onFailure ?? 'continue',
+        ),
+      },
     )
   } catch (err) {
     // Roll back the reservation so the slot doesn't appear permanently occupied.
@@ -820,6 +833,69 @@ export async function generateAndPersistSessionTitle(localId: string, prompt: st
   }
 }
 
+const MAX_AGENT_RETRIES = 3
+
+function handleAgentFailure(
+  runtime: RuntimeAgency,
+  roleId: string,
+  localId: string,
+  policy: OnFailurePolicy,
+): void {
+  if (policy === 'block') {
+    const errMsg = `Agency halted: role "${roleId}" failed.`
+    for (const otherId of runtime.sessionToInstance.keys()) {
+      if (otherId !== localId) void interruptSession(otherId).catch(() => {})
+    }
+    for (const [, queue] of runtime.pendingByRole) {
+      for (const p of queue.splice(0)) p.reject(new Error(errMsg))
+    }
+    return
+  }
+
+  if (policy === 'retry') {
+    const attempt = runtime.retryCountByRole.get(roleId) ?? 0
+    if (attempt >= MAX_AGENT_RETRIES) return // max retries hit — already in 'error', leave as-is
+
+    runtime.retryCountByRole.set(roleId, attempt + 1)
+    const backoffMs = Math.pow(2, attempt) * 1000
+    const restart = runtime.restartParamsByRole.get(roleId)
+    const inst = runtime.sessionToInstance.get(localId)
+    const persisted = registry.getAgent(localId)
+    if (!restart || !inst || !persisted) return
+
+    setTimeout(() => {
+      void startSession(
+        {
+          localId,
+          agentLocalId: localId,
+          sessionLocalId: runtime.instanceId,
+          projectPath: runtime.projectPath,
+          ...(runtime.worktreePath ? { worktreePath: runtime.worktreePath } : {}),
+          initialPrompt: persisted.initialPrompt,
+          systemPromptAppend: restart.systemPromptAppend,
+          ...(restart.model ? { model: restart.model } : {}),
+          ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
+          ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
+          agencyId: runtime.agencyId,
+          agencyScope: runtime.agencyScope,
+          roleId: inst.roleId,
+          roleInstanceIndex: inst.instanceIndex,
+          roleName: persisted.roleName ?? inst.roleId,
+          agencyName: runtime.agencyName,
+          isEntryPoint: persisted.isEntryPoint,
+        },
+        {
+          mcpFactory: () => createOrchestratorMcp(runtime.projectPath, localId),
+          onTerminalError: () => handleAgentFailure(runtime, roleId, localId, policy),
+        },
+      )
+    }, backoffMs)
+    return
+  }
+
+  // 'continue': peer agents keep running; the failed agent is already marked 'error'
+}
+
 export async function startAgency(
   params: StartAgencyParams,
 ): Promise<AgencyInstance> {
@@ -890,6 +966,7 @@ export async function startAgency(
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
     restartParamsByRole: new Map(),
+    retryCountByRole: new Map(),
   }
   instances.set(instanceId, runtime)
 
@@ -989,7 +1066,12 @@ export async function startAgency(
           agencyName: agency.name,
           isEntryPoint: isEntry && idx === 1,
         },
-        { mcpFactory: () => createOrchestratorMcp(params.projectPath, localId) },
+        {
+          mcpFactory: () => createOrchestratorMcp(params.projectPath, localId),
+          onTerminalError: () => handleAgentFailure(
+            runtime, slot.roleId, localId, slot.onFailure ?? 'continue',
+          ),
+        },
       )
 
       // Store per-instance restart params (the preamble varies per instance)
@@ -1100,6 +1182,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
     restartParamsByRole: new Map(),
+    retryCountByRole: new Map(),
   }
   instances.set(instanceId, runtime)
 

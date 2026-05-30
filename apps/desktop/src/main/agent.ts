@@ -60,6 +60,7 @@ export interface ActiveSession {
   interrupted: boolean
   turnCount: number
   mcpFactory?: NonNullable<InternalStartExtras['mcpFactory']>
+  onTerminalError?: () => void
 }
 
 /** Optional extras orchestrator passes to startSession that aren't in the
@@ -71,6 +72,10 @@ export interface InternalStartExtras {
   mcpFactory?: () => ReturnType<
     typeof import('@anthropic-ai/claude-agent-sdk').createSdkMcpServer
   >
+  /** Called once when the stream reaches a terminal error (after MCP reconnect
+   *  retries are exhausted and the active-map entry has been removed). Fired in
+   *  consumeStream's finally block so startSession can be called again safely. */
+  onTerminalError?: () => void
 }
 
 const active = new Map<string, ActiveSession>()
@@ -340,6 +345,11 @@ async function consumeStream(session: ActiveSession): Promise<void> {
     if (isStillOwner) {
       active.delete(session.agentLocalId)
     }
+    // Fire AFTER active.delete so the orchestrator's retry path can reinstate
+    // a clean session without racing the old entry.
+    if (session.status === 'error' && !session.interrupted) {
+      session.onTerminalError?.()
+    }
   }
 }
 
@@ -526,6 +536,7 @@ export async function startSession(
     interrupted: false,
     turnCount: getPersistedTurnCount(agentLocalId),
     mcpFactory: extras.mcpFactory,
+    onTerminalError: extras.onTerminalError,
   }
 
   active.set(agentLocalId, session)
