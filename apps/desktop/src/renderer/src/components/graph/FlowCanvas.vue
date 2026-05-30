@@ -15,7 +15,9 @@
       :connection-mode="ConnectionMode.Loose"
       :connection-line-component="FloatingConnectionLine"
       @connect="onConnect"
+      @edge-update-start="onEdgeUpdateStart"
       @edge-update="onEdgeUpdate"
+      @edge-update-end="onEdgeUpdateEnd"
       @edges-change="onEdgesChange"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
@@ -80,11 +82,15 @@ const patternColor = computed(() =>
   layoutStore.theme === 'dark' ? '#27272a' : '#d4cfc8'
 )
 
-// Register the store instance by ID so edge/node helpers are available if
-// needed elsewhere; we don't call addEdges manually — pendingFlows in
-// useFlowGraph drives the :edges prop and provides immediate visual feedback
-// without triggering a reconciliation remove event that would undo the save.
-useVueFlow('agency-flow')
+// updateEdge / addEdges are needed for edge-reconnection UX:
+// updateEdge() applies the new connection to Vue Flow's internal state immediately
+// (without it the edge snaps back on next render). addEdges() restores the edge
+// when a drag is cancelled without connecting anywhere.
+const { updateEdge, addEdges } = useVueFlow('agency-flow')
+
+// Tracks the edge being dragged so we can restore it on a cancelled drag.
+let draggingEdge: VFEdge | null = null
+let edgeUpdateSuccessful = false
 
 // Cast to bypass strict NodeComponent type mismatch — our component satisfies
 // the runtime contract but Vue Flow's generic NodeProps don't align with defineProps<...>
@@ -228,8 +234,16 @@ function onConnect(conn: Connection) {
   emit('connection', { sourceId: conn.source, targetId: conn.target, sourceHandle, targetHandle })
 }
 
+function onEdgeUpdateStart({ edge }: EdgeMouseEvent) {
+  draggingEdge = edge
+  edgeUpdateSuccessful = false
+}
+
 function onEdgeUpdate({ edge, connection: conn }: EdgeUpdateEvent) {
+  edgeUpdateSuccessful = true
   if (!conn.source || !conn.target) return
+  // Apply to Vue Flow's internal state immediately so the edge doesn't snap back.
+  updateEdge(edge, conn)
   const sourceHandle = conn.sourceHandle ?? 'right'
   const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
   const tgtPos = nodePosMap.value.get(conn.target) ?? { x: 0, y: 0 }
@@ -237,6 +251,15 @@ function onEdgeUpdate({ edge, connection: conn }: EdgeUpdateEvent) {
   const rawTarget = conn.targetHandle ?? facing
   const targetHandle = rawTarget === OPPOSITE[facing] ? facing : rawTarget
   emit('edge-update', edge.id, { sourceId: conn.source, targetId: conn.target, sourceHandle, targetHandle })
+}
+
+function onEdgeUpdateEnd() {
+  // When the drag is cancelled (dropped on empty canvas), Vue Flow has already
+  // removed the edge from its internal state. Restore it so it doesn't vanish.
+  if (!edgeUpdateSuccessful && draggingEdge) {
+    addEdges([{ ...draggingEdge }])
+  }
+  draggingEdge = null
 }
 
 function onNodeClick({ node }: NodeMouseEvent) {
