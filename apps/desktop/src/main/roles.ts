@@ -77,6 +77,8 @@ function parseRoleFile(
         (t): t is string => typeof t === 'string',
       )
     : null
+  const icon = typeof parsed['icon'] === 'string' ? parsed['icon'] : undefined
+  const accent = typeof parsed['accent'] === 'string' ? parsed['accent'] : undefined
   return {
     id: meta.id,
     scope: meta.scope,
@@ -87,6 +89,8 @@ function parseRoleFile(
     effort,
     allowedTools,
     systemPrompt: body.trimEnd(),
+    icon,
+    accent,
   }
 }
 
@@ -99,6 +103,8 @@ function serializeRole(role: Omit<Role, 'scope' | 'path'>): string {
   if (role.effort) fm['effort'] = role.effort
   if (role.allowedTools && role.allowedTools.length)
     fm['allowedTools'] = role.allowedTools
+  if (role.icon) fm['icon'] = role.icon
+  if (role.accent) fm['accent'] = role.accent
   return `---\n${stringifyYaml(fm).trimEnd()}\n---\n\n${role.systemPrompt.trim()}\n`
 }
 

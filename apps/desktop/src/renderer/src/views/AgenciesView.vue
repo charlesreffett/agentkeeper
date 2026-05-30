@@ -16,30 +16,78 @@
       </aside>
 
       <!-- Center: graph canvas -->
-      <main class="flex-1 relative overflow-hidden">
+      <main class="flex-1 relative overflow-hidden flex flex-col">
+        <!-- Toolbar above graph -->
+        <div class="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border bg-background">
+          <div class="flex items-center gap-1 text-xs rounded-lg border border-border p-0.5">
+            <button
+              class="flex items-center gap-1.5 px-3 py-1 rounded-md transition-colors font-medium"
+              :class="graphTab === 'graph' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              @click="graphTab = 'graph'"
+            >
+              <PencilLine class="w-3.5 h-3.5" />
+              Graph
+            </button>
+            <button
+              class="flex items-center gap-1.5 px-3 py-1 rounded-md transition-colors font-medium"
+              :class="graphTab === 'pipeline' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+              @click="graphTab = 'pipeline'"
+            >
+              <Layers class="w-3.5 h-3.5" />
+              Pipeline
+            </button>
+          </div>
+
+          <span v-if="selectedAgency" class="text-xs text-muted-foreground/60 select-none">
+            drag handles to wire · ⌫ to delete
+          </span>
+
+          <button
+            v-if="selectedAgency"
+            class="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted transition-colors"
+            @click="showAddRolePanel = !showAddRolePanel"
+          >
+            <Plus class="w-3.5 h-3.5" />
+            Add role
+          </button>
+          <div v-else class="w-[90px]" />
+        </div>
+
         <div
           v-if="!selectedAgency"
-          class="flex h-full items-center justify-center text-muted-foreground text-sm"
+          class="flex flex-1 items-center justify-center text-muted-foreground text-sm"
         >
           Select an agency to view its graph
         </div>
-        <FlowCanvas
-          v-else
-          :nodes="graph.nodes.value"
-          :edges="graph.edges.value"
-          :flow-mode="graph.flowMode.value"
-          :selected-node-id="graph.selectedNodeId.value"
-          :selected-edge-id="graph.selectedEdgeId.value"
-          :fit-on-load="true"
-          @node-click="graph.selectNode"
-          @edge-click="graph.selectEdge"
-          @edge-remove="graph.removeConnection"
-          @pane-click="graph.clearSelection"
-          @connection="graph.addConnection"
-          @edge-update="(id, conn) => graph.updateConnection(id, conn)"
-          @node-move="graph.updateNodePosition"
-          @node-expand="graph.toggleExpanded"
-        />
+
+        <div v-else class="flex-1 relative overflow-hidden">
+          <AddRolePanel
+            v-if="showAddRolePanel"
+            :roles="roles"
+            :agency="selectedAgency"
+            :project-path="focusedProjectPath"
+            class="absolute top-0 left-0 z-10 h-full"
+            @add-role="graph.addRole"
+            @close="showAddRolePanel = false"
+          />
+
+          <FlowCanvas
+            :nodes="graph.nodes.value"
+            :edges="graph.edges.value"
+            :flow-mode="graph.flowMode.value"
+            :selected-node-id="graph.selectedNodeId.value"
+            :selected-edge-id="graph.selectedEdgeId.value"
+            :fit-on-load="true"
+            @node-click="graph.selectNode"
+            @edge-click="graph.selectEdge"
+            @edge-remove="graph.removeConnection"
+            @pane-click="graph.clearSelection"
+            @connection="graph.addConnection"
+            @edge-update="(id, conn) => graph.updateConnection(id, conn)"
+            @node-move="graph.updateNodePosition"
+            @node-expand="graph.toggleExpanded"
+          />
+        </div>
       </main>
 
       <!-- Right sidebar: context panel -->
@@ -83,6 +131,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { PencilLine, Layers, Plus } from 'lucide-vue-next'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -93,6 +142,7 @@ import AgencyDetailPanel from '@/components/agencies/AgencyDetailPanel.vue'
 import RoleInAgencyPanel from '@/components/agencies/RoleInAgencyPanel.vue'
 import ConnectionPanel from '@/components/agencies/ConnectionPanel.vue'
 import NewAgencyModal from '@/components/agencies/NewAgencyModal.vue'
+import AddRolePanel from '@/components/agencies/AddRolePanel.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import type { Agency, AgencyDraft, AgencyScope } from '@shared/ipc-contract'
 
@@ -104,6 +154,8 @@ const { agencies, isLoading, saveAgency: saveAgencyMutation, removeAgency: remov
 const { roles } = useRolesQuery(focusedProjectPath)
 
 const selectedAgencyId = ref<string | null>(null)
+const graphTab = ref<'graph' | 'pipeline'>('graph')
+const showAddRolePanel = ref(false)
 
 const selectedAgency = computed<Agency | null>(() => {
   if (!selectedAgencyId.value) return null
@@ -186,7 +238,13 @@ watch(
   () => focusedProject.value,
   () => {
     selectedAgencyId.value = null
+    showAddRolePanel.value = false
     graph.clearSelection()
   },
+)
+
+watch(
+  () => selectedAgencyId.value,
+  () => { showAddRolePanel.value = false },
 )
 </script>

@@ -341,6 +341,17 @@ export function useFlowGraph(
     await saveAgency(draft)
   }
 
+  async function addRole(roleId: string) {
+    if (!agency.value) return
+    if (agency.value.roles.some(r => r.roleId === roleId)) return
+    const newRoles = [...agency.value.roles, { roleId }]
+    const newEntries = agency.value.entryPoints.length === 0
+      ? [roleId]
+      : agency.value.entryPoints
+    const draft = { ...agency.value, roles: newRoles, entryPoints: newEntries }
+    await saveAgency(draft)
+  }
+
   async function removeRole(roleId: string) {
     if (!agency.value) return
     if (!agency.value.roles.some(r => r.roleId === roleId)) return
@@ -444,7 +455,7 @@ export function useFlowGraph(
     toggleExpanded,
     addConnection, updateConnection, removeConnection, flipConnection,
     toggleEntryPoint, updateInstanceCount,
-    removeRole,
+    addRole, removeRole,
     deleteAgency,
   }
 }

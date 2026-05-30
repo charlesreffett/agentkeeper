@@ -26,14 +26,22 @@
     >
       <Background :pattern-color="patternColor" :gap="20" />
       <Controls class="!bg-muted !border-border" />
-      <AnyToAnyOverlay v-if="flowMode === 'any-to-any'" />
+      <Panel position="bottom-right">
+        <div class="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-background/80 border border-border backdrop-blur-sm rounded-md px-3 py-1.5 shadow-sm select-none font-mono">
+          <span>{{ Math.round(viewport.zoom * 100) }}%</span>
+          <span class="opacity-40">·</span>
+          <span>drag to connect</span>
+          <span class="opacity-40">·</span>
+          <span>⌫ to delete</span>
+        </div>
+      </Panel>
     </VueFlow>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
-import { VueFlow, MarkerType, useVueFlow, ConnectionMode, Position } from '@vue-flow/core'
+import { VueFlow, MarkerType, useVueFlow, ConnectionMode, Position, Panel } from '@vue-flow/core'
 import { useLayoutStore } from '@/stores/layout'
 import type {
   Node as VFNode,
@@ -53,7 +61,6 @@ import '@vue-flow/controls/dist/style.css'
 import AgencyRoleNode from './AgencyRoleNode.vue'
 import AgencyInstanceNode from './AgencyInstanceNode.vue'
 import FloatingConnectionLine from './FloatingConnectionLine.vue'
-import AnyToAnyOverlay from './AnyToAnyOverlay.vue'
 import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
 
 const props = defineProps<{
@@ -86,7 +93,7 @@ const patternColor = computed(() =>
 // updateEdge() applies the new connection to Vue Flow's internal state immediately
 // (without it the edge snaps back on next render). addEdges() restores the edge
 // when a drag is cancelled without connecting anywhere.
-const { updateEdge, addEdges } = useVueFlow('agency-flow')
+const { updateEdge, addEdges, viewport } = useVueFlow('agency-flow')
 
 // Tracks the edge being dragged so we can restore it on a cancelled drag.
 let draggingEdge: VFEdge | null = null
@@ -222,17 +229,16 @@ const vfEdges = computed<VFEdge[]>(() =>
 )
 
 function isValidConnection(conn: Connection): boolean {
-  if (conn.source === conn.target) return false
-  return !props.edges.some(e => {
-    // When reconnecting an existing edge, that edge is still in props.edges —
-    // exclude it so the drag isn't immediately rejected by its own old connection.
-    if (draggingEdge && e.id === draggingEdge.id) return false
-    return e.source === conn.source && e.target === conn.target
-  })
+  // Only block self-loops here — duplicate detection happens in onConnect where
+  // Vue Flow has already confirmed the connection, avoiding false positives from
+  // ConnectionMode.Loose calling this during hover with unexpected handle pairings.
+  return !!conn.source && !!conn.target && conn.source !== conn.target
 }
 
 function onConnect(conn: Connection) {
   if (!conn.source || !conn.target) return
+  // Block duplicate connections (same source→target regardless of handles).
+  if (props.edges.some(e => e.source === conn.source && e.target === conn.target)) return
   const sourceHandle = conn.sourceHandle ?? 'right'
   const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
   const tgtPos = nodePosMap.value.get(conn.target) ?? { x: 0, y: 0 }

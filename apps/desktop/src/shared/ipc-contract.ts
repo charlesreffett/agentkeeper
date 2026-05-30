@@ -363,6 +363,8 @@ export interface Role {
   effort: RoleEffort | null
   allowedTools: string[] | null
   systemPrompt: string
+  icon?: string
+  accent?: string
 }
 
 export type RoleDraft = Omit<Role, 'scope' | 'path'>
