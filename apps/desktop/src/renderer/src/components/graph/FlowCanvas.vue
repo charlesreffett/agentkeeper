@@ -223,7 +223,12 @@ const vfEdges = computed<VFEdge[]>(() =>
 
 function isValidConnection(conn: Connection): boolean {
   if (conn.source === conn.target) return false
-  return !props.edges.some(e => e.source === conn.source && e.target === conn.target)
+  return !props.edges.some(e => {
+    // When reconnecting an existing edge, that edge is still in props.edges —
+    // exclude it so the drag isn't immediately rejected by its own old connection.
+    if (draggingEdge && e.id === draggingEdge.id) return false
+    return e.source === conn.source && e.target === conn.target
+  })
 }
 
 function onConnect(conn: Connection) {
