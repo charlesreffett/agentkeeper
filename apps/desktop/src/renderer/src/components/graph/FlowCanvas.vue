@@ -10,7 +10,7 @@
       :delete-key-code="null"
       class="bg-background"
       :default-edge-options="defaultEdgeOptions"
-      :is-valid-connection="(conn) => conn.source !== conn.target"
+      :is-valid-connection="isValidConnection"
       :connect-on-click="false"
       :connection-mode="ConnectionMode.Loose"
       :connection-line-component="FloatingConnectionLine"
@@ -220,6 +220,11 @@ const vfEdges = computed<VFEdge[]>(() =>
     }
   })
 )
+
+function isValidConnection(conn: Connection): boolean {
+  if (conn.source === conn.target) return false
+  return !props.edges.some(e => e.source === conn.source && e.target === conn.target)
+}
 
 function onConnect(conn: Connection) {
   if (!conn.source || !conn.target) return
