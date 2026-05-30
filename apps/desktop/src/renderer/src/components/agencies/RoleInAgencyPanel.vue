@@ -40,7 +40,7 @@
             <div class="text-sm font-medium text-foreground">Entry point</div>
             <div class="text-[11px] text-muted-foreground mt-0.5">Receives the ticket first</div>
           </div>
-          <Switch :checked="isEntry" @update:checked="emit('toggle-entry')" />
+          <Switch :model-value="isEntry" @update:model-value="emit('toggle-entry')" />
         </div>
         <!-- Open messaging -->
         <div class="flex items-center justify-between rounded-lg border border-border bg-card px-3 py-2.5">
@@ -49,8 +49,8 @@
             <div class="text-[11px] text-muted-foreground mt-0.5">Any-to-any, ignores wired edges</div>
           </div>
           <Switch
-            :checked="openMessaging"
-            @update:checked="(val: boolean) => saveSlotPatch({ openMessaging: val || undefined })"
+            :model-value="openMessaging"
+            @update:model-value="(val: boolean) => saveSlotPatch({ openMessaging: val || undefined })"
           />
         </div>
       </section>
@@ -109,8 +109,8 @@
             <div class="text-[11px] text-muted-foreground mt-0.5">Hold this agent's output for a human before handoff</div>
           </div>
           <Switch
-            :checked="pauseForReview"
-            @update:checked="(val: boolean) => saveSlotPatch({ pauseForReview: val || undefined })"
+            :model-value="pauseForReview"
+            @update:model-value="(val: boolean) => saveSlotPatch({ pauseForReview: val || undefined })"
           />
         </div>
       </section>
