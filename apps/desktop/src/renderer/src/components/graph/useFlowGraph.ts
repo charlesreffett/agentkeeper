@@ -50,7 +50,7 @@ export function useFlowGraph(
     pendingRoleRemovals.value = new Set()
     expandedRoles.value = new Set()
     nodePositions.value = { ...(agency.value?.layout ?? {}) }
-  })
+  }, { immediate: true })
 
   // Once the store confirms pending additions/removals, clear the pending lists.
   watch(
