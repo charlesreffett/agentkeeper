@@ -226,7 +226,7 @@ const FAILURE_OPTS: { value: OnFailurePolicy; label: string }[] = [
   { value: 'retry',    label: 'Retry' },
 ]
 
-const onFailure = computed<OnFailurePolicy>(() => props.roleSlot.onFailure ?? 'block')
+const onFailure = computed<OnFailurePolicy>(() => props.roleSlot.onFailure ?? 'continue')
 const pauseForReview = computed(() => props.roleSlot.pauseForReview ?? false)
 
 const failureDescription = computed(() => {
