@@ -15,6 +15,7 @@
       :connection-mode="ConnectionMode.Loose"
       :connection-line-component="FloatingConnectionLine"
       @connect="onConnect"
+      @edge-update="onEdgeUpdate"
       @edges-change="onEdgesChange"
       @node-click="onNodeClick"
       @edge-click="onEdgeClick"
@@ -37,6 +38,7 @@ import type {
   Edge as VFEdge,
   NodeMouseEvent,
   EdgeMouseEvent,
+  EdgeUpdateEvent,
   EdgeChange,
   NodeDragEvent,
   Connection,
@@ -66,6 +68,7 @@ const emit = defineEmits<{
   (e: 'edge-click', edgeId: string): void
   (e: 'edge-remove', edgeId: string): void
   (e: 'connection', payload: GraphConnectionRequest): void
+  (e: 'edge-update', oldEdgeId: string, payload: GraphConnectionRequest): void
   (e: 'pane-click'): void
   (e: 'node-move', nodeId: string, position: { x: number; y: number }): void
   (e: 'node-expand', roleId: string): void
@@ -95,6 +98,7 @@ const edgeTypes: Record<string, any> = {}
 
 const defaultEdgeOptions = {
   type: 'smoothstep',
+  updatable: true,
   markerEnd: { type: MarkerType.ArrowClosed, color: '#6b7280' },
   style: { stroke: '#6b7280', strokeWidth: 2 },
   animated: false,
@@ -222,6 +226,17 @@ function onConnect(conn: Connection) {
   // source, snap to the facing handle instead. Any other explicit choice is kept.
   const targetHandle = rawTarget === OPPOSITE[facing] ? facing : rawTarget
   emit('connection', { sourceId: conn.source, targetId: conn.target, sourceHandle, targetHandle })
+}
+
+function onEdgeUpdate({ edge, connection: conn }: EdgeUpdateEvent) {
+  if (!conn.source || !conn.target) return
+  const sourceHandle = conn.sourceHandle ?? 'right'
+  const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
+  const tgtPos = nodePosMap.value.get(conn.target) ?? { x: 0, y: 0 }
+  const facing = facingTargetHandle(srcPos, tgtPos)
+  const rawTarget = conn.targetHandle ?? facing
+  const targetHandle = rawTarget === OPPOSITE[facing] ? facing : rawTarget
+  emit('edge-update', edge.id, { sourceId: conn.source, targetId: conn.target, sourceHandle, targetHandle })
 }
 
 function onNodeClick({ node }: NodeMouseEvent) {

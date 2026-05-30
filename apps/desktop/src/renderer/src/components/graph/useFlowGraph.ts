@@ -282,6 +282,37 @@ export function useFlowGraph(
     }
   }
 
+  async function updateConnection(oldEdgeId: string, req: GraphConnectionRequest) {
+    if (!agency.value) return
+    if (req.sourceId === req.targetId) return
+    const [oldSrc, oldTgt] = oldEdgeId.split('->')
+    if (!oldSrc || !oldTgt) return
+    // Bail if the new target already exists (and it isn't the edge being replaced)
+    if (!(oldSrc === req.sourceId && oldTgt === req.targetId)) {
+      if (effectiveFlows.value.some(([a, b]) => a === req.sourceId && b === req.targetId)) return
+    }
+    // Optimistic: pull old out of pending additions, mark as removal, add new
+    pendingFlows.value = pendingFlows.value.filter(([a, b]) => !(a === oldSrc && b === oldTgt))
+    if (!pendingRemovals.value.some(([a, b]) => a === oldSrc && b === oldTgt)) {
+      pendingRemovals.value = [...pendingRemovals.value, [oldSrc, oldTgt]]
+    }
+    pendingFlows.value = [...pendingFlows.value, [req.sourceId, req.targetId, req.sourceHandle, req.targetHandle]]
+    const flows = effectiveFlows.value.map(([a, b, sh, th]) => {
+      const entry: [string, string, string?, string?] = [a, b]
+      if (sh) entry[2] = sh
+      if (th) entry[3] = th
+      return entry
+    })
+    const draft = { ...agency.value, flows }
+    try {
+      await saveAgency(draft)
+    } catch (err) {
+      console.error('[useFlowGraph] updateConnection save failed:', err)
+      pendingRemovals.value = pendingRemovals.value.filter(([a, b]) => !(a === oldSrc && b === oldTgt))
+      pendingFlows.value = pendingFlows.value.filter(([a, b]) => !(a === req.sourceId && b === req.targetId))
+    }
+  }
+
   async function removeConnection(edgeId: string) {
     if (!agency.value) return
     const parts = edgeId.split('->')
@@ -411,7 +442,7 @@ export function useFlowGraph(
     selectNode, selectEdge, clearSelection,
     updateNodePosition,
     toggleExpanded,
-    addConnection, removeConnection, flipConnection,
+    addConnection, updateConnection, removeConnection, flipConnection,
     toggleEntryPoint, updateInstanceCount,
     removeRole,
     deleteAgency,

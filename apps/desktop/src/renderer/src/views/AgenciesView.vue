@@ -36,6 +36,7 @@
           @edge-remove="graph.removeConnection"
           @pane-click="graph.clearSelection"
           @connection="graph.addConnection"
+          @edge-update="(id, conn) => graph.updateConnection(id, conn)"
           @node-move="graph.updateNodePosition"
           @node-expand="graph.toggleExpanded"
         />
