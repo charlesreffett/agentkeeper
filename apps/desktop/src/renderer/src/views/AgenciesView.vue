@@ -38,9 +38,22 @@
             </button>
           </div>
 
-          <span v-if="selectedAgency" class="text-xs text-muted-foreground/60 select-none">
-            drag handles to wire · ⌫ to delete
-          </span>
+          <div class="flex items-center gap-3">
+            <Transition
+              enter-active-class="transition-opacity duration-150"
+              leave-active-class="transition-opacity duration-500"
+              enter-from-class="opacity-0"
+              leave-to-class="opacity-0"
+            >
+              <span v-if="savedFlash" class="flex items-center gap-1 text-xs text-green-500">
+                <Check class="w-3 h-3" />
+                Saved
+              </span>
+            </Transition>
+            <span v-if="selectedAgency" class="text-xs text-muted-foreground/60 select-none">
+              drag handles to wire · ⌫ to delete
+            </span>
+          </div>
 
           <button
             v-if="selectedAgency"
@@ -136,7 +149,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PencilLine, Layers, Plus } from 'lucide-vue-next'
+import { PencilLine, Layers, Plus, Check } from 'lucide-vue-next'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -161,6 +174,14 @@ const { roles } = useRolesQuery(focusedProjectPath)
 const selectedAgencyId = ref<string | null>(null)
 const graphTab = ref<'graph' | 'pipeline'>('graph')
 const showAddRolePanel = ref(false)
+const savedFlash = ref(false)
+let savedFlashTimer: ReturnType<typeof setTimeout> | null = null
+
+function flashSaved() {
+  savedFlash.value = true
+  if (savedFlashTimer) clearTimeout(savedFlashTimer)
+  savedFlashTimer = setTimeout(() => { savedFlash.value = false }, 2000)
+}
 
 const selectedAgency = computed<Agency | null>(() => {
   if (!selectedAgencyId.value) return null
@@ -182,6 +203,7 @@ async function saveHelper(draft: Agency) {
   // Vue proxy arrays (roles, entryPoints) that survive a top-level spread.
   const plainDraft = JSON.parse(JSON.stringify(agencyDraft)) as typeof agencyDraft
   await saveAgencyMutation({ scope, path: projectPath, draft: plainDraft })
+  flashSaved()
 }
 
 async function deleteHelper() {
