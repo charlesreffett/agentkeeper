@@ -39,6 +39,10 @@ export function useFlowGraph(
   // Which role nodes are currently expanded to show per-instance nodes (UI-only, not persisted).
   const expandedRoles = ref<Set<string>>(new Set())
 
+  // Layout persistence: positions are seeded from agency.layout on load.
+  const nodePositions = ref<Record<string, { x: number; y: number }>>({})
+  let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
+
   // Reset pending and positions when the selected agency changes.
   watch(() => agency.value?.id, () => {
     if (layoutSaveTimer !== null) {
@@ -81,10 +85,6 @@ export function useFlowGraph(
     },
     { deep: true },
   )
-
-  // Layout persistence: positions are seeded from agency.layout on load.
-  const nodePositions = ref<Record<string, { x: number; y: number }>>({})
-  let layoutSaveTimer: ReturnType<typeof setTimeout> | null = null
 
   // Merged view: confirmed flows minus pending removals, plus pending additions,
   // minus any flow referencing a role that is pending removal.

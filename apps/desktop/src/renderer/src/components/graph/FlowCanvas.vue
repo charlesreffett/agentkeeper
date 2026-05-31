@@ -160,11 +160,10 @@ const nodePosMap = computed(() => new Map(props.nodes.map(n => [n.id, n.position
 const HANDLE_TO_POSITION: Record<string, Position> = {
   top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left,
 }
-const OPPOSITE: Record<string, string> = {
-  top: 'bottom', bottom: 'top', left: 'right', right: 'left',
-}
 
-// For legacy edges without stored handles, infer the best pair from node positions.
+// Returns the handle on each node that faces the other node along the dominant axis.
+// Used as the auto-routing fallback when no user-chosen handle is stored or when
+// the stored handle would cause the edge to loop back through a node.
 function getBestHandles(
   srcPos: { x: number; y: number },
   tgtPos: { x: number; y: number },
@@ -182,36 +181,35 @@ function getBestHandles(
   }
 }
 
-// The "facing" handle on the target is the side that points toward the source.
-// e.g. source is above target (dy > 0) → top of target faces the source.
-function facingTargetHandle(srcPos: { x: number; y: number }, tgtPos: { x: number; y: number }): string {
-  const dx = tgtPos.x - srcPos.x
-  const dy = tgtPos.y - srcPos.y
-  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'left' : 'right'
-  return dy >= 0 ? 'top' : 'bottom'
+// Returns true when the smoothstep path would loop back through the node.
+// That only happens when the chosen handle is the direct opposite of the
+// dominant-axis facing handle (e.g. stored "right" when the target is to the
+// left so best is "left"). A handle that's merely off-axis (e.g. "right" when
+// the target is below-left) can still route cleanly — the path bows out to the
+// side then curves around, never re-entering the node.
+function handleNeedsSnap(stored: string, bestHandle: string): boolean {
+  switch (bestHandle) {
+    case 'right':  return stored === 'left'
+    case 'left':   return stored === 'right'
+    case 'bottom': return stored === 'top'
+    case 'top':    return stored === 'bottom'
+    default:       return false
+  }
 }
 
-const vfEdges = computed<VFEdge[]>(() =>
-  props.edges.map(e => {
+const vfEdges = computed<VFEdge[]>(() => {
+  const mapped = props.edges.map(e => {
     const isSelected = e.id === props.selectedEdgeId
     const stroke = isSelected ? '#3b82f6' : '#6b7280'
-    let sourceHandle: string
-    let targetHandle: string
-    let sourcePosition: Position
-    let targetPosition: Position
-
-    if (e.sourceHandle && e.targetHandle) {
-      // Explicit handles stored at connection time — use them directly.
-      sourceHandle = e.sourceHandle
-      targetHandle = e.targetHandle
-      sourcePosition = HANDLE_TO_POSITION[e.sourceHandle] ?? Position.Right
-      targetPosition = HANDLE_TO_POSITION[e.targetHandle] ?? Position.Left
-    } else {
-      // Legacy edge with no stored handles — infer from positions.
-      const srcPos = nodePosMap.value.get(e.source) ?? { x: 0, y: 0 }
-      const tgtPos = nodePosMap.value.get(e.target) ?? { x: 0, y: 0 }
-      ;({ sourceHandle, targetHandle, sourcePosition, targetPosition } = getBestHandles(srcPos, tgtPos))
-    }
+    const srcPos = nodePosMap.value.get(e.source) ?? { x: 0, y: 0 }
+    const tgtPos = nodePosMap.value.get(e.target) ?? { x: 0, y: 0 }
+    const best = getBestHandles(srcPos, tgtPos)
+    const rawSrc = e.sourceHandle ?? best.sourceHandle
+    const sourceHandle = handleNeedsSnap(rawSrc, best.sourceHandle) ? best.sourceHandle : rawSrc
+    const sourcePosition = HANDLE_TO_POSITION[sourceHandle] ?? best.sourcePosition
+    const rawTgt = e.targetHandle ?? best.targetHandle
+    const targetHandle = handleNeedsSnap(rawTgt, best.targetHandle) ? best.targetHandle : rawTgt
+    const targetPosition = HANDLE_TO_POSITION[targetHandle] ?? best.targetPosition
 
     return {
       id: e.id,
@@ -223,10 +221,20 @@ const vfEdges = computed<VFEdge[]>(() =>
       targetPosition,
       selected: isSelected,
       markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
-      style: { stroke, strokeWidth: isSelected ? 3 : 2 },
+      style: { stroke, strokeWidth: 2 },
     }
   })
-)
+
+  // SVG paints last-in-array on top. Promote the selected edge to the end so
+  // its drag handles sit above any other edges that share the same source handle,
+  // ensuring a drag always moves the selected edge rather than a stacked peer.
+  if (props.selectedEdgeId) {
+    const idx = mapped.findIndex(e => e.id === props.selectedEdgeId)
+    if (idx !== -1) mapped.push(mapped.splice(idx, 1)[0]!)
+  }
+
+  return mapped
+})
 
 function isValidConnection(conn: Connection): boolean {
   // Only block self-loops here — duplicate detection happens in onConnect where
@@ -239,14 +247,13 @@ function onConnect(conn: Connection) {
   if (!conn.source || !conn.target) return
   // Block duplicate connections (same source→target regardless of handles).
   if (props.edges.some(e => e.source === conn.source && e.target === conn.target)) return
-  const sourceHandle = conn.sourceHandle ?? 'right'
   const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
   const tgtPos = nodePosMap.value.get(conn.target) ?? { x: 0, y: 0 }
-  const facing = facingTargetHandle(srcPos, tgtPos)
-  const rawTarget = conn.targetHandle ?? facing
-  // Redirect back-side drops: if user released on the handle facing away from the
-  // source, snap to the facing handle instead. Any other explicit choice is kept.
-  const targetHandle = rawTarget === OPPOSITE[facing] ? facing : rawTarget
+  const best = getBestHandles(srcPos, tgtPos)
+  const rawSrc = conn.sourceHandle ?? best.sourceHandle
+  const sourceHandle = handleNeedsSnap(rawSrc, best.sourceHandle) ? best.sourceHandle : rawSrc
+  const rawTgt = conn.targetHandle ?? best.targetHandle
+  const targetHandle = handleNeedsSnap(rawTgt, best.targetHandle) ? best.targetHandle : rawTgt
   emit('connection', { sourceId: conn.source, targetId: conn.target, sourceHandle, targetHandle })
 }
 
@@ -258,14 +265,16 @@ function onEdgeUpdateStart({ edge }: EdgeMouseEvent) {
 function onEdgeUpdate({ edge, connection: conn }: EdgeUpdateEvent) {
   edgeUpdateSuccessful = true
   if (!conn.source || !conn.target) return
-  // Apply to Vue Flow's internal state immediately so the edge doesn't snap back.
-  updateEdge(edge, conn)
-  const sourceHandle = conn.sourceHandle ?? 'right'
   const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
   const tgtPos = nodePosMap.value.get(conn.target) ?? { x: 0, y: 0 }
-  const facing = facingTargetHandle(srcPos, tgtPos)
-  const rawTarget = conn.targetHandle ?? facing
-  const targetHandle = rawTarget === OPPOSITE[facing] ? facing : rawTarget
+  const best = getBestHandles(srcPos, tgtPos)
+  const rawSrc = conn.sourceHandle ?? best.sourceHandle
+  const sourceHandle = handleNeedsSnap(rawSrc, best.sourceHandle) ? best.sourceHandle : rawSrc
+  const rawTgt = conn.targetHandle ?? best.targetHandle
+  const targetHandle = handleNeedsSnap(rawTgt, best.targetHandle) ? best.targetHandle : rawTgt
+  // Apply corrected handles to Vue Flow's internal state immediately so the edge
+  // doesn't snap back on next render.
+  updateEdge(edge, { ...conn, sourceHandle, targetHandle })
   emit('edge-update', edge.id, { sourceId: conn.source, targetId: conn.target, sourceHandle, targetHandle })
 }
 
