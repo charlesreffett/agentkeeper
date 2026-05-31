@@ -3,7 +3,6 @@
     class="relative rounded-lg border-2 px-4 py-3 bg-card shadow-md min-w-[120px] cursor-pointer select-none transition-all"
     :class="[
       selected ? 'border-blue-500 shadow-blue-500/20' : 'border-border hover:border-foreground/40',
-      data.isEntryPoint ? 'ring-2 ring-amber-500/60' : '',
       data.anyToAny ? 'border-dashed' : '',
     ]"
   >
@@ -18,7 +17,7 @@
     <div class="mt-1 flex items-center gap-1.5 flex-wrap">
       <span
         v-if="data.isEntryPoint"
-        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30"
+        class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/25"
       >
         entry
       </span>

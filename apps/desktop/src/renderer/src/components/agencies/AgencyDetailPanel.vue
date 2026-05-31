@@ -13,7 +13,7 @@
           <span
             v-for="ep in agency.entryPoints"
             :key="ep"
-            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30"
+            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/25"
           >
             {{ ep }}
           </span>
