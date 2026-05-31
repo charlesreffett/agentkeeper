@@ -15,15 +15,18 @@ export function useAgenciesQuery(projectPath: { value: string }) {
   const { mutateAsync: saveAgency } = useMutation({
     mutationFn: ({ scope, path, draft }: { scope: AgencyScope; path: string; draft: AgencyDraft }) =>
       window.agentkeeper.agencies.save(scope, path, draft),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.agencies.list(projectPath.value) }),
+    // Use the path from mutation variables, not the reactive projectPath at callback time.
+    // If the user switches projects while a save is in-flight, projectPath.value would be
+    // wrong and the old cache would never be invalidated.
+    onSuccess: (_data, variables) =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.agencies.list(variables.path) }),
   })
 
   const { mutateAsync: removeAgency } = useMutation({
     mutationFn: ({ scope, path, id }: { scope: AgencyScope; path: string; id: string }) =>
       window.agentkeeper.agencies.remove(scope, path, id),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: queryKeys.agencies.list(projectPath.value) }),
+    onSuccess: (_data, variables) =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.agencies.list(variables.path) }),
   })
 
   return {

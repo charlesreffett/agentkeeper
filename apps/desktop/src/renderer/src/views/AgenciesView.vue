@@ -19,25 +19,6 @@
       <main class="flex-1 relative overflow-hidden flex flex-col">
         <!-- Toolbar above graph -->
         <div class="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border bg-background">
-          <div class="flex items-center gap-1 text-xs rounded-lg border border-border p-0.5">
-            <button
-              class="flex items-center gap-1.5 px-3 py-1 rounded-md transition-colors font-medium"
-              :class="graphTab === 'graph' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-              @click="graphTab = 'graph'"
-            >
-              <PencilLine class="w-3.5 h-3.5" />
-              Graph
-            </button>
-            <button
-              class="flex items-center gap-1.5 px-3 py-1 rounded-md transition-colors font-medium"
-              :class="graphTab === 'pipeline' ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
-              @click="graphTab = 'pipeline'"
-            >
-              <Layers class="w-3.5 h-3.5" />
-              Pipeline
-            </button>
-          </div>
-
           <div class="flex items-center gap-3">
             <Transition
               enter-active-class="transition-opacity duration-150"
@@ -50,9 +31,6 @@
                 Saved
               </span>
             </Transition>
-            <span v-if="selectedAgency" class="text-xs text-muted-foreground/60 select-none">
-              drag handles to wire · ⌫ to delete
-            </span>
           </div>
 
           <button
@@ -149,7 +127,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PencilLine, Layers, Plus, Check } from 'lucide-vue-next'
+import { Plus, Check } from 'lucide-vue-next'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -172,7 +150,6 @@ const { agencies, isLoading, saveAgency: saveAgencyMutation, removeAgency: remov
 const { roles } = useRolesQuery(focusedProjectPath)
 
 const selectedAgencyId = ref<string | null>(null)
-const graphTab = ref<'graph' | 'pipeline'>('graph')
 const showAddRolePanel = ref(false)
 const savedFlash = ref(false)
 let savedFlashTimer: ReturnType<typeof setTimeout> | null = null
@@ -188,17 +165,22 @@ const selectedAgency = computed<Agency | null>(() => {
   return agencies.value.find(a => a.id === selectedAgencyId.value) ?? null
 })
 
+// Derive the project root for a project-scoped agency from its own file path.
+// This is always authoritative: focusedProjectPath can diverge from the agency's
+// actual location if the user switches projects while a mutation is in-flight.
+function agencyProjectPath(scope: Agency['scope'], filePath: string): string {
+  if (scope === 'project' && filePath) {
+    const marker = '/.agentkeeper/agencies/'
+    const idx = filePath.indexOf(marker)
+    if (idx !== -1) return filePath.slice(0, idx)
+  }
+  return focusedProjectPath.value
+}
+
 async function saveHelper(draft: Agency) {
   const scope = draft.scope
   const { scope: _s, path: agencyFilePath, ...agencyDraft } = draft
-  let projectPath = focusedProjectPath.value
-  if (scope === 'project' && !projectPath && agencyFilePath) {
-    // focusedProject may be unset; recover the project root from the agency's file path
-    // agencyFilePath = <projectRoot>/.agentkeeper/agencies/<id>.md
-    const marker = '/.agentkeeper/agencies/'
-    const idx = agencyFilePath.indexOf(marker)
-    if (idx !== -1) projectPath = agencyFilePath.slice(0, idx)
-  }
+  const projectPath = agencyProjectPath(scope, agencyFilePath)
   // Deep-unwrap reactive proxies — contextBridge structured-clone fails on
   // Vue proxy arrays (roles, entryPoints) that survive a top-level spread.
   const plainDraft = JSON.parse(JSON.stringify(agencyDraft)) as typeof agencyDraft
@@ -208,10 +190,11 @@ async function saveHelper(draft: Agency) {
 
 async function deleteHelper() {
   if (!selectedAgency.value) return
+  const { scope, path: agencyFilePath, id } = selectedAgency.value
   await removeAgencyMutation({
-    scope: selectedAgency.value.scope,
-    path: focusedProjectPath.value,
-    id: selectedAgency.value.id,
+    scope,
+    path: agencyProjectPath(scope, agencyFilePath),
+    id,
   })
   selectedAgencyId.value = null
 }
@@ -257,7 +240,7 @@ async function onUpdateAgency(draft: Agency) {
   if (current && (idChanged || scopeChanged)) {
     await removeAgencyMutation({
       scope: current.scope,
-      path: focusedProjectPath.value,
+      path: agencyProjectPath(current.scope, current.path),
       id: current.id,
     })
   }
