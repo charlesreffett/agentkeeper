@@ -21,6 +21,7 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import {
   DEFAULT_VERBOSITY_STATE,
   MODE_DEFAULTS,
+  passesEventFilter,
   type VerbosityState,
   hiddenCount as computeHiddenCount,
 } from '@/lib/verbosity'
@@ -242,7 +243,7 @@ async function onEditSubmit(uuid: string, newText: string) {
       agentLocalId,
       sessionLocalId: props.liveId,
       events: removed,
-      count: removed.length,
+      count: removed.filter((e) => passesEventFilter(e, verbosityState.value)).length,
       timerId: setTimeout(() => { undoBuf.value = null }, 10_000),
     }
   } catch (e) {
@@ -276,7 +277,7 @@ async function onRegenerate(assistantEventUuid: string) {
       agentLocalId,
       sessionLocalId: props.liveId,
       events: removed,
-      count: removed.length,
+      count: removed.filter((e) => passesEventFilter(e, verbosityState.value)).length,
       timerId: setTimeout(() => { undoBuf.value = null }, 10_000),
     }
   } catch (e) {
@@ -804,7 +805,7 @@ const streamingEventUuid = computed((): string | undefined => {
       class="fixed bottom-28 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-border bg-popover px-4 py-2.5 text-sm shadow-lg"
     >
       <span class="text-muted-foreground">
-        Response removed.
+        {{ undoBuf.count }} {{ undoBuf.count === 1 ? 'message' : 'messages' }} removed.
       </span>
       <button
         class="font-medium text-foreground underline underline-offset-2 hover:text-primary"

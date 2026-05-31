@@ -1300,6 +1300,7 @@ export const useSessionStore = defineStore('sessions', () => {
         update.status === 'idle' ||
         update.status === 'completed' ||
         update.status === 'terminated' ||
+        update.status === 'suspended' ||
         update.status === 'error'
       const agentKey = update.agentLocalId ?? update.sessionId
       const partial = quiescent ? (sessionRunTokens[agentKey] ?? 0) : 0
