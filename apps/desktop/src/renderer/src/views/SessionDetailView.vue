@@ -21,6 +21,7 @@ const settings = ref<AppSettings>({
   sendModifier: 'auto',
   sessionExpiryDays: 14,
   theme: 'dark',
+  notifications: 'all',
 })
 
 onMounted(async () => {

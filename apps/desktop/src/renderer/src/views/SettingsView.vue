@@ -60,7 +60,7 @@ const saving = ref(false)
 
 const DIRTY_FIELDS = [
   'defaultModel', 'defaultEffort', 'defaultUseWorktree',
-  'enterToSend', 'sendModifier', 'sessionExpiryDays',
+  'enterToSend', 'sendModifier', 'sessionExpiryDays', 'notifications',
 ] as const satisfies ReadonlyArray<keyof AppSettings>
 
 const isDirty = computed(() => {
@@ -158,6 +158,7 @@ async function save() {
         enterToSend: settings.value.enterToSend,
         sendModifier: settings.value.sendModifier,
         sessionExpiryDays: settings.value.sessionExpiryDays,
+        notifications: settings.value.notifications,
       }
       await window.agentkeeper.settings.set(toSave)
       queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
@@ -374,6 +375,26 @@ async function onReset() {
                   <option value="21">21 days</option>
                   <option value="30">30 days</option>
                   <option value="never">Never</option>
+                </select>
+              </div>
+
+              <!-- Session notifications -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Session notifications</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Notify when a session becomes idle or completes.
+                  </p>
+                </div>
+                <select
+                  v-model="settings.notifications"
+                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                >
+                  <option value="all">Desktop notification + sound</option>
+                  <option value="notification-only">Desktop notification only</option>
+                  <option value="sound-only">Sound only</option>
+                  <option value="toast">In-app toast only</option>
+                  <option value="disabled">Disabled</option>
                 </select>
               </div>
 

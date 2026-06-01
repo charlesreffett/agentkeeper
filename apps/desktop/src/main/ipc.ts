@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification } from 'electron'
 import type { EventMap } from '@agentkeeper/sdk'
 import path from 'node:path'
 import fs from 'node:fs/promises'
@@ -1303,6 +1303,26 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
+
+  ipcMain.handle(
+    IPC_CHANNELS.notificationsTrigger,
+    (_event, sessionLocalId: string, sessionTitle: string, silent: boolean) => {
+      if (!Notification.isSupported()) return
+      const win = BrowserWindow.getAllWindows()[0]
+      if (!win) return
+      const n = new Notification({
+        title: 'Session complete',
+        body: sessionTitle || sessionLocalId,
+        silent,
+      })
+      n.on('click', () => {
+        win.show()
+        win.focus()
+        win.webContents.send(IPC_CHANNELS.notificationsNavigate, sessionLocalId)
+      })
+      n.show()
+    },
+  )
 }
 
 export function wirePluginEventRelay(win: BrowserWindow): void {

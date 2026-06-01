@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, toRaw, watch } from 'vue'
+import { toast } from 'vue-sonner'
+import router from '../router'
 import type {
   Agency,
   Agent,
@@ -99,6 +101,54 @@ interface TokenStats {
   outputCostUsd: number
   cacheReadCostUsd: number
   cacheCreationCostUsd: number
+}
+
+function playNotificationSound() {
+  try {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    if (!AudioCtx) return
+    const ctx = new AudioCtx()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(880, ctx.currentTime)
+    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.2)
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
+    osc.start(ctx.currentTime)
+    osc.stop(ctx.currentTime + 0.5)
+  } catch {
+    // audio unavailable
+  }
+}
+
+async function triggerSessionNotification(sessionLocalId: string, title: string) {
+  const settings = await window.agentkeeper.settings.get()
+  const pref = settings.notifications ?? 'all'
+  if (pref === 'disabled') return
+
+  if (pref === 'sound-only' || pref === 'all') {
+    playNotificationSound()
+  }
+
+  if (pref === 'toast') {
+    toast('Session ready', {
+      description: title,
+      action: {
+        label: 'Open',
+        onClick: () => { void router.push(`/sessions/${sessionLocalId}`) },
+      },
+      duration: 8000,
+    })
+    return
+  }
+
+  if (pref === 'all' || pref === 'notification-only') {
+    const silent = pref === 'notification-only'
+    await window.agentkeeper.notifications.trigger(sessionLocalId, title, silent)
+  }
 }
 
 export const useSessionStore = defineStore('sessions', () => {
@@ -1323,6 +1373,15 @@ export const useSessionStore = defineStore('sessions', () => {
       if (update.title) s.title = update.title
       if (update.error) s.error = update.error
       s.lastActivityAt = Date.now()
+
+      const newStatus = s.status
+      if (
+        (newStatus === 'idle' || newStatus === 'completed') &&
+        newStatus !== prevStatus &&
+        prevStatus !== 'idle' && prevStatus !== 'completed'
+      ) {
+        void triggerSessionNotification(s.localId, s.title ?? s.localId)
+      }
     } else {
       const buf = ensureBuffer(update.sessionId)
       if (update.status != null) buf.status = update.status
@@ -1332,6 +1391,10 @@ export const useSessionStore = defineStore('sessions', () => {
       }
       if (update.error) buf.error = update.error
     }
+  })
+
+  window.agentkeeper.notifications.onNavigate((sessionLocalId) => {
+    void router.push(`/sessions/${sessionLocalId}`)
   })
 
   // ─── Edit / regenerate ──────────────────────────────────────────────────────

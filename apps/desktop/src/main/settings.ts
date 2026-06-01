@@ -14,10 +14,12 @@ const DEFAULTS: AppSettings = {
   sendModifier: 'auto' as const,
   sessionExpiryDays: 14,
   theme: 'dark',
+  notifications: 'all',
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']
 const THEME_VALUES: AppSettings['theme'][] = ['light', 'dark']
+const NOTIFICATIONS_VALUES: AppSettings['notifications'][] = ['all', 'notification-only', 'sound-only', 'toast', 'disabled']
 
 function filePath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -39,6 +41,9 @@ function read(): AppSettings {
     }
     if (!THEME_VALUES.includes(merged.theme)) {
       merged.theme = DEFAULTS.theme
+    }
+    if (!NOTIFICATIONS_VALUES.includes(merged.notifications)) {
+      merged.notifications = DEFAULTS.notifications
     }
     return merged
   } catch {

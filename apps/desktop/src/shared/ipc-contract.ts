@@ -500,6 +500,7 @@ export interface AppSettings {
   /** Days of inactivity before a persisted session is auto-pruned. null = never expire. */
   sessionExpiryDays: number | null
   theme: 'light' | 'dark'
+  notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
 }
 
 export type SecretKeyName = 'anthropicApiKey'
@@ -772,6 +773,10 @@ export interface AgentKeeperApi {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
   }
+  notifications: {
+    trigger: (sessionLocalId: string, sessionTitle: string, silent: boolean) => Promise<void>
+    onNavigate: (callback: (sessionLocalId: string) => void) => () => void
+  }
   auth: {
     status: () => Promise<ClaudeAuthType>
   }
@@ -1020,4 +1025,6 @@ export const IPC_CHANNELS = {
   statsUpsert: 'stats:upsert',
   statsImportLegacy: 'stats:importLegacy',
   devRunMigrations: 'dev:runMigrations',
+  notificationsTrigger: 'notifications:trigger',
+  notificationsNavigate: 'notifications:navigate',
 } as const

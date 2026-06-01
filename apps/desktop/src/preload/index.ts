@@ -277,6 +277,15 @@ const api: AgentKeeperApi = {
     set: (partial: Partial<AppSettings>) =>
       invoke(IPC_CHANNELS.settingsSet, partial) as Promise<never>,
   },
+  notifications: {
+    trigger: (sessionLocalId: string, sessionTitle: string, silent: boolean) =>
+      invoke(IPC_CHANNELS.notificationsTrigger, sessionLocalId, sessionTitle, silent) as Promise<void>,
+    onNavigate: (callback: (sessionLocalId: string) => void): () => void => {
+      const handler = (_event: IpcRendererEvent, sessionLocalId: string) => callback(sessionLocalId)
+      ipcRenderer.on(IPC_CHANNELS.notificationsNavigate, handler)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.notificationsNavigate, handler)
+    },
+  },
   secrets: {
     has: (key: SecretKeyName) =>
       invoke(IPC_CHANNELS.secretsHas, key) as Promise<boolean>,
