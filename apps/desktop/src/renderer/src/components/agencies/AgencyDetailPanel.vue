@@ -61,10 +61,10 @@
       </div>
       <div class="space-y-1">
         <label class="text-xs font-medium text-muted-foreground">Description</label>
-        <input
+        <textarea
           v-model="form.description"
-          type="text"
-          class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
+          rows="2"
+          class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40 resize-none leading-relaxed"
         />
       </div>
       <div class="space-y-1">
