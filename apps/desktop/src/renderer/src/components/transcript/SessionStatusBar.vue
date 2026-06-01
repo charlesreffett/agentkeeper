@@ -81,6 +81,7 @@ const toolLabel = computed(() => {
       typeof o['url'] === 'string' ? new URL(o['url'] as string).hostname :
       typeof o['command'] === 'string' ? truncate(o['command'] as string, 40) :
       typeof o['skill'] === 'string' ? o['skill'] as string :
+      typeof o['to'] === 'string' ? o['to'] as string :
       null
     if (detail) return `${base} ${detail}`
   }
