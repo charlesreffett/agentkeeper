@@ -9,6 +9,7 @@ import {
   type AppSettings,
   type Attachment,
   type CreatePRParams,
+  type CreateProjectParams,
   type DayTotal,
   type MergeMethod,
   type PRFilters,
@@ -75,6 +76,7 @@ import { generateSkillContent, installSkill, listSkills, previewSkills, removeSk
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
 import { startWatching, stopWatching } from './watcher.js'
+import { registerTerminalHandlers } from './terminal'
 import type {
   AgencyDraft,
   AgencyScope,
@@ -174,6 +176,27 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] })
     return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]!
+  })
+
+  ipcMain.handle(IPC_CHANNELS.projectsCreate, async (_event, params: CreateProjectParams) => {
+    const projectPath = path.join(params.parentDir, params.dirName)
+    try {
+      await fs.access(projectPath)
+      throw new Error(`Directory already exists: ${projectPath}`)
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
+    await fs.mkdir(projectPath, { recursive: true })
+    await fs.mkdir(path.join(projectPath, '.agentkeeper'), { recursive: true })
+    const repo = await detectGithubRepo(projectPath)
+    const project: RecentProject = {
+      path: projectPath,
+      name: params.name,
+      repo,
+      lastOpenedAt: Date.now(),
+    }
+    recentProjectsStore.add(project)
+    return project
   })
 
   ipcMain.handle(IPC_CHANNELS.dialogOpenFiles, async (): Promise<Attachment[]> => {
@@ -1303,6 +1326,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
+
+  registerTerminalHandlers()
 
   ipcMain.handle(
     IPC_CHANNELS.notificationsTrigger,

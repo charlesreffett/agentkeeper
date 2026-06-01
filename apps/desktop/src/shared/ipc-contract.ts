@@ -74,6 +74,12 @@ export interface RecentProject {
   lastOpenedAt: number
 }
 
+export interface CreateProjectParams {
+  name: string
+  parentDir: string
+  dirName: string
+}
+
 export interface GitChange {
   path: string
   status: string
@@ -670,6 +676,7 @@ export interface AgentKeeperApi {
     getFocused: () => Promise<RecentProject | null>
     setFocused: (path: string | null) => Promise<void>
     pickFolder: () => Promise<string | null>
+    create: (params: CreateProjectParams) => Promise<RecentProject>
   }
   project: {
     pick: () => Promise<RecentProject | null>
@@ -886,6 +893,13 @@ export interface AgentKeeperApi {
     upsert: (sessionLocalId: string, totalTokens: number, totalCostUsd: number, turnCount: number, inProgressTokens: number) => Promise<void>
     importLegacy: (entries: SessionStatRow[]) => Promise<void>
   }
+  terminal: {
+    create: (cwd: string) => Promise<string>
+    sendInput: (id: string, data: string) => Promise<void>
+    resize: (id: string, cols: number, rows: number) => Promise<void>
+    destroy: (id: string) => Promise<void>
+    onData: (handler: (id: string, data: string) => void) => () => void
+  }
   /** Only present in development builds (`!app.isPackaged`). */
   dev?: {
     runMigrations: () => Promise<{ applied: number }>
@@ -899,6 +913,7 @@ export const IPC_CHANNELS = {
   projectsGetFocused: 'projects:getFocused',
   projectsSetFocused: 'projects:setFocused',
   projectsPickFolder: 'projects:pickFolder',
+  projectsCreate: 'projects:create',
   projectsRename: 'projects:rename',
   projectPick: 'project:pick',
   projectRecentList: 'project:recent:list',
@@ -1028,4 +1043,9 @@ export const IPC_CHANNELS = {
   devRunMigrations: 'dev:runMigrations',
   notificationsTrigger: 'notifications:trigger',
   notificationsNavigate: 'notifications:navigate',
+  terminalCreate: 'terminal:create',
+  terminalSendInput: 'terminal:sendInput',
+  terminalResize: 'terminal:resize',
+  terminalDestroy: 'terminal:destroy',
+  terminalData: 'terminal:data',
 } as const

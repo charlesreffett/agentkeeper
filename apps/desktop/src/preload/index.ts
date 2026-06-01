@@ -46,6 +46,8 @@ import {
   type SlashCommand,
   type StartAgencyParams,
   type StartSessionParams,
+  type CreateProjectParams,
+  type RecentProject,
   type WorkItemCreateParams,
   type WorkItemStatus,
   type JiraProject,
@@ -128,6 +130,8 @@ const api: AgentKeeperApi = {
     setFocused: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.projectsSetFocused, projectPath) as Promise<void>,
     pickFolder: () => invoke(IPC_CHANNELS.projectsPickFolder) as Promise<string | null>,
+    create: (params: CreateProjectParams) =>
+      invoke(IPC_CHANNELS.projectsCreate, params) as Promise<RecentProject>,
   },
   project: {
     pick: () => invoke(IPC_CHANNELS.projectPick) as Promise<never>,
@@ -463,6 +467,21 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.statsUpsert, sessionLocalId, totalTokens, totalCostUsd, turnCount, inProgressTokens) as Promise<void>,
     importLegacy: (entries: SessionStatRow[]) =>
       invoke(IPC_CHANNELS.statsImportLegacy, entries) as Promise<void>,
+  },
+  terminal: {
+    create: (cwd: string) =>
+      invoke(IPC_CHANNELS.terminalCreate, cwd) as Promise<string>,
+    sendInput: (id: string, data: string) =>
+      invoke(IPC_CHANNELS.terminalSendInput, id, data) as Promise<void>,
+    resize: (id: string, cols: number, rows: number) =>
+      invoke(IPC_CHANNELS.terminalResize, id, cols, rows) as Promise<void>,
+    destroy: (id: string) =>
+      invoke(IPC_CHANNELS.terminalDestroy, id) as Promise<void>,
+    onData: (handler: (id: string, data: string) => void): () => void => {
+      const listener = (_e: IpcRendererEvent, id: string, data: string) => handler(id, data)
+      ipcRenderer.on(IPC_CHANNELS.terminalData, listener)
+      return () => ipcRenderer.off(IPC_CHANNELS.terminalData, listener)
+    },
   },
   ...(process.env.NODE_ENV === 'development' ? {
     dev: {
