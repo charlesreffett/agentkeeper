@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { computed, reactive, ref, toRaw, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, toRaw, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import router from '../router'
 import type {
@@ -146,7 +146,7 @@ async function triggerSessionNotification(sessionLocalId: string, title: string)
   }
 
   if (pref === 'all' || pref === 'notification-only') {
-    const silent = pref === 'notification-only'
+    const silent = pref === 'all'
     await window.agentkeeper.notifications.trigger(sessionLocalId, title, silent)
   }
 }
@@ -1393,9 +1393,10 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   })
 
-  window.agentkeeper.notifications.onNavigate((sessionLocalId) => {
+  const unsubNavigate = window.agentkeeper.notifications.onNavigate((sessionLocalId) => {
     void router.push(`/sessions/${sessionLocalId}`)
   })
+  onScopeDispose(unsubNavigate)
 
   // ─── Edit / regenerate ──────────────────────────────────────────────────────
 
