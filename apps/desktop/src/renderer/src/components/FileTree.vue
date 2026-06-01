@@ -20,16 +20,20 @@ const entries = ref<Entry[]>([])
 const refreshKey = ref(0)
 const statusMap = ref<Record<string, string>>({})
 
+const COLOR_DELETED  = 'text-red-600 dark:text-red-400'
+const COLOR_MODIFIED = 'text-amber-600 dark:text-amber-400'
+const COLOR_ADDED    = 'text-green-700 dark:text-green-400'
+
 const STATUS_PRIORITY: Record<string, number> = {
-  'text-red-400': 3,
-  'text-amber-400': 2,
-  'text-green-400': 1,
+  [COLOR_DELETED]:  3,
+  [COLOR_MODIFIED]: 2,
+  [COLOR_ADDED]:    1,
 }
 
 function colorForStatus(status: string): string {
-  if (status === 'D') return 'text-red-400'
-  if (status === 'M' || status === 'U') return 'text-amber-400'
-  return 'text-green-400'
+  if (status === 'D') return COLOR_DELETED
+  if (status === 'M' || status === 'U') return COLOR_MODIFIED
+  return COLOR_ADDED
 }
 
 function buildStatusMap(rootPath: string, status: GitStatus): Record<string, string> {
@@ -50,8 +54,8 @@ function buildStatusMap(rootPath: string, status: GitStatus): Record<string, str
   }
 
   for (const relPath of status.untracked) {
-    setWithPriority(`${rootPath}/${relPath}`, 'text-green-400')
-    markAncestors(relPath, 'text-green-400')
+    setWithPriority(`${rootPath}/${relPath}`, COLOR_ADDED)
+    markAncestors(relPath, COLOR_ADDED)
   }
 
   for (const change of status.unstaged) {
