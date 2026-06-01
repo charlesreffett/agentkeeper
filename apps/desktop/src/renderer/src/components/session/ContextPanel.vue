@@ -470,6 +470,12 @@ async function reconnectMcp() {
           </div>
         </div>
 
+        <!-- Role name — standalone sessions only -->
+        <div v-if="agents.length === 1 && selectedAgent?.roleName" class="flex items-center justify-between gap-2 mb-2">
+          <span class="text-muted-foreground shrink-0 text-[11px]">Role</span>
+          <span class="text-[11px] font-medium text-foreground truncate text-right">{{ selectedAgent.roleName }}</span>
+        </div>
+
         <!-- Stats (for selected agent) -->
         <div class="space-y-1 text-[11px]">
           <!-- Status row — only when there are sub-agents (otherwise redundant with header badge) -->
