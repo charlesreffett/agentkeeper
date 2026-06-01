@@ -1,0 +1,55 @@
+appId: com.agentkeeper.desktop
+productName: AgentKeeper
+copyright: Copyright © 2024
+
+directories:
+  buildResources: build
+  output: dist
+
+# electron-vite bundles all JS (including workspace packages) into out/.
+# node_modules is still needed at runtime for native addons (better-sqlite3,
+# keytar) and any externalized deps that couldn't be bundled.
+files:
+  - out/**
+  - node_modules/**
+  - package.json
+  - "!node_modules/.cache/**"
+  - "!node_modules/@agentkeeper/**"
+  - "!**/*.map"
+
+# .node files must live outside the asar archive so Electron can dlopen them.
+asarUnpack:
+  - "**/*.node"
+  - node_modules/better-sqlite3/**
+  - node_modules/keytar/**
+
+npmRebuild: true
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.developer-tools
+  # Disable hardened runtime + Gatekeeper check for unsigned local builds.
+  # Re-enable and add entitlements when setting up notarization.
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  # icon: build/icon.icns   # 1024×1024 ICNS — add when ready
+
+dmg:
+  sign: false
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # icon: build/icon.ico    # 256×256 ICO — add when ready
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
