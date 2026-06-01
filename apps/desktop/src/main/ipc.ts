@@ -1141,7 +1141,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     try {
       const entries = await fs.readdir(dirPath, { withFileTypes: true })
       const result: FsEntry[] = entries
-        .filter((e) => !EXCLUDED.has(e.name) && !e.name.startsWith('.'))
+        .filter((e) => !EXCLUDED.has(e.name))
         .map((e) => ({
           name: e.name,
           path: `${dirPath}/${e.name}`,
