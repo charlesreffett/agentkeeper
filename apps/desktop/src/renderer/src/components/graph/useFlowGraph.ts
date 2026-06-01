@@ -1,7 +1,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { toast } from 'vue-sonner'
-import type { Agency, RoleSlot } from '../../../../shared/ipc-contract'
+import type { Agency, Role, RoleSlot } from '../../../../shared/ipc-contract'
 import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
 
 const instanceIdPattern = /^(.+)-(\d+)$/
@@ -25,6 +25,7 @@ export function useFlowGraph(
   agency: Ref<Agency | null>,
   saveAgency: (draft: Agency) => Promise<void>,
   deleteAgencyFn: () => Promise<void>,
+  roles?: Ref<Role[]>,
 ) {
   const selectedNodeId = ref<string | null>(null)
   const selectedEdgeId = ref<string | null>(null)
@@ -124,6 +125,12 @@ export function useFlowGraph(
     (agency.value?.roles ?? []).filter(r => !pendingRoleRemovals.value.has(r.roleId))
   )
 
+  const rolesById = computed<Map<string, Role>>(() => {
+    const map = new Map<string, Role>()
+    for (const r of (roles?.value ?? [])) map.set(r.id, r)
+    return map
+  })
+
   const nodes = computed<GraphNode[]>(() => {
     if (!agency.value) return []
     const anyToAny = effectiveFlows.value.length === 0
@@ -164,7 +171,12 @@ export function useFlowGraph(
           isExpandable: expandable,
           isExpanded: false,
           position: nodePositions.value[slot.roleId] ?? defaultPosition(index, roles.length),
-          meta: { slot },
+          meta: {
+            slot,
+            name: rolesById.value.get(slot.roleId)?.name ?? slot.roleId,
+            icon: rolesById.value.get(slot.roleId)?.icon ?? 'Layers',
+            accent: rolesById.value.get(slot.roleId)?.accent ?? 'blue',
+          },
         })
       }
     })

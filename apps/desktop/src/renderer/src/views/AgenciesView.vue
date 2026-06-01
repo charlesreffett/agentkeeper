@@ -17,8 +17,11 @@
 
       <!-- Center: graph canvas -->
       <main class="flex-1 relative overflow-hidden flex flex-col">
-        <!-- Toolbar above graph -->
-        <div class="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border bg-background">
+        <!-- Toolbar above graph — only when an agency is selected -->
+        <div
+          v-if="selectedAgency"
+          class="shrink-0 flex items-center justify-between px-3 py-2 border-b border-border bg-background"
+        >
           <div class="flex items-center gap-3">
             <Transition
               enter-active-class="transition-opacity duration-150"
@@ -34,14 +37,12 @@
           </div>
 
           <button
-            v-if="selectedAgency"
             class="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-md border border-border bg-card hover:bg-muted transition-colors"
             @click="showAddRolePanel = !showAddRolePanel"
           >
             <Plus class="w-3.5 h-3.5" />
             Add role
           </button>
-          <div v-else class="w-[90px]" />
         </div>
 
         <div
@@ -199,7 +200,7 @@ async function deleteHelper() {
   selectedAgencyId.value = null
 }
 
-const graph = useFlowGraph(selectedAgency, saveHelper, deleteHelper)
+const graph = useFlowGraph(selectedAgency, saveHelper, deleteHelper, roles)
 
 const router = useRouter()
 

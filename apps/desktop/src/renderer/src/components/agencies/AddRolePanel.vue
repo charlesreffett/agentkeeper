@@ -14,10 +14,6 @@
           <Plus class="w-3 h-3" />
           New role
         </button>
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
-          @click="emit('close')"
-        >×</button>
       </div>
     </div>
 

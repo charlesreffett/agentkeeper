@@ -142,6 +142,10 @@ const vfNodes = computed<VFNode[]>(() =>
       selected: n.id === props.selectedNodeId,
       data: {
         label: n.label,
+        roleId: n.id,
+        name: (n.meta.name as string | undefined) ?? n.label,
+        icon: (n.meta.icon as string | undefined) ?? 'Layers',
+        accent: (n.meta.accent as string | undefined) ?? 'blue',
         isEntryPoint: n.isEntryPoint,
         anyToAny: n.anyToAny,
         multiplicityLabel: n.multiplicityLabel,
