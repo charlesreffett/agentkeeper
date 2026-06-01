@@ -111,12 +111,7 @@ function agentName(a: Agent): string {
 
 // ─── Derived stats ────────────────────────────────────────────────────────────
 
-const turnCount = computed(() => {
-  const agentEvts = rootSession.value?.agentEvents[props.selectedId] ?? []
-  const fromEvents = agentEvts.filter((e) => e.kind === 'assistant').length
-  const persisted = store.sessionTurns[props.rootSessionId] ?? 0
-  return Math.max(fromEvents, persisted)
-})
+const turnCount = computed(() => store.sessionTurns[props.rootSessionId] ?? 0)
 
 // Session-level totals persist across restarts; add the selected agent's
 // currently-streaming partial on top for a live running estimate.

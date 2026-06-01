@@ -10,7 +10,6 @@ import {
 import * as costLedger from './cost-ledger'
 import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
 import { calculateCost, calculateCostBreakdown } from './pricing'
-import { getPersistedTurnCount } from './stats'
 import type {
   Agent,
   AgencyScope,
@@ -534,7 +533,7 @@ export async function startSession(
     planState: null,
     idleWaiters: [],
     interrupted: false,
-    turnCount: getPersistedTurnCount(agentLocalId),
+    turnCount: costLedger.getAgentTurnCount(agentLocalId),
     mcpFactory: extras.mcpFactory,
     onTerminalError: extras.onTerminalError,
   }

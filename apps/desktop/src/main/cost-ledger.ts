@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm'
+import { eq, like } from 'drizzle-orm'
 import { getDb } from './db/index'
-import { costEntries } from './db/schema'
+import { agents, costEntries } from './db/schema'
 
 export interface CostEntry {
   key: string
@@ -84,24 +84,53 @@ export function getSessionTokenBreakdowns(): Record<string, SessionTokenBreakdow
     cacheCreationCostUsd: costEntries.cacheCreationCostUsd,
   }).from(costEntries).all()
 
-  const result: Record<string, SessionTokenBreakdown> = {}
+  const byAgent: Record<string, SessionTokenBreakdown> = {}
   for (const row of rows) {
     const turnIdx = row.key.indexOf(':turn:')
     if (turnIdx === -1) continue
-    const sessionId = row.key.slice(0, turnIdx)
-    if (!result[sessionId]) {
-      result[sessionId] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
+    const agentId = row.key.slice(0, turnIdx)
+    if (!byAgent[agentId]) {
+      byAgent[agentId] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
     }
-    result[sessionId]!.inputTokens += row.inputTokens
-    result[sessionId]!.outputTokens += row.outputTokens
-    result[sessionId]!.cacheReadTokens += row.cacheReadTokens
-    result[sessionId]!.cacheCreationTokens += row.cacheCreationTokens
-    result[sessionId]!.inputCostUsd += row.inputCostUsd
-    result[sessionId]!.outputCostUsd += row.outputCostUsd
-    result[sessionId]!.cacheReadCostUsd += row.cacheReadCostUsd
-    result[sessionId]!.cacheCreationCostUsd += row.cacheCreationCostUsd
+    byAgent[agentId]!.inputTokens += row.inputTokens
+    byAgent[agentId]!.outputTokens += row.outputTokens
+    byAgent[agentId]!.cacheReadTokens += row.cacheReadTokens
+    byAgent[agentId]!.cacheCreationTokens += row.cacheCreationTokens
+    byAgent[agentId]!.inputCostUsd += row.inputCostUsd
+    byAgent[agentId]!.outputCostUsd += row.outputCostUsd
+    byAgent[agentId]!.cacheReadCostUsd += row.cacheReadCostUsd
+    byAgent[agentId]!.cacheCreationCostUsd += row.cacheCreationCostUsd
   }
-  return result
+
+  const agentRows = getDb().select({ localId: agents.localId, sessionLocalId: agents.sessionLocalId }).from(agents).all()
+  const agentToSession: Record<string, string> = {}
+  for (const a of agentRows) agentToSession[a.localId] = a.sessionLocalId
+
+  const bySession: Record<string, SessionTokenBreakdown> = {}
+  for (const [agentId, b] of Object.entries(byAgent)) {
+    const sessionId = agentToSession[agentId] ?? agentId
+    if (!bySession[sessionId]) {
+      bySession[sessionId] = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, inputCostUsd: 0, outputCostUsd: 0, cacheReadCostUsd: 0, cacheCreationCostUsd: 0 }
+    }
+    bySession[sessionId]!.inputTokens += b.inputTokens
+    bySession[sessionId]!.outputTokens += b.outputTokens
+    bySession[sessionId]!.cacheReadTokens += b.cacheReadTokens
+    bySession[sessionId]!.cacheCreationTokens += b.cacheCreationTokens
+    bySession[sessionId]!.inputCostUsd += b.inputCostUsd
+    bySession[sessionId]!.outputCostUsd += b.outputCostUsd
+    bySession[sessionId]!.cacheReadCostUsd += b.cacheReadCostUsd
+    bySession[sessionId]!.cacheCreationCostUsd += b.cacheCreationCostUsd
+  }
+  return bySession
+}
+
+export function getAgentTurnCount(agentLocalId: string): number {
+  return getDb()
+    .select({ key: costEntries.key })
+    .from(costEntries)
+    .where(like(costEntries.key, `${agentLocalId}:turn:%`))
+    .all()
+    .length
 }
 
 export function getDailySummary(): DayTotal[] {
