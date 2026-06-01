@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { Eye, EyeOff } from 'lucide-vue-next'
 import FileTreeNode from '@/components/FileTreeNode.vue'
 
 const props = defineProps<{ rootPath: string }>()
@@ -12,6 +13,11 @@ interface Entry {
 
 const entries = ref<Entry[]>([])
 const refreshKey = ref(0)
+const showHidden = ref(false)
+
+const visibleEntries = computed(() =>
+  showHidden.value ? entries.value : entries.value.filter((e) => !e.name.startsWith('.'))
+)
 
 async function load() {
   if (!props.rootPath) return
@@ -60,14 +66,25 @@ onUnmounted(async () => {
 
 <template>
   <div class="text-sm font-mono">
-    <div v-if="entries.length === 0" class="text-xs text-muted-foreground px-1 py-2">
+    <div class="flex items-center justify-end px-1 pb-1">
+      <button
+        class="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        :title="showHidden ? 'Hide hidden files' : 'Show hidden files'"
+        @click="showHidden = !showHidden"
+      >
+        <EyeOff v-if="showHidden" class="h-3.5 w-3.5" />
+        <Eye v-else class="h-3.5 w-3.5" />
+      </button>
+    </div>
+    <div v-if="visibleEntries.length === 0" class="text-xs text-muted-foreground px-1 py-2">
       No files
     </div>
     <FileTreeNode
-      v-for="entry in entries"
+      v-for="entry in visibleEntries"
       :key="entry.path"
       :entry="entry"
       :refresh-key="refreshKey"
+      :show-hidden="showHidden"
     />
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { ChevronRight, Folder, File } from 'lucide-vue-next'
 
 interface Entry {
@@ -11,10 +11,15 @@ interface Entry {
 const props = defineProps<{
   entry: Entry
   refreshKey?: number
+  showHidden?: boolean
 }>()
 
 const expanded = ref(false)
 const children = ref<Entry[]>([])
+
+const visibleChildren = computed(() =>
+  props.showHidden ? children.value : children.value.filter((e) => !e.name.startsWith('.'))
+)
 
 async function loadChildren() {
   const result = await (window.agentkeeper as any).fs?.listDirectory(props.entry.path)
@@ -54,10 +59,11 @@ watch(() => props.refreshKey, () => {
     </button>
     <div v-if="expanded && entry.isDirectory" class="pl-3">
       <FileTreeNode
-        v-for="child in children"
+        v-for="child in visibleChildren"
         :key="child.path"
         :entry="child"
         :refresh-key="refreshKey"
+        :show-hidden="showHidden"
       />
     </div>
   </div>
