@@ -501,6 +501,7 @@ export interface AppSettings {
   sessionExpiryDays: number | null
   theme: 'light' | 'dark'
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
+  notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
 }
 
 export type SecretKeyName = 'anthropicApiKey'

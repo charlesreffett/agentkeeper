@@ -15,11 +15,13 @@ const DEFAULTS: AppSettings = {
   sessionExpiryDays: 14,
   theme: 'dark',
   notifications: 'all',
+  notificationSound: 'chime',
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']
 const THEME_VALUES: AppSettings['theme'][] = ['light', 'dark']
 const NOTIFICATIONS_VALUES: AppSettings['notifications'][] = ['all', 'notification-only', 'sound-only', 'toast', 'disabled']
+const NOTIFICATION_SOUND_VALUES: AppSettings['notificationSound'][] = ['chime', 'bell', 'ping', 'ding', 'pulse']
 
 function filePath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -44,6 +46,9 @@ function read(): AppSettings {
     }
     if (!NOTIFICATIONS_VALUES.includes(merged.notifications)) {
       merged.notifications = DEFAULTS.notifications
+    }
+    if (!NOTIFICATION_SOUND_VALUES.includes(merged.notificationSound)) {
+      merged.notificationSound = DEFAULTS.notificationSound
     }
     return merged
   } catch {

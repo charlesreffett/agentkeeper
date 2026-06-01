@@ -16,6 +16,7 @@ import type {
   TranscriptEvent,
 } from '@shared/ipc-contract'
 import { sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
+import { playNotificationSound } from '@/lib/notificationSound'
 import { queryClient } from '@/lib/queryClient'
 import { queryKeys } from '@/lib/queryKeys'
 
@@ -103,34 +104,13 @@ interface TokenStats {
   cacheCreationCostUsd: number
 }
 
-function playNotificationSound() {
-  try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-    if (!AudioCtx) return
-    const ctx = new AudioCtx()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(880, ctx.currentTime)
-    osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.2)
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.5)
-  } catch {
-    // audio unavailable
-  }
-}
-
 async function triggerSessionNotification(sessionLocalId: string, title: string) {
   const settings = await window.agentkeeper.settings.get()
   const pref = settings.notifications ?? 'all'
   if (pref === 'disabled') return
 
   if (pref === 'sound-only' || pref === 'all') {
-    playNotificationSound()
+    playNotificationSound(settings.notificationSound ?? 'chime')
   }
 
   if (pref === 'toast') {
@@ -147,7 +127,7 @@ async function triggerSessionNotification(sessionLocalId: string, title: string)
 
   if (pref === 'all' || pref === 'notification-only') {
     const silent = pref === 'all'
-    await window.agentkeeper.notifications.trigger(sessionLocalId, title, silent)
+    await window.agentkeeper.notifications?.trigger(sessionLocalId, title, silent)
   }
 }
 
@@ -1393,10 +1373,10 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   })
 
-  const unsubNavigate = window.agentkeeper.notifications.onNavigate((sessionLocalId) => {
+  const unsubNavigate = window.agentkeeper.notifications?.onNavigate((sessionLocalId) => {
     void router.push(`/sessions/${sessionLocalId}`)
   })
-  onScopeDispose(unsubNavigate)
+  if (unsubNavigate) onScopeDispose(unsubNavigate)
 
   // ─── Edit / regenerate ──────────────────────────────────────────────────────
 

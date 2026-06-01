@@ -22,6 +22,7 @@ const settings = ref<AppSettings>({
   sessionExpiryDays: 14,
   theme: 'dark',
   notifications: 'all',
+  notificationSound: 'chime',
 })
 
 onMounted(async () => {

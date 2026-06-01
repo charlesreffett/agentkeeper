@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
+import { NOTIFICATION_SOUND_VALUES, NOTIFICATION_SOUND_LABELS, playNotificationSound } from '@/lib/notificationSound'
 import { useLayoutStore } from '@/stores/layout'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSettingsQuery } from '@/composables/useSettingsQuery'
@@ -60,7 +61,7 @@ const saving = ref(false)
 
 const DIRTY_FIELDS = [
   'defaultModel', 'defaultEffort', 'defaultUseWorktree',
-  'enterToSend', 'sendModifier', 'sessionExpiryDays', 'notifications',
+  'enterToSend', 'sendModifier', 'sessionExpiryDays', 'notifications', 'notificationSound',
 ] as const satisfies ReadonlyArray<keyof AppSettings>
 
 const isDirty = computed(() => {
@@ -159,6 +160,7 @@ async function save() {
         sendModifier: settings.value.sendModifier,
         sessionExpiryDays: settings.value.sessionExpiryDays,
         notifications: settings.value.notifications,
+        notificationSound: settings.value.notificationSound,
       }
       await window.agentkeeper.settings.set(toSave)
       queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
@@ -387,8 +389,9 @@ async function onReset() {
                   </p>
                 </div>
                 <select
-                  v-model="settings.notifications"
+                  :value="settings.notifications ?? 'all'"
                   class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                  @change="(e) => { settings!.notifications = (e.target as HTMLSelectElement).value as AppSettings['notifications'] }"
                 >
                   <option value="all">Desktop notification + sound</option>
                   <option value="notification-only">Desktop notification only</option>
@@ -396,6 +399,37 @@ async function onReset() {
                   <option value="toast">In-app toast only</option>
                   <option value="disabled">Disabled</option>
                 </select>
+              </div>
+
+              <!-- Notification sound (only relevant when a sound mode is active) -->
+              <div
+                v-if="settings.notifications === 'all' || settings.notifications === 'sound-only'"
+                class="flex items-center gap-4 px-4 py-3"
+              >
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Notification sound</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Sound played when a session completes.
+                  </p>
+                </div>
+                <div class="shrink-0 flex items-center gap-2">
+                  <select
+                    :value="settings.notificationSound ?? 'chime'"
+                    class="w-36 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                    @change="(e) => { settings!.notificationSound = (e.target as HTMLSelectElement).value as AppSettings['notificationSound'] }"
+                  >
+                    <option v-for="s in NOTIFICATION_SOUND_VALUES" :key="s" :value="s">
+                      {{ NOTIFICATION_SOUND_LABELS[s] }}
+                    </option>
+                  </select>
+                  <button
+                    type="button"
+                    class="rounded-md border border-input bg-background px-3 py-1.5 text-sm hover:bg-muted transition-colors"
+                    @click="playNotificationSound(settings.notificationSound ?? 'chime')"
+                  >
+                    Preview
+                  </button>
+                </div>
               </div>
 
             </div>
