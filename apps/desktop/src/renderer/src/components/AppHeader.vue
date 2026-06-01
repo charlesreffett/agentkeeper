@@ -6,6 +6,7 @@ import {
   GitBranch,
   GitPullRequest,
   Folder,
+  FolderPlus,
   Moon,
   PanelRight,
   Plus,
@@ -15,6 +16,7 @@ import {
   Settings,
   Settings2,
   GitCommitHorizontal,
+  SquareTerminal,
 } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -30,15 +32,22 @@ import { SidebarTrigger } from '@/components/ui/sidebar'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useLayoutStore } from '@/stores/layout'
 import { useRightPanelStore } from '@/stores/rightPanel'
+import { useTerminalStore } from '@/stores/terminalStore'
+import { useSessionStore } from '@/stores/sessions'
 import { useRouter } from 'vue-router'
 import { cn } from '@/lib/utils'
 import { toast } from 'vue-sonner'
 import type { RecentProject } from '@shared/ipc-contract'
+import NewProjectDialog from './NewProjectDialog.vue'
 
 const { projects, focusedProject, add, remove, setFocused, rename: renameProject, pickAndAdd } = useProjectsQuery()
 const layoutStore = useLayoutStore()
 const rightPanelStore = useRightPanelStore()
+const terminalStore = useTerminalStore()
+const sessionStore = useSessionStore()
 const router = useRouter()
+
+const newProjectOpen = ref(false)
 
 const branch = ref<string>('—')
 const popoverOpen = ref(false)
@@ -120,6 +129,18 @@ async function confirmNewBranch() {
   }
 }
 
+async function onProjectCreated(project: RecentProject) {
+  await setFocused(project.path)
+  const settings = await window.agentkeeper.settings.get()
+  const localId = sessionStore.createOrFocusDraft({
+    projectPath: project.path,
+    defaultModel: settings.defaultModel,
+    defaultEffort: settings.defaultEffort,
+    defaultUseWorktree: settings.defaultUseWorktree,
+  })
+  void router.push(`/sessions/${localId}`)
+}
+
 async function openLocalProject() {
   const path = await window.agentkeeper.projects.pickFolder()
   if (path) {
@@ -176,6 +197,14 @@ watch(
         </Button>
       </PopoverTrigger>
       <PopoverContent class="w-72 p-1" style="-webkit-app-region: no-drag">
+        <button
+          class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent hover:text-accent-foreground transition-colors"
+          style="-webkit-app-region: no-drag"
+          @click="newProjectOpen = true; popoverOpen = false"
+        >
+          <FolderPlus class="h-4 w-4" />
+          New project
+        </button>
         <button
           class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent hover:text-accent-foreground transition-colors"
           @click="openLocalProject"
@@ -310,6 +339,16 @@ watch(
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <!-- Terminal toggle -->
+      <Button
+        variant="ghost"
+        size="icon"
+        :class="cn('h-7 w-7', terminalStore.isOpen && 'bg-accent text-accent-foreground')"
+        style="-webkit-app-region: no-drag"
+        @click="terminalStore.toggle()"
+      >
+        <SquareTerminal class="h-4 w-4" />
+      </Button>
       <!-- Right panel toggle -->
       <Button
         variant="ghost"
@@ -389,4 +428,5 @@ watch(
       </div>
     </div>
   </Teleport>
+  <NewProjectDialog v-model:open="newProjectOpen" @created="onProjectCreated" />
 </template>
