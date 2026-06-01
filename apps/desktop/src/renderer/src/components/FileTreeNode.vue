@@ -11,15 +11,13 @@ interface Entry {
 const props = defineProps<{
   entry: Entry
   refreshKey?: number
-  showHidden?: boolean
+  statusMap?: Record<string, string>
 }>()
 
 const expanded = ref(false)
 const children = ref<Entry[]>([])
 
-const visibleChildren = computed(() =>
-  props.showHidden ? children.value : children.value.filter((e) => !e.name.startsWith('.'))
-)
+const statusColor = computed(() => props.statusMap?.[props.entry.path] ?? '')
 
 async function loadChildren() {
   const result = await (window.agentkeeper as any).fs?.listDirectory(props.entry.path)
@@ -55,15 +53,15 @@ watch(() => props.refreshKey, () => {
       <span v-else class="w-3 shrink-0" />
       <Folder v-if="entry.isDirectory" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
       <File v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <span class="truncate">{{ entry.name }}</span>
+      <span class="truncate" :class="statusColor || 'text-foreground'">{{ entry.name }}</span>
     </button>
     <div v-if="expanded && entry.isDirectory" class="pl-3">
       <FileTreeNode
-        v-for="child in visibleChildren"
+        v-for="child in children"
         :key="child.path"
         :entry="child"
         :refresh-key="refreshKey"
-        :show-hidden="showHidden"
+        :status-map="statusMap"
       />
     </div>
   </div>
