@@ -895,9 +895,11 @@ export interface AgentKeeperApi {
   }
   terminal: {
     create: (cwd: string) => Promise<string>
+    attach: (id: string) => Promise<string>
     sendInput: (id: string, data: string) => Promise<void>
     resize: (id: string, cols: number, rows: number) => Promise<void>
     destroy: (id: string) => Promise<void>
+    kill: (id: string) => Promise<void>
     onData: (handler: (id: string, data: string) => void) => () => void
   }
   /** Only present in development builds (`!app.isPackaged`). */
@@ -1044,8 +1046,10 @@ export const IPC_CHANNELS = {
   notificationsTrigger: 'notifications:trigger',
   notificationsNavigate: 'notifications:navigate',
   terminalCreate: 'terminal:create',
+  terminalAttach: 'terminal:attach',
   terminalSendInput: 'terminal:sendInput',
   terminalResize: 'terminal:resize',
   terminalDestroy: 'terminal:destroy',
+  terminalKill: 'terminal:kill',
   terminalData: 'terminal:data',
 } as const

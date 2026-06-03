@@ -471,12 +471,16 @@ const api: AgentKeeperApi = {
   terminal: {
     create: (cwd: string) =>
       invoke(IPC_CHANNELS.terminalCreate, cwd) as Promise<string>,
+    attach: (id: string) =>
+      invoke(IPC_CHANNELS.terminalAttach, id) as Promise<string>,
     sendInput: (id: string, data: string) =>
       invoke(IPC_CHANNELS.terminalSendInput, id, data) as Promise<void>,
     resize: (id: string, cols: number, rows: number) =>
       invoke(IPC_CHANNELS.terminalResize, id, cols, rows) as Promise<void>,
     destroy: (id: string) =>
       invoke(IPC_CHANNELS.terminalDestroy, id) as Promise<void>,
+    kill: (id: string) =>
+      invoke(IPC_CHANNELS.terminalKill, id) as Promise<void>,
     onData: (handler: (id: string, data: string) => void): () => void => {
       const listener = (_e: IpcRendererEvent, id: string, data: string) => handler(id, data)
       ipcRenderer.on(IPC_CHANNELS.terminalData, listener)
