@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, computed, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import {
   FolderOpen,
   ChevronDown,
@@ -176,7 +176,21 @@ async function confirmRename() {
   renameTarget.value = null
 }
 
-onMounted(() => loadBranch(focusedProject.value?.path))
+let unsubBranch: (() => void) | null = null
+
+onMounted(() => {
+  loadBranch(focusedProject.value?.path)
+  unsubBranch = window.agentkeeper.git.onBranchChanged((event) => {
+    if (event.projectPath === focusedProject.value?.path) {
+      loadBranch(event.projectPath)
+    }
+  })
+})
+
+onUnmounted(() => {
+  unsubBranch?.()
+})
+
 watch(
   () => focusedProject.value?.path,
   (path) => loadBranch(path),

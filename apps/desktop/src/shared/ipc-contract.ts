@@ -112,6 +112,10 @@ export interface GitStatusChangedEvent {
   projectPath: string
 }
 
+export interface GitBranchChangedEvent {
+  projectPath: string
+}
+
 export interface FsChangedEvent {
   projectPath: string
 }
@@ -860,6 +864,7 @@ export interface AgentKeeperApi {
     createBranch: (projectPath: string, branchName: string) => Promise<void>
     suggestCommits: (projectPath: string) => Promise<CommitSuggestion>
     onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) => () => void
+    onBranchChanged: (cb: (event: GitBranchChangedEvent) => void) => () => void
   }
   fs: {
     listDirectory: (dirPath: string) => Promise<FsEntry[]>
@@ -1025,6 +1030,7 @@ export const IPC_CHANNELS = {
   fsWatchStart: 'fs:watchStart',
   fsWatchStop: 'fs:watchStop',
   gitStatusChanged: 'git:statusChanged',
+  gitBranchChanged: 'git:branchChanged',
   fsChanged: 'fs:changed',
   plansList: 'plans:list',
   plansGet: 'plans:get',

@@ -2,13 +2,14 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { webContents } from 'electron'
 import path from 'node:path'
 import { IPC_CHANNELS } from '../shared/ipc-contract.js'
-import type { GitStatusChangedEvent, FsChangedEvent } from '../shared/ipc-contract.js'
+import type { GitStatusChangedEvent, GitBranchChangedEvent, FsChangedEvent } from '../shared/ipc-contract.js'
 
 interface WatchEntry {
   gitWatcher: FSWatcher
   fsWatcher: FSWatcher
   subscribers: Set<number>
   gitDebounceTimer: ReturnType<typeof setTimeout> | null
+  branchDebounceTimer: ReturnType<typeof setTimeout> | null
   fsDebounceTimer: ReturnType<typeof setTimeout> | null
 }
 
@@ -47,11 +48,17 @@ export function startWatching(projectPath: string, webContentsId: number): void 
     fsWatcher,
     subscribers: new Set([webContentsId]),
     gitDebounceTimer: null,
+    branchDebounceTimer: null,
     fsDebounceTimer: null,
   }
   entries.set(projectPath, entry)
 
-  gitWatcher.on('all', () => scheduleGitEmit(projectPath))
+  gitWatcher.on('all', (_event, filePath) => {
+    scheduleGitEmit(projectPath)
+    if (String(filePath).endsWith(path.sep + 'HEAD') || String(filePath).endsWith('/HEAD')) {
+      scheduleBranchEmit(projectPath)
+    }
+  })
   fsWatcher.on('all', () => scheduleFsEmit(projectPath))
 }
 
@@ -83,6 +90,7 @@ export function stopAllWatchers(): void {
 
 function closeEntry(projectPath: string, entry: WatchEntry): void {
   if (entry.gitDebounceTimer !== null) clearTimeout(entry.gitDebounceTimer)
+  if (entry.branchDebounceTimer !== null) clearTimeout(entry.branchDebounceTimer)
   if (entry.fsDebounceTimer !== null) clearTimeout(entry.fsDebounceTimer)
   entry.gitWatcher.close()
   entry.fsWatcher.close()
@@ -96,6 +104,16 @@ function scheduleGitEmit(projectPath: string): void {
   entry.gitDebounceTimer = setTimeout(() => {
     entry.gitDebounceTimer = null
     emitToSubscribers(entry, IPC_CHANNELS.gitStatusChanged, { projectPath } as GitStatusChangedEvent)
+  }, 250)
+}
+
+function scheduleBranchEmit(projectPath: string): void {
+  const entry = entries.get(projectPath)
+  if (!entry) return
+  if (entry.branchDebounceTimer !== null) clearTimeout(entry.branchDebounceTimer)
+  entry.branchDebounceTimer = setTimeout(() => {
+    entry.branchDebounceTimer = null
+    emitToSubscribers(entry, IPC_CHANNELS.gitBranchChanged, { projectPath } as GitBranchChangedEvent)
   }, 250)
 }
 

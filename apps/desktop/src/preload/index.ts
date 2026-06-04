@@ -16,6 +16,7 @@ import {
   type FsEntry,
   type FsChangedEvent,
   type GitHubConfig,
+  type GitBranchChangedEvent,
   type GitStatusChangedEvent,
   type CommitSuggestion,
   type GitStatus,
@@ -417,6 +418,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.gitSuggestCommits, projectPath) as Promise<CommitSuggestion>,
     onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) =>
       onChannel<GitStatusChangedEvent>(IPC_CHANNELS.gitStatusChanged, cb),
+    onBranchChanged: (cb: (event: GitBranchChangedEvent) => void) =>
+      onChannel<GitBranchChangedEvent>(IPC_CHANNELS.gitBranchChanged, cb),
   },
   fs: {
     listDirectory: (dirPath: string) =>
