@@ -810,6 +810,8 @@ export interface AgentKeeperApi {
       body: string,
     ) => Promise<SlashCommand>
     remove: (cmd: SlashCommand) => Promise<void>
+    /** Fires when Claude Code plugin files change on disk (install/uninstall). */
+    onChanged: (callback: () => void) => () => void
   }
   settings: {
     get: () => Promise<AppSettings>
@@ -986,6 +988,7 @@ export const IPC_CHANNELS = {
   commandsGenerate: 'commands:generate',
   commandsSave: 'commands:save',
   commandsRemove: 'commands:remove',
+  commandsChanged: 'commands:changed',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   authStatus: 'auth:status',

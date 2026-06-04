@@ -1,7 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification } from 'electron'
 import type { EventMap } from '@agentkeeper/sdk'
 import path from 'node:path'
+import os from 'node:os'
 import fs from 'node:fs/promises'
+import { watch as fsWatch } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import {
   IPC_CHANNELS,
@@ -1377,6 +1379,42 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       n.show()
     },
   )
+
+  startClaudePluginWatcher()
+}
+
+/**
+ * Watch ~/.claude/plugins/installed_plugins.json and ~/.claude/settings.json
+ * for changes and broadcast commands:changed so the renderer reloads the list
+ * without requiring an app restart.
+ */
+function startClaudePluginWatcher(): void {
+  const claudeDir = path.join(os.homedir(), '.claude')
+  const targets = [
+    path.join(claudeDir, 'plugins', 'installed_plugins.json'),
+    path.join(claudeDir, 'settings.json'),
+  ]
+
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  function broadcast(): void {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.commandsChanged)
+    }
+  }
+
+  function schedulebroadcast(): void {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(broadcast, 200)
+  }
+
+  for (const target of targets) {
+    try {
+      fsWatch(target, schedulebroadcast)
+    } catch {
+      // File may not exist yet (e.g. no plugins installed); ignore.
+    }
+  }
 }
 
 export function wirePluginEventRelay(win: BrowserWindow): void {
