@@ -12,7 +12,8 @@
     "build": "pnpm -r --filter './packages/*' build && pnpm --filter desktop build",
     "typecheck": "pnpm -r typecheck",
     "dist:mac": "pnpm build && pnpm --filter desktop dist:mac",
-    "dist:win": "pnpm build && pnpm --filter desktop dist:win"
+    "dist:win": "pnpm build && pnpm --filter desktop dist:win",
+    "postinstall": "node -e \"const {execSync}=require('child_process');try{execSync('find node_modules/.pnpm -name spawn-helper -path \\\"*/node-pty/*\\\" -exec chmod +x {} \\\\;')}catch(e){}\""
   },
   "devDependencies": {
     "typescript": "^5.6.3"
