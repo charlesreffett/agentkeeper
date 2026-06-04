@@ -76,7 +76,7 @@
               ? 'bg-secondary text-foreground font-medium'
               : 'bg-background text-muted-foreground hover:bg-muted'"
             @click="form.model = m.value"
-          >{{ m.label }}</button>
+          >{{ m.shortLabel }}</button>
         </div>
       </div>
 
@@ -163,6 +163,7 @@ import {
 } from 'lucide-vue-next'
 import type { Agency, Role } from '../../../../shared/ipc-contract'
 import { queryKeys } from '@/lib/queryKeys'
+import { CLAUDE_MODELS } from '@/lib/models'
 
 const props = defineProps<{
   roles: Role[]
@@ -214,11 +215,7 @@ const ICON_MAP: Record<string, ReturnType<typeof markRaw>> = Object.fromEntries(
   ICONS.map(i => [i.name, i.component])
 )
 
-const MODELS = [
-  { value: 'claude-opus-4-7',           label: 'opus' },
-  { value: 'claude-sonnet-4-6',         label: 'sonnet' },
-  { value: 'claude-haiku-4-5-20251001', label: 'haiku' },
-]
+const MODELS = CLAUDE_MODELS
 
 function accentBg(accent: string | undefined) {
   return (ACCENT_PALETTE[accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).bg

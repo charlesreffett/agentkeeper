@@ -11,6 +11,7 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { queryKeys } from '@/lib/queryKeys'
 import { pluginSettingsPanels } from '@/lib/pluginSettingsPanels'
+import { CLAUDE_MODELS } from '@/lib/models'
 import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
@@ -98,11 +99,7 @@ function captureModifier(e: KeyboardEvent) {
   else if (e.key === 'Shift')   settings.value!.sendModifier = 'shift'
 }
 
-const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-7', label: 'Opus 4.7 (most capable)' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (balanced)' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
-] as const
+const MODEL_OPTIONS = CLAUDE_MODELS
 
 // Danger-zone state
 const resetAppSettingsSel = ref(false)

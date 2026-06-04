@@ -10,8 +10,9 @@ export interface ModelPricing {
   cacheRead: number    // $/1M tokens
 }
 
-// Bundled from Anthropic pricing page 2026-05-05.
+// Bundled from Anthropic pricing page 2026-06-03.
 const BUNDLED: Record<string, ModelPricing> = {
+  'claude-opus-4-8':   { input: 5,    output: 25,   cacheWrite5m: 6.25,  cacheWrite1h: 10,   cacheRead: 0.50 },
   'claude-opus-4-7':   { input: 5,    output: 25,   cacheWrite5m: 6.25,  cacheWrite1h: 10,   cacheRead: 0.50 },
   'claude-opus-4-6':   { input: 5,    output: 25,   cacheWrite5m: 6.25,  cacheWrite1h: 10,   cacheRead: 0.50 },
   'claude-opus-4-5':   { input: 5,    output: 25,   cacheWrite5m: 6.25,  cacheWrite1h: 10,   cacheRead: 0.50 },

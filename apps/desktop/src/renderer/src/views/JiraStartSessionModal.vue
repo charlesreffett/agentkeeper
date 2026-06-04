@@ -6,6 +6,7 @@ import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore } from '@/stores/jiraActivity'
 import type { Agency, Role, RoleEffort, WorkItem } from '@shared/ipc-contract'
 import { ROLE_EFFORT_VALUES } from '@shared/ipc-contract'
+import { CLAUDE_MODELS } from '@/lib/models'
 
 const props = defineProps<{
   open: boolean
@@ -48,11 +49,7 @@ const selectedProjectPath = ref('')
 const starting = ref(false)
 const startError = ref<string | null>(null)
 
-const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-] as const
+const MODEL_OPTIONS = CLAUDE_MODELS
 
 const defaultPrompt = computed(
   () => `Work on ${props.item.externalRef}: ${props.item.title}`,

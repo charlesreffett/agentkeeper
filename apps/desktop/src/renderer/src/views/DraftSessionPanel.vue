@@ -9,6 +9,7 @@ import {
 } from '@shared/ipc-contract'
 import type { LiveSession } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { CLAUDE_MODELS } from '@/lib/models'
 
 const props = defineProps<{
   session: LiveSession
@@ -33,11 +34,7 @@ const selectedRole = computed<Role | null>(() =>
     : null,
 )
 
-const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-] as const
+const MODEL_OPTIONS = CLAUDE_MODELS
 
 const PERMISSION_MODE_OPTIONS: { value: PermissionMode; label: string }[] = [
   { value: 'bypassPermissions', label: 'Bypass (auto-approve all)' },
@@ -188,7 +185,7 @@ onMounted(() => {
       <div class="space-y-1.5">
         <label class="text-sm font-medium">Model</label>
         <select
-          :value="props.session.model ?? MODEL_OPTIONS[0].value"
+          :value="props.session.model ?? MODEL_OPTIONS[0]!.value"
           class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
           @change="onModelChange"
         >
