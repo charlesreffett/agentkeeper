@@ -56,7 +56,7 @@ function computeSessionStatus(agentList: Agent[]): LiveSessionStatus {
   if (agentList.some(a => a.status === 'running' || a.status === 'starting')) return 'running'
   if (agentList.some(a => a.status === 'blocked')) return 'blocked'
   if (agentList.every(a => a.status === 'completed')) return 'completed'
-  if (agentList.every(a => a.status === 'terminated')) return 'terminated'
+  if (agentList.every(a => a.status === 'inactive')) return 'inactive'
   if (agentList.some(a => a.status === 'error')) return 'error'
   return 'idle'
 }
@@ -1329,7 +1329,7 @@ export const useSessionStore = defineStore('sessions', () => {
       const quiescent =
         update.status === 'idle' ||
         update.status === 'completed' ||
-        update.status === 'terminated' ||
+        update.status === 'inactive' ||
         update.status === 'suspended' ||
         update.status === 'error'
       const agentKey = update.agentLocalId ?? update.sessionId

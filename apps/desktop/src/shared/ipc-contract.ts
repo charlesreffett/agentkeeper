@@ -200,7 +200,7 @@ export type LiveSessionStatus =
   | 'blocked'
   | 'suspended'
   | 'completed'
-  | 'terminated'
+  | 'inactive'
   | 'error'
 
 export interface Agent {

@@ -33,7 +33,7 @@ function statusTone(s: LiveSession) {
     case 'suspended':
       return 'bg-amber-500'
     case 'completed':
-    case 'terminated':
+    case 'inactive':
       return 'bg-muted-foreground'
     case 'error':
       return 'bg-destructive'
@@ -51,8 +51,8 @@ function statusLabel(s: LiveSession) {
       return 'Idle'
     case 'completed':
       return 'Completed'
-    case 'terminated':
-      return 'Terminated'
+    case 'inactive':
+      return 'Inactive'
     case 'error':
       return 'Error'
   }

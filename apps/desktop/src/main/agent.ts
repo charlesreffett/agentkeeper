@@ -54,7 +54,7 @@ export interface ActiveSession {
   events: SDKMessage[]
   /** Last-known TodoWrite todo list, kept in sync during the session. */
   planState: PlanTodo[] | null
-  /** Resolvers awaiting next terminal status (idle/suspended/completed/error/terminated). */
+  /** Resolvers awaiting next terminal status (idle/suspended/completed/error/inactive). */
   idleWaiters: Array<(status: LiveSessionStatus) => void>
   interrupted: boolean
   turnCount: number
@@ -139,7 +139,7 @@ const TERMINAL_STATUSES: LiveSessionStatus[] = [
   'idle',
   'suspended',
   'completed',
-  'terminated',
+  'inactive',
   'error',
 ]
 
@@ -613,7 +613,7 @@ export async function terminateSession(sessionId: string): Promise<void> {
     try { await s.query.interrupt() } catch { /* ignore */ }
     try { s.abortController.abort() } catch { /* ignore */ }
     try { s.query.close?.() } catch { /* ignore */ }
-    setStatus(s, 'terminated')
+    setStatus(s, 'inactive')
     active.delete(s.agentLocalId)
   }))
 }
@@ -730,11 +730,7 @@ async function restartIdle(
     if (currentStatus === 'running' || currentStatus === 'starting') {
       throw new Error(`cannot change session params while status is ${currentStatus}`)
     }
-    if (
-      currentStatus === 'terminated' ||
-      currentStatus === 'error' ||
-      currentStatus === 'completed'
-    ) {
+    if (currentStatus === 'error' || currentStatus === 'completed') {
       throw new Error(`cannot change session params on a ${currentStatus} session`)
     }
 

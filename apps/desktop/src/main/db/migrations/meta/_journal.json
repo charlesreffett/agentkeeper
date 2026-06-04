@@ -71,6 +71,13 @@
       "when": 1747785600,
       "tag": "0009_plugin_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1748908800000,
+      "tag": "0010_inactive_status",
+      "breakpoints": true
     }
   ]
 }

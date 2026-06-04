@@ -210,7 +210,7 @@ const isInterrupted = computed(() => {
   if (!plan.value || plan.value.status !== 'running') return false
   if (lastSession.value === undefined) return false
   if (lastSession.value === null) return true
-  const stoppedStatuses: string[] = ['idle', 'completed', 'terminated', 'error', 'suspended']
+  const stoppedStatuses: string[] = ['idle', 'completed', 'inactive', 'error', 'suspended']
   return stoppedStatuses.includes(lastSession.value.status)
 })
 

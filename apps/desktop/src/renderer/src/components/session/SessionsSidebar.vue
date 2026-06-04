@@ -67,7 +67,7 @@ function statusDotClass(status: LiveSessionStatus): string {
     case 'blocked':
       return 'bg-blue-500'
     case 'completed':
-    case 'terminated':
+    case 'inactive':
       return 'bg-muted-foreground/40'
     case 'error':
       return 'bg-destructive'

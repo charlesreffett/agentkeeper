@@ -25,6 +25,7 @@ import {
   type VerbosityState,
   hiddenCount as computeHiddenCount,
 } from '@/lib/verbosity'
+import { CLAUDE_MODELS } from '@/lib/models'
 import {
   ROLE_EFFORT_VALUES,
   type Attachment,
@@ -202,6 +203,14 @@ const isDraft = computed(() => !!session.value?.isDraft)
 const promoting = ref(false)
 const promoteError = ref<string | null>(null)
 
+// Clear per-session transient errors when the user navigates to a different session.
+// LiveSessionView is reused across /sessions/:id navigations without remounting,
+// so these refs must be reset manually.
+watch(() => props.liveId, () => {
+  promoteError.value = null
+  rewriteError.value = null
+})
+
 async function onSend(text: string, attachments: Attachment[]) {
   if (isDraft.value) {
     if (promoting.value || (!text.trim() && attachments.length === 0)) return
@@ -304,7 +313,8 @@ const canSend = computed(
     isDraft.value ||
     session.value?.status === 'idle' ||
     session.value?.status === 'running' ||
-    session.value?.status === 'suspended',
+    session.value?.status === 'suspended' ||
+    session.value?.status === 'inactive',
 )
 
 const wasInterrupted = computed(() => !!session.value?.interruptedAt)
@@ -312,7 +322,7 @@ const wasInterrupted = computed(() => !!session.value?.interruptedAt)
 const isTerminal = computed(
   () =>
     session.value?.status === 'completed' ||
-    session.value?.status === 'terminated' ||
+    session.value?.status === 'inactive' ||
     session.value?.status === 'error',
 )
 
@@ -325,7 +335,7 @@ const statusBadgeLabel = computed(() => {
     case 'idle':      return 'Idle'
     case 'suspended': return 'Suspended'
     case 'completed': return 'Completed'
-    case 'terminated':return 'Terminated'
+    case 'inactive':  return 'Inactive'
     case 'error':     return 'Error'
     default:          return ''
   }
@@ -342,7 +352,7 @@ const statusDotClass = computed(() => {
     case 'suspended':
       return 'bg-amber-500'
     case 'completed':
-    case 'terminated':
+    case 'inactive':
       return 'bg-muted-foreground'
     case 'error':
       return 'bg-destructive'
@@ -363,7 +373,7 @@ const rootIsRunning = computed(
 const rootIsTerminal = computed(
   () =>
     rootSession.value?.status === 'completed' ||
-    rootSession.value?.status === 'terminated' ||
+    rootSession.value?.status === 'inactive' ||
     rootSession.value?.status === 'error',
 )
 const rootIsDraft = computed(() => !!rootSession.value?.isDraft)
@@ -386,11 +396,7 @@ function removeFromList() {
 
 // ─── Model / effort / permission selectors ───────────────────────────────────
 
-const MODEL_OPTIONS = [
-  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
-] as const
+const MODEL_OPTIONS = CLAUDE_MODELS
 
 const PERM_MODE_LABELS: Record<PermissionMode, string> = {
   bypassPermissions: 'Bypass',
@@ -748,7 +754,7 @@ const streamingEventUuid = computed((): string | undefined => {
             </select>
           </div>
           <select
-            :value="session.model ?? MODEL_OPTIONS[0].value"
+            :value="session.model ?? MODEL_OPTIONS[0]!.value"
             :disabled="!canEditParams"
             class="text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[72px]"
             :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"

@@ -64,7 +64,7 @@ function statusDotClass(status: LiveSessionStatus): string {
     case 'blocked':
       return 'bg-blue-500'
     case 'completed':
-    case 'terminated':
+    case 'inactive':
       return 'bg-muted-foreground/40'
     case 'error':
       return 'bg-destructive'
@@ -81,7 +81,7 @@ function statusLabel(status: LiveSessionStatus): string {
     case 'suspended':  return 'Suspended'
     case 'blocked':    return 'Waiting'
     case 'completed':  return 'Completed'
-    case 'terminated': return 'Terminated'
+    case 'inactive':   return 'Inactive'
     case 'error':      return 'Error'
     default:           return ''
   }
@@ -245,7 +245,7 @@ function startPlanPolling() {
 
 const isPlanInterrupted = computed(() => {
   if (!linkedPlan.value || linkedPlan.value.status !== 'running') return false
-  const interruptedStatuses: string[] = ['idle', 'suspended', 'error', 'terminated']
+  const interruptedStatuses: string[] = ['idle', 'suspended', 'error', 'inactive']
   return interruptedStatuses.includes(rootSession.value?.status ?? '')
 })
 
