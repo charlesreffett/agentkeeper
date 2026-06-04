@@ -345,10 +345,13 @@ export interface Skill {
 
 export interface SlashCommand {
   id: string
-  scope: 'project' | 'global'
+  /** 'plugin' = read-only; contributed by an installed Claude Code plugin. */
+  scope: 'project' | 'global' | 'plugin'
   path: string
   name: string
   body: string
+  /** Human-readable plugin name when scope === 'plugin'. */
+  pluginName?: string
 }
 
 // ─── Roles ──────────────────────────────────────────────────────────────────
