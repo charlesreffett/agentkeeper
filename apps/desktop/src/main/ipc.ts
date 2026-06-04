@@ -253,7 +253,36 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     async (_event, params: StartSessionParams) => {
       try {
         const mcp = createProjectMcp(params.projectPath)
-        const agentLocalId = await startSession(params, { mcpServer: mcp })
+
+        // Resolve any user-selected external MCP servers into plain configs
+        // the SDK can consume directly (stdio/http/sse — no SDK objects needed).
+        const additionalMcpServers: Record<string, import('./agent').ExternalMcpConfig> = {}
+        if (params.mcpServerIds && params.mcpServerIds.length > 0) {
+          const allEntries = settingsStore.get().mcpServers ?? []
+          for (const id of params.mcpServerIds) {
+            const entry = allEntries.find((e) => e.id === id)
+            if (!entry) continue
+            if (entry.type === 'stdio' && entry.command) {
+              additionalMcpServers[entry.name] = {
+                type: 'stdio' as const,
+                command: entry.command,
+                ...(entry.args ? { args: entry.args } : {}),
+                ...(entry.env ? { env: entry.env } : {}),
+              }
+            } else if ((entry.type === 'http' || entry.type === 'sse') && entry.url) {
+              additionalMcpServers[entry.name] = {
+                type: entry.type,
+                url: entry.url,
+                ...(entry.headers ? { headers: entry.headers } : {}),
+              }
+            }
+          }
+        }
+
+        const agentLocalId = await startSession(params, {
+          mcpServer: mcp,
+          ...(Object.keys(additionalMcpServers).length > 0 ? { additionalMcpServers } : {}),
+        })
         if (params.initialPrompt) {
           // Title is stored on the session row; for solo sessions agentLocalId = sessionLocalId.
           const sessionId = params.sessionLocalId ?? agentLocalId

@@ -295,6 +295,8 @@ export interface StartSessionParams {
   agencyName?: string
   /** Whether this agent is the entry point (received the user's original prompt). */
   isEntryPoint?: boolean
+  /** IDs of McpServerEntry entries from AppSettings.mcpServers to activate for this session. */
+  mcpServerIds?: string[]
 }
 
 export interface AddAgentParams {
@@ -496,6 +498,29 @@ export interface LiveSessionStats {
   }
 }
 
+// ─── MCP servers ────────────────────────────────────────────────────────────
+
+export type McpServerType = 'stdio' | 'http' | 'sse'
+
+export interface McpServerEntry {
+  id: string
+  /** Display name shown in the UI. */
+  name: string
+  type: McpServerType
+  /** stdio: the executable to run. */
+  command?: string
+  /** stdio: arguments passed to the command. */
+  args?: string[]
+  /** stdio: extra environment variables for the subprocess. */
+  env?: Record<string, string>
+  /** http / sse: the endpoint URL. */
+  url?: string
+  /** http / sse: request headers. */
+  headers?: Record<string, string>
+  /** When true this server is pre-checked in the new-session panel. */
+  enabledByDefault: boolean
+}
+
 // ─── Settings & secrets ─────────────────────────────────────────────────────
 
 export interface AppSettings {
@@ -512,6 +537,8 @@ export interface AppSettings {
   theme: 'light' | 'dark'
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
   notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
+  /** User-configured external MCP servers available to sessions. */
+  mcpServers: McpServerEntry[]
 }
 
 export type SecretKeyName = 'anthropicApiKey'
