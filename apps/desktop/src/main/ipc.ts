@@ -615,7 +615,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       body: string,
     ) => {
       try {
-        return await saveCommand(scope, projectPath, id, body)
+        const result = await saveCommand(scope, projectPath, id, body)
+        broadcastCommandsChanged()
+        return result
       } catch (err) {
         console.error('[ipc] commands:save failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -626,7 +628,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.commandsRemove,
     async (_event, cmd: SlashCommand) => {
       try {
-        return await removeCommand(cmd)
+        await removeCommand(cmd)
+        broadcastCommandsChanged()
       } catch (err) {
         console.error('[ipc] commands:remove failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -1383,6 +1386,12 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   startClaudePluginWatcher()
 }
 
+function broadcastCommandsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.commandsChanged)
+  }
+}
+
 /**
  * Watch ~/.claude/plugins/installed_plugins.json and ~/.claude/settings.json
  * for changes and broadcast commands:changed so the renderer reloads the list
@@ -1397,15 +1406,9 @@ function startClaudePluginWatcher(): void {
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-  function broadcast(): void {
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.commandsChanged)
-    }
-  }
-
   function schedulebroadcast(): void {
     if (debounceTimer) clearTimeout(debounceTimer)
-    debounceTimer = setTimeout(broadcast, 200)
+    debounceTimer = setTimeout(broadcastCommandsChanged, 200)
   }
 
   for (const target of targets) {
