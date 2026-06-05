@@ -32,9 +32,10 @@ export const useCommandsDataStore = defineStore('commandsData', () => {
 
   // Reload whenever Claude Code installs or removes a plugin (live update).
   const unsubChanged = window.agentkeeper.commands.onChanged(() => {
-    if (_key) {
+    const key = _key
+    if (key) {
       invalidate()
-      void _doLoad(_key)
+      void _doLoad(key)
     }
   })
   onScopeDispose(unsubChanged)
