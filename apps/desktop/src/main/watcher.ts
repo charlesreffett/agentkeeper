@@ -7,7 +7,10 @@ import type { GitStatusChangedEvent, GitBranchChangedEvent, FsChangedEvent } fro
 interface WatchEntry {
   gitWatcher: FSWatcher
   fsWatcher: FSWatcher
-  subscribers: Set<number>
+  // Keyed by webContentsId → active watchStart count. Refcounted because a
+  // single renderer can hold multiple independent subscriptions (AppHeader +
+  // GitChanges); one stop must not tear down the watcher the other still needs.
+  subscribers: Map<number, number>
   gitDebounceTimer: ReturnType<typeof setTimeout> | null
   branchDebounceTimer: ReturnType<typeof setTimeout> | null
   fsDebounceTimer: ReturnType<typeof setTimeout> | null
@@ -18,7 +21,7 @@ const entries = new Map<string, WatchEntry>()
 export function startWatching(projectPath: string, webContentsId: number): void {
   const existing = entries.get(projectPath)
   if (existing) {
-    existing.subscribers.add(webContentsId)
+    existing.subscribers.set(webContentsId, (existing.subscribers.get(webContentsId) ?? 0) + 1)
     return
   }
 
@@ -46,7 +49,7 @@ export function startWatching(projectPath: string, webContentsId: number): void 
   const entry: WatchEntry = {
     gitWatcher,
     fsWatcher,
-    subscribers: new Set([webContentsId]),
+    subscribers: new Map([[webContentsId, 1]]),
     gitDebounceTimer: null,
     branchDebounceTimer: null,
     fsDebounceTimer: null,
@@ -65,7 +68,13 @@ export function startWatching(projectPath: string, webContentsId: number): void 
 export function stopWatching(projectPath: string, webContentsId: number): void {
   const entry = entries.get(projectPath)
   if (!entry) return
-  entry.subscribers.delete(webContentsId)
+  const count = entry.subscribers.get(webContentsId)
+  if (count === undefined) return
+  if (count <= 1) {
+    entry.subscribers.delete(webContentsId)
+  } else {
+    entry.subscribers.set(webContentsId, count - 1)
+  }
   if (entry.subscribers.size === 0) {
     closeEntry(projectPath, entry)
   }
@@ -128,7 +137,7 @@ function scheduleFsEmit(projectPath: string): void {
 }
 
 function emitToSubscribers(entry: WatchEntry, channel: string, payload: unknown): void {
-  for (const id of entry.subscribers) {
+  for (const id of entry.subscribers.keys()) {
     const wc = webContents.fromId(id)
     if (wc && !wc.isDestroyed()) {
       wc.send(channel, payload)
