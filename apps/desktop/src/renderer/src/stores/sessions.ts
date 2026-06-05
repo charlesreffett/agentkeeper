@@ -558,7 +558,7 @@ export const useSessionStore = defineStore('sessions', () => {
         roleInstanceIndex: entry.roleInstanceIndex ?? null,
         initialPrompt: entry.initialPrompt,
         isEntryPoint: entry.isEntryPoint ?? false,
-        status: 'starting',
+        status: 'idle',
         startedAt: now,
         lastActivityAt: now,
       })
