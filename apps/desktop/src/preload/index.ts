@@ -276,6 +276,8 @@ const api: AgentKeeperApi = {
       ) as Promise<never>,
     remove: (cmd: SlashCommand) =>
       invoke(IPC_CHANNELS.commandsRemove, cmd) as Promise<void>,
+    onChanged: (callback: () => void) =>
+      onChannel<void>(IPC_CHANNELS.commandsChanged, callback),
   },
   settings: {
     get: () => invoke(IPC_CHANNELS.settingsGet) as Promise<never>,

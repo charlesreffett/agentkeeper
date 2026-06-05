@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { onScopeDispose, ref } from 'vue'
 import type { SlashCommand } from '@shared/ipc-contract'
 
 export const useCommandsDataStore = defineStore('commandsData', () => {
@@ -29,6 +29,16 @@ export const useCommandsDataStore = defineStore('commandsData', () => {
     _key = ''
     _promise = null
   }
+
+  // Reload whenever Claude Code installs or removes a plugin (live update).
+  const unsubChanged = window.agentkeeper.commands.onChanged(() => {
+    const key = _key
+    if (key) {
+      invalidate()
+      void _doLoad(key)
+    }
+  })
+  onScopeDispose(unsubChanged)
 
   return { commands, loading, load, invalidate }
 })

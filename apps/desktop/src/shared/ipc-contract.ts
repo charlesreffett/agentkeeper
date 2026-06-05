@@ -295,6 +295,8 @@ export interface StartSessionParams {
   agencyName?: string
   /** Whether this agent is the entry point (received the user's original prompt). */
   isEntryPoint?: boolean
+  /** IDs of McpServerEntry entries from AppSettings.mcpServers to activate for this session. */
+  mcpServerIds?: string[]
 }
 
 export interface AddAgentParams {
@@ -343,10 +345,13 @@ export interface Skill {
 
 export interface SlashCommand {
   id: string
-  scope: 'project' | 'global'
+  /** 'plugin' = read-only; contributed by an installed Claude Code plugin. */
+  scope: 'project' | 'global' | 'plugin'
   path: string
   name: string
   body: string
+  /** Human-readable plugin name when scope === 'plugin'. */
+  pluginName?: string
 }
 
 // ─── Roles ──────────────────────────────────────────────────────────────────
@@ -496,6 +501,29 @@ export interface LiveSessionStats {
   }
 }
 
+// ─── MCP servers ────────────────────────────────────────────────────────────
+
+export type McpServerType = 'stdio' | 'http' | 'sse'
+
+export interface McpServerEntry {
+  id: string
+  /** Display name shown in the UI. */
+  name: string
+  type: McpServerType
+  /** stdio: the executable to run. */
+  command?: string
+  /** stdio: arguments passed to the command. */
+  args?: string[]
+  /** stdio: extra environment variables for the subprocess. */
+  env?: Record<string, string>
+  /** http / sse: the endpoint URL. */
+  url?: string
+  /** http / sse: request headers. */
+  headers?: Record<string, string>
+  /** When true this server is pre-checked in the new-session panel. */
+  enabledByDefault: boolean
+}
+
 // ─── Settings & secrets ─────────────────────────────────────────────────────
 
 export interface AppSettings {
@@ -512,6 +540,8 @@ export interface AppSettings {
   theme: 'light' | 'dark'
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
   notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
+  /** User-configured external MCP servers available to sessions. */
+  mcpServers: McpServerEntry[]
 }
 
 export type SecretKeyName = 'anthropicApiKey'
@@ -780,6 +810,8 @@ export interface AgentKeeperApi {
       body: string,
     ) => Promise<SlashCommand>
     remove: (cmd: SlashCommand) => Promise<void>
+    /** Fires when Claude Code plugin files change on disk (install/uninstall). */
+    onChanged: (callback: () => void) => () => void
   }
   settings: {
     get: () => Promise<AppSettings>
@@ -956,6 +988,7 @@ export const IPC_CHANNELS = {
   commandsGenerate: 'commands:generate',
   commandsSave: 'commands:save',
   commandsRemove: 'commands:remove',
+  commandsChanged: 'commands:changed',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
   authStatus: 'auth:status',

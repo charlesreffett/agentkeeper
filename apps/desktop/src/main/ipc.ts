@@ -1,7 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, Notification } from 'electron'
 import type { EventMap } from '@agentkeeper/sdk'
 import path from 'node:path'
+import os from 'node:os'
 import fs from 'node:fs/promises'
+import { watch as fsWatch } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import {
   IPC_CHANNELS,
@@ -253,7 +255,36 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     async (_event, params: StartSessionParams) => {
       try {
         const mcp = createProjectMcp(params.projectPath)
-        const agentLocalId = await startSession(params, { mcpServer: mcp })
+
+        // Resolve any user-selected external MCP servers into plain configs
+        // the SDK can consume directly (stdio/http/sse — no SDK objects needed).
+        const additionalMcpServers: Record<string, import('./agent').ExternalMcpConfig> = {}
+        if (params.mcpServerIds && params.mcpServerIds.length > 0) {
+          const allEntries = settingsStore.get().mcpServers ?? []
+          for (const id of params.mcpServerIds) {
+            const entry = allEntries.find((e) => e.id === id)
+            if (!entry) continue
+            if (entry.type === 'stdio' && entry.command) {
+              additionalMcpServers[entry.name] = {
+                type: 'stdio' as const,
+                command: entry.command,
+                ...(entry.args ? { args: entry.args } : {}),
+                ...(entry.env ? { env: entry.env } : {}),
+              }
+            } else if ((entry.type === 'http' || entry.type === 'sse') && entry.url) {
+              additionalMcpServers[entry.name] = {
+                type: entry.type,
+                url: entry.url,
+                ...(entry.headers ? { headers: entry.headers } : {}),
+              }
+            }
+          }
+        }
+
+        const agentLocalId = await startSession(params, {
+          mcpServer: mcp,
+          ...(Object.keys(additionalMcpServers).length > 0 ? { additionalMcpServers } : {}),
+        })
         if (params.initialPrompt) {
           // Title is stored on the session row; for solo sessions agentLocalId = sessionLocalId.
           const sessionId = params.sessionLocalId ?? agentLocalId
@@ -584,7 +615,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       body: string,
     ) => {
       try {
-        return await saveCommand(scope, projectPath, id, body)
+        const result = await saveCommand(scope, projectPath, id, body)
+        broadcastCommandsChanged()
+        return result
       } catch (err) {
         console.error('[ipc] commands:save failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -595,7 +628,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.commandsRemove,
     async (_event, cmd: SlashCommand) => {
       try {
-        return await removeCommand(cmd)
+        await removeCommand(cmd)
+        broadcastCommandsChanged()
       } catch (err) {
         console.error('[ipc] commands:remove failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -1348,6 +1382,42 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       n.show()
     },
   )
+
+  startClaudePluginWatcher()
+}
+
+function broadcastCommandsChanged(): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) win.webContents.send(IPC_CHANNELS.commandsChanged)
+  }
+}
+
+/**
+ * Watch ~/.claude/plugins/installed_plugins.json and ~/.claude/settings.json
+ * for changes and broadcast commands:changed so the renderer reloads the list
+ * without requiring an app restart.
+ */
+function startClaudePluginWatcher(): void {
+  const claudeDir = path.join(os.homedir(), '.claude')
+  const targets = [
+    path.join(claudeDir, 'plugins', 'installed_plugins.json'),
+    path.join(claudeDir, 'settings.json'),
+  ]
+
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+
+  function schedulebroadcast(): void {
+    if (debounceTimer) clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(broadcastCommandsChanged, 200)
+  }
+
+  for (const target of targets) {
+    try {
+      fsWatch(target, schedulebroadcast)
+    } catch {
+      // File may not exist yet (e.g. no plugins installed); ignore.
+    }
+  }
 }
 
 export function wirePluginEventRelay(win: BrowserWindow): void {

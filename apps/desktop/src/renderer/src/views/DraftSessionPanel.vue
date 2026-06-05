@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import {
   ROLE_EFFORT_VALUES,
   type Agency,
+  type McpServerEntry,
   type PermissionMode,
   type Role,
   type RoleEffort,
@@ -19,6 +20,7 @@ const { focusedProject } = useProjectsQuery()
 
 const roles = ref<Role[]>([])
 const agencies = ref<Agency[]>([])
+const mcpServers = ref<McpServerEntry[]>([])
 
 const cfg = computed(() => props.session.draftConfig!)
 
@@ -56,6 +58,32 @@ async function loadAgencies() {
     agencies.value = await window.agentkeeper.agencies.list(props.session.projectPath)
   } catch {
     agencies.value = []
+  }
+}
+
+async function loadMcpServers() {
+  try {
+    const settings = await window.agentkeeper.settings.get()
+    mcpServers.value = settings.mcpServers ?? []
+    // Pre-check servers that are enabled by default, but only on first load
+    // (don't stomp existing selections if the user already toggled something).
+    if (cfg.value.mcpServerIds.length === 0) {
+      cfg.value.mcpServerIds = mcpServers.value
+        .filter((s) => s.enabledByDefault)
+        .map((s) => s.id)
+    }
+  } catch {
+    mcpServers.value = []
+  }
+}
+
+function toggleMcpServer(id: string) {
+  const ids = cfg.value.mcpServerIds
+  const idx = ids.indexOf(id)
+  if (idx === -1) {
+    cfg.value.mcpServerIds = [...ids, id]
+  } else {
+    cfg.value.mcpServerIds = ids.filter((i) => i !== id)
   }
 }
 
@@ -106,6 +134,7 @@ watch(
 onMounted(() => {
   void loadRoles()
   void loadAgencies()
+  void loadMcpServers()
 })
 </script>
 
@@ -226,6 +255,38 @@ onMounted(() => {
           {{ p.label }}
         </option>
       </select>
+    </div>
+
+    <!-- MCP servers -->
+    <div v-if="mcpServers.length > 0" class="space-y-2">
+      <div class="flex items-center justify-between">
+        <label class="text-sm font-medium">MCP Servers</label>
+        <span class="text-xs text-muted-foreground">Active for this session</span>
+      </div>
+      <div class="rounded-md border border-border bg-muted/20 divide-y divide-border">
+        <label
+          v-for="server in mcpServers"
+          :key="server.id"
+          class="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/40 transition-colors first:rounded-t-md last:rounded-b-md"
+        >
+          <input
+            type="checkbox"
+            :checked="cfg.mcpServerIds.includes(server.id)"
+            class="size-4 rounded border-input shrink-0"
+            @change="toggleMcpServer(server.id)"
+          />
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium truncate">{{ server.name }}</p>
+            <p class="text-xs text-muted-foreground font-mono truncate">
+              <template v-if="server.type === 'stdio'">{{ server.command }}</template>
+              <template v-else>{{ server.url }}</template>
+            </p>
+          </div>
+          <span class="text-xs text-muted-foreground uppercase tracking-wide shrink-0">
+            {{ server.type }}
+          </span>
+        </label>
+      </div>
     </div>
   </div>
 </template>

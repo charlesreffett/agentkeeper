@@ -16,6 +16,7 @@ const DEFAULTS: AppSettings = {
   theme: 'dark',
   notifications: 'all',
   notificationSound: 'chime',
+  mcpServers: [],
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']
@@ -49,6 +50,9 @@ function read(): AppSettings {
     }
     if (!NOTIFICATION_SOUND_VALUES.includes(merged.notificationSound)) {
       merged.notificationSound = DEFAULTS.notificationSound
+    }
+    if (!Array.isArray(merged.mcpServers)) {
+      merged.mcpServers = []
     }
     return merged
   } catch {

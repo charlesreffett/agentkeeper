@@ -62,6 +62,14 @@ export interface ActiveSession {
   onTerminalError?: () => void
 }
 
+/**
+ * Plain-object config for an external (non-SDK) MCP server.
+ * Matches the stdio / http / sse variants the Agent SDK accepts in mcpServers.
+ */
+export type ExternalMcpConfig =
+  | { type?: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
+  | { type: 'http' | 'sse'; url: string; headers?: Record<string, string> }
+
 /** Optional extras orchestrator passes to startSession that aren't in the
  *  IPC contract (mcpServers is an SDK object, not transportable). */
 export interface InternalStartExtras {
@@ -71,6 +79,9 @@ export interface InternalStartExtras {
   mcpFactory?: () => ReturnType<
     typeof import('@anthropic-ai/claude-agent-sdk').createSdkMcpServer
   >
+  /** External MCP servers (stdio/http/sse) to activate alongside the built-in
+   *  agentkeeper server. Keys become the server names visible to the agent. */
+  additionalMcpServers?: Record<string, ExternalMcpConfig>
   /** Called once when the stream reaches a terminal error (after MCP reconnect
    *  retries are exhausted and the active-map entry has been removed). Fired in
    *  consumeStream's finally block so startSession can be called again safely. */
@@ -504,8 +515,14 @@ export async function startSession(
     options!.allowedTools = params.allowedTools
   }
   const mcpServer = extras.mcpServer ?? extras.mcpFactory?.()
-  if (mcpServer) {
-    options!.mcpServers = { agentkeeper: mcpServer }
+  const hasBuiltin = !!mcpServer
+  const hasExternal = extras.additionalMcpServers && Object.keys(extras.additionalMcpServers).length > 0
+  if (hasBuiltin || hasExternal) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    options!.mcpServers = {
+      ...(hasBuiltin ? { agentkeeper: mcpServer! } : {}),
+      ...(extras.additionalMcpServers ?? {}),
+    } as any
   }
 
   const q = query({ prompt: input, options })

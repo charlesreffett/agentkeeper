@@ -23,6 +23,7 @@ const settings = ref<AppSettings>({
   theme: 'dark',
   notifications: 'all',
   notificationSound: 'chime',
+  mcpServers: [],
 })
 
 onMounted(async () => {

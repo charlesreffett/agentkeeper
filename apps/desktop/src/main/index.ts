@@ -1,8 +1,9 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, shell, Menu } from 'electron'
 // DEV ONLY: enable CDP for agent-browser testing
 if (process.env['NODE_ENV'] !== 'production') {
   app.commandLine.appendSwitch('remote-debugging-port', '9223')
 }
+app.name = 'AgentKeeper'
 import path from 'node:path'
 import * as net from 'node:net'
 import * as fsp from 'node:fs/promises'
@@ -129,6 +130,34 @@ app.on('before-quit', () => {
 })
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      {
+        label: 'AgentKeeper',
+        submenu: [
+          { role: 'about' },
+          { type: 'separator' },
+          { role: 'services' },
+          { type: 'separator' },
+          { role: 'hide' },
+          { role: 'hideOthers' },
+          { role: 'unhide' },
+          { type: 'separator' },
+          { role: 'quit' },
+        ],
+      },
+      { role: 'editMenu' },
+      { role: 'viewMenu' },
+      { role: 'windowMenu' },
+    ]))
+    app.setAboutPanelOptions({
+      applicationName: 'AgentKeeper',
+      applicationVersion: '0.1.0',
+      version: '',
+      credits: '',
+      copyright: 'Copyright © 2024',
+    })
+  }
   const userData = app.getPath('userData')
   initDb(userData)
   runLegacyImport(userData)

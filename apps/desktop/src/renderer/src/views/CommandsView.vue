@@ -15,6 +15,9 @@ const projectPath = computed(() => focusedProject.value?.path ?? '')
 const { handleAuthError } = useClaudeAuth()
 
 const commands = computed(() => commandsDataStore.commands)
+const selectedCommand = computed(() =>
+  selectedId.value ? commands.value.find((c) => `${c.scope}:${c.id}` === selectedId.value) ?? null : null,
+)
 const loading = computed(() => commandsDataStore.loading)
 const selectedId = ref<string | null>(null)
 const editing = ref(false)
@@ -80,10 +83,15 @@ function beginNew() {
 }
 
 function beginEdit(cmd: SlashCommand) {
+  if (cmd.scope === 'plugin') {
+    selectedId.value = `${cmd.scope}:${cmd.id}`
+    editing.value = false
+    return
+  }
   selectedId.value = `${cmd.scope}:${cmd.id}`
   isNew.value = false
   editing.value = true
-  form.value = { id: cmd.id, scope: cmd.scope, body: cmd.body }
+  form.value = { id: cmd.id, scope: cmd.scope as 'project' | 'global', body: cmd.body }
 }
 
 function cancelEdit() {
@@ -191,12 +199,16 @@ onMounted(async () => {
             <div class="text-xs text-muted-foreground truncate">
               {{ cmd.name !== cmd.id ? cmd.name : '(no title)' }}
             </div>
-            <div class="mt-1 text-[10px] tabular-nums">
+            <div class="mt-1 flex items-center gap-1 text-[10px] tabular-nums">
               <span
-                class="px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono"
+                class="px-1.5 py-0.5 rounded font-mono"
+                :class="cmd.scope === 'plugin'
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-muted/60 text-muted-foreground'"
               >
-                {{ cmd.scope }}
+                {{ cmd.scope === 'plugin' ? (cmd.pluginName ?? 'plugin') : cmd.scope }}
               </span>
+              <span v-if="cmd.scope === 'plugin'" class="text-muted-foreground">read-only</span>
             </div>
           </li>
         </ul>
@@ -204,8 +216,25 @@ onMounted(async () => {
       </aside>
 
       <main class="flex-1 overflow-y-auto min-w-0">
+        <!-- Plugin command — read-only view -->
         <div
-          v-if="!editing"
+          v-if="!editing && selectedCommand?.scope === 'plugin'"
+          class="p-6 space-y-3"
+        >
+          <div class="flex items-center gap-2">
+            <span class="font-mono text-lg font-semibold">/{{ selectedCommand.id }}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+              {{ selectedCommand.pluginName ?? 'plugin' }}
+            </span>
+          </div>
+          <p class="text-xs text-muted-foreground">
+            Contributed by an installed Claude Code plugin. Available in all AgentKeeper sessions — use it by typing
+            <code class="font-mono">/{{ selectedCommand.id }}</code> in the session input.
+          </p>
+          <pre class="rounded-md border border-border bg-muted/20 p-4 text-xs font-mono whitespace-pre-wrap leading-relaxed">{{ selectedCommand.body }}</pre>
+        </div>
+        <div
+          v-else-if="!editing"
           class="h-full flex items-center justify-center text-muted-foreground text-sm p-8"
         >
           Select a command to edit, or create a new one.

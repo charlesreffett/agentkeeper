@@ -59,12 +59,79 @@ async function listScope(
   return results
 }
 
+/** Parse YAML frontmatter name/description from a SKILL.md file. */
+function parseSkillMeta(body: string): { name: string; description: string } {
+  const fm = body.match(/^---\s*\n([\s\S]*?)\n---/)
+  if (!fm) return { name: '', description: '' }
+  const nameMatch = fm[1]!.match(/^name:\s*(.+)$/m)
+  const descMatch = fm[1]!.match(/^description:\s*[>|]?\s*\n?([\s\S]*?)(?=\n\w|\n---|\s*$)/m)
+  return {
+    name: nameMatch?.[1]?.trim() ?? '',
+    description: descMatch?.[1]?.replace(/\s+/g, ' ').trim() ?? '',
+  }
+}
+
+/** Enumerate skills contributed by installed Claude Code plugins. */
+async function listPluginCommands(): Promise<SlashCommand[]> {
+  const installedPath = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json')
+  let installed: { version: number; plugins: Record<string, Array<{ installPath: string }>> }
+  try {
+    const raw = await fs.readFile(installedPath, 'utf8')
+    installed = JSON.parse(raw)
+  } catch {
+    return []
+  }
+
+  const results: SlashCommand[] = []
+  for (const [pluginKey, installs] of Object.entries(installed.plugins ?? {})) {
+    const pluginName = pluginKey.split('@')[0] ?? pluginKey
+    for (const inst of installs) {
+      // Walk <installPath>/plugins/*/skills/*/SKILL.md
+      const pluginsRoot = path.join(inst.installPath, 'plugins')
+      let pluginDirs: string[]
+      try {
+        pluginDirs = await fs.readdir(pluginsRoot)
+      } catch {
+        continue
+      }
+      for (const pluginDir of pluginDirs) {
+        const skillsRoot = path.join(pluginsRoot, pluginDir, 'skills')
+        let skillDirs: string[]
+        try {
+          skillDirs = await fs.readdir(skillsRoot)
+        } catch {
+          continue
+        }
+        for (const skillDir of skillDirs) {
+          const skillFile = path.join(skillsRoot, skillDir, 'SKILL.md')
+          try {
+            const body = await fs.readFile(skillFile, 'utf8')
+            const { name, description } = parseSkillMeta(body)
+            results.push({
+              id: skillDir,
+              scope: 'plugin',
+              path: skillFile,
+              name: name || skillDir,
+              body: description || body.replace(/^---[\s\S]*?---\s*\n?/, '').trimEnd(),
+              pluginName,
+            })
+          } catch {
+            // skip unreadable
+          }
+        }
+      }
+    }
+  }
+  return results
+}
+
 export async function listCommands(projectPath: string): Promise<SlashCommand[]> {
-  const [project, global] = await Promise.all([
+  const [project, global, plugin] = await Promise.all([
     listScope('project', projectPath),
     listScope('global', projectPath),
+    listPluginCommands(),
   ])
-  return [...project, ...global]
+  return [...project, ...global, ...plugin]
 }
 
 export async function saveCommand(

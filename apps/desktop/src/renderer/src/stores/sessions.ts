@@ -30,6 +30,8 @@ export interface DraftSessionConfig {
   branch: string
   branchTouched: boolean
   effortTouched: boolean
+  /** IDs of McpServerEntry items from AppSettings.mcpServers to activate. */
+  mcpServerIds: string[]
 }
 
 export interface LiveSession extends Session {
@@ -815,6 +817,7 @@ export const useSessionStore = defineStore('sessions', () => {
     defaultModel: string
     defaultEffort: RoleEffort
     defaultUseWorktree: boolean
+    defaultMcpServerIds?: string[]
   }): string {
     const existing = Object.values(sessions).find(
       (s) => s.isDraft && s.projectPath === params.projectPath,
@@ -859,6 +862,7 @@ export const useSessionStore = defineStore('sessions', () => {
         branch: '',
         branchTouched: false,
         effortTouched: false,
+        mcpServerIds: params.defaultMcpServerIds ?? [],
       },
       draftMessage: '',
       draftAttachments: [],
@@ -992,6 +996,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
       ...(role?.name ? { roleName: role.name } : {}),
       ...(attachments && attachments.length > 0 ? { initialAttachments: attachments } : {}),
+      ...(cfg.mcpServerIds.length > 0 ? { mcpServerIds: cfg.mcpServerIds } : {}),
     }
 
     try {
