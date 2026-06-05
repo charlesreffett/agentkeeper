@@ -1076,6 +1076,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     (_event, sessionLocalId: string) => {
       const agentList = sessionRegistry.listAgentsBySession(sessionLocalId)
       return agentList.map((a) => {
+        if (a.status !== 'running' && a.status !== 'starting') return a
         const live = getActiveSession(a.localId)
         return live ? { ...a, status: live.status } : a
       })
