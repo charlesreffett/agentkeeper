@@ -65,7 +65,7 @@ import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, createBranch, detectRemoteSources, getBranch, getStatus, pull, push, stageFiles, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
-import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp, editAndRerun, undoEditAndRerun, getActiveSession } from './agent'
+import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp, editAndRerun, undoEditAndRerun } from './agent'
 import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, gitDiffStat, listWorktrees, removeWorktree } from './worktrees'
@@ -1073,13 +1073,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsGetAgents,
-    (_event, sessionLocalId: string) => {
-      const agentList = sessionRegistry.listAgentsBySession(sessionLocalId)
-      return agentList.map((a) => {
-        const live = getActiveSession(a.localId)
-        return live ? { ...a, status: live.status } : a
-      })
-    },
+    (_event, sessionLocalId: string) => sessionRegistry.listAgentsBySession(sessionLocalId),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsListTrackedSdkIds,
