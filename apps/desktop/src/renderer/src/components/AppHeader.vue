@@ -177,9 +177,24 @@ async function confirmRename() {
 }
 
 let unsubBranch: (() => void) | null = null
+let watchedPath: string | null = null
+
+async function startWatch(path: string): Promise<void> {
+  await window.agentkeeper.fs.watchStart(path)
+  watchedPath = path
+}
+
+async function stopWatch(): Promise<void> {
+  if (watchedPath) {
+    await window.agentkeeper.fs.watchStop(watchedPath)
+    watchedPath = null
+  }
+}
 
 onMounted(() => {
-  loadBranch(focusedProject.value?.path)
+  const path = focusedProject.value?.path
+  loadBranch(path)
+  if (path) void startWatch(path)
   unsubBranch = window.agentkeeper.git.onBranchChanged((event) => {
     if (event.projectPath === focusedProject.value?.path) {
       loadBranch(event.projectPath)
@@ -189,11 +204,16 @@ onMounted(() => {
 
 onUnmounted(() => {
   unsubBranch?.()
+  void stopWatch()
 })
 
 watch(
   () => focusedProject.value?.path,
-  (path) => loadBranch(path),
+  async (path) => {
+    await stopWatch()
+    loadBranch(path)
+    if (path) await startWatch(path)
+  },
 )
 </script>
 
