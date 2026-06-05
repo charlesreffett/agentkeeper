@@ -624,6 +624,7 @@ export const useSessionStore = defineStore('sessions', () => {
         const s = sessions[localId]
         if (!s) return
         s.agents = agentList
+        s.status = computeSessionStatus(agentList)
         for (const a of agentList) {
           if (!s.agentEvents[a.localId]) s.agentEvents[a.localId] = []
           if (a.sdkSessionId) {
@@ -659,6 +660,7 @@ export const useSessionStore = defineStore('sessions', () => {
       const s = sessions[localId]
       if (!s) return
       s.agents = agentList
+      s.status = computeSessionStatus(agentList)
       for (const a of agentList) {
         if (!s.agentEvents[a.localId]) s.agentEvents[a.localId] = []
         if (a.sdkSessionId) {
@@ -1304,6 +1306,21 @@ export const useSessionStore = defineStore('sessions', () => {
           if (update.status != null) agent.status = update.status
           if (update.sdkSessionId) agent.sdkSessionId = update.sdkSessionId
           agent.lastActivityAt = Date.now()
+        } else if (update.status != null) {
+          s.agents.push({
+            localId: update.agentLocalId,
+            sessionLocalId: s.localId,
+            sdkSessionId: update.sdkSessionId ?? null,
+            roleId: null,
+            roleName: null,
+            roleInstanceIndex: null,
+            initialPrompt: '',
+            isEntryPoint: false,
+            status: update.status,
+            startedAt: Date.now(),
+            lastActivityAt: Date.now(),
+          })
+          if (!s.agentEvents[update.agentLocalId]) s.agentEvents[update.agentLocalId] = []
         }
         if (update.status != null) {
           // Recompute session status from all agents
