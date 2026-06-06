@@ -62,28 +62,25 @@ const displayName = computed(() => {
   return props.agentName ?? 'Claude'
 })
 
-const visibleContent = computed(() =>
-  props.event.content.filter((b) => isBlockVisible(b, state.value)),
-)
-
 type BlockGroup =
-  | { kind: 'single'; block: ContentBlock }
-  | { kind: 'images'; blocks: (ContentBlock & { type: 'image' })[] }
+  | { kind: 'single'; key: number; block: ContentBlock }
+  | { kind: 'images'; key: number; blocks: Array<{ block: ContentBlock & { type: 'image' }; key: number }> }
 
 const groupedContent = computed((): BlockGroup[] => {
   const groups: BlockGroup[] = []
-  for (const block of visibleContent.value) {
+  props.event.content.forEach((block, idx) => {
+    if (!isBlockVisible(block, state.value)) return
     if (block.type === 'image') {
       const last = groups[groups.length - 1]
       if (last?.kind === 'images') {
-        last.blocks.push(block as ContentBlock & { type: 'image' })
+        last.blocks.push({ block: block as ContentBlock & { type: 'image' }, key: idx })
       } else {
-        groups.push({ kind: 'images', blocks: [block as ContentBlock & { type: 'image' }] })
+        groups.push({ kind: 'images', key: idx, blocks: [{ block: block as ContentBlock & { type: 'image' }, key: idx }] })
       }
     } else {
-      groups.push({ kind: 'single', block })
+      groups.push({ kind: 'single', key: idx, block })
     }
-  }
+  })
   return groups
 })
 
@@ -190,7 +187,7 @@ function onEditKeydown(e: KeyboardEvent) {
       </span>
     </header>
     <div class="space-y-1 text-sm text-foreground/70 select-text">
-      <template v-for="(group, i) in groupedContent" :key="i">
+      <template v-for="group in groupedContent" :key="group.key">
         <component
           v-if="group.kind === 'single' && group.block.type === 'text'"
           :is="blockComponent(group.block)"
@@ -206,12 +203,12 @@ function onEditKeydown(e: KeyboardEvent) {
     v-else-if="isToolResultOnly"
     class="ml-10 space-y-1.5"
   >
-    <template v-for="(group, i) in groupedContent" :key="i">
+    <template v-for="group in groupedContent" :key="group.key">
       <div v-if="group.kind === 'images'" class="flex flex-wrap gap-2">
         <ImageBlock
-          v-for="(block, j) in group.blocks"
-          :key="j"
-          :block="block"
+          v-for="item in group.blocks"
+          :key="item.key"
+          :block="item.block"
         />
       </div>
       <component
@@ -301,12 +298,12 @@ function onEditKeydown(e: KeyboardEvent) {
 
       <!-- Normal blocks display -->
       <div v-else class="space-y-2">
-        <template v-for="(group, i) in groupedContent" :key="i">
+        <template v-for="group in groupedContent" :key="group.key">
           <div v-if="group.kind === 'images'" class="flex flex-wrap gap-2">
             <ImageBlock
-              v-for="(block, j) in group.blocks"
-              :key="j"
-              :block="block"
+              v-for="item in group.blocks"
+              :key="item.key"
+              :block="item.block"
             />
           </div>
           <component
