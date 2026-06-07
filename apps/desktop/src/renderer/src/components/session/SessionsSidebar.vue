@@ -34,6 +34,7 @@ const sessions = computed(() => {
     .map((s) => ({
       localId: s.localId,
       status: s.status,
+      projectPath: s.projectPath,
       workItemKey: s.workItemKey ?? null,
       workItemTitle: s.workItemTitle ?? null,
       title: s.title ?? null,
@@ -84,6 +85,10 @@ function itemTitle(s: (typeof sessions.value)[number]): string {
 function itemDescription(s: (typeof sessions.value)[number]): string | null {
   if (s.workItemTitle && s.title && s.title !== s.workItemTitle) return s.title
   return null
+}
+
+function projectName(path: string): string {
+  return path.split('/').at(-1) ?? path
 }
 
 function isRunning(status: LiveSessionStatus): boolean {
@@ -174,20 +179,22 @@ async function handleNew() {
         "
         @click="handleSessionClick(s)"
       >
-        <!-- Row 1: dot + key + time -->
+        <!-- Row 1: dot + title -->
         <div class="flex items-center gap-1.5 mb-0.5">
           <span class="size-1.5 rounded-full shrink-0" :class="statusDotClass(s.status)" />
+          <span class="text-[12px] font-medium text-foreground line-clamp-1 min-w-0">
+            {{ itemTitle(s) }}
+          </span>
+        </div>
+
+        <!-- Row 2: project + ticket + time -->
+        <div class="flex items-center gap-1.5 pl-3">
           <span class="text-[11px] font-mono text-muted-foreground truncate flex-1 min-w-0">
-            {{ s.workItemKey ?? 'no ticket' }}
+            {{ projectName(s.projectPath) }}{{ s.workItemKey ? ` · ${s.workItemKey}` : '' }}
           </span>
           <span class="text-[11px] text-muted-foreground/50 tabular-nums shrink-0">
             {{ formatRelativeTime(s.lastActivityAt) }}
           </span>
-        </div>
-
-        <!-- Row 2: main title -->
-        <div class="text-[12px] font-medium text-foreground line-clamp-1 pl-3">
-          {{ itemTitle(s) }}
         </div>
 
         <!-- Row 3: dynamic description (shown only when different from title) -->
