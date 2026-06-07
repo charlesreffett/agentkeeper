@@ -28,7 +28,7 @@ import StatsCards from '@/components/StatsCards.vue'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
-const { projects, focusedProject } = useProjectsQuery()
+const { projects, focusedProject, setFocused } = useProjectsQuery()
 const projectStore = useProjectStore()
 const queryClient = useQueryClient()
 const plansStore = usePlansStore()
@@ -350,13 +350,21 @@ async function executeDeleteAll() {
 function handleCardClick(card: SessionCardData) {
   if (isSelectMode.value) return
   switch (card.source) {
-    case 'live':
+    case 'live': {
+      const liveSession = sessionStore.getSession(card.id)
+      if (liveSession?.projectPath && liveSession.projectPath !== focusedProject.value?.path) {
+        void setFocused(liveSession.projectPath)
+      }
       void router.push(`/sessions/${card.id}`)
       break
+    }
     case 'persisted':
     case 'agency': {
       const session = persistedSessions.value.find((s) => s.localId === card.id)
       if (session) {
+        if (session.projectPath && session.projectPath !== focusedProject.value?.path) {
+          void setFocused(session.projectPath)
+        }
         const localId = sessionStore.openPersisted(session)
         void router.push(`/sessions/${localId}`)
       }
@@ -365,6 +373,9 @@ function handleCardClick(card: SessionCardData) {
     case 'historical': {
       const hist = historicalSessions.value.find(({ summary: s }) => s.id === card.id)
       if (hist) {
+        if (hist.projectPath && hist.projectPath !== focusedProject.value?.path) {
+          void setFocused(hist.projectPath)
+        }
         const localId = sessionStore.openHistorical(hist.projectPath, hist.summary)
         void router.push(`/sessions/${localId}`)
       }

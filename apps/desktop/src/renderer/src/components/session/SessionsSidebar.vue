@@ -19,7 +19,7 @@ defineEmits<{ collapse: []; expand: [] }>()
 const router = useRouter()
 const sessionStore = useSessionStore()
 const projectStore = useProjectStore()
-const { focusedProject, projects } = useProjectsQuery()
+const { focusedProject, projects, setFocused } = useProjectsQuery()
 const { persistedSessions } = useSessionsListQuery(projects)
 
 const filterText = ref('')
@@ -91,10 +91,13 @@ function isRunning(status: LiveSessionStatus): boolean {
 }
 
 function handleSessionClick(s: (typeof sessions.value)[number]): void {
-  if (!sessionStore.getSession(s.localId)) {
-    const persisted = persistedSessions.value.find((p) => p.localId === s.localId)
-    if (persisted) sessionStore.openPersisted(persisted)
+  const live = sessionStore.getSession(s.localId)
+  const persisted = live ? null : persistedSessions.value.find((p) => p.localId === s.localId)
+  const projectPath = live?.projectPath ?? persisted?.projectPath
+  if (projectPath && projectPath !== focusedProject.value?.path) {
+    void setFocused(projectPath)
   }
+  if (!live && persisted) sessionStore.openPersisted(persisted)
   void router.push(`/sessions/${s.localId}`)
 }
 
