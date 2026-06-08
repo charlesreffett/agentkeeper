@@ -11,6 +11,6 @@ export interface PluginSettingsPanel {
 
 export const pluginSettingsPanels: PluginSettingsPanel[] = [
   { id: 'github', label: 'GitHub', component: GitHubSettingsPanel },
-  { id: 'jira', label: 'Jira', component: JiraSettingsPanel },
+  { id: 'jira', label: 'Projects', component: JiraSettingsPanel },
   { id: 'mcp', label: 'MCP Servers', component: McpSettingsPanel },
 ]
