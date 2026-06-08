@@ -21,11 +21,13 @@ export interface JiraProject {
 
 export async function listProjects(): Promise<JiraProject[]> {
   try {
-    const { stdout } = await execFileAsync('jira', ['project', 'list', '--raw', '--limit', '500'])
-    const data = JSON.parse(stdout.trim()) as Array<{ key?: string; name?: string }>
-    return data
-      .filter((p): p is { key: string; name?: string } => typeof p.key === 'string' && p.key.length > 0)
-      .map((p) => ({ key: p.key, name: p.name ?? p.key }))
+    const { stdout } = await execFileAsync('jira', ['project', 'list'])
+    return stdout
+      .split('\n')
+      .slice(1)
+      .map((line) => line.split('\t').map((p) => p.trim()))
+      .filter((parts) => parts[0] && parts[0].length > 0)
+      .map((parts) => ({ key: parts[0]!, name: parts[1] ?? parts[0]! }))
   } catch {
     return []
   }
