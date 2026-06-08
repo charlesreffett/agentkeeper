@@ -1,5 +1,8 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 
 const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
@@ -106,21 +109,39 @@ function mapStatus(
   }
 }
 
-export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
+export function mapToWorkItem(raw: RawJiraIssue, fieldMeta?: Map<string, string>): WorkItem {
   const summary = raw.fields?.summary ?? raw.summary ?? raw.key
-  const description = raw.fields?.description ?? raw.description ?? ''
+  const rawDesc = raw.fields?.description ?? raw.description ?? ''
+  const description = typeof rawDesc === 'string' ? rawDesc : extractADFText(rawDesc)
   const assignee = raw.fields?.assignee?.displayName ?? raw.assignee?.displayName
   const reporter = raw.fields?.reporter?.displayName
   const priority = raw.fields?.priority?.name
   const storyPoints = raw.fields?.story_points ?? raw.fields?.customfield_10016
   const issueType = raw.fields?.issuetype?.name ?? raw.fields?.issueType?.name ?? raw.issuetype?.name
   const parentRef = raw.fields?.parent?.key
+
+  const customFields: Record<string, string> = {}
+  if (raw.fields) {
+    for (const [key, value] of Object.entries(raw.fields)) {
+      if (!key.startsWith('customfield_')) continue
+      if (value == null) continue
+      if (key === 'customfield_10016') continue
+      const name = fieldMeta?.get(key) ?? key
+      const text =
+        typeof value === 'string' ? value
+        : typeof value === 'number' ? String(value)
+        : typeof value === 'object' ? extractADFText(value).trim()
+        : null
+      if (text && text.trim()) customFields[name] = text.trim()
+    }
+  }
+
   return {
     id: raw.key,
     source: 'jira',
     externalRef: raw.key,
     title: summary,
-    body: typeof description === 'string' ? description : '',
+    body: description,
     status: mapStatus(raw.fields?.status ?? raw.status),
     statusLabel: raw.fields?.status?.name ?? raw.status?.name,
     ...(assignee ? { assignee } : {}),
@@ -129,6 +150,7 @@ export function mapToWorkItem(raw: RawJiraIssue): WorkItem {
     ...(storyPoints != null ? { storyPoints } : {}),
     ...(issueType ? { issueType } : {}),
     ...(parentRef ? { parentRef } : {}),
+    ...(Object.keys(customFields).length > 0 ? { customFields } : {}),
     links: [],
   }
 }
@@ -145,11 +167,121 @@ export async function createIssue(
   return JSON.parse(stdout.trim()) as RawJiraIssue
 }
 
-export async function listIssues(projectKey?: string): Promise<RawJiraIssue[]> {
-  const args = ['issue', 'list', '--raw']
-  if (projectKey) args.push('--project', projectKey)
-  const { stdout } = await execFileAsync('jira', args)
-  return JSON.parse(stdout.trim()) as RawJiraIssue[]
+const LIST_PAGE_SIZE = 100
+const LIST_MAX_ITEMS = 500
+
+export async function listIssues(
+  projectKey?: string,
+  { excludeDone = true, maxItems = LIST_MAX_ITEMS }: { excludeDone?: boolean; maxItems?: number } = {},
+): Promise<RawJiraIssue[]> {
+  const all: RawJiraIssue[] = []
+  let from = 0
+
+  while (true) {
+    const limit = Math.min(LIST_PAGE_SIZE, maxItems - all.length)
+    if (limit <= 0) break
+    const args = ['issue', 'list', '--raw', '--paginate', `${from}:${limit}`]
+    if (projectKey) args.push('--project', projectKey)
+    if (excludeDone) args.push('--jql', 'statusCategory != Done')
+    const { stdout } = await execFileAsync('jira', args)
+    const page = JSON.parse(stdout.trim()) as RawJiraIssue[]
+    all.push(...page)
+    if (page.length < limit) break
+    from += page.length
+  }
+
+  return all
+}
+
+interface JiraAuth {
+  server: string
+  login: string
+  token: string
+}
+
+function extractADFText(node: unknown): string {
+  if (typeof node === 'string') return node
+  if (typeof node !== 'object' || node === null) return ''
+  const n = node as Record<string, unknown>
+  if (n.type === 'text' && typeof n.text === 'string') return n.text
+  const children = Array.isArray(n.content)
+    ? (n.content as unknown[]).map(extractADFText).join('')
+    : ''
+  const blockTypes = ['paragraph', 'heading', 'listItem', 'bulletList', 'orderedList',
+    'blockquote', 'codeBlock', 'rule', 'mediaGroup', 'mediaSingle']
+  return blockTypes.includes(n.type as string) ? children + '\n' : children
+}
+
+// jira CLI stores server/login in its YAML config; the API token lives in JIRA_API_TOKEN
+// (same source the CLI reads). Parsed by line, not full YAML, to avoid a yaml dependency.
+function readJiraAuth(): JiraAuth | null {
+  const token = process.env.JIRA_API_TOKEN
+  if (!token) return null
+  const cfgPath =
+    process.env.JIRA_CONFIG_FILE ?? join(homedir(), '.config', '.jira', '.config.yml')
+  try {
+    const text = readFileSync(cfgPath, 'utf8')
+    const server = text.match(/^server:\s*(.+)$/m)?.[1]?.trim()
+    const login = text.match(/^login:\s*(.+)$/m)?.[1]?.trim()
+    if (!server || !login) return null
+    return { server, login, token }
+  } catch {
+    return null
+  }
+}
+
+let fieldMetaCache: Map<string, string> | null = null
+
+export async function getFieldMeta(): Promise<Map<string, string>> {
+  if (fieldMetaCache) return fieldMetaCache
+  const auth = readJiraAuth()
+  if (!auth) { fieldMetaCache = new Map(); return fieldMetaCache }
+  try {
+    const res = await fetch(`${auth.server}/rest/api/3/field`, {
+      headers: {
+        Authorization: 'Basic ' + Buffer.from(`${auth.login}:${auth.token}`).toString('base64'),
+      },
+    })
+    if (!res.ok) { fieldMetaCache = new Map(); return fieldMetaCache }
+    const fields = (await res.json()) as Array<{ id: string; name: string }>
+    fieldMetaCache = new Map(fields.map((f) => [f.id, f.name]))
+  } catch {
+    fieldMetaCache = new Map()
+  }
+  return fieldMetaCache
+}
+
+// True board total via Jira Cloud's approximate-count endpoint — the CLI list output
+// carries no total, so this is the only cheap way to count without fetching every page.
+// Returns null when auth is unavailable or the request fails (callers fall back to the
+// loaded/capped count).
+export async function countIssues(
+  projectKey?: string,
+  { excludeDone = true }: { excludeDone?: boolean } = {},
+): Promise<number | null> {
+  const auth = readJiraAuth()
+  if (!auth) return null
+
+  const clauses: string[] = []
+  if (projectKey) clauses.push(`project = ${projectKey}`)
+  if (excludeDone) clauses.push('statusCategory != Done')
+  const jql = clauses.join(' AND ')
+
+  try {
+    const res = await fetch(`${auth.server}/rest/api/3/search/approximate-count`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Basic ' + Buffer.from(`${auth.login}:${auth.token}`).toString('base64'),
+      },
+      body: JSON.stringify({ jql }),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { count?: number }
+    return typeof data.count === 'number' ? data.count : null
+  } catch {
+    return null
+  }
 }
 
 export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {

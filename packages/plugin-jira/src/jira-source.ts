@@ -2,6 +2,7 @@ import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemSource, W
 import {
   addComment as cliAddComment,
   createIssue,
+  getFieldMeta,
   getIssue,
   getIssueTransitions,
   listIssues,
@@ -15,6 +16,7 @@ export class JiraWorkItemSource implements WorkItemSource {
   readonly label = 'Jira'
 
   private cache: WorkItem[] = []
+  private lastError: Error | null = null
 
   constructor(
     private projectMappings: Array<{ jiraProjectKey: string; projectPath: string }> = [],
@@ -25,14 +27,16 @@ export class JiraWorkItemSource implements WorkItemSource {
     if (this.cache.length === 0) {
       await this.refresh()
     }
+    // Empty cache after a failed fetch must surface the error, not masquerade as "no issues"
+    if (this.cache.length === 0 && this.lastError) throw this.lastError
     return this.cache
   }
 
   async get(id: string): Promise<WorkItem | undefined> {
     const cached = this.cache.find((i) => i.id === id)
     if (cached) return cached
-    const raw = await getIssue(id)
-    return raw ? mapToWorkItem(raw) : undefined
+    const [raw, fieldMeta] = await Promise.all([getIssue(id), getFieldMeta().catch(() => new Map<string, string>())])
+    return raw ? mapToWorkItem(raw, fieldMeta) : undefined
   }
 
   async updateStatus(id: string, status: WorkItemStatus): Promise<void> {
@@ -61,20 +65,26 @@ export class JiraWorkItemSource implements WorkItemSource {
   }
 
   async refresh(): Promise<void> {
+    const keys = this.projectMappings.map((m) => m.jiraProjectKey)
+    const fieldMeta = await getFieldMeta().catch(() => new Map<string, string>())
     try {
-      const keys = this.projectMappings.map((m) => m.jiraProjectKey)
-      let raw: Awaited<ReturnType<typeof listIssues>>
       if (keys.length > 0) {
-        const results = await Promise.all(keys.map((k) => listIssues(k)))
-        raw = results.flat()
+        // Per-board so one inaccessible project can't wipe out every other board's issues
+        const results = await Promise.allSettled(keys.map((k) => listIssues(k)))
+        const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+        if (failures.length === results.length) throw failures[0]!.reason
+        const raw = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+        this.cache = raw.map((r) => mapToWorkItem(r, fieldMeta))
       } else if (this.legacyProjectKey) {
-        raw = await listIssues(this.legacyProjectKey)
+        this.cache = (await listIssues(this.legacyProjectKey)).map((r) => mapToWorkItem(r, fieldMeta))
       } else {
-        raw = await listIssues()
+        this.cache = (await listIssues()).map((r) => mapToWorkItem(r, fieldMeta))
       }
-      this.cache = raw.map(mapToWorkItem)
+      this.lastError = null
     } catch (err) {
-      console.error('[jira] refresh failed:', err)
+      // Log but don't rethrow — background pollers must not crash; list() reads lastError
+      this.lastError = err instanceof Error ? err : new Error(String(err))
+      console.error('[jira] refresh failed:', this.lastError)
     }
   }
 }

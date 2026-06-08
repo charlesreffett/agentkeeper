@@ -216,6 +216,17 @@ async function startSession() {
         {{ item.body }}
       </div>
 
+      <div v-if="item.customFields && Object.keys(item.customFields).length > 0" class="space-y-2">
+        <div
+          v-for="(value, name) in item.customFields"
+          :key="name"
+          class="space-y-0.5"
+        >
+          <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{{ name }}</div>
+          <div class="text-xs text-foreground/80 whitespace-pre-wrap bg-muted/30 rounded p-2">{{ value }}</div>
+        </div>
+      </div>
+
       <div v-if="startError" class="text-xs text-destructive bg-destructive/5 rounded p-2">
         {{ startError }}
       </div>

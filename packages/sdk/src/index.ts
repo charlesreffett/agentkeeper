@@ -31,6 +31,7 @@ export interface WorkItem {
   storyPoints?: number
   issueType?: string
   parentRef?: string
+  customFields?: Record<string, string>
   links: WorkItemLink[]
 }
 
