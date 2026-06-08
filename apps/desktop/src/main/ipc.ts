@@ -138,14 +138,6 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         lastOpenedAt: Date.now(),
       }
       recentProjectsStore.add(project)
-      // auto-register GitHub repo if detected and not already in config
-      if (repo) {
-        const cfg = (await getPluginConfig('github', getRawSqlite())) as { repos?: string[]; repo?: string }
-        const repos: string[] = cfg.repos ?? (cfg.repo ? [cfg.repo] : [])
-        if (!repos.includes(repo)) {
-          await setPluginConfig('github', { repos: [...repos, repo] }, getRawSqlite())
-        }
-      }
       return project
     } catch (err) {
       console.error('[ipc] projects:add failed:', err)
@@ -854,10 +846,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   // GitHub — config + PR channels
   async function getGithubRepos(): Promise<string[]> {
-    const cfg = (await getPluginConfig('github', getRawSqlite())) as { repos?: string[]; repo?: string }
-    if (cfg.repos) return cfg.repos
-    if (cfg.repo) return [cfg.repo]
-    return []
+    const projects = recentProjectsStore.list()
+    return [...new Set(projects.map((p) => p.repo).filter((r): r is string => Boolean(r)))]
   }
 
   ipcMain.handle(IPC_CHANNELS.githubConfigGet, async () => {
