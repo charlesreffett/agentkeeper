@@ -254,8 +254,6 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.sessionStart,
     async (_event, params: StartSessionParams) => {
       try {
-        const mcp = createProjectMcp(params.projectPath)
-
         // Resolve any user-selected external MCP servers into plain configs
         // the SDK can consume directly (stdio/http/sse — no SDK objects needed).
         const additionalMcpServers: Record<string, import('./agent').ExternalMcpConfig> = {}
@@ -282,7 +280,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         }
 
         const agentLocalId = await startSession(params, {
-          mcpServer: mcp,
+          mcpFactory: () => createProjectMcp(params.projectPath),
           ...(Object.keys(additionalMcpServers).length > 0 ? { additionalMcpServers } : {}),
         })
         if (params.initialPrompt) {
@@ -1089,7 +1087,6 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         const session = sessionRegistry.getSession(sessionLocalId)
         if (!session) throw new Error(`Session ${sessionLocalId} not found`)
         const agentLocalId = randomUUID()
-        const mcp = createProjectMcp(session.projectPath)
         return await startSession(
           {
             localId: agentLocalId,
@@ -1099,7 +1096,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
             worktreePath: session.worktreePath ?? undefined,
             ...params,
           },
-          { mcpServer: mcp },
+          { mcpFactory: () => createProjectMcp(session.projectPath) },
         )
       } catch (err) {
         console.error('[ipc] sessions:addAgent failed:', err)

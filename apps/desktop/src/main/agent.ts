@@ -98,7 +98,7 @@ interface UndoBuffer {
   removedLines: string[]
 }
 const undoBuffers = new Map<string, UndoBuffer>()
-const MAX_MCP_RESTARTS = 3
+const MAX_MCP_RESTARTS = 10
 const mcpRestartCounts = new Map<string, number>()
 
 let workItemRegistry: WorkItemRegistryFull | null = null
@@ -307,7 +307,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       const restartCount = mcpRestartCounts.get(session.agentLocalId) ?? 0
       if (session.mcpFactory && restartCount < MAX_MCP_RESTARTS) {
         mcpRestartCounts.set(session.agentLocalId, restartCount + 1)
-        const delayMs = Math.pow(2, restartCount) * 500
+        const delayMs = Math.min(Math.pow(2, restartCount) * 500, 30_000)
         console.warn(`[agent] session ${session.agentLocalId} MCP error, reconnecting (${restartCount + 1}/${MAX_MCP_RESTARTS}) in ${delayMs}ms:`, err)
         setStatus(session, 'error', `MCP disconnected — reconnecting (${restartCount + 1}/${MAX_MCP_RESTARTS})…`)
         setTimeout(() => void scheduledMcpRestart(session.agentLocalId, session.mcpFactory!), delayMs)

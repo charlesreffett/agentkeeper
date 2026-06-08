@@ -506,6 +506,8 @@ async function routeMessage(
     setAgentStatus(fromSessionId, 'blocked')
     try {
       return await injectAndWait(runtime, targetInst, wrapMessage(fromInst.instanceId, content))
+    } catch (err) {
+      return `Error: ${err instanceof Error ? err.message : String(err)}`
     } finally {
       removeWait(fromSessionId, targetInst.localId)
       setAgentStatus(fromSessionId, 'running')
@@ -565,6 +567,8 @@ async function routeMessage(
   setAgentStatus(fromSessionId, 'blocked')
   try {
     return await findOrSpawnAndDeliver()
+  } catch (err) {
+    return `Error: ${err instanceof Error ? err.message : String(err)}`
   } finally {
     setAgentStatus(fromSessionId, 'running')
   }
@@ -683,26 +687,30 @@ function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefi
         steps: planStepSchema,
       },
       async ({ title, externalRef, workItemId, prompt, estimatedMinutes, steps }) => {
-        const plan = await createPlan(projectPath, {
-          title,
-          externalRef,
-          workItemId: workItemId ?? '',
-          prompt,
-          estimatedMinutes,
-          steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' })),
-          status: 'planned',
-          sessionIds: sessionId ? [sessionId] : [],
-        })
-        if (sessionId) {
-          registry.updateSession(sessionId, {
-            planState: plan.steps.map((s) => ({
-              id: s.id,
-              content: s.title,
-              status: 'pending' as const,
-            })),
+        try {
+          const plan = await createPlan(projectPath, {
+            title,
+            externalRef,
+            workItemId: workItemId ?? '',
+            prompt,
+            estimatedMinutes,
+            steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' })),
+            status: 'planned',
+            sessionIds: sessionId ? [sessionId] : [],
           })
+          if (sessionId) {
+            registry.updateSession(sessionId, {
+              planState: plan.steps.map((s) => ({
+                id: s.id,
+                content: s.title,
+                status: 'pending' as const,
+              })),
+            })
+          }
+          return { content: [{ type: 'text', text: JSON.stringify(plan) }] }
+        } catch (err) {
+          return { content: [{ type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` }] }
         }
-        return { content: [{ type: 'text', text: JSON.stringify(plan) }] }
       },
     ),
     tool(
@@ -725,30 +733,34 @@ function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefi
         }).optional().describe('Fields to update on a single step when stepId is provided.'),
       },
       async ({ id: planId, filename, steps, stepId, stepPatch, ...rest }) => {
-        let resolvedId = planId
+        try {
+          let resolvedId = planId
 
-        if (!resolvedId && filename) {
-          const planRef = filename.replace(/-plan\.json$/, '')
-          const found = await getPlanByRef(projectPath, planRef)
-          resolvedId = found?.id
-        }
+          if (!resolvedId && filename) {
+            const planRef = filename.replace(/-plan\.json$/, '')
+            const found = await getPlanByRef(projectPath, planRef)
+            resolvedId = found?.id
+          }
 
-        if (!resolvedId) {
-          const label = planId ?? filename ?? '(none)'
-          return { content: [{ type: 'text', text: `Error: plan "${label}" not found.` }] }
-        }
+          if (!resolvedId) {
+            const label = planId ?? filename ?? '(none)'
+            return { content: [{ type: 'text', text: `Error: plan "${label}" not found.` }] }
+          }
 
-        const patch = {
-          ...rest,
-          ...(steps !== undefined
-            ? { steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' as const })) }
-            : {}),
-          ...(stepId !== undefined ? { stepId } : {}),
-          ...(stepPatch !== undefined ? { stepPatch } : {}),
+          const patch = {
+            ...rest,
+            ...(steps !== undefined
+              ? { steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' as const })) }
+              : {}),
+            ...(stepId !== undefined ? { stepId } : {}),
+            ...(stepPatch !== undefined ? { stepPatch } : {}),
+          }
+          const updated = await updatePlan(projectPath, resolvedId, patch)
+          if (!updated) return { content: [{ type: 'text', text: `Error: plan "${resolvedId}" not found.` }] }
+          return { content: [{ type: 'text', text: JSON.stringify(updated) }] }
+        } catch (err) {
+          return { content: [{ type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` }] }
         }
-        const updated = await updatePlan(projectPath, resolvedId, patch)
-        if (!updated) return { content: [{ type: 'text', text: `Error: plan "${resolvedId}" not found.` }] }
-        return { content: [{ type: 'text', text: JSON.stringify(updated) }] }
       },
     ),
   ]
@@ -781,8 +793,12 @@ export function createOrchestratorMcp(
           content: z.string().describe('Message body to send to the peer.'),
         },
         async ({ to, content }) => {
-          const reply = await routeMessage(sessionId, to, content)
-          return { content: [{ type: 'text', text: reply }] }
+          try {
+            const reply = await routeMessage(sessionId, to, content)
+            return { content: [{ type: 'text', text: reply }] }
+          } catch (err) {
+            return { content: [{ type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` }] }
+          }
         },
       ),
     ],
