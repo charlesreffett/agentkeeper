@@ -1,8 +1,8 @@
 // Shared between main, preload, and renderer. Pure types/constants only — no
 // runtime imports from Electron or Node.
 
-import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
-export type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus }
+import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
+export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus }
 import type { PluginManifest } from '@agentkeeper/sdk'
 import type {
   CheckRun,
@@ -63,6 +63,14 @@ export interface RemoteSource {
 export interface JiraProject {
   key: string
   name: string
+}
+
+export interface JiraActivityEntry {
+  id: string
+  ticketRef: string
+  actor: string
+  message: string
+  createdAt: number
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
@@ -862,9 +870,12 @@ export interface AgentKeeperApi {
     getTransitions: (id: string) => Promise<IssueTransition[]>
     transition: (id: string, name: string) => Promise<void>
     create: (params: WorkItemCreateParams) => Promise<WorkItem>
+    counts: (boards: string[]) => Promise<Record<string, number>>
   }
   jira: {
     listProjects: () => Promise<JiraProject[]>
+    activityList: (ticketRef: string) => Promise<JiraActivityEntry[]>
+    activityAdd: (entry: { ticketRef: string; actor: string; message: string }) => Promise<JiraActivityEntry>
   }
   remotes: {
     detect: (projectPath: string) => Promise<RemoteSource[]>
@@ -1002,7 +1013,10 @@ export const IPC_CHANNELS = {
   workItemsGetTransitions: 'workItems:getTransitions',
   workItemsTransition: 'workItems:transition',
   workItemsCreate: 'workItems:create',
+  workItemsCounts: 'workItems:counts',
   jiraListProjects: 'jira:listProjects',
+  jiraActivityList: 'jira:activity:list',
+  jiraActivityAdd: 'jira:activity:add',
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',

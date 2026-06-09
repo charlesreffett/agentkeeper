@@ -1,34 +1,34 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import type { JiraActivityEntry } from '@shared/ipc-contract'
 
 export type ActivityActor = 'user' | 'claude' | 'system'
-
-export interface ActivityEntry {
-  id: string
-  workItemId: string
-  actor: ActivityActor
-  message: string
-  timestamp: number
-}
+export type ActivityEntry = JiraActivityEntry
 
 export const useJiraActivityStore = defineStore('jiraActivity', () => {
-  const entries = ref<ActivityEntry[]>([])
+  const cache = ref<Map<string, JiraActivityEntry[]>>(new Map())
+  const loaded = ref<Set<string>>(new Set())
 
-  function addEntry(workItemId: string, actor: ActivityActor, message: string) {
-    entries.value.unshift({
-      id: crypto.randomUUID(),
-      workItemId,
-      actor,
-      message,
-      timestamp: Date.now(),
-    })
+  async function ensureLoaded(ticketRef: string) {
+    if (loaded.value.has(ticketRef)) return
+    const entries = await window.agentkeeper.jira.activityList(ticketRef)
+    cache.value.set(ticketRef, entries)
+    loaded.value.add(ticketRef)
   }
 
-  function getEntries(workItemId: string): ActivityEntry[] {
-    return entries.value.filter((e) => e.workItemId === workItemId)
+  async function addEntry(ticketRef: string, actor: ActivityActor, message: string) {
+    const entry = await window.agentkeeper.jira.activityAdd({ ticketRef, actor, message })
+    const current = cache.value.get(ticketRef) ?? []
+    cache.value.set(ticketRef, [entry, ...current])
+    if (!loaded.value.has(ticketRef)) loaded.value.add(ticketRef)
   }
 
-  return { entries, addEntry, getEntries }
+  async function getEntries(ticketRef: string): Promise<JiraActivityEntry[]> {
+    await ensureLoaded(ticketRef)
+    return cache.value.get(ticketRef) ?? []
+  }
+
+  return { addEntry, getEntries }
 })
 
 export function relativeTime(ts: number): string {

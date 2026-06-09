@@ -138,6 +138,14 @@ export const pluginRegistry = sqliteTable('plugin_registry', {
   devPath: text('dev_path'),
 })
 
+export const jiraTicketActivity = sqliteTable('jira_ticket_activity', {
+  id: text('id').primaryKey(),
+  ticketRef: text('ticket_ref').notNull(),
+  actor: text('actor').notNull(),
+  message: text('message').notNull(),
+  createdAt: integer('created_at').notNull(),
+})
+
 export const planSteps = sqliteTable('plan_steps', {
   id: text('id').primaryKey(),
   planId: text('plan_id').notNull().references(() => plans.id, { onDelete: 'cascade' }),

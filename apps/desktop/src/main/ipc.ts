@@ -27,7 +27,8 @@ import * as costLedger from './cost-ledger'
 import { getDraft, setDraft, clearDraft } from './drafts'
 import { getAllStats, upsertStats, markStatsImported, isStatsImported, flushInProgressTokens } from './stats'
 import { getDb, runMigrations } from './db/index'
-import { sql } from 'drizzle-orm'
+import { jiraTicketActivity } from './db/schema'
+import { sql, eq, desc } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
 import { getAllPricing, refreshFromLiteLLM } from './pricing'
 import {
@@ -42,6 +43,8 @@ import {
   submitReview as ghSubmitReview,
 } from '@agentkeeper/plugin-github/src/github-cli'
 import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
+import { JiraWorkItemSource } from '@agentkeeper/plugin-jira/src/jira-source'
+import { countIssues as jiraCountIssues } from '@agentkeeper/plugin-jira/src/jira-cli'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import {
@@ -1280,10 +1283,20 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     })
   }
 
-  // Work items (plugin registry)
+  // Work items — Jira runs in-main (like jira:listProjects), bypassing the worker
+  // plugin route whose unreliable PATH/config delivery returned 0 issues. Config is
+  // read under the 'jira' id, matching what the settings panel writes.
+  async function jiraSource(): Promise<JiraWorkItemSource> {
+    const cfg = (await getPluginConfig('jira', getRawSqlite())) as {
+      projectMappings?: Array<{ jiraProjectKey: string; projectPath: string }>
+      projectKey?: string
+    }
+    return new JiraWorkItemSource(cfg.projectMappings ?? [], cfg.projectKey)
+  }
+
   ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {
     try {
-      return await registry.list()
+      return await (await jiraSource()).list()
     } catch (err) {
       console.error('[ipc] workItems:list failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -1291,7 +1304,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(IPC_CHANNELS.workItemsGet, async (_event, id: string) => {
     try {
-      return await registry.get(id)
+      return await (await jiraSource()).get(id)
     } catch (err) {
       console.error('[ipc] workItems:get failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -1301,7 +1314,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.workItemsUpdateStatus,
     async (_event, id: string, status: WorkItemStatus) => {
       try {
-        return await registry.updateStatus(id, status)
+        return await (await jiraSource()).updateStatus(id, status)
       } catch (err) {
         console.error('[ipc] workItems:updateStatus failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -1310,7 +1323,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(IPC_CHANNELS.workItemsGetTransitions, async (_event, id: string) => {
     try {
-      return await registry.getTransitions(id)
+      return await (await jiraSource()).getTransitions(id)
     } catch (err) {
       console.error('[ipc] workItems:getTransitions failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -1320,7 +1333,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.workItemsTransition,
     async (_event, id: string, name: string) => {
       try {
-        return await registry.transition(id, name)
+        return await (await jiraSource()).transition(id, name)
       } catch (err) {
         console.error('[ipc] workItems:transition failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -1331,13 +1344,20 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     IPC_CHANNELS.workItemsCreate,
     async (_event, params: WorkItemCreateParams) => {
       try {
-        return await registry.create(params)
+        return await (await jiraSource()).create(params)
       } catch (err) {
         console.error('[ipc] workItems:create failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
   )
+
+  ipcMain.handle(IPC_CHANNELS.workItemsCounts, async (_event, boards: string[]) => {
+    const entries = await Promise.all(
+      boards.map(async (key) => [key, await jiraCountIssues(key)] as const),
+    )
+    return Object.fromEntries(entries.filter((e): e is [string, number] => e[1] != null))
+  })
 
   ipcMain.handle(IPC_CHANNELS.jiraListProjects, async () => {
     try {
@@ -1346,6 +1366,22 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       console.error('[ipc] jira:listProjects failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.jiraActivityList, (_e, ticketRef: string) => {
+    return getDb()
+      .select()
+      .from(jiraTicketActivity)
+      .where(eq(jiraTicketActivity.ticketRef, ticketRef))
+      .orderBy(desc(jiraTicketActivity.createdAt))
+      .all()
+      .map((r) => ({ id: r.id, ticketRef: r.ticketRef, actor: r.actor, message: r.message, createdAt: r.createdAt }))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.jiraActivityAdd, (_e, entry: { ticketRef: string; actor: string; message: string }) => {
+    const row = { id: randomUUID(), ticketRef: entry.ticketRef, actor: entry.actor, message: entry.message, createdAt: Date.now() }
+    getDb().insert(jiraTicketActivity).values(row).run()
+    return row
   })
 
   registerTerminalHandlers()

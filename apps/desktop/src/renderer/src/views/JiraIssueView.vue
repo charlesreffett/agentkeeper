@@ -1,12 +1,21 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { JiraActivityEntry } from '@shared/ipc-contract'
 import { useRoute } from 'vue-router'
-import { Bot, Sparkles, User } from 'lucide-vue-next'
+import { Bot, ChevronDown, Sparkles, User } from 'lucide-vue-next'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Comark } from '@comark/vue'
+import { transcriptPlugins } from '@/lib/comark-config'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore, relativeTime } from '@/stores/jiraActivity'
 import JiraStartSessionModal from './JiraStartSessionModal.vue'
-import type { IssueTransition, WorkItem, WorkItemStatus } from '@shared/ipc-contract'
+import type { IssueTransition, StatusCategory, WorkItem, WorkItemStatus } from '@shared/ipc-contract'
 
 const route = useRoute()
 const { focusedProject } = useProjectsQuery()
@@ -43,6 +52,25 @@ const statusClass: Record<WorkItemStatus, string> = {
   done: 'bg-green-500/20 text-green-400',
   closed: 'bg-muted text-muted-foreground',
 }
+
+// Mirrors Jira's own lozenge palette keyed on statusCategory (To Do=gray, In Progress=blue,
+// Done=green) — deterministic across orgs since status names are arbitrary.
+const categoryClass: Record<StatusCategory, string> = {
+  todo: 'bg-muted text-muted-foreground',
+  'in-progress': 'bg-blue-500/20 text-blue-400',
+  done: 'bg-green-500/20 text-green-400',
+  unknown: 'bg-muted text-muted-foreground',
+}
+
+function transitionClass(t: IssueTransition): string {
+  return t.toStatusCategory ? categoryClass[t.toStatusCategory] : statusClass[t.toStatus]
+}
+
+const itemStatusClass = computed(() => {
+  const it = item.value
+  if (!it) return ''
+  return it.statusCategory ? categoryClass[it.statusCategory] : statusClass[it.status]
+})
 
 const priorityClass: Record<string, string> = {
   critical: 'text-red-500',
@@ -95,18 +123,20 @@ async function load() {
 
 watch(id, load, { immediate: true })
 
-async function applyTransition(transitionName: string) {
+async function applyTransition(t: IssueTransition) {
   if (!item.value) return
   statusError.value = null
-  statusUpdating.value = transitionName
+  const prev = item.value
+  // Optimistic: reflect the target status immediately; rollback on failure.
+  item.value = { ...prev, status: t.toStatus, statusLabel: t.toStatusLabel, statusCategory: t.toStatusCategory }
+  statusUpdating.value = t.name
   try {
-    await window.agentkeeper.workItems.transition(item.value.id, transitionName)
-    const refreshed = await window.agentkeeper.workItems.get(item.value.id)
-    if (refreshed) {
-      item.value = refreshed
-      await loadTransitions(item.value.id)
-    }
+    await window.agentkeeper.workItems.transition(prev.id, t.name)
+    const refreshed = await window.agentkeeper.workItems.get(prev.id)
+    if (refreshed) item.value = refreshed
+    await loadTransitions(prev.id)
   } catch (err) {
+    item.value = prev
     statusError.value = err instanceof Error ? err.message : String(err)
   } finally {
     statusUpdating.value = null
@@ -116,15 +146,17 @@ async function applyTransition(transitionName: string) {
 async function setStatus(newStatus: WorkItemStatus) {
   if (!item.value || newStatus === item.value.status) return
   statusError.value = null
+  const prev = item.value
+  // Optimistic update; no category color known for the fallback path.
+  item.value = { ...prev, status: newStatus, statusLabel: statusLabel[newStatus], statusCategory: undefined }
   statusUpdating.value = newStatus
   try {
-    await window.agentkeeper.workItems.updateStatus(item.value.id, newStatus)
-    const refreshed = await window.agentkeeper.workItems.get(item.value.id)
-    if (refreshed) {
-      item.value = refreshed
-      await loadTransitions(item.value.id)
-    }
+    await window.agentkeeper.workItems.updateStatus(prev.id, newStatus)
+    const refreshed = await window.agentkeeper.workItems.get(prev.id)
+    if (refreshed) item.value = refreshed
+    await loadTransitions(prev.id)
   } catch (err) {
+    item.value = prev
     statusError.value = err instanceof Error ? err.message : String(err)
   } finally {
     statusUpdating.value = null
@@ -134,16 +166,30 @@ async function setStatus(newStatus: WorkItemStatus) {
 async function planWithClaude() {
   if (!item.value) return
   planError.value = null
-  const focused = focusedProject.value
-  if (!focused) {
-    planError.value = 'Focus a project in the sidebar before planning.'
-    return
-  }
   planRunning.value = true
   const cur = item.value
+
+  let projectPath: string | undefined
+  try {
+    const projKey = cur.externalRef.match(/^[A-Z]+/)?.[0]
+    if (projKey) {
+      const cfg = await window.agentkeeper.plugins.getConfig('jira') as { projectMappings?: { jiraProjectKey: string; projectPath: string }[] } | null
+      const mapping = cfg?.projectMappings?.find(m => m.jiraProjectKey === projKey && m.projectPath)
+      if (mapping) projectPath = mapping.projectPath
+    }
+  } catch {
+    // config fetch failure is non-fatal; fall through to focused project
+  }
+  if (!projectPath) projectPath = focusedProject.value?.path
+  if (!projectPath) {
+    planError.value = 'No project mapping found for this Jira project. Configure mappings in Jira settings or focus a project in the sidebar.'
+    planRunning.value = false
+    return
+  }
+
   let planId: string | null = null
   try {
-    const plan = await window.agentkeeper.plans.create(focused.path, {
+    const plan = await window.agentkeeper.plans.create(projectPath, {
       title: `${cur.externalRef}: ${cur.title}`,
       externalRef: cur.externalRef,
       workItemId: cur.id,
@@ -177,11 +223,12 @@ For each step:
 Do not use the Write tool for the plan. Use mcp__agentkeeper__update_plan only.`
   try {
     await sessionStore.start({
-      projectPath: focused.path,
+      projectPath,
       workItemId: cur.id,
       initialPrompt: planningPrompt,
     })
-    activityStore.addEntry(cur.id, 'claude', 'Claude opened planning session')
+    await activityStore.addEntry(cur.externalRef, 'claude', 'Claude opened planning session')
+    activity.value = await activityStore.getEntries(cur.externalRef)
   } catch (err) {
     planError.value = err instanceof Error ? err.message : String(err)
   } finally {
@@ -189,7 +236,10 @@ Do not use the Write tool for the plan. Use mcp__agentkeeper__update_plan only.`
   }
 }
 
-const activity = computed(() => item.value ? activityStore.getEntries(item.value.id) : [])
+const activity = ref<JiraActivityEntry[]>([])
+watch(() => item.value?.externalRef, async (ticketRef) => {
+  if (ticketRef) activity.value = await activityStore.getEntries(ticketRef)
+}, { immediate: true })
 
 const breadcrumb = computed(() => {
   if (!item.value) return ''
@@ -261,10 +311,30 @@ const breadcrumb = computed(() => {
           <!-- Description -->
           <div v-if="item.body">
             <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Description</div>
-            <div class="text-sm text-foreground/80 whitespace-pre-wrap font-mono bg-muted/20 rounded p-3 leading-relaxed">
-              {{ item.body }}
+            <div class="prose prose-sm dark:prose-invert max-w-none text-sm bg-muted/20 rounded p-3">
+              <Suspense>
+                <Comark :markdown="item.body" :plugins="transcriptPlugins" />
+                <template #fallback>
+                  <span class="whitespace-pre-wrap break-words">{{ item.body }}</span>
+                </template>
+              </Suspense>
             </div>
           </div>
+
+          <!-- Custom fields (rich-text only, e.g. Acceptance Criteria) -->
+          <template v-if="item.customFields && Object.keys(item.customFields).length > 0">
+            <div v-for="(value, name) in item.customFields" :key="name">
+              <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{{ name }}</div>
+              <div class="prose prose-sm dark:prose-invert max-w-none text-sm bg-muted/20 rounded p-3">
+                <Suspense>
+                  <Comark :markdown="value" :plugins="transcriptPlugins" />
+                  <template #fallback>
+                    <span class="whitespace-pre-wrap break-words">{{ value }}</span>
+                  </template>
+                </Suspense>
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- Right panel -->
@@ -276,37 +346,42 @@ const breadcrumb = computed(() => {
               <!-- Status with transitions -->
               <div class="space-y-1">
                 <div class="text-xs text-muted-foreground">Status</div>
-                <div v-if="transitionsLoading" class="text-xs text-muted-foreground">Loading…</div>
-                <div v-else class="flex flex-wrap gap-1">
-                  <template v-if="availableTransitions.length > 0">
-                    <button
-                      v-for="t in availableTransitions"
-                      :key="t.name"
-                      class="text-xs px-2 py-0.5 rounded-full bg-muted/40 text-foreground/80 hover:opacity-90 transition-opacity"
-                      :class="statusUpdating === t.name ? 'opacity-40 cursor-wait' : ''"
-                      :disabled="statusUpdating !== null"
-                      @click="applyTransition(t.name)"
-                    >
-                      {{ statusUpdating === t.name ? '…' : t.toStatusLabel }}
-                    </button>
-                  </template>
-                  <template v-else>
-                    <button
-                      v-for="s in fallbackStatuses"
-                      :key="s"
-                      class="text-xs px-2 py-0.5 rounded-full border transition-opacity"
-                      :class="[
-                        statusClass[s],
-                        s === item.status ? 'border-current opacity-100 ring-1 ring-current' : 'border-transparent opacity-60 hover:opacity-90',
-                        statusUpdating === s ? 'opacity-40 cursor-wait' : '',
-                      ]"
-                      :disabled="statusUpdating !== null"
-                      @click="setStatus(s)"
-                    >
-                      {{ statusUpdating === s ? '…' : statusLabel[s] }}
-                    </button>
-                  </template>
-                </div>
+                <div v-if="transitionsLoading && availableTransitions.length === 0" class="text-xs text-muted-foreground">Loading…</div>
+                <DropdownMenu v-else>
+                  <DropdownMenuTrigger
+                    class="text-xs px-2 py-0.5 rounded-full border border-current inline-flex items-center gap-1 disabled:opacity-60 disabled:cursor-wait"
+                    :class="itemStatusClass"
+                    :disabled="statusUpdating !== null"
+                  >
+                    {{ item.statusLabel ?? statusLabel[item.status] }}
+                    <ChevronDown class="size-3" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <template v-if="availableTransitions.length > 0">
+                      <DropdownMenuItem
+                        v-for="t in availableTransitions"
+                        :key="t.name"
+                        class="text-xs"
+                        @select="applyTransition(t)"
+                      >
+                        <span class="size-2 rounded-full" :class="transitionClass(t)" />
+                        {{ t.toStatusLabel }}
+                      </DropdownMenuItem>
+                    </template>
+                    <template v-else>
+                      <DropdownMenuItem
+                        v-for="s in fallbackStatuses"
+                        :key="s"
+                        class="text-xs"
+                        :disabled="s === item.status"
+                        @select="setStatus(s)"
+                      >
+                        <span class="size-2 rounded-full" :class="statusClass[s]" />
+                        {{ statusLabel[s] }}
+                      </DropdownMenuItem>
+                    </template>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <div v-if="statusError" class="text-xs text-destructive">{{ statusError }}</div>
               </div>
 
@@ -376,7 +451,7 @@ const breadcrumb = computed(() => {
                 />
                 <div class="min-w-0 flex-1">
                   <span class="text-xs text-foreground/80">{{ entry.message }}</span>
-                  <span class="text-xs text-muted-foreground/60 ml-1.5">· {{ relativeTime(entry.timestamp) }}</span>
+                  <span class="text-xs text-muted-foreground/60 ml-1.5">· {{ relativeTime(entry.createdAt) }}</span>
                 </div>
               </div>
             </div>

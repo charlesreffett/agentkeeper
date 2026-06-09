@@ -52,6 +52,7 @@ import {
   type WorkItemCreateParams,
   type WorkItemStatus,
   type JiraProject,
+  type JiraActivityEntry,
   type PluginRecord,
   type UpdateAvailable,
 } from '../shared/ipc-contract'
@@ -364,9 +365,13 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.workItemsTransition, id, name) as Promise<void>,
     create: (params: WorkItemCreateParams) =>
       invoke(IPC_CHANNELS.workItemsCreate, params) as Promise<never>,
+    counts: (boards: string[]) =>
+      invoke(IPC_CHANNELS.workItemsCounts, boards) as Promise<Record<string, number>>,
   },
   jira: {
     listProjects: () => invoke(IPC_CHANNELS.jiraListProjects) as Promise<JiraProject[]>,
+    activityList: (ticketRef: string) => invoke(IPC_CHANNELS.jiraActivityList, ticketRef) as Promise<JiraActivityEntry[]>,
+    activityAdd: (entry: { ticketRef: string; actor: string; message: string }) => invoke(IPC_CHANNELS.jiraActivityAdd, entry) as Promise<JiraActivityEntry>,
   },
   remotes: {
     detect: (projectPath: string) =>

@@ -171,7 +171,7 @@ async function startSolo() {
       ...(selectedRole?.systemPrompt ? { systemPromptAppend: selectedRole.systemPrompt } : {}),
       ...(selectedRole?.allowedTools?.length ? { allowedTools: selectedRole.allowedTools } : {}),
     })
-    activityStore.addEntry(props.item.id, 'claude', 'Claude opened session')
+    await activityStore.addEntry(props.item.externalRef, 'claude', 'Claude opened session')
     emit('started')
     emit('close')
   } catch (err) {
@@ -205,7 +205,7 @@ async function startAgency() {
       workItemKey: props.item.externalRef ?? null,
       workItemTitle: props.item.title ?? null,
     })
-    activityStore.addEntry(props.item.id, 'claude', 'Claude opened agency session')
+    await activityStore.addEntry(props.item.externalRef, 'claude', 'Claude opened agency session')
     emit('started')
     emit('close')
   } catch (err) {
