@@ -1,6 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk'
-import { query } from '@anthropic-ai/claude-agent-sdk'
-import { resolveClaudeAuth } from './secrets'
+import { getHarness } from './harness/index'
 import { getDiff, getStatus } from './git'
 import type { CommitSuggestion, CommitGroup } from '../shared/ipc-contract'
 
@@ -107,36 +105,15 @@ function parseResponse(text: string, allFiles: string[]): CommitSuggestion {
 // Pro/Max users (claude login, no keychain key): subprocess path via the agent
 // SDK — same binary the sessions use, picks up CLI credentials automatically.
 
-async function callClaude(prompt: string): Promise<string> {
-  const auth = await resolveClaudeAuth()
-
-  if (auth.type === 'api-key') {
-    const client = new Anthropic({ apiKey: auth.key })
-    const msg = await client.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 2048,
-      messages: [{ role: 'user', content: prompt }],
-    })
-    return msg.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-  }
-
-  // Pro/Max path: spawn the claude subprocess (mirrors agent.ts auth setup)
-  const childEnv: Record<string, string | undefined> = {
-    ...process.env,
-    CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
-  }
-
-  const q = query({ prompt, options: { env: childEnv } })
-  for await (const event of q) {
+async function callClaude(prompt: string, cwd?: string): Promise<string> {
+  const stream = getHarness().runSession(prompt, { model: getHarness().defaultModel, cwd: cwd ?? process.cwd() })
+  for await (const event of stream) {
     if (event.type === 'result') {
-      if (event.subtype === 'success') return event.result
-      throw new Error(`Claude analysis failed: ${(event.errors ?? []).join(', ')}`)
+      if ((event as {subtype?:string}).subtype === 'success') return (event as {result?:string}).result ?? ''
+      throw new Error(`Analysis failed: ${((event as {errors?:unknown[]}).errors ?? []).join(', ')}`)
     }
   }
-  throw new Error('Claude analysis produced no result')
+  throw new Error('Analysis produced no result')
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -160,6 +137,6 @@ export async function suggestCommits(projectPath: string): Promise<CommitSuggest
   const statusText = buildStatusText(status)
   const prompt = buildPrompt(statusText, diff, diffTruncated, projectPath)
 
-  const responseText = await callClaude(prompt)
+  const responseText = await callClaude(prompt, projectPath)
   return parseResponse(responseText, allFiles)
 }

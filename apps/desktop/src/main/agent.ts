@@ -1,12 +1,8 @@
 import { webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import {
-  query,
-  type Query,
-  type SDKMessage,
-  type SDKUserMessage,
-} from '@anthropic-ai/claude-agent-sdk'
+import { getHarness } from './harness/index'
+import type { HarnessEvent } from '@agentkeeper/core'
 import * as costLedger from './cost-ledger'
 import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
 import { calculateCost, calculateCostBreakdown } from './pricing'
@@ -41,8 +37,8 @@ export interface ActiveSession {
   model: string | undefined
   effort: RoleEffort | undefined
   permissionMode: PermissionMode
-  query: Query
-  input: AsyncQueue<SDKUserMessage>
+  stream: AsyncIterable<HarnessEvent>
+  input: AsyncQueue<{type:'user';message:{role:'user';content:unknown}}>
   abortController: AbortController
   status: LiveSessionStatus
   startedAt: number
@@ -50,8 +46,8 @@ export interface ActiveSession {
   workItemId: string | null
   workItemKey: string | null
   workItemTitle: string | null
-  /** Full SDK message history for orchestrator routing. */
-  events: SDKMessage[]
+  /** Full harness event history for orchestrator routing. */
+  events: HarnessEvent[]
   /** Last-known TodoWrite todo list, kept in sync during the session. */
   planState: PlanTodo[] | null
   /** Resolvers awaiting next terminal status (idle/suspended/completed/error/inactive). */
@@ -170,7 +166,7 @@ function setStatus(s: ActiveSession, status: LiveSessionStatus, error?: string) 
 
 async function consumeStream(session: ActiveSession): Promise<void> {
   try {
-    for await (const msg of session.query) {
+    for await (const msg of session.stream) {
       if (session.interrupted) break
 
       session.events.push(msg)
@@ -363,9 +359,9 @@ async function consumeStream(session: ActiveSession): Promise<void> {
   }
 }
 
-function messageFromInput(text: string, attachments?: Attachment[]): SDKUserMessage {
+function messageFromInput(text: string, attachments?: Attachment[]): {type:'user';message:{role:'user';content:unknown}} {
   if (!attachments || attachments.length === 0) {
-    return { type: 'user', message: { role: 'user', content: text } } as SDKUserMessage
+    return { type: 'user', message: { role: 'user', content: text } }
   }
   const blocks: unknown[] = attachments.map((a) => {
     if (a.mimeType.startsWith('image/')) {
@@ -377,7 +373,7 @@ function messageFromInput(text: string, attachments?: Attachment[]): SDKUserMess
     return { type: 'text', text: `<file name="${a.name}">\n${a.content}\n</file>` }
   })
   if (text.trim()) blocks.push({ type: 'text', text })
-  return { type: 'user', message: { role: 'user', content: blocks } } as SDKUserMessage
+  return { type: 'user', message: { role: 'user', content: blocks } }
 }
 
 export async function startSession(
@@ -432,7 +428,7 @@ export async function startSession(
   const now = Date.now()
 
   const controller = new AbortController()
-  const input = new AsyncQueue<SDKUserMessage>()
+  const input = new AsyncQueue<{type:'user';message:{role:'user';content:unknown}}>()
   const isResume = !!params.resumeSdkSessionId
   if (!isResume) {
     input.push(messageFromInput(params.initialPrompt, params.initialAttachments))
@@ -494,39 +490,26 @@ export async function startSession(
 
   const cwd = params.worktreePath ?? params.projectPath
 
-  const options: Parameters<typeof query>[0]['options'] = {
-    cwd,
-    ...(params.model ? { model: params.model } : {}),
-    ...(params.effort ? { effort: params.effort } : {}),
-    ...(params.resumeSdkSessionId ? { resume: params.resumeSdkSessionId } : {}),
-    abortController: controller,
-    env: childEnv,
-    permissionMode: params.permissionMode ?? 'bypassPermissions',
-    settingSources: ['user', 'project'],
-    includePartialMessages: true,
-  }
-  if (systemPromptAppend) {
-    options!.systemPrompt = {
-      type: 'preset',
-      preset: 'claude_code',
-      append: systemPromptAppend,
-    }
-  }
-  if (params.allowedTools && params.allowedTools.length) {
-    options!.allowedTools = params.allowedTools
-  }
   const mcpServer = extras.mcpServer ?? extras.mcpFactory?.()
   const hasBuiltin = !!mcpServer
   const hasExternal = extras.additionalMcpServers && Object.keys(extras.additionalMcpServers).length > 0
-  if (hasBuiltin || hasExternal) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    options!.mcpServers = {
-      ...(hasBuiltin ? { agentkeeper: mcpServer! } : {}),
-      ...(extras.additionalMcpServers ?? {}),
-    } as any
-  }
 
-  const q = query({ prompt: input, options })
+  const stream = getHarness().runSession('', {
+    model: params.model,
+    cwd,
+    preset: 'claude_code',
+    ...(systemPromptAppend ? { systemPrompt: systemPromptAppend } : {}),
+    env: childEnv as Record<string, string>,
+    messageQueue: input,
+    ...(params.resumeSdkSessionId ? { resume: params.resumeSdkSessionId } : {}),
+    ...(params.effort ? { effort: params.effort } : {}),
+    abortController: controller,
+    permissionMode: params.permissionMode ?? 'bypassPermissions',
+    settingSources: ['user', 'project'],
+    includePartialMessages: true,
+    ...(params.allowedTools?.length ? { allowedTools: params.allowedTools } : {}),
+    ...(hasBuiltin || hasExternal ? { mcpServers: { ...(hasBuiltin ? { agentkeeper: mcpServer! } : {}), ...(extras.additionalMcpServers ?? {}) } } : {}),
+  })
 
   const session: ActiveSession = {
     id: agentLocalId,
@@ -538,7 +521,7 @@ export async function startSession(
     model: params.model,
     effort: params.effort,
     permissionMode: params.permissionMode ?? 'bypassPermissions',
-    query: q,
+    stream,
     input,
     abortController: controller,
     status: 'starting',
@@ -615,9 +598,7 @@ export async function interruptSession(sessionId: string): Promise<boolean> {
     s.interrupted = true
     setStatus(s, 'suspended')
     try { s.input.close() } catch { /* ignore */ }
-    try { await s.query.interrupt() } catch { /* ignore */ }
     try { s.abortController.abort() } catch { /* ignore */ }
-    try { s.query.close?.() } catch { /* ignore */ }
   }))
   return true
 }
@@ -628,9 +609,7 @@ export async function terminateSession(sessionId: string): Promise<void> {
   )
   await Promise.all(targets.map(async s => {
     try { s.input.close() } catch { /* ignore */ }
-    try { await s.query.interrupt() } catch { /* ignore */ }
     try { s.abortController.abort() } catch { /* ignore */ }
-    try { s.query.close?.() } catch { /* ignore */ }
     setStatus(s, 'inactive')
     active.delete(s.agentLocalId)
   }))
