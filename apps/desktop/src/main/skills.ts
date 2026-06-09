@@ -6,19 +6,9 @@ import { promisify } from 'node:util'
 import Anthropic from '@anthropic-ai/sdk'
 import type { Skill, SkillPreview } from '../shared/ipc-contract'
 import { resolveClaudeAuth } from './secrets'
+import { getHarness } from './harness/index'
 
 const execFileAsync = promisify(execFile)
-
-const PROJECT_SKILLS_DIR = '.claude/skills'
-const GLOBAL_SKILLS_DIR = '.claude/skills'
-
-function projectSkillsDir(projectPath: string): string {
-  return path.join(projectPath, PROJECT_SKILLS_DIR)
-}
-
-function globalSkillsDir(): string {
-  return path.join(os.homedir(), GLOBAL_SKILLS_DIR)
-}
 
 function parseFrontmatter(source: string): {
   name: string
@@ -199,7 +189,7 @@ async function listScope(
   projectPath: string,
 ): Promise<Skill[]> {
   const dir =
-    scope === 'project' ? projectSkillsDir(projectPath) : globalSkillsDir()
+    getHarness().getSkillsDir(scope, projectPath)
   let entries: string[]
   try {
     entries = await fs.readdir(dir)
@@ -345,7 +335,7 @@ function parseSourceInput(raw: string): { source: string; skillFilter: string[] 
     input = input.replace(new RegExp(`\\s*${escaped}(?=\\s|$)`, 'g'), '')
   }
 
-  // Strip -a/--agent <value> — we always inject -a claude-code ourselves
+  // Strip -a/--agent <value> — we always inject -a <harness-id> ourselves
   input = input.replace(/(?:-a|--agent)\s+\S+/g, '')
 
   return { source: input.trim(), skillFilter }
@@ -358,7 +348,7 @@ export async function previewSkills(
   const { source: cleanSource, skillFilter } = parseSourceInput(source)
   const resolvedSource = await resolveGithubShaUrl(cleanSource)
   const { stdout } = await runSkills(
-    ['add', resolvedSource, '-a', 'claude-code', '-l', '-y'],
+    ['add', resolvedSource, '-a', getHarness().id, '-l', '-y'],
     projectPath,
   )
   let previews = parsePreviewOutput(stdout)
@@ -385,7 +375,7 @@ export async function installSkill(
     ...(skillIds ?? []),
     ...skillFilter.filter((f) => !(skillIds ?? []).includes(f)),
   ]
-  const args: string[] = ['add', resolvedSource, '-a', 'claude-code', '-y']
+  const args: string[] = ['add', resolvedSource, '-a', getHarness().id, '-y']
   if (scope === 'global') args.push('-g')
   if (mergedIds.length > 0) {
     for (const id of mergedIds) {
@@ -409,7 +399,7 @@ export async function removeSkill(skill: Skill): Promise<void> {
   await fs.rm(skill.path, { recursive: true, force: true })
 }
 
-const SKILL_GENERATION_SYSTEM = `You generate Claude Code skill files. Output ONLY the skill markdown starting with \`---\`. No explanation, no code fences, no prose before or after.
+const SKILL_GENERATION_SYSTEM = `You generate agent skill files. Output ONLY the skill markdown starting with \`---\`. No explanation, no code fences, no prose before or after.
 
 Format:
 ---
@@ -431,7 +421,7 @@ function validateGeneratedSkill(raw: string): string {
 
 export async function generateSkillContent(prompt: string): Promise<string> {
   const auth = await resolveClaudeAuth()
-  const userContent = `Create a Claude Code skill that does the following: ${prompt}`
+  const userContent = `Create an agent skill that does the following: ${prompt}`
 
   if (auth.type === 'api-key') {
     const client = new Anthropic({ apiKey: auth.key })
@@ -445,21 +435,15 @@ export async function generateSkillContent(prompt: string): Promise<string> {
     return validateGeneratedSkill(text)
   }
 
-  // Pro/Max plan path — spawn the claude CLI which picks up `claude login`
-  // credentials the same way agent sessions do.
+  // Pro/Max plan path — harness CLI picks up `claude login` credentials
   const fullPrompt = `${SKILL_GENERATION_SYSTEM}\n\n${userContent}`
   try {
-    const result = await execFileAsync('claude', ['-p', fullPrompt], {
-      cwd: os.homedir(),
-      timeout: 60000,
-      maxBuffer: 2 * 1024 * 1024,
-      env: { ...process.env },
-    })
-    return validateGeneratedSkill(result.stdout)
+    const stdout = await getHarness().runCLI(['-p', fullPrompt], { cwd: os.homedir(), timeout: 60000 })
+    return validateGeneratedSkill(stdout)
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: string }
     if (e.code === 'ENOENT') {
-      throw new Error('claude CLI not found in PATH — make sure Claude Code is installed.')
+      throw new Error('CLI not found in PATH — make sure the agent harness is installed.')
     }
     const raw = e.stderr?.trim() || e.stdout?.trim() || e.message || 'unknown error'
     throw new Error(`Skill generation failed: ${stripAnsi(raw).trim()}`)
@@ -472,7 +456,7 @@ export async function saveSkill(
   scope: 'project' | 'global',
   content: string,
 ): Promise<Skill> {
-  const dir = scope === 'project' ? projectSkillsDir(projectPath) : globalSkillsDir()
+  const dir = getHarness().getSkillsDir(scope, projectPath)
   const skillDir = path.join(dir, id)
   const skillFile = path.join(skillDir, 'SKILL.md')
   await fs.mkdir(skillDir, { recursive: true })

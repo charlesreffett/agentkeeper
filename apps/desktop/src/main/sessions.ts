@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import os from 'node:os'
 import readline from 'node:readline'
+import { getHarness } from './harness/index'
 import type {
   ContentBlock,
   EventKind,
@@ -13,21 +13,15 @@ import type {
 // ─── Path helpers ───────────────────────────────────────────────────────────
 
 function claudeProjectsRoot(): string {
-  return path.join(os.homedir(), '.claude', 'projects')
+  return getHarness().getSessionsRoot()
 }
 
-export function encodeCwdForClaude(cwd: string): string {
-  // Claude Code encodes a project cwd by replacing path separators with '-'.
-  // Tested on POSIX: '/Volumes/workspace/foo' → '-Volumes-workspace-foo'.
-  // Windows encoding is best-effort here; verify on first Windows run.
-  return cwd
-    .replaceAll('\\', '-')
-    .replaceAll('/', '-')
-    .replaceAll(':', '-')
+export function encodeCwdForHarness(cwd: string): string {
+  return getHarness().encodeCwd(cwd)
 }
 
 function projectDir(projectPath: string): string {
-  return path.join(claudeProjectsRoot(), encodeCwdForClaude(projectPath))
+  return path.join(claudeProjectsRoot(), encodeCwdForHarness(projectPath))
 }
 
 function snippet(s: string, maxLen = 200): string {

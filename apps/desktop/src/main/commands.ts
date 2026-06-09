@@ -1,26 +1,10 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import Anthropic from '@anthropic-ai/sdk'
 import type { SlashCommand } from '../shared/ipc-contract'
 import { resolveClaudeAuth } from './secrets'
-
-const PROJECT_COMMANDS_DIR = '.claude/commands'
-const GLOBAL_COMMANDS_DIR = '.claude/commands'
-
-function projectCommandsDir(projectPath: string): string {
-  return path.join(projectPath, PROJECT_COMMANDS_DIR)
-}
-
-function globalCommandsDir(): string {
-  return path.join(os.homedir(), GLOBAL_COMMANDS_DIR)
-}
-
-function commandsDir(scope: 'project' | 'global', projectPath: string): string {
-  return scope === 'project' ? projectCommandsDir(projectPath) : globalCommandsDir()
-}
+import { getHarness } from './harness/index'
 
 function nameFromBody(body: string, id: string): string {
   const match = body.match(/^#\s+(.+)$/m)
@@ -31,7 +15,7 @@ async function listScope(
   scope: 'project' | 'global',
   projectPath: string,
 ): Promise<SlashCommand[]> {
-  const dir = commandsDir(scope, projectPath)
+  const dir = getHarness().getCommandsDir(scope, projectPath)
   let entries: string[]
   try {
     entries = await fs.readdir(dir)
@@ -140,7 +124,7 @@ export async function saveCommand(
   id: string,
   body: string,
 ): Promise<SlashCommand> {
-  const dir = commandsDir(scope, projectPath)
+  const dir = getHarness().getCommandsDir(scope, projectPath)
   await fs.mkdir(dir, { recursive: true })
   const filePath = path.join(dir, `${id}.md`)
   const content = body.trimEnd() + '\n'
@@ -163,9 +147,7 @@ export async function removeCommand(cmd: SlashCommand): Promise<void> {
   }
 }
 
-const execFileAsync = promisify(execFile)
-
-const COMMAND_GENERATION_SYSTEM = `You generate Claude Code slash command files. Output ONLY the markdown body starting with the H1 heading. No explanation, no code fences, no prose before or after.
+const COMMAND_GENERATION_SYSTEM = `You generate agent slash command files. Output ONLY the markdown body starting with the H1 heading. No explanation, no code fences, no prose before or after.
 
 Format:
 # Command Title
@@ -174,7 +156,7 @@ Description of what this command does and when to use it.
 
 ## Instructions
 
-Step-by-step instructions for Claude to follow when this command is invoked.
+Step-by-step instructions for the agent to follow when this command is invoked.
 Use $ARGUMENTS anywhere the user's input after the slash command should be substituted.
 
 Rules:
@@ -193,7 +175,7 @@ function validateGeneratedCommand(text: string): string {
 
 export async function generateCommandContent(prompt: string): Promise<string> {
   const auth = await resolveClaudeAuth()
-  const userContent = `Create a Claude Code slash command that does the following: ${prompt}`
+  const userContent = `Create an agent slash command that does the following: ${prompt}`
 
   if (auth.type === 'api-key') {
     const client = new Anthropic({ apiKey: auth.key })
@@ -210,15 +192,11 @@ export async function generateCommandContent(prompt: string): Promise<string> {
   // Pro/Max plan path — picks up `claude login` credentials
   const fullPrompt = `${COMMAND_GENERATION_SYSTEM}\n\n${userContent}`
   try {
-    const result = await execFileAsync('claude', ['-p', fullPrompt], {
-      cwd: os.homedir(),
-      timeout: 60_000,
-      maxBuffer: 2 * 1024 * 1024,
-    })
-    return validateGeneratedCommand(result.stdout)
+    const stdout = await getHarness().runCLI(['-p', fullPrompt], { cwd: os.homedir(), timeout: 60_000 })
+    return validateGeneratedCommand(stdout)
   } catch (err) {
     throw new Error(
-      err instanceof Error ? err.message : 'claude CLI failed — check your login.',
+      err instanceof Error ? err.message : 'CLI failed — check your login.',
     )
   }
 }

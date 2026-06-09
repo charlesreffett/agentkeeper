@@ -1,8 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import Anthropic from '@anthropic-ai/sdk'
 import {
@@ -13,8 +11,7 @@ import {
   type RoleScope,
 } from '../shared/ipc-contract'
 import { resolveClaudeAuth } from './secrets'
-
-const execFileAsync = promisify(execFile)
+import { getHarness } from './harness/index'
 
 function stripAnsi(s: string): string {
   return s
@@ -176,7 +173,7 @@ export async function deleteRole(
 }
 
 const ROLE_GENERATION_PROMPT = (prompt: string) =>
-  `You are helping configure an AI agent role for AgentKeeper, an Electron app that drives Claude Code sessions.
+  `You are helping configure an AI agent role for AgentKeeper, an Electron app that drives AI agent sessions.
 
 Generate a complete role definition for: "${prompt}"
 
@@ -240,19 +237,14 @@ export async function generateRoleContent(prompt: string): Promise<RolesGenerate
     return parseRoleGenerationResponse(text)
   }
 
-  // Pro/Max path — claude CLI picks up `claude login` credentials
+  // Pro/Max path — harness CLI picks up `claude login` credentials
   try {
-    const result = await execFileAsync('claude', ['-p', content], {
-      cwd: os.homedir(),
-      timeout: 60_000,
-      maxBuffer: 2 * 1024 * 1024,
-      env: { ...process.env },
-    })
-    return parseRoleGenerationResponse(result.stdout)
+    const stdout = await getHarness().runCLI(['-p', content], { cwd: os.homedir(), timeout: 60_000 })
+    return parseRoleGenerationResponse(stdout)
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: string }
     if (e.code === 'ENOENT')
-      throw new Error('claude CLI not found — make sure Claude Code is installed.')
+      throw new Error('CLI not found — make sure the agent harness is installed.')
     const raw = e.stderr?.trim() || e.stdout?.trim() || e.message || 'unknown error'
     throw new Error(`Role generation failed: ${stripAnsi(raw).trim()}`)
   }
