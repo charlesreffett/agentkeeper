@@ -36,4 +36,8 @@ export const queryKeys = {
     list: () => ['plugins', 'list'] as const,
     updates: () => ['plugins', 'updates'] as const,
   },
+  harness: {
+    list: () => ['harness', 'list'] as const,
+    active: () => ['harness', 'active'] as const,
+  },
 }
