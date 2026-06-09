@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var config = AppConfig.shared
+    @ObservedObject var config: AppConfig
 
     var body: some View {
         if config.isConfigured {

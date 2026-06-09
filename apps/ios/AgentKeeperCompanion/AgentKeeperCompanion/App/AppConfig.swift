@@ -1,7 +1,6 @@
 import Foundation
 import Security
 
-@MainActor
 final class AppConfig: ObservableObject {
     static let shared = AppConfig()
 
