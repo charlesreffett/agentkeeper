@@ -7,3 +7,4 @@
 // core/plugin boundary is in place from day one.
 
 export const CORE_VERSION = '0.0.1'
+export * from './harness'
