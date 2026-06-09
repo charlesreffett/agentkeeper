@@ -19,6 +19,7 @@ export const sessions = sqliteTable('sessions', {
   status: text('status').notNull().default('idle'),
   startedAt: integer('started_at').notNull(),
   lastActivityAt: integer('last_activity_at').notNull(),
+  lastUserMessageAt: integer('last_user_message_at'),
 })
 
 export const agents = sqliteTable('agents', {

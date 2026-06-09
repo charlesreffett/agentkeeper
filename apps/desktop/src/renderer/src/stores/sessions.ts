@@ -312,7 +312,9 @@ export const useSessionStore = defineStore('sessions', () => {
   }
 
   const liveList = computed(() =>
-    Object.values(sessions).sort((a, b) => b.lastActivityAt - a.lastActivityAt),
+    Object.values(sessions).sort(
+      (a, b) => (b.lastUserMessageAt ?? b.startedAt) - (a.lastUserMessageAt ?? a.startedAt),
+    ),
   )
 
   const currentSession = computed(() =>
@@ -369,6 +371,7 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: now,
       lastActivityAt: now,
+      lastUserMessageAt: null,
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
@@ -407,6 +410,7 @@ export const useSessionStore = defineStore('sessions', () => {
       await window.agentkeeper.sessions.sendInput(id, text, attachments)
       s.interruptedAt = null
       s.lastActivityAt = Date.now()
+      s.lastUserMessageAt = Date.now()
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)
     }
@@ -527,6 +531,7 @@ export const useSessionStore = defineStore('sessions', () => {
         error: null,
         startedAt: now,
         lastActivityAt: now,
+        lastUserMessageAt: null,
         interruptedAt: null,
         currentTurnStartedAt: null,
         currentTurnEndedAt: null,
@@ -711,6 +716,7 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: summary.startedAt,
       lastActivityAt: summary.lastActivityAt,
+      lastUserMessageAt: null,
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
@@ -776,6 +782,7 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: now,
       lastActivityAt: now,
+      lastUserMessageAt: null,
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
@@ -848,6 +855,7 @@ export const useSessionStore = defineStore('sessions', () => {
       error: null,
       startedAt: Date.now(),
       lastActivityAt: Date.now(),
+      lastUserMessageAt: null,
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
@@ -1013,7 +1021,7 @@ export const useSessionStore = defineStore('sessions', () => {
   const visibleSessions = computed<LiveSession[]>(() =>
     Object.values(sessions)
       .filter(s => !s.isDraft)
-      .sort((a, b) => b.lastActivityAt - a.lastActivityAt),
+      .sort((a, b) => (b.lastUserMessageAt ?? b.startedAt) - (a.lastUserMessageAt ?? a.startedAt)),
   )
 
   const statusCounts = computed(() => {

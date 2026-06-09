@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, lt } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencyHandoffs, agents, sessions } from './db/schema'
 import type { Agent, AgencyScope, LiveSessionStatus, PlanTodo, RoleEffort, Session } from '../shared/ipc-contract'
@@ -32,6 +32,7 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
     status: row.status as LiveSessionStatus,
     startedAt: row.startedAt,
     lastActivityAt: row.lastActivityAt,
+    lastUserMessageAt: row.lastUserMessageAt ?? null,
   }
 }
 
@@ -125,7 +126,7 @@ export function listSessions(projectPath: string): Session[] {
     .select()
     .from(sessions)
     .where(eq(sessions.projectPath, projectPath))
-    .orderBy(desc(sessions.lastActivityAt))
+    .orderBy(desc(sql`IFNULL(${sessions.lastUserMessageAt}, ${sessions.startedAt})`))
     .all()
     .map(rowToSession)
 }
@@ -157,6 +158,10 @@ export function deleteAllForProject(projectPath: string): void {
 
 export function touchSession(localId: string): void {
   getDb().update(sessions).set({ lastActivityAt: Date.now() }).where(eq(sessions.localId, localId)).run()
+}
+
+export function touchSessionUserMessage(localId: string): void {
+  getDb().update(sessions).set({ lastUserMessageAt: Date.now() }).where(eq(sessions.localId, localId)).run()
 }
 
 // ── Agent CRUD ────────────────────────────────────────────────────────────────

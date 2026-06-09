@@ -963,6 +963,7 @@ export async function startAgency(
     status: 'starting',
     startedAt: sessionNow,
     lastActivityAt: sessionNow,
+    lastUserMessageAt: null,
     planState: null,
   })
 

@@ -18,6 +18,7 @@ export interface SessionCardData {
   model: string | null
   branch: string | null
   lastActivityAt: number
+  lastUserMessageAt: number | null
   workItemKey: string | null
   workItemTitle: string | null
   subAgentCount: number

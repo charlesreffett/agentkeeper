@@ -116,6 +116,7 @@ const allSessions = computed((): SessionCardData[] => {
       model: s.model,
       branch: s.branch,
       lastActivityAt: s.lastActivityAt,
+      lastUserMessageAt: s.lastUserMessageAt ?? null,
       workItemKey: s.workItemKey,
       workItemTitle: s.workItemTitle,
       subAgentCount: sessionStore.subAgentCount(s),
@@ -142,6 +143,7 @@ const allSessions = computed((): SessionCardData[] => {
         model: s.model,
         branch: s.branch,
         lastActivityAt: s.lastActivityAt,
+        lastUserMessageAt: s.lastUserMessageAt ?? null,
         workItemKey: s.workItemKey,
         workItemTitle: s.workItemTitle,
         subAgentCount: s.agentCount ?? 0,
@@ -168,6 +170,7 @@ const allSessions = computed((): SessionCardData[] => {
         model: s.model,
         branch: s.gitBranch,
         lastActivityAt: s.lastActivityAt,
+        lastUserMessageAt: null,
         workItemKey: null,
         workItemTitle: null,
         subAgentCount: 0,
@@ -179,7 +182,7 @@ const allSessions = computed((): SessionCardData[] => {
     })
 
   return [...live, ...previous, ...historical].sort(
-    (a, b) => b.lastActivityAt - a.lastActivityAt,
+    (a, b) => (b.lastUserMessageAt ?? b.lastActivityAt) - (a.lastUserMessageAt ?? a.lastActivityAt),
   )
 })
 

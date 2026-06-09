@@ -458,6 +458,7 @@ export async function startSession(
       status: 'starting',
       startedAt: now,
       lastActivityAt: now,
+      lastUserMessageAt: null,
       planState: null,
     })
   }

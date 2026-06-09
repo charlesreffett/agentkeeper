@@ -239,6 +239,7 @@ export interface Session {
   agencyScope: AgencyScope | null
   startedAt: number
   lastActivityAt: number
+  lastUserMessageAt: number | null
   status: LiveSessionStatus
   workItemKey: string | null
   workItemTitle: string | null

@@ -320,6 +320,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
           await resumeAgency(agencySessionId)
         }
         await sendInput(agentLocalIdToSend, text, attachments)
+        sessionRegistry.touchSessionUserMessage(agencySessionId ?? sessionId)
       } catch (err) {
         console.error('[ipc] session:input failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
