@@ -24,6 +24,7 @@ export interface HarnessSessionOptions {
   allowedTools?: string[]
   includePartialMessages?: boolean
   settingSources?: string[]
+  messageQueue?: AsyncIterable<{ type: 'user'; message: { role: 'user'; content: unknown } }>
 }
 
 export type HarnessEvent =
