@@ -17,6 +17,7 @@ const DEFAULTS: AppSettings = {
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],
+  harnessId: 'claude-code',
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']

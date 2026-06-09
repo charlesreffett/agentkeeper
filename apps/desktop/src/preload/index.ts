@@ -9,6 +9,7 @@ import {
   type AppSettings,
   type Attachment,
   type ClaudeAuthType,
+  type HarnessInfo,
   type CreatePRParams,
   type DayTotal,
   type DraftRecord,
@@ -496,6 +497,11 @@ const api: AgentKeeperApi = {
       ipcRenderer.on(IPC_CHANNELS.terminalData, listener)
       return () => ipcRenderer.off(IPC_CHANNELS.terminalData, listener)
     },
+  },
+  harness: {
+    list: () => invoke(IPC_CHANNELS.harnessListAdapters) as Promise<HarnessInfo[]>,
+    getActive: () => invoke(IPC_CHANNELS.harnessGetActive) as Promise<HarnessInfo>,
+    setActive: (id: string) => invoke(IPC_CHANNELS.harnessSetActive, id) as Promise<void>,
   },
   ...(process.env.NODE_ENV === 'development' ? {
     dev: {

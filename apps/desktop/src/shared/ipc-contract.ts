@@ -551,11 +551,20 @@ export interface AppSettings {
   notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
   /** User-configured external MCP servers available to sessions. */
   mcpServers: McpServerEntry[]
+  /** Active harness adapter id. Defaults to 'claude-code' when undefined. */
+  harnessId?: string
 }
 
 export type SecretKeyName = 'anthropicApiKey'
 
 export type ClaudeAuthType = 'api-key' | 'cli'
+
+export interface HarnessInfo {
+  id: string
+  name: string
+  available: boolean
+  defaultModel: string
+}
 
 // ─── Factory reset ──────────────────────────────────────────────────────────
 
@@ -951,6 +960,11 @@ export interface AgentKeeperApi {
     kill: (id: string) => Promise<void>
     onData: (handler: (id: string, data: string) => void) => () => void
   }
+  harness: {
+    list: () => Promise<HarnessInfo[]>
+    getActive: () => Promise<HarnessInfo>
+    setActive: (id: string) => Promise<void>
+  }
   /** Only present in development builds (`!app.isPackaged`). */
   dev?: {
     runMigrations: () => Promise<{ applied: number }>
@@ -1106,4 +1120,7 @@ export const IPC_CHANNELS = {
   terminalDestroy: 'terminal:destroy',
   terminalKill: 'terminal:kill',
   terminalData: 'terminal:data',
+  harnessListAdapters: 'harness:list',
+  harnessGetActive: 'harness:getActive',
+  harnessSetActive: 'harness:setActive',
 } as const

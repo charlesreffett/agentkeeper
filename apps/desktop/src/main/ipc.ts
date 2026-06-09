@@ -13,6 +13,7 @@ import {
   type CreatePRParams,
   type CreateProjectParams,
   type DayTotal,
+  type HarnessInfo,
   type MergeMethod,
   type PRFilters,
   type PluginSource,
@@ -80,6 +81,7 @@ import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
+import { harnessRegistry, getHarness } from './harness/index'
 import { startWatching, stopWatching } from './watcher.js'
 import { registerTerminalHandlers } from './terminal'
 import type {
@@ -1385,6 +1387,32 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     return row
   })
 
+  // Harness
+  ipcMain.handle(IPC_CHANNELS.harnessListAdapters, async (): Promise<HarnessInfo[]> => {
+    const adapters = harnessRegistry.list()
+    return Promise.all(adapters.map(async (a) => ({
+      id: a.id,
+      name: a.name,
+      available: await a.isAvailable(),
+      defaultModel: a.defaultModel,
+    })))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessGetActive, async (): Promise<HarnessInfo> => {
+    const active = getHarness()
+    return {
+      id: active.id,
+      name: active.name,
+      available: await active.isAvailable(),
+      defaultModel: active.defaultModel,
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessSetActive, async (_e, id: string): Promise<void> => {
+    harnessRegistry.setDefault(id)
+    settingsStore.set({ harnessId: id })
+  })
+
   registerTerminalHandlers()
 
   ipcMain.handle(
@@ -1407,7 +1435,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     },
   )
 
-  startClaudePluginWatcher()
+  startHarnessPluginWatcher()
 }
 
 function broadcastCommandsChanged(): void {
@@ -1417,15 +1445,14 @@ function broadcastCommandsChanged(): void {
 }
 
 /**
- * Watch ~/.claude/plugins/installed_plugins.json and ~/.claude/settings.json
- * for changes and broadcast commands:changed so the renderer reloads the list
+ * Watch the active harness's installed_plugins.json and settings.json for
+ * changes and broadcast commands:changed so the renderer reloads the list
  * without requiring an app restart.
  */
-function startClaudePluginWatcher(): void {
-  const claudeDir = path.join(os.homedir(), '.claude')
+function startHarnessPluginWatcher(): void {
   const targets = [
-    path.join(claudeDir, 'plugins', 'installed_plugins.json'),
-    path.join(claudeDir, 'settings.json'),
+    path.join(getHarness().getPluginsDir(), 'installed_plugins.json'),
+    getHarness().getSettingsPath(),
   ]
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
