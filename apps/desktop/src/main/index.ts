@@ -9,6 +9,8 @@ import * as net from 'node:net'
 import * as fsp from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
+import { syncMobileServer, teardownMobileServer } from './mobile-server'
+import { settingsStore } from './settings'
 import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
 import { loadDevPlugin, unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
 import { setWebContentsOnActiveHosts } from './plugin-loader.js'
@@ -127,6 +129,7 @@ app.on('before-quit', () => {
   stopAllWatchers()
   flushCostLedger()
   clearDevPluginRegistry()
+  void teardownMobileServer()
 })
 
 app.whenReady().then(async () => {
@@ -169,6 +172,7 @@ app.whenReady().then(async () => {
   setWorkItemRegistry(registry)
   await activatePlugins(registry)
   registerIpcHandlers(registry)
+  syncMobileServer(settingsStore.get())
   const win = createWindow()
   setWebContentsOnActiveHosts(win.webContents)
   win.webContents.on('destroyed', () => {

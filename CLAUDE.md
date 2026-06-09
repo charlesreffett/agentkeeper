@@ -169,3 +169,11 @@ rejected — reply with plain text, which is auto-captured.
 - Don't write comments that describe WHAT code does — only non-obvious
   WHY. No file-level docstrings.
 - Don't add backwards-compat shims for code that isn't shipped yet.
+
+## iOS Companion
+
+Enable via Settings → Mobile tab in the desktop app. Set a secret key, note the URL shown.
+Open `apps/ios/AgentKeeperCompanion/AgentKeeperCompanion.xcodeproj` in Xcode, set your
+development team, build and run on device or simulator. Enter the desktop URL + secret key
+in the iOS app's Setup screen to pair. For TestFlight: archive → Distribute App → App Store
+Connect → upload. Bundle ID: `com.agentkeeper.companion`.
