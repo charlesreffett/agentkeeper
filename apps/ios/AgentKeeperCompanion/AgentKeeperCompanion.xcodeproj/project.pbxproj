@@ -14,6 +14,9 @@
 		BF100005000000000000001A /* WebSocketClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF200005000000000000001A /* WebSocketClient.swift */; };
 		BF100006000000000000001A /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF200006000000000000001A /* Models.swift */; };
 		BF100008000000000000001A /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BF200009000000000000001A /* Security.framework */; };
+		BF100009000000000000001A /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000B000000000000001A /* SetupView.swift */; };
+		BF10000A000000000000001A /* SessionsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000C000000000000001A /* SessionsListView.swift */; };
+		BF10000B000000000000001A /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000D000000000000001A /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +30,9 @@
 		BF200008000000000000001A /* AgentKeeperCompanion.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AgentKeeperCompanion.entitlements; sourceTree = "<group>"; };
 		BF200009000000000000001A /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
 		BF20000A000000000000001A /* AgentKeeperCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AgentKeeperCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BF20000B000000000000001A /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
+		BF20000C000000000000001A /* SessionsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsListView.swift; sourceTree = "<group>"; };
+		BF20000D000000000000001A /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +69,7 @@
 			children = (
 				BF400004000000000000001A /* App */,
 				BF400005000000000000001A /* Network */,
+				BF400007000000000000001A /* Views */,
 				BF200007000000000000001A /* Info.plist */,
 				BF200008000000000000001A /* AgentKeeperCompanion.entitlements */,
 			);
@@ -87,6 +94,16 @@
 				BF200006000000000000001A /* Models.swift */,
 			);
 			path = Network;
+			sourceTree = "<group>";
+		};
+		BF400007000000000000001A /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				BF20000B000000000000001A /* SetupView.swift */,
+				BF20000C000000000000001A /* SessionsListView.swift */,
+				BF20000D000000000000001A /* SessionDetailView.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 		BF400006000000000000001A /* Frameworks */ = {
@@ -171,6 +188,9 @@
 				BF100004000000000000001A /* APIClient.swift in Sources */,
 				BF100005000000000000001A /* WebSocketClient.swift in Sources */,
 				BF100006000000000000001A /* Models.swift in Sources */,
+				BF100009000000000000001A /* SetupView.swift in Sources */,
+				BF10000A000000000000001A /* SessionsListView.swift in Sources */,
+				BF10000B000000000000001A /* SessionDetailView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -300,7 +320,7 @@
 				CODE_SIGN_ENTITLEMENTS = AgentKeeperCompanion/AgentKeeperCompanion.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = SVLC6QDF7V;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AgentKeeperCompanion/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -324,7 +344,7 @@
 				CODE_SIGN_ENTITLEMENTS = AgentKeeperCompanion/AgentKeeperCompanion.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = SVLC6QDF7V;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AgentKeeperCompanion/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -363,7 +383,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
 	};
 	rootObject = BF600001000000000000001A /* Project object */;
 }
