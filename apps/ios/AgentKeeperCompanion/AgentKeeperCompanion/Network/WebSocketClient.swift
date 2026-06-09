@@ -15,14 +15,16 @@ actor WebSocketClient {
         let t = URLSession.shared.webSocketTask(with: req)
         self.task = t
 
-        return AsyncStream { [weak self] continuation in
-            self?.continuation = continuation
-            t.resume()
-            let msg = #"{"type":"subscribe","sessionId":"\#(sessionId)"}"#
-            t.send(.string(msg)) { _ in }
-            Task { [weak self] in await self?.receiveLoop(task: t, continuation: continuation) }
-            continuation.onTermination = { [weak self] _ in Task { await self?.disconnect() } }
-        }
+        // makeStream() returns (stream, continuation) in actor-isolated scope —
+        // no nonisolated closure, so self.continuation assignment is safe here.
+        let (stream, cont) = AsyncStream<HarnessEvent>.makeStream()
+        self.continuation = cont
+        t.resume()
+        let msg = #"{"type":"subscribe","sessionId":"\#(sessionId)"}"#
+        t.send(.string(msg)) { _ in }
+        Task { await self.receiveLoop(task: t, continuation: cont) }
+        cont.onTermination = { [weak self] _ in Task { await self?.disconnect() } }
+        return stream
     }
 
     private func receiveLoop(task: URLSessionWebSocketTask, continuation: AsyncStream<HarnessEvent>.Continuation) async {
