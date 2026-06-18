@@ -54,7 +54,13 @@ struct SessionDetailView: View {
                     .id("bottom")
                 }
                 .onChange(of: events.count) { _, _ in
-                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                    // Defer past the current frame: history bulk-load + WS appends
+                    // can change the count several times per frame, and scrolling
+                    // synchronously each time trips "tried to update multiple times
+                    // per frame".
+                    Task { @MainActor in
+                        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                    }
                 }
             }
 
