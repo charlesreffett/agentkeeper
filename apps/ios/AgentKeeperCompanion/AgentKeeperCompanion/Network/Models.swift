@@ -25,42 +25,61 @@ struct AgentSummary: Codable, Identifiable {
     var id: String { localId }
 }
 
-struct HarnessEvent: Codable {
-    let type: String
+struct LiveEvent: Codable {
     let sessionId: String?
-    let content: AnyCodable?
+    let agentLocalId: String?
+    let message: EventMessage?
 }
 
-enum AnyCodable: Codable {
-    case string(String)
-    case int(Int)
-    case double(Double)
-    case bool(Bool)
-    case dict([String: AnyCodable])
-    case array([AnyCodable])
-    case null
+struct EventMessage: Codable {
+    let type: String
+    let message: MessageBody?
+    let subtype: String?
+}
+
+struct MessageBody: Codable {
+    let role: String?
+    let content: ContentValue?
+
+    enum CodingKeys: String, CodingKey { case role, content }
 
     init(from decoder: Decoder) throws {
-        let c = try decoder.singleValueContainer()
-        if let v = try? c.decode(String.self) { self = .string(v) }
-        else if let v = try? c.decode(Bool.self) { self = .bool(v) }
-        else if let v = try? c.decode(Int.self) { self = .int(v) }
-        else if let v = try? c.decode(Double.self) { self = .double(v) }
-        else if let v = try? c.decode([String: AnyCodable].self) { self = .dict(v) }
-        else if let v = try? c.decode([AnyCodable].self) { self = .array(v) }
-        else { self = .null }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        role = try? c.decode(String.self, forKey: .role)
+        if let s = try? c.decode(String.self, forKey: .content) {
+            content = .text(s)
+        } else if let blocks = try? c.decode([ContentBlock].self, forKey: .content) {
+            content = .blocks(blocks)
+        } else {
+            content = nil
+        }
     }
 
     func encode(to encoder: Encoder) throws {
-        var c = encoder.singleValueContainer()
-        switch self {
-        case .string(let v): try c.encode(v)
-        case .int(let v): try c.encode(v)
-        case .double(let v): try c.encode(v)
-        case .bool(let v): try c.encode(v)
-        case .dict(let v): try c.encode(v)
-        case .array(let v): try c.encode(v)
-        case .null: try c.encodeNil()
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try? c.encode(role, forKey: .role)
+        switch content {
+        case .text(let s): try? c.encode(s, forKey: .content)
+        case .blocks(let bs): try? c.encode(bs, forKey: .content)
+        case nil: break
         }
     }
+
+    enum ContentValue {
+        case text(String)
+        case blocks([ContentBlock])
+    }
+
+    var textContent: String {
+        switch content {
+        case .text(let s): return s
+        case .blocks(let bs): return bs.compactMap { $0.text }.joined(separator: "\n")
+        case nil: return ""
+        }
+    }
+}
+
+struct ContentBlock: Codable {
+    let type: String
+    let text: String?
 }

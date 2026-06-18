@@ -6,7 +6,7 @@ struct SessionDetailView: View {
     @ObservedObject var config: AppConfig
 
     @State private var detail: SessionDetail? = nil
-    @State private var events: [HarnessEvent] = []
+    @State private var events: [LiveEvent] = []
     @State private var inputText = ""
     @State private var wsState: WSState = .connecting
     @State private var error: String? = nil
@@ -113,20 +113,30 @@ struct SessionDetailView: View {
 }
 
 private struct EventBubble: View {
-    let event: HarnessEvent
+    let event: LiveEvent
 
-    private var isUser: Bool { event.type == "user" }
+    private var isUser: Bool { event.message?.type == "user" }
+    private var eventType: String { event.message?.type ?? "unknown" }
+    private var displayText: String { event.message?.message?.textContent ?? "" }
 
     var body: some View {
         HStack {
             if isUser { Spacer(minLength: 40) }
-            Text(event.type)
-                .font(.caption)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(isUser ? Color.blue.opacity(0.2) : Color.secondary.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-            if !isUser { Spacer(minLength: 40) }
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 2) {
+                Text(eventType)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if !displayText.isEmpty {
+                    Text(displayText)
+                        .font(.body)
+                        .multilineTextAlignment(isUser ? .trailing : .leading)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isUser ? Color.blue.opacity(0.2) : Color.secondary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            if !isUser { Spacer(minLength: .infinity) }
         }
     }
 }
