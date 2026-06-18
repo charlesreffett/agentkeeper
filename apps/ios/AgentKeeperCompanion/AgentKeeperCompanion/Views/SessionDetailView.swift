@@ -11,6 +11,14 @@ struct SessionDetailView: View {
     @State private var wsState: WSState = .connecting
     @State private var error: String? = nil
     @State private var wsClient = WebSocketClient()
+    @State private var didInitialScroll = false
+    @State private var visibleCount = SessionDetailView.pageSize
+
+    // Render only the latest `visibleCount` turns. A full transcript is held in
+    // `events` but drawing all of it eagerly is expensive on long sessions, so the
+    // view starts at one page and grows via "Load older". Pagination (V-next) will
+    // swap the array itself to a fetched window without touching this view shape.
+    private static let pageSize = 25
 
     enum WSState { case connecting, connected, disconnected }
 
@@ -20,6 +28,15 @@ struct SessionDetailView: View {
     private var visibleEvents: [LiveEvent] {
         events.filter { !$0.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
+
+    // The tail slice actually rendered. `suffix` keeps the latest turns, so live
+    // appends stay in-window automatically.
+    private var windowedEvents: [LiveEvent] {
+        let v = visibleEvents
+        return v.count > visibleCount ? Array(v.suffix(visibleCount)) : v
+    }
+
+    private var hasOlder: Bool { visibleEvents.count > visibleCount }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,21 +62,42 @@ struct SessionDetailView: View {
 
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(visibleEvents.enumerated()), id: \.offset) { _, event in
+                    // Plain VStack, not LazyVStack: a chat is a finite list of
+                    // text-only turns, and lazy rows that aren't measured until they
+                    // scroll on-screen made scrollTo land short and the view open
+                    // blank. Eager layout makes scrollTo("bottom") land first try.
+                    VStack(alignment: .leading, spacing: 8) {
+                        if hasOlder {
+                            Button("Load older messages") {
+                                visibleCount += Self.pageSize
+                            }
+                            .font(.caption)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 4)
+                        }
+                        ForEach(windowedEvents) { event in
                             EventBubble(event: event)
                         }
+                        Color.clear
+                            .frame(height: 1)
+                            .id("bottom")
                     }
                     .padding()
-                    .id("bottom")
                 }
-                .onChange(of: events.count) { _, _ in
-                    // Defer past the current frame: history bulk-load + WS appends
-                    // can change the count several times per frame, and scrolling
-                    // synchronously each time trips "tried to update multiple times
-                    // per frame".
+                .onChange(of: visibleEvents.count) { _, _ in
+                    // First settle = jump without animation so the view opens at the
+                    // latest message; later live appends animate. Defer past the
+                    // current frame: history bulk-load + WS appends can change the
+                    // count several times per frame, and scrolling synchronously trips
+                    // "tried to update multiple times per frame".
+                    let animated = didInitialScroll
+                    didInitialScroll = true
                     Task { @MainActor in
-                        withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        if animated {
+                            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                        } else {
+                            proxy.scrollTo("bottom", anchor: .bottom)
+                        }
                     }
                 }
             }
@@ -111,6 +149,11 @@ struct SessionDetailView: View {
         )
         wsState = .connected
         for await event in stream {
+            // Active sessions replay buffered events on subscribe, which overlap the
+            // REST history we already loaded. Skip dupes so the count doesn't churn
+            // (which would re-trigger scrolling and flicker rows).
+            guard !event.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            if events.contains(where: { $0.dedupKey == event.dedupKey }) { continue }
             events.append(event)
         }
         wsState = .disconnected

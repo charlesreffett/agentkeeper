@@ -25,13 +25,19 @@ struct AgentSummary: Codable, Identifiable {
     var id: String { localId }
 }
 
-struct LiveEvent: Codable {
+struct LiveEvent: Codable, Identifiable {
+    let id = UUID()
     let sessionId: String?
     let agentLocalId: String?
     let message: EventMessage?
 
+    enum CodingKeys: String, CodingKey { case sessionId, agentLocalId, message }
+
     var displayText: String { message?.message?.textContent ?? "" }
     var isUser: Bool { message?.type == "user" }
+
+    // Content-derived key for de-duping WS subscribe-replay against REST history.
+    var dedupKey: String { "\(message?.type ?? "")|\(displayText)" }
 }
 
 struct EventMessage: Codable {
