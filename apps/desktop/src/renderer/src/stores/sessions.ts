@@ -587,7 +587,7 @@ export const useSessionStore = defineStore('sessions', () => {
     if (!s) return
     if ((s.agentEvents[agentLocalId]?.length ?? 0) > 0) return
     try {
-      const transcript = await window.agentkeeper.sessions.read(projectPath, sdkSessionId)
+      const transcript = await window.agentkeeper.sessions.read(projectPath, sdkSessionId, s.harnessId)
       if (!transcript?.events.length) return
       // Re-check after async gap — live streaming may have populated by now.
       const s2 = sessions[sessionLocalId]
@@ -943,6 +943,21 @@ export const useSessionStore = defineStore('sessions', () => {
           isEntryPoint: s.isEntryPoint,
         })
       }
+      // Sync agent statuses from DB — broadcasts may arrive before registerExternal runs
+      void window.agentkeeper.sessions.getAgents(instance.instanceId).then((agentList) => {
+        const s = sessions[instance.instanceId]
+        if (!s) return
+        for (const db of agentList) {
+          const mem = s.agents.find(a => a.localId === db.localId)
+          if (!mem) continue
+          if (mem.status === 'starting' && db.status !== 'starting') {
+            mem.status = db.status
+          }
+          if (db.sdkSessionId && !mem.sdkSessionId) mem.sdkSessionId = db.sdkSessionId
+        }
+        const rollup = computeSessionStatus(s.agents)
+        if (s.status !== rollup) s.status = rollup
+      })
       // Focus the session UUID (not an individual agent UUID)
       currentLiveId.value = instance.instanceId
       return instance.instanceId
@@ -1425,8 +1440,15 @@ export const useSessionStore = defineStore('sessions', () => {
       s.agents.some((a) => a.localId === agentLocalId),
     )
     if (!sessionEntry) return []
+    const target = sessionEntry.agentEvents[agentLocalId]?.find((e) => e.uuid === truncateFromUuid)
+    const originalText = target
+      ? target.content
+          .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
+          .map((b) => b.text)
+          .join('\n') || null
+      : null
     const removed = truncateAgentEventsAt(sessionEntry.localId, agentLocalId, truncateFromUuid)
-    await window.agentkeeper.sessions.editAndRerun(agentLocalId, truncateFromUuid, newText)
+    await window.agentkeeper.sessions.editAndRerun(agentLocalId, truncateFromUuid, newText, originalText)
     return removed
   }
 

@@ -75,22 +75,29 @@
     {
       "idx": 10,
       "version": "6",
-      "when": 1748908800000,
+      "when": 1778230332981,
       "tag": "0010_inactive_status",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "6",
-      "when": 1749340800000,
+      "when": 1778230332982,
       "tag": "0011_jira_ticket_activity",
       "breakpoints": true
     },
     {
       "idx": 12,
       "version": "6",
-      "when": 1749427200000,
+      "when": 1778230332983,
       "tag": "0012_last_user_message_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1778230332984,
+      "tag": "0013_session_harness_id",
       "breakpoints": true
     }
   ]
