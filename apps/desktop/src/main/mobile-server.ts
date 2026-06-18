@@ -68,6 +68,21 @@ function send(res: http.ServerResponse, status: number, data: unknown): void {
   res.end(body)
 }
 
+/**
+ * Resolve a mobile-supplied id to a registry Session. The id may be a session
+ * localId, an sdkSessionId, or an agent localId (agency agents differ from the
+ * session localId) — try each in turn.
+ */
+function resolveSession(id: string): ReturnType<typeof sessionRegistry.getSession> {
+  const direct = sessionRegistry.getSession(id)
+  if (direct) return direct
+  const bySdk = sessionRegistry.getSessionBySdkId(id)
+  if (bySdk) return bySdk
+  const agent = sessionRegistry.getAgent(id)
+  if (agent) return sessionRegistry.getSession(agent.sessionLocalId)
+  return null
+}
+
 export function startMobileServer(port: number, secretKey: string): http.Server {
   const server = http.createServer(async (req, res) => {
     const reqUrl = new URL(req.url ?? '/', `http://localhost:${port}`)
@@ -100,9 +115,9 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
     const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/)
     if (sessionMatch && req.method === 'GET') {
       const id = sessionMatch[1]!
-      const session = sessionRegistry.getSession(id)
+      const session = resolveSession(id)
       if (!session) { send(res, 404, { error: 'not found' }); return }
-      const agents = sessionRegistry.listAgentsBySession(id)
+      const agents = sessionRegistry.listAgentsBySession(session.localId)
       send(res, 200, { ...session, agents })
       return
     }
@@ -110,15 +125,16 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
     const eventsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/events$/)
     if (eventsMatch && req.method === 'GET') {
       const id = eventsMatch[1]!
-      const session = sessionRegistry.getSession(id)
+      const session = resolveSession(id)
       if (!session) {
-        console.warn(`[mobile-server] events: session ${id} not found in registry`)
+        const all = sessionRegistry.listAllSessions()
+        console.warn(`[mobile-server] events: session ${id} not resolved. registry has ${all.length} sessions: ${all.slice(0, 10).map(s => s.localId).join(', ')}`)
         send(res, 404, { error: 'not found' })
         return
       }
-      const agents = sessionRegistry.listAgentsBySession(id)
+      const agents = sessionRegistry.listAgentsBySession(session.localId)
       const entry = agents.find(a => a.isEntryPoint) ?? agents[0]
-      console.log(`[mobile-server] events: session=${id} agents=${agents.length} entry=${entry?.localId ?? 'none'} sdkSessionId=${entry?.sdkSessionId ?? 'none'} project=${session.projectPath} harness=${session.harnessId}`)
+      console.log(`[mobile-server] events: reqId=${id} resolved=${session.localId} agents=${agents.length} entry=${entry?.localId ?? 'none'} sdkSessionId=${entry?.sdkSessionId ?? 'none'} project=${session.projectPath} harness=${session.harnessId}`)
       if (!entry?.sdkSessionId) {
         console.warn(`[mobile-server] events: no sdkSessionId for session ${id} — returning []`)
         send(res, 200, [])
@@ -141,8 +157,9 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       const body = await parseBody(req)
       const text = typeof body.text === 'string' ? body.text : ''
       if (!text) { send(res, 400, { error: 'text required' }); return }
-      const agents = sessionRegistry.listAgentsBySession(id)
-      const entry = agents.find(a => a.isEntryPoint)
+      const session = resolveSession(id)
+      const agents = session ? sessionRegistry.listAgentsBySession(session.localId) : []
+      const entry = agents.find(a => a.isEntryPoint) ?? agents[0]
       if (!entry) { send(res, 404, { error: 'entry-point agent not found' }); return }
       await sendInput(entry.localId, text, [])
       send(res, 200, { ok: true })
