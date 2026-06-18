@@ -113,7 +113,7 @@ async function save() {
   <div class="space-y-4">
     <div class="flex items-start justify-between gap-4">
       <div>
-        <h2 class="text-sm font-semibold mb-1">Project mappings</h2>
+        <h2 class="text-sm font-semibold mb-1">Projects</h2>
         <p class="text-xs text-muted-foreground">
           Map Jira projects to local project paths so issues and sessions stay connected.
         </p>

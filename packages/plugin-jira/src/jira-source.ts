@@ -33,8 +33,6 @@ export class JiraWorkItemSource implements WorkItemSource {
   }
 
   async get(id: string): Promise<WorkItem | undefined> {
-    const cached = this.cache.find((i) => i.id === id)
-    if (cached) return cached
     const [raw, fieldMeta] = await Promise.all([getIssue(id), getFieldMeta().catch(() => new Map<string, string>())])
     return raw ? mapToWorkItem(raw, fieldMeta) : undefined
   }
