@@ -4,8 +4,39 @@ import { WebSocketServer } from 'ws'
 import type { WebSocket } from 'ws'
 import * as sessionRegistry from './session-registry'
 import { sendInput, interruptSession, setMobileEventNotifier, getActiveSessionsBySessionLocalId } from './agent'
+import { readSession } from './sessions'
 import { settingsStore } from './settings'
-import type { AppSettings } from '../shared/ipc-contract'
+import type { AppSettings, ContentBlock, TranscriptEvent } from '../shared/ipc-contract'
+
+/** Flatten a transcript event's content blocks into a single display string. */
+function blocksToText(blocks: ContentBlock[]): string {
+  return blocks
+    .map((b) => {
+      switch (b.type) {
+        case 'text': return b.text
+        case 'thinking': return b.thinking
+        case 'tool_use': return `[tool: ${b.name}]`
+        case 'tool_result': return typeof b.content === 'string' ? b.content : '[tool result]'
+        case 'image': return '[image]'
+        default: return ''
+      }
+    })
+    .filter((s) => s.trim())
+    .join('\n')
+}
+
+/** Map a JSONL transcript event to the LiveEvent shape the mobile app decodes. */
+function transcriptToMobileEvent(ev: TranscriptEvent, sessionId: string, agentLocalId: string): unknown {
+  const role = ev.role ?? (ev.kind === 'assistant' ? 'assistant' : 'user')
+  return {
+    sessionId,
+    agentLocalId,
+    message: {
+      type: role,
+      message: { role, content: blocksToText(ev.content) },
+    },
+  }
+}
 
 const subscribers = new Map<string, Set<WebSocket>>()
 
@@ -70,6 +101,23 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       if (!session) { send(res, 404, { error: 'not found' }); return }
       const agents = sessionRegistry.listAgentsBySession(id)
       send(res, 200, { ...session, agents })
+      return
+    }
+
+    const eventsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/events$/)
+    if (eventsMatch && req.method === 'GET') {
+      const id = eventsMatch[1]!
+      const session = sessionRegistry.getSession(id)
+      if (!session) { send(res, 404, { error: 'not found' }); return }
+      const agents = sessionRegistry.listAgentsBySession(id)
+      const entry = agents.find(a => a.isEntryPoint) ?? agents[0]
+      if (!entry?.sdkSessionId) { send(res, 200, []); return }
+      const transcript = await readSession(session.projectPath, entry.sdkSessionId, session.harnessId)
+      const events = (transcript?.events ?? [])
+        .filter(e => e.kind === 'user' || e.kind === 'assistant')
+        .filter(e => !e.isMeta && !e.isSidechain)
+        .map(e => transcriptToMobileEvent(e, id, entry.localId))
+      send(res, 200, events)
       return
     }
 

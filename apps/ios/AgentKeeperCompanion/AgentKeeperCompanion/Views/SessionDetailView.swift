@@ -86,6 +86,9 @@ struct SessionDetailView: View {
         } catch {
             self.error = error.localizedDescription
         }
+        if let history = try? await client.getEvents(id: session.localId) {
+            events = history
+        }
     }
 
     private func startWebSocket() async {

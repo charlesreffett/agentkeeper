@@ -42,6 +42,11 @@ actor APIClient {
         return try JSONDecoder().decode(SessionDetail.self, from: data)
     }
 
+    func getEvents(id: String) async throws -> [LiveEvent] {
+        let data = try await request("/api/sessions/\(id)/events")
+        return try JSONDecoder().decode([LiveEvent].self, from: data)
+    }
+
     func sendInput(sessionId: String, text: String) async throws {
         let body = try JSONEncoder().encode(["text": text])
         _ = try await request("/api/sessions/\(sessionId)/input", method: "POST", body: body)
