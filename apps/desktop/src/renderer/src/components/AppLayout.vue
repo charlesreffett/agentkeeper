@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { onMounted, onBeforeUnmount } from 'vue'
 import { RouterView } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
@@ -12,6 +13,17 @@ import { useTerminalStore } from '@/stores/terminalStore'
 const layoutStore = useLayoutStore()
 const { focusedProject } = useProjectsQuery()
 const terminalStore = useTerminalStore()
+
+function onKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 't' || e.key === 'T')) {
+    if (!terminalStore.isOpen || !terminalStore.focused) return
+    e.preventDefault()
+    terminalStore.addTab(focusedProject.value?.name ?? 'Terminal')
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
