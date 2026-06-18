@@ -70,12 +70,15 @@ function send(res: http.ServerResponse, status: number, data: unknown): void {
 
 export function startMobileServer(port: number, secretKey: string): http.Server {
   const server = http.createServer(async (req, res) => {
+    const reqUrl = new URL(req.url ?? '/', `http://localhost:${port}`)
+    console.log(`[mobile-server] ${req.method} ${reqUrl.pathname}`)
     if (!checkAuth(req, secretKey)) {
+      console.warn(`[mobile-server] 401 unauthorized: ${req.method} ${reqUrl.pathname}`)
       send(res, 401, { error: 'unauthorized' })
       return
     }
 
-    const url = new URL(req.url ?? '/', `http://localhost:${port}`)
+    const url = reqUrl
     const pathname = url.pathname
 
     if (req.method === 'GET' && pathname === '/api/health') {
@@ -108,15 +111,26 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
     if (eventsMatch && req.method === 'GET') {
       const id = eventsMatch[1]!
       const session = sessionRegistry.getSession(id)
-      if (!session) { send(res, 404, { error: 'not found' }); return }
+      if (!session) {
+        console.warn(`[mobile-server] events: session ${id} not found in registry`)
+        send(res, 404, { error: 'not found' })
+        return
+      }
       const agents = sessionRegistry.listAgentsBySession(id)
       const entry = agents.find(a => a.isEntryPoint) ?? agents[0]
-      if (!entry?.sdkSessionId) { send(res, 200, []); return }
+      console.log(`[mobile-server] events: session=${id} agents=${agents.length} entry=${entry?.localId ?? 'none'} sdkSessionId=${entry?.sdkSessionId ?? 'none'} project=${session.projectPath} harness=${session.harnessId}`)
+      if (!entry?.sdkSessionId) {
+        console.warn(`[mobile-server] events: no sdkSessionId for session ${id} — returning []`)
+        send(res, 200, [])
+        return
+      }
       const transcript = await readSession(session.projectPath, entry.sdkSessionId, session.harnessId)
+      const rawCount = transcript?.events.length ?? 0
       const events = (transcript?.events ?? [])
         .filter(e => e.kind === 'user' || e.kind === 'assistant')
         .filter(e => !e.isMeta && !e.isSidechain)
         .map(e => transcriptToMobileEvent(e, id, entry.localId))
+      console.log(`[mobile-server] events: transcript=${transcript ? 'found' : 'null'} rawEvents=${rawCount} returned=${events.length}`)
       send(res, 200, events)
       return
     }
@@ -150,11 +164,13 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
 
   server.on('upgrade', (req, socket, head) => {
     const url = new URL(req.url ?? '/', `http://localhost:${port}`)
+    console.log(`[mobile-server] ws upgrade ${url.pathname}`)
     if (url.pathname !== '/ws') {
       socket.destroy()
       return
     }
     if (!checkAuth(req, secretKey)) {
+      console.warn('[mobile-server] ws upgrade 401 unauthorized')
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
       socket.destroy()
       return
@@ -165,9 +181,11 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
   })
 
   wss.on('connection', ws => {
+    console.log('[mobile-server] ws client connected')
     ws.on('message', data => {
       try {
         const msg = JSON.parse(String(data)) as { type?: string; sessionId?: string }
+        console.log(`[mobile-server] ws message type=${msg.type} sessionId=${msg.sessionId ?? 'none'}`)
         if (msg.type === 'subscribe' && msg.sessionId) {
           let set = subscribers.get(msg.sessionId)
           if (!set) {
@@ -177,6 +195,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
           set.add(ws)
           // Replay buffered events for any currently-active agents in this session
           const activeSessions = getActiveSessionsBySessionLocalId(msg.sessionId)
+          let replayed = 0
           for (const as_ of activeSessions) {
             for (const evt of as_.events) {
               if (ws.readyState === ws.OPEN) {
@@ -185,14 +204,19 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
                   agentLocalId: as_.agentLocalId,
                   message: evt,
                 }))
+                replayed++
               }
             }
           }
+          console.log(`[mobile-server] ws subscribe session=${msg.sessionId} activeAgents=${activeSessions.length} replayedEvents=${replayed}`)
         }
-      } catch { /* ignore malformed messages */ }
+      } catch (err) {
+        console.warn('[mobile-server] ws malformed message:', err)
+      }
     })
 
     ws.on('close', () => {
+      console.log('[mobile-server] ws client disconnected')
       for (const [sid, set] of subscribers) {
         set.delete(ws)
         if (set.size === 0) subscribers.delete(sid)
@@ -208,7 +232,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
 
   server.on('close', () => clearInterval(heartbeat))
 
-  server.listen(port)
+  server.listen(port, () => console.log(`[mobile-server] listening on port ${port}`))
   return server
 }
 
@@ -222,9 +246,11 @@ export function notifyMobileSubscribers(sessionId: string, event: unknown): void
   const set = subscribers.get(sessionId)
   if (!set) return
   const payload = JSON.stringify(event)
+  let sent = 0
   for (const ws of set) {
-    if (ws.readyState === ws.OPEN) ws.send(payload)
+    if (ws.readyState === ws.OPEN) { ws.send(payload); sent++ }
   }
+  console.log(`[mobile-server] notify session=${sessionId} subscribers=${set.size} sent=${sent}`)
 }
 
 let _server: http.Server | null = null

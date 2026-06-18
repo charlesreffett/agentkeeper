@@ -8,8 +8,10 @@ actor WebSocketClient {
         let wsURL = baseURL.replacingOccurrences(of: "http://", with: "ws://")
                            .replacingOccurrences(of: "https://", with: "wss://")
         guard let url = URL(string: wsURL + "/ws") else {
+            print("[Companion] ws: bad URL \(wsURL)/ws")
             return AsyncStream { $0.finish() }
         }
+        print("[Companion] ws: connecting \(url.absoluteString) session=\(sessionId)")
         var req = URLRequest(url: url)
         req.setValue("Bearer \(secretKey)", forHTTPHeaderField: "Authorization")
         let t = URLSession.shared.webSocketTask(with: req)
@@ -21,7 +23,10 @@ actor WebSocketClient {
         self.continuation = cont
         t.resume()
         let msg = #"{"type":"subscribe","sessionId":"\#(sessionId)"}"#
-        t.send(.string(msg)) { _ in }
+        print("[Companion] ws: sending subscribe \(msg)")
+        t.send(.string(msg)) { err in
+            if let err { print("[Companion] ws: subscribe send error: \(err.localizedDescription)") }
+        }
         Task { await self.receiveLoop(task: t, continuation: cont) }
         cont.onTermination = { [weak self] _ in Task { await self?.disconnect() } }
         return stream
@@ -32,11 +37,18 @@ actor WebSocketClient {
             do {
                 let msg = try await task.receive()
                 if case .string(let str) = msg, let data = str.data(using: .utf8) {
-                    if let event = try? JSONDecoder().decode(LiveEvent.self, from: data) {
+                    print("[Companion] ws: recv \(str.prefix(200))")
+                    do {
+                        let event = try JSONDecoder().decode(LiveEvent.self, from: data)
                         continuation.yield(event)
+                    } catch {
+                        print("[Companion] ws: decode FAILED: \(error)")
                     }
+                } else {
+                    print("[Companion] ws: recv non-string message")
                 }
             } catch {
+                print("[Companion] ws: receive loop ended: \(error.localizedDescription)")
                 continuation.finish()
                 break
             }

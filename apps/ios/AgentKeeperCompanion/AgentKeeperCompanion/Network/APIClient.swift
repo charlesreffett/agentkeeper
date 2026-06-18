@@ -11,20 +11,30 @@ actor APIClient {
     init(config: AppConfig) { self.config = config }
 
     private func request(_ path: String, method: String = "GET", body: Data? = nil) async throws -> Data {
-        guard let url = URL(string: await config.baseURL + path) else { throw APIError.serverError(0) }
+        let fullURL = await config.baseURL + path
+        guard let url = URL(string: fullURL) else {
+            print("[Companion] request: bad URL \(fullURL)")
+            throw APIError.serverError(0)
+        }
         var req = URLRequest(url: url, timeoutInterval: 10)
         req.httpMethod = method
         req.setValue("Bearer \(await config.secretKey)", forHTTPHeaderField: "Authorization")
         if let body { req.httpBody = body; req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
+        print("[Companion] -> \(method) \(fullURL)")
         do {
             let (data, resp) = try await session.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? "<\(data.count) bytes>"
+            print("[Companion] <- \(code) \(method) \(path) bytes=\(data.count) body=\(preview)")
             if code == 401 { throw APIError.unauthorized }
             if code == 404 { throw APIError.notFound }
             if code < 200 || code >= 300 { throw APIError.serverError(code) }
             return data
         } catch let e as APIError { throw e }
-        catch { throw APIError.networkError(error) }
+        catch {
+            print("[Companion] xx \(method) \(path) network error: \(error.localizedDescription)")
+            throw APIError.networkError(error)
+        }
     }
 
     func health() async throws -> Bool {
@@ -44,7 +54,14 @@ actor APIClient {
 
     func getEvents(id: String) async throws -> [LiveEvent] {
         let data = try await request("/api/sessions/\(id)/events")
-        return try JSONDecoder().decode([LiveEvent].self, from: data)
+        do {
+            let events = try JSONDecoder().decode([LiveEvent].self, from: data)
+            print("[Companion] getEvents: decoded \(events.count) events for session \(id)")
+            return events
+        } catch {
+            print("[Companion] getEvents: decode FAILED for session \(id): \(error)")
+            throw APIError.decodingError(error)
+        }
     }
 
     func sendInput(sessionId: String, text: String) async throws {
