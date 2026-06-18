@@ -46,6 +46,7 @@ struct SetupView: View {
         }
     }
 
+    @MainActor
     private func validate() async {
         isValidating = true
         error = nil
