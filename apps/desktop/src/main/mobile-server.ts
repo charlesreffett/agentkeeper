@@ -3,7 +3,7 @@ import crypto from 'node:crypto'
 import { WebSocketServer } from 'ws'
 import type { WebSocket } from 'ws'
 import * as sessionRegistry from './session-registry'
-import { sendInput, interruptSession } from './agent'
+import { sendInput, interruptSession, setMobileEventNotifier, getActiveSessionsBySessionLocalId } from './agent'
 import { settingsStore } from './settings'
 import type { AppSettings } from '../shared/ipc-contract'
 
@@ -127,6 +127,19 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
             subscribers.set(msg.sessionId, set)
           }
           set.add(ws)
+          // Replay buffered events for any currently-active agents in this session
+          const activeSessions = getActiveSessionsBySessionLocalId(msg.sessionId)
+          for (const as_ of activeSessions) {
+            for (const evt of as_.events) {
+              if (ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify({
+                  sessionId: as_.sessionLocalId,
+                  agentLocalId: as_.agentLocalId,
+                  message: evt,
+                }))
+              }
+            }
+          }
         }
       } catch { /* ignore malformed messages */ }
     })
@@ -170,6 +183,7 @@ let _server: http.Server | null = null
 let _serverPort = 0
 
 export function syncMobileServer(settings: AppSettings): void {
+  setMobileEventNotifier(notifyMobileSubscribers)
   const cfg = settings.mobileServer
   const shouldRun = !!(cfg?.enabled && cfg.secretKey)
   if (shouldRun) {
