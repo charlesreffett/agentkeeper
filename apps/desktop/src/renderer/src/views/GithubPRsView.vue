@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { PRSummary, PRState, CheckState, ReviewDecision } from '@shared/github-types'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -41,18 +41,17 @@ async function autoDetectRepos(projectPath: string) {
   } catch { /* silent */ }
 }
 
-onMounted(async () => {
-  const cfg = await window.agentkeeper.github.getConfig()
-  repos.value = cfg.repos ?? []
-})
-
 watch(
   () => focusedProject.value,
   async (proj) => {
-    if (proj?.repo) repoFilter.value = proj.repo
-    else repoFilter.value = ''
+    const cfg = await window.agentkeeper.github.getConfig()
+    repos.value = cfg.repos ?? []
     if (repos.value.length === 0 && proj?.path) {
       await autoDetectRepos(proj.path)
+    }
+    // default to "All repos"; drop a stale selection no longer in the list
+    if (repoFilter.value && !repos.value.includes(repoFilter.value)) {
+      repoFilter.value = ''
     }
     void load()
   },
