@@ -29,6 +29,9 @@ struct LiveEvent: Codable {
     let sessionId: String?
     let agentLocalId: String?
     let message: EventMessage?
+
+    var displayText: String { message?.message?.textContent ?? "" }
+    var isUser: Bool { message?.type == "user" }
 }
 
 struct EventMessage: Codable {

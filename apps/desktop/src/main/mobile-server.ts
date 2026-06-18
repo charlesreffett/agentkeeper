@@ -10,17 +10,11 @@ import type { AppSettings, ContentBlock, TranscriptEvent } from '../shared/ipc-c
 
 /** Flatten a transcript event's content blocks into a single display string. */
 function blocksToText(blocks: ContentBlock[]): string {
+  // Conversation view only — keep human-readable prose. Tool calls, tool
+  // results (e.g. Read output with cat -n line numbers), and thinking blocks
+  // are noise on a phone, so they're dropped.
   return blocks
-    .map((b) => {
-      switch (b.type) {
-        case 'text': return b.text
-        case 'thinking': return b.thinking
-        case 'tool_use': return `[tool: ${b.name}]`
-        case 'tool_result': return typeof b.content === 'string' ? b.content : '[tool result]'
-        case 'image': return '[image]'
-        default: return ''
-      }
-    })
+    .map((b) => (b.type === 'text' ? b.text : ''))
     .filter((s) => s.trim())
     .join('\n')
 }
@@ -145,6 +139,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       const events = (transcript?.events ?? [])
         .filter(e => e.kind === 'user' || e.kind === 'assistant')
         .filter(e => !e.isMeta && !e.isSidechain)
+        .filter(e => blocksToText(e.content).trim().length > 0)
         .map(e => transcriptToMobileEvent(e, id, entry.localId))
       console.log(`[mobile-server] events: transcript=${transcript ? 'found' : 'null'} rawEvents=${rawCount} returned=${events.length}`)
       send(res, 200, events)

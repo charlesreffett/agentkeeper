@@ -16,6 +16,11 @@ struct SessionDetailView: View {
 
     private var client: APIClient { APIClient(config: config) }
 
+    // Live tool-only turns have no prose — drop them so the chat reads cleanly.
+    private var visibleEvents: [LiveEvent] {
+        events.filter { !$0.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             if wsState == .connecting {
@@ -41,7 +46,7 @@ struct SessionDetailView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(Array(events.enumerated()), id: \.offset) { _, event in
+                        ForEach(Array(visibleEvents.enumerated()), id: \.offset) { _, event in
                             EventBubble(event: event)
                         }
                     }
@@ -129,17 +134,17 @@ private struct EventBubble: View {
                 Text(eventType)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                if !displayText.isEmpty {
-                    Text(displayText)
-                        .font(.body)
-                        .multilineTextAlignment(isUser ? .trailing : .leading)
-                }
+                Text(displayText)
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(isUser ? Color.blue.opacity(0.2) : Color.secondary.opacity(0.1))
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            if !isUser { Spacer(minLength: .infinity) }
+            if !isUser { Spacer(minLength: 40) }
         }
     }
 }
