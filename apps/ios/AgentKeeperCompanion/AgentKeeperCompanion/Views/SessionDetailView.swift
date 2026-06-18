@@ -12,12 +12,13 @@ struct SessionDetailView: View {
     @State private var error: String? = nil
     @State private var wsClient = WebSocketClient()
     @State private var didInitialScroll = false
-    @State private var visibleCount = SessionDetailView.pageSize
+    @State private var hasMoreOlder = false
+    @State private var loadingOlder = false
+    @State private var suppressBottomScroll = false
 
-    // Render only the latest `visibleCount` turns. A full transcript is held in
-    // `events` but drawing all of it eagerly is expensive on long sessions, so the
-    // view starts at one page and grows via "Load older". Pagination (V-next) will
-    // swap the array itself to a fetched window without touching this view shape.
+    // `events` now holds only a fetched window — the latest page on open, grown
+    // toward the top as the user pulls in older pages. Memory is bounded to what's
+    // been fetched rather than the whole transcript.
     private static let pageSize = 25
 
     enum WSState { case connecting, connected, disconnected }
@@ -29,20 +30,11 @@ struct SessionDetailView: View {
         events.filter { !$0.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
-    // The tail slice actually rendered. `suffix` keeps the latest turns, so live
-    // appends stay in-window automatically.
-    private var windowedEvents: [LiveEvent] {
-        let v = visibleEvents
-        return v.count > visibleCount ? Array(v.suffix(visibleCount)) : v
-    }
-
-    private var hasOlder: Bool { visibleEvents.count > visibleCount }
-
     var body: some View {
         VStack(spacing: 0) {
             if wsState == .connecting {
                 HStack {
-                    ProgressView().scaleEffect(0.7)
+                    ProgressView().frame(width: 16, height: 16)
                     Text("Connecting…").font(.caption).foregroundStyle(.secondary)
                 }
                 .padding(8)
@@ -67,15 +59,22 @@ struct SessionDetailView: View {
                     // scroll on-screen made scrollTo land short and the view open
                     // blank. Eager layout makes scrollTo("bottom") land first try.
                     VStack(alignment: .leading, spacing: 8) {
-                        if hasOlder {
-                            Button("Load older messages") {
-                                visibleCount += Self.pageSize
+                        if hasMoreOlder {
+                            Button {
+                                Task { await loadOlder(proxy) }
+                            } label: {
+                                if loadingOlder {
+                                    ProgressView().frame(width: 16, height: 16)
+                                } else {
+                                    Text("Load older messages")
+                                }
                             }
                             .font(.caption)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 4)
+                            .disabled(loadingOlder)
                         }
-                        ForEach(windowedEvents) { event in
+                        ForEach(visibleEvents) { event in
                             EventBubble(event: event)
                         }
                         Color.clear
@@ -85,6 +84,9 @@ struct SessionDetailView: View {
                     .padding()
                 }
                 .onChange(of: visibleEvents.count) { _, _ in
+                    // A prepended older page also changes this count; suppressBottomScroll
+                    // tells us to keep position there instead of yanking to the bottom.
+                    if suppressBottomScroll { return }
                     // First settle = jump without animation so the view opens at the
                     // latest message; later live appends animate. Defer past the
                     // current frame: history bulk-load + WS appends can change the
@@ -135,8 +137,35 @@ struct SessionDetailView: View {
         } catch {
             self.error = error.localizedDescription
         }
-        if let history = try? await client.getEvents(id: session.localId) {
+        if let history = try? await client.getEvents(id: session.localId, limit: Self.pageSize) {
             events = history
+            // A full page back implies there may be more older history to pull.
+            hasMoreOlder = history.count >= Self.pageSize
+        }
+    }
+
+    private func loadOlder(_ proxy: ScrollViewProxy) async {
+        guard !loadingOlder, hasMoreOlder else { return }
+        // Oldest held event's uuid is the cursor; live (WS) events have no uuid but
+        // only ever append at the bottom, so the head is always REST-sourced.
+        guard let cursor = events.first?.uuid else { hasMoreOlder = false; return }
+        loadingOlder = true
+        defer { loadingOlder = false }
+        // The event currently at the top stays put after we splice rows in above it.
+        let anchorId = visibleEvents.first?.id
+        guard let older = try? await client.getEvents(id: session.localId, limit: Self.pageSize, before: cursor) else {
+            return
+        }
+        if older.count < Self.pageSize { hasMoreOlder = false }
+        guard !older.isEmpty else { return }
+        suppressBottomScroll = true
+        events.insert(contentsOf: older, at: 0)
+        Task { @MainActor in
+            if let anchorId { proxy.scrollTo(anchorId, anchor: .top) }
+            // Hold the suppression until after onChange has had a chance to fire on
+            // the count bump, then re-arm bottom-follow for future live appends.
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            suppressBottomScroll = false
         }
     }
 

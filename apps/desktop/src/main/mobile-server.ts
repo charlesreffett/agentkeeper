@@ -23,6 +23,7 @@ function blocksToText(blocks: ContentBlock[]): string {
 function transcriptToMobileEvent(ev: TranscriptEvent, sessionId: string, agentLocalId: string): unknown {
   const role = ev.role ?? (ev.kind === 'assistant' ? 'assistant' : 'user')
   return {
+    uuid: ev.uuid,
     sessionId,
     agentLocalId,
     message: {
@@ -136,12 +137,23 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       }
       const transcript = await readSession(session.projectPath, entry.sdkSessionId, session.harnessId)
       const rawCount = transcript?.events.length ?? 0
-      const events = (transcript?.events ?? [])
+      // Chronological prose-only turns. Pagination walks this list from the tail
+      // backwards: `before` is a uuid cursor, `limit` the page size.
+      const filtered = (transcript?.events ?? [])
         .filter(e => e.kind === 'user' || e.kind === 'assistant')
         .filter(e => !e.isMeta && !e.isSidechain)
         .filter(e => blocksToText(e.content).trim().length > 0)
-        .map(e => transcriptToMobileEvent(e, id, entry.localId))
-      console.log(`[mobile-server] events: transcript=${transcript ? 'found' : 'null'} rawEvents=${rawCount} returned=${events.length}`)
+      const limitParam = Number(url.searchParams.get('limit'))
+      const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 200) : 25
+      const before = url.searchParams.get('before')
+      let endIdx = filtered.length
+      if (before) {
+        const idx = filtered.findIndex(e => e.uuid === before)
+        if (idx >= 0) endIdx = idx // exclusive: page is the events strictly before the cursor
+      }
+      const startIdx = Math.max(0, endIdx - limit)
+      const events = filtered.slice(startIdx, endIdx).map(e => transcriptToMobileEvent(e, id, entry.localId))
+      console.log(`[mobile-server] events: transcript=${transcript ? 'found' : 'null'} rawEvents=${rawCount} filtered=${filtered.length} limit=${limit} before=${before ?? 'none'} window=[${startIdx},${endIdx}) returned=${events.length}`)
       send(res, 200, events)
       return
     }

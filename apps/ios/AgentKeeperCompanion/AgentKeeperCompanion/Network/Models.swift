@@ -26,17 +26,25 @@ struct AgentSummary: Codable, Identifiable {
 }
 
 struct LiveEvent: Codable, Identifiable {
-    let id = UUID()
+    let uuid: String?
     let sessionId: String?
     let agentLocalId: String?
     let message: EventMessage?
 
-    enum CodingKeys: String, CodingKey { case sessionId, agentLocalId, message }
+    // Live WS events have no transcript uuid; a per-instance fallback keeps ForEach
+    // identity stable for them too.
+    private let localId = UUID()
 
+    enum CodingKeys: String, CodingKey { case uuid, sessionId, agentLocalId, message }
+
+    // Transcript uuid when present (also the pagination cursor); else the fallback.
+    var id: String { uuid ?? localId.uuidString }
     var displayText: String { message?.message?.textContent ?? "" }
     var isUser: Bool { message?.type == "user" }
 
     // Content-derived key for de-duping WS subscribe-replay against REST history.
+    // Stays content-based (not uuid) so WS events without a uuid still match their
+    // REST counterparts.
     var dedupKey: String { "\(message?.type ?? "")|\(displayText)" }
 }
 

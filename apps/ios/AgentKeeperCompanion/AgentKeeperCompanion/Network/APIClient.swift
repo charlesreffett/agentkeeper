@@ -52,11 +52,13 @@ actor APIClient {
         return try JSONDecoder().decode(SessionDetail.self, from: data)
     }
 
-    func getEvents(id: String) async throws -> [LiveEvent] {
-        let data = try await request("/api/sessions/\(id)/events")
+    func getEvents(id: String, limit: Int = 25, before: String? = nil) async throws -> [LiveEvent] {
+        var path = "/api/sessions/\(id)/events?limit=\(limit)"
+        if let before { path += "&before=\(before)" }
+        let data = try await request(path)
         do {
             let events = try JSONDecoder().decode([LiveEvent].self, from: data)
-            print("[Companion] getEvents: decoded \(events.count) events for session \(id)")
+            print("[Companion] getEvents: decoded \(events.count) events for session \(id) limit=\(limit) before=\(before ?? "none")")
             return events
         } catch {
             print("[Companion] getEvents: decode FAILED for session \(id): \(error)")
