@@ -4,6 +4,7 @@ import { app } from 'electron'
 import { EventEmitter } from 'node:events'
 import Database from 'better-sqlite3'
 import { getRawSqlite } from './db/index'
+import { initPluginLoader } from './plugin-loader.js'
 import type {
   EventBus,
   EventHandler,
@@ -162,7 +163,6 @@ export async function activatePlugins(workItemRegistry: WorkItemRegistryFull): P
   if (!pluginEventBus) {
     pluginEventBus = buildEventBus()
   }
-  const { initPluginLoader } = await import('./plugin-loader.js')
   await initPluginLoader(workItemRegistry)
 }
 
