@@ -975,6 +975,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     (_event, projectPath: string) => sessionRegistry.listSessions(projectPath),
   )
   ipcMain.handle(
+    IPC_CHANNELS.sessionsGetByLocalId,
+    (_event, localId: string) => sessionRegistry.getSession(localId) ?? null,
+  )
+  ipcMain.handle(
     IPC_CHANNELS.sessionsResume,
     async (_event, localId: string) => {
       try {

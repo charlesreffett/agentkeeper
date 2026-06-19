@@ -12,6 +12,7 @@ const sessionStore = useSessionStore()
 
 const id = computed(() => route.params.id as string)
 const session = computed(() => sessionStore.getSession(id.value))
+const loading = ref(true)
 
 const settings = ref<AppSettings>({
   defaultModel: 'claude-sonnet-4-6',
@@ -28,6 +29,13 @@ const settings = ref<AppSettings>({
 
 onMounted(async () => {
   settings.value = await window.agentkeeper.settings.get()
+  if (!session.value) {
+    const result = await window.agentkeeper.sessions.getByLocalId(id.value)
+    if (result) {
+      sessionStore.openPersisted(result)
+    }
+  }
+  loading.value = false
 })
 </script>
 
@@ -40,6 +48,12 @@ onMounted(async () => {
       :enter-to-send="settings.enterToSend"
       :send-modifier="settings.sendModifier"
     />
+    <div
+      v-else-if="loading"
+      class="h-full flex items-center justify-center text-muted-foreground text-sm"
+    >
+      <p>Loading session…</p>
+    </div>
     <div
       v-else
       class="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground text-sm"

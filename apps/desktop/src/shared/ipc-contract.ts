@@ -761,6 +761,7 @@ export interface AgentKeeperApi {
     ) => () => void
     onStats: (callback: (stats: LiveSessionStats) => void) => () => void
     listPersisted: (projectPath: string) => Promise<Session[]>
+    getByLocalId: (localId: string) => Promise<Session | null>
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
     touchPersisted: (localId: string) => Promise<void>
@@ -1074,6 +1075,7 @@ export const IPC_CHANNELS = {
   githubCreatePR: 'github:prs:create',
   remotesDetect: 'remotes:detect',
   sessionsListPersisted: 'sessions:listPersisted',
+  sessionsGetByLocalId: 'sessions:getByLocalId',
   sessionsResume: 'sessions:resume',
   sessionsDeletePersisted: 'sessions:deletePersisted',
   sessionsTouchPersisted: 'sessions:touchPersisted',
