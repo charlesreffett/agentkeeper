@@ -161,6 +161,7 @@ const api: AgentKeeperApi = {
     onStatus: (cb) =>
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
     onStats: (cb) => onChannel<LiveSessionStats>(IPC_CHANNELS.sessionStats, cb),
+    onCreated: (cb) => onChannel<string>(IPC_CHANNELS.sessionCreated, cb),
     listPersisted: (projectPath: string) =>
       invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<Session[]>,
     getByLocalId: (localId: string) =>

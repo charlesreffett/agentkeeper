@@ -3,10 +3,28 @@ import crypto from 'node:crypto'
 import { WebSocketServer } from 'ws'
 import type { WebSocket } from 'ws'
 import * as sessionRegistry from './session-registry'
-import { sendInput, interruptSession, setMobileEventNotifier, getActiveSessionsBySessionLocalId } from './agent'
+import { sendInput, interruptSession, setMobileEventNotifier, setMobileSessionsNotifier, getActiveSessionsBySessionLocalId, startSession } from './agent'
 import { readSession } from './sessions'
+import { listCommands, expandCommandInput } from './commands'
 import { settingsStore } from './settings'
-import type { AppSettings, ContentBlock, TranscriptEvent } from '../shared/ipc-contract'
+import { startAgency, createProjectMcp, generateAndPersistSessionTitle } from './orchestrator'
+import { listRoles } from './roles'
+import { listAgencies } from './agencies'
+import { createWorktree } from './worktrees'
+import { recentProjectsStore } from './store'
+import { ROLE_EFFORT_VALUES } from '../shared/ipc-contract'
+import type { AppSettings, ContentBlock, TranscriptEvent, StartSessionParams, AgencyScope, RoleEffort, PermissionMode } from '../shared/ipc-contract'
+
+/** Model list mirrors apps/desktop/src/renderer/src/lib/models.ts. The renderer
+ *  lib can't be imported from main, so the values are duplicated here. */
+const MOBILE_MODELS = [
+  { value: 'claude-opus-4-8', label: 'Opus 4.8 (most capable)' },
+  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
+  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (balanced)' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
+]
+
+const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan']
 
 /** Flatten a transcript event's content blocks into a single display string. */
 function blocksToText(blocks: ContentBlock[]): string {
@@ -34,6 +52,10 @@ function transcriptToMobileEvent(ev: TranscriptEvent, sessionId: string, agentLo
 }
 
 const subscribers = new Map<string, Set<WebSocket>>()
+
+// Reserved subscription topic for clients watching the whole session list
+// (e.g. the mobile sessions screen) rather than one conversation's events.
+const SESSIONS_TOPIC = '__sessions__'
 
 function checkAuth(req: http.IncomingMessage, secretKey: string): boolean {
   const header = req.headers['authorization'] ?? ''
@@ -107,6 +129,97 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       return
     }
 
+    // Options for the new-session form. Without ?projectPath the response omits
+    // roles/agencies (those are per-project); with it they're included.
+    if (req.method === 'GET' && pathname === '/api/new-session/options') {
+      const settings = settingsStore.get()
+      const projectPath = url.searchParams.get('projectPath')
+      const payload: Record<string, unknown> = {
+        projects: recentProjectsStore.list(),
+        focusedProjectPath: recentProjectsStore.getFocused(),
+        models: MOBILE_MODELS,
+        defaultModel: settings.defaultModel,
+        defaultEffort: settings.defaultEffort,
+        defaultUseWorktree: settings.defaultUseWorktree,
+        efforts: ROLE_EFFORT_VALUES,
+        permissionModes: PERMISSION_MODES,
+      }
+      if (projectPath) {
+        payload.roles = await listRoles(projectPath)
+        payload.agencies = await listAgencies(projectPath)
+      }
+      send(res, 200, payload)
+      return
+    }
+
+    if (req.method === 'POST' && pathname === '/api/sessions') {
+      const body = await parseBody(req)
+      const projectPath = typeof body.projectPath === 'string' ? body.projectPath : ''
+      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+      if (!projectPath) { send(res, 400, { error: 'projectPath required' }); return }
+      if (!prompt) { send(res, 400, { error: 'prompt required' }); return }
+      const useWorktree = body.useWorktree === true
+      const branch = typeof body.branch === 'string' ? body.branch.trim() : ''
+      const model = typeof body.model === 'string' && body.model ? body.model : undefined
+
+      try {
+        const agencyKey = typeof body.agencyKey === 'string' ? body.agencyKey : ''
+        if (agencyKey) {
+          const sep = agencyKey.indexOf(':')
+          const agencyScope = agencyKey.slice(0, sep) as AgencyScope
+          const agencyId = agencyKey.slice(sep + 1)
+          const instance = await startAgency({
+            projectPath,
+            agencyId,
+            agencyScope,
+            initialPrompt: prompt,
+            useWorktree,
+            ...(useWorktree && branch ? { branch } : {}),
+            ...(model ? { model } : {}),
+          })
+          send(res, 200, { sessionId: instance.instanceId })
+          return
+        }
+
+        const roleId = typeof body.roleId === 'string' ? body.roleId : ''
+        const effort = typeof body.effort === 'string' ? (body.effort as RoleEffort) : undefined
+        const permissionMode = typeof body.permissionMode === 'string'
+          ? (body.permissionMode as PermissionMode)
+          : undefined
+        const role = roleId
+          ? (await listRoles(projectPath)).find((r) => r.id === roleId) ?? null
+          : null
+
+        let worktreePath: string | undefined
+        if (useWorktree && branch) {
+          const wt = await createWorktree(projectPath, { branchRequest: branch })
+          worktreePath = wt.path
+        }
+
+        const params: StartSessionParams = {
+          projectPath,
+          ...(worktreePath ? { worktreePath } : {}),
+          ...(role?.systemPrompt ? { systemPromptAppend: role.systemPrompt } : {}),
+          ...(role?.allowedTools && role.allowedTools.length ? { allowedTools: role.allowedTools } : {}),
+          initialPrompt: prompt,
+          ...(model ? { model } : {}),
+          ...(effort ? { effort } : {}),
+          ...(permissionMode ? { permissionMode } : {}),
+          ...(role?.name ? { roleName: role.name } : {}),
+          ...(role?.id ? { roleId: role.id } : {}),
+        }
+        const agentLocalId = await startSession(params, {
+          mcpFactory: () => createProjectMcp(projectPath),
+        })
+        void generateAndPersistSessionTitle(agentLocalId, prompt)
+        send(res, 200, { sessionId: agentLocalId })
+      } catch (err) {
+        console.error('[mobile-server] create session failed:', err)
+        send(res, 500, { error: err instanceof Error ? err.message : String(err) })
+      }
+      return
+    }
+
     const sessionMatch = pathname.match(/^\/api\/sessions\/([^/]+)$/)
     if (sessionMatch && req.method === 'GET') {
       const id = sessionMatch[1]!
@@ -158,6 +271,15 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       return
     }
 
+    const commandsMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/commands$/)
+    if (commandsMatch && req.method === 'GET') {
+      const id = commandsMatch[1]!
+      const session = resolveSession(id)
+      if (!session) { send(res, 404, { error: 'not found' }); return }
+      send(res, 200, await listCommands(session.projectPath))
+      return
+    }
+
     const inputMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/input$/)
     if (inputMatch && req.method === 'POST') {
       const id = inputMatch[1]!
@@ -168,7 +290,8 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       const agents = session ? sessionRegistry.listAgentsBySession(session.localId) : []
       const entry = agents.find(a => a.isEntryPoint) ?? agents[0]
       if (!entry) { send(res, 404, { error: 'entry-point agent not found' }); return }
-      await sendInput(entry.localId, text, [])
+      const expanded = session ? await expandCommandInput(session.projectPath, text) : text
+      await sendInput(entry.localId, expanded, [])
       send(res, 200, { ok: true })
       return
     }
@@ -217,6 +340,10 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
             subscribers.set(msg.sessionId, set)
           }
           set.add(ws)
+          if (msg.sessionId === SESSIONS_TOPIC) {
+            console.log('[mobile-server] ws subscribe sessions-list topic')
+            return
+          }
           // Replay buffered events for any currently-active agents in this session
           const activeSessions = getActiveSessionsBySessionLocalId(msg.sessionId)
           let replayed = 0
@@ -266,6 +393,27 @@ export function stopMobileServer(server: http.Server): Promise<void> {
   })
 }
 
+export function broadcastSessionsChanged(): void {
+  const set = subscribers.get(SESSIONS_TOPIC)
+  if (!set) return
+  const payload = JSON.stringify({ type: 'sessions-changed' })
+  for (const ws of set) {
+    if (ws.readyState === ws.OPEN) ws.send(payload)
+  }
+}
+
+let sessionsChangedTimer: ReturnType<typeof setTimeout> | null = null
+
+// Status updates fire many times per running turn; coalesce them into one
+// list-refresh ping so the phone reloads at most ~5x/sec.
+function scheduleSessionsChanged(): void {
+  if (sessionsChangedTimer) return
+  sessionsChangedTimer = setTimeout(() => {
+    sessionsChangedTimer = null
+    broadcastSessionsChanged()
+  }, 200)
+}
+
 export function notifyMobileSubscribers(sessionId: string, event: unknown): void {
   const set = subscribers.get(sessionId)
   if (!set) return
@@ -282,6 +430,7 @@ let _serverPort = 0
 
 export function syncMobileServer(settings: AppSettings): void {
   setMobileEventNotifier(notifyMobileSubscribers)
+  setMobileSessionsNotifier(scheduleSessionsChanged)
   const cfg = settings.mobileServer
   const shouldRun = !!(cfg?.enabled && cfg.secretKey)
   if (shouldRun) {

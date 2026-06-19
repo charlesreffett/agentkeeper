@@ -17,6 +17,7 @@
 		BF100009000000000000001A /* SetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000B000000000000001A /* SetupView.swift */; };
 		BF10000A000000000000001A /* SessionsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000C000000000000001A /* SessionsListView.swift */; };
 		BF10000B000000000000001A /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000D000000000000001A /* SessionDetailView.swift */; };
+		BF10000C000000000000001A /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000E000000000000001A /* NewSessionView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 		BF20000B000000000000001A /* SetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupView.swift; sourceTree = "<group>"; };
 		BF20000C000000000000001A /* SessionsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsListView.swift; sourceTree = "<group>"; };
 		BF20000D000000000000001A /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
+		BF20000E000000000000001A /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +104,7 @@
 				BF20000B000000000000001A /* SetupView.swift */,
 				BF20000C000000000000001A /* SessionsListView.swift */,
 				BF20000D000000000000001A /* SessionDetailView.swift */,
+				BF20000E000000000000001A /* NewSessionView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -191,6 +194,7 @@
 				BF100009000000000000001A /* SetupView.swift in Sources */,
 				BF10000A000000000000001A /* SessionsListView.swift in Sources */,
 				BF10000B000000000000001A /* SessionDetailView.swift in Sources */,
+				BF10000C000000000000001A /* NewSessionView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

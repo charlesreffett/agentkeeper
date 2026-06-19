@@ -6,6 +6,8 @@ struct SessionsListView: View {
     @State private var isLoading = false
     @State private var error: String? = nil
     @State private var showingSetup = false
+    @State private var showingNewSession = false
+    @State private var wsClient = WebSocketClient()
 
     private var client: APIClient { APIClient(config: config) }
 
@@ -18,11 +20,17 @@ struct SessionsListView: View {
         .navigationTitle("Sessions")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
+                Button { showingNewSession = true } label: {
+                    Image(systemName: "plus")
+                }
+            }
+            ToolbarItem(placement: .navigationBarLeading) {
                 Button("Settings") { showingSetup = true }
             }
         }
         .refreshable { await loadSessions() }
         .task { await loadSessions() }
+        .task { await watchSessions() }
         .overlay {
             if isLoading && sessions.isEmpty {
                 ProgressView()
@@ -35,6 +43,16 @@ struct SessionsListView: View {
         .sheet(isPresented: $showingSetup) {
             SetupView(config: config, onDismiss: { showingSetup = false })
         }
+        .sheet(isPresented: $showingNewSession) {
+            NewSessionView(
+                config: config,
+                onCreated: { _ in
+                    showingNewSession = false
+                    Task { await loadSessions() }
+                },
+                onDismiss: { showingNewSession = false }
+            )
+        }
     }
 
     private func loadSessions() async {
@@ -46,6 +64,19 @@ struct SessionsListView: View {
             self.error = error.localizedDescription
         }
         isLoading = false
+    }
+
+    // Live list updates: the desktop pings this topic whenever any session's
+    // status changes (created, started, completed). Reload on each ping.
+    private func watchSessions() async {
+        let stream = await wsClient.connectSignals(
+            baseURL: config.baseURL,
+            secretKey: config.secretKey,
+            topic: sessionsListTopic
+        )
+        for await _ in stream {
+            await loadSessions()
+        }
     }
 }
 

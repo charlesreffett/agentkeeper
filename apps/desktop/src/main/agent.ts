@@ -89,10 +89,27 @@ const active = new Map<string, ActiveSession>()
 const restartingIds = new Set<string>()
 
 let mobileNotifier: ((sessionId: string, event: unknown) => void) | null = null
+let mobileSessionsNotifier: (() => void) | null = null
 
 export function setMobileEventNotifier(fn: (sessionId: string, event: unknown) => void): void {
   mobileNotifier = fn
 }
+
+export function setMobileSessionsNotifier(fn: () => void): void {
+  mobileSessionsNotifier = fn
+}
+
+// A session can be created by any client (desktop renderer, mobile, agency
+// orchestrator). Whoever didn't initiate it has no entry in its list yet, so
+// fan a one-shot "created" signal out to every renderer and to mobile.
+function broadcastSessionCreated(localId: string): void {
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) wc.send('session:created', localId)
+  }
+  mobileSessionsNotifier?.()
+}
+
+registry.setSessionRegisteredNotifier(broadcastSessionCreated)
 
 interface UndoBuffer {
   projectPath: string
@@ -142,6 +159,7 @@ export function broadcastStatus(update: LiveSessionStatusUpdate): void {
   for (const wc of webContents.getAllWebContents()) {
     if (!wc.isDestroyed()) wc.send('session:status', payload)
   }
+  mobileSessionsNotifier?.()
 }
 
 function broadcastStats(stats: LiveSessionStats): void {

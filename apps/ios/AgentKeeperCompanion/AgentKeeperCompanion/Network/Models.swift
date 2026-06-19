@@ -12,6 +12,60 @@ struct SessionSummary: Codable, Identifiable {
     var id: String { localId }
 }
 
+struct NewSessionOptions: Codable {
+    let projects: [RecentProject]
+    let focusedProjectPath: String?
+    let models: [ModelOption]
+    let defaultModel: String
+    let defaultEffort: String
+    let defaultUseWorktree: Bool
+    let efforts: [String]
+    let permissionModes: [String]
+    let roles: [RoleOption]?
+    let agencies: [AgencyOption]?
+}
+
+struct RecentProject: Codable, Identifiable {
+    let path: String
+    let name: String
+    let repo: String?
+    var id: String { path }
+}
+
+struct ModelOption: Codable, Identifiable {
+    let value: String
+    let label: String
+    var id: String { value }
+}
+
+struct RoleOption: Codable, Identifiable {
+    let id: String
+    let scope: String
+    let name: String
+    let description: String
+}
+
+struct AgencyOption: Codable, Identifiable {
+    let id: String
+    let scope: String
+    let name: String
+    let description: String
+    // 'scope:id' — the key the create endpoint expects.
+    var key: String { "\(scope):\(id)" }
+}
+
+struct CreateSessionResponse: Codable {
+    let sessionId: String
+}
+
+struct SlashCommand: Codable, Identifiable {
+    let id: String
+    let scope: String
+    let name: String
+    let body: String
+    let pluginName: String?
+}
+
 struct SessionDetail: Codable {
     let session: SessionSummary
     let agents: [AgentSummary]

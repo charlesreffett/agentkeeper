@@ -1401,6 +1401,16 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   })
 
+  // Sessions created by another client (mobile, agency orchestrator) aren't in
+  // the store yet. Pull the row and track it so it appears app-wide.
+  const unsubCreated = window.agentkeeper.sessions.onCreated((localId) => {
+    if (sessions[localId]) return
+    void window.agentkeeper.sessions.getByLocalId(localId).then((s) => {
+      if (s && !sessions[localId]) trackRunning(s)
+    })
+  })
+  onScopeDispose(unsubCreated)
+
   const unsubNavigate = window.agentkeeper.notifications?.onNavigate((sessionLocalId) => {
     void router.push(`/sessions/${sessionLocalId}`)
   })

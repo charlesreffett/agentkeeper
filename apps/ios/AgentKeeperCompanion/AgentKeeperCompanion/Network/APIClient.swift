@@ -66,6 +66,27 @@ actor APIClient {
         }
     }
 
+    func newSessionOptions(projectPath: String? = nil) async throws -> NewSessionOptions {
+        var path = "/api/new-session/options"
+        if let projectPath {
+            let encoded = projectPath.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? projectPath
+            path += "?projectPath=\(encoded)"
+        }
+        let data = try await request(path)
+        return try JSONDecoder().decode(NewSessionOptions.self, from: data)
+    }
+
+    func createSession(_ body: [String: Any]) async throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: body)
+        let resp = try await request("/api/sessions", method: "POST", body: data)
+        return try JSONDecoder().decode(CreateSessionResponse.self, from: resp).sessionId
+    }
+
+    func listCommands(sessionId: String) async throws -> [SlashCommand] {
+        let data = try await request("/api/sessions/\(sessionId)/commands")
+        return try JSONDecoder().decode([SlashCommand].self, from: data)
+    }
+
     func sendInput(sessionId: String, text: String) async throws {
         let body = try JSONEncoder().encode(["text": text])
         _ = try await request("/api/sessions/\(sessionId)/input", method: "POST", body: body)
