@@ -1,0 +1,107 @@
+import Foundation
+
+// Server-reserved subscription topic for whole-session-list changes.
+let sessionsListTopic = "__sessions__"
+
+actor WebSocketClient {
+    private var task: URLSessionWebSocketTask?
+    private var continuation: AsyncStream<LiveEvent>.Continuation?
+    private var signalContinuation: AsyncStream<Void>.Continuation?
+
+    // Subscribes to a topic and yields once per received message. Used by the
+    // sessions list, which only needs a "reload now" signal, not decoded events.
+    func connectSignals(baseURL: String, secretKey: String, topic: String) -> AsyncStream<Void> {
+        let wsURL = baseURL.replacingOccurrences(of: "http://", with: "ws://")
+                           .replacingOccurrences(of: "https://", with: "wss://")
+        guard let url = URL(string: wsURL + "/ws") else {
+            print("[Companion] ws: bad URL \(wsURL)/ws")
+            return AsyncStream { $0.finish() }
+        }
+        print("[Companion] ws: connecting signals \(url.absoluteString) topic=\(topic)")
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(secretKey)", forHTTPHeaderField: "Authorization")
+        let t = URLSession.shared.webSocketTask(with: req)
+        self.task = t
+
+        let (stream, cont) = AsyncStream<Void>.makeStream()
+        self.signalContinuation = cont
+        t.resume()
+        let msg = #"{"type":"subscribe","sessionId":"\#(topic)"}"#
+        t.send(.string(msg)) { err in
+            if let err { print("[Companion] ws: subscribe send error: \(err.localizedDescription)") }
+        }
+        Task { await self.signalLoop(task: t, continuation: cont) }
+        cont.onTermination = { [weak self] _ in Task { await self?.disconnect() } }
+        return stream
+    }
+
+    private func signalLoop(task: URLSessionWebSocketTask, continuation: AsyncStream<Void>.Continuation) async {
+        while true {
+            do {
+                _ = try await task.receive()
+                continuation.yield(())
+            } catch {
+                print("[Companion] ws: signal loop ended: \(error.localizedDescription)")
+                continuation.finish()
+                break
+            }
+        }
+    }
+
+    func connect(baseURL: String, secretKey: String, sessionId: String) -> AsyncStream<LiveEvent> {
+        let wsURL = baseURL.replacingOccurrences(of: "http://", with: "ws://")
+                           .replacingOccurrences(of: "https://", with: "wss://")
+        guard let url = URL(string: wsURL + "/ws") else {
+            print("[Companion] ws: bad URL \(wsURL)/ws")
+            return AsyncStream { $0.finish() }
+        }
+        print("[Companion] ws: connecting \(url.absoluteString) session=\(sessionId)")
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(secretKey)", forHTTPHeaderField: "Authorization")
+        let t = URLSession.shared.webSocketTask(with: req)
+        self.task = t
+
+        // makeStream() returns (stream, continuation) in actor-isolated scope —
+        // no nonisolated closure, so self.continuation assignment is safe here.
+        let (stream, cont) = AsyncStream<LiveEvent>.makeStream()
+        self.continuation = cont
+        t.resume()
+        let msg = #"{"type":"subscribe","sessionId":"\#(sessionId)"}"#
+        print("[Companion] ws: sending subscribe \(msg)")
+        t.send(.string(msg)) { err in
+            if let err { print("[Companion] ws: subscribe send error: \(err.localizedDescription)") }
+        }
+        Task { await self.receiveLoop(task: t, continuation: cont) }
+        cont.onTermination = { [weak self] _ in Task { await self?.disconnect() } }
+        return stream
+    }
+
+    private func receiveLoop(task: URLSessionWebSocketTask, continuation: AsyncStream<LiveEvent>.Continuation) async {
+        while true {
+            do {
+                let msg = try await task.receive()
+                if case .string(let str) = msg, let data = str.data(using: .utf8) {
+                    print("[Companion] ws: recv \(str.prefix(200))")
+                    do {
+                        let event = try JSONDecoder().decode(LiveEvent.self, from: data)
+                        continuation.yield(event)
+                    } catch {
+                        print("[Companion] ws: decode FAILED: \(error)")
+                    }
+                } else {
+                    print("[Companion] ws: recv non-string message")
+                }
+            } catch {
+                print("[Companion] ws: receive loop ended: \(error.localizedDescription)")
+                continuation.finish()
+                break
+            }
+        }
+    }
+
+    func disconnect() {
+        task?.cancel(with: .normalClosure, reason: nil)
+        continuation?.finish()
+        signalContinuation?.finish()
+    }
+}

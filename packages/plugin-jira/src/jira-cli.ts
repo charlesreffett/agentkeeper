@@ -3,7 +3,22 @@ import { promisify } from 'node:util'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
+import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
+
+// Jira statusCategory.key (platform constant) → SDK StatusCategory. Deterministic across
+// orgs/boards; the only reliable color source since status names are arbitrary.
+function mapStatusCategory(key?: string): StatusCategory {
+  switch (key) {
+    case 'new':
+      return 'todo'
+    case 'indeterminate':
+      return 'in-progress'
+    case 'done':
+      return 'done'
+    default:
+      return 'unknown'
+  }
+}
 
 const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
   backlog: 'Backlog',
@@ -48,7 +63,7 @@ export interface RawJiraIssue {
     description?: string
     status?: {
       name: string
-      statusCategory?: { name: string }
+      statusCategory?: { name: string; key?: string }
     }
     assignee?: { displayName: string }
     reporter?: { displayName: string }
@@ -87,6 +102,7 @@ function mapStatus(
     case 'In Testing':
     case 'In QA':
     case 'QA':
+    case 'QA Review':
     case 'Testing':
       return 'in_review'
     case 'Done':
@@ -112,7 +128,7 @@ function mapStatus(
 export function mapToWorkItem(raw: RawJiraIssue, fieldMeta?: Map<string, string>): WorkItem {
   const summary = raw.fields?.summary ?? raw.summary ?? raw.key
   const rawDesc = raw.fields?.description ?? raw.description ?? ''
-  const description = typeof rawDesc === 'string' ? rawDesc : extractADFText(rawDesc)
+  const description = typeof rawDesc === 'string' ? rawDesc : adfToMarkdown(rawDesc).trim()
   const assignee = raw.fields?.assignee?.displayName ?? raw.assignee?.displayName
   const reporter = raw.fields?.reporter?.displayName
   const priority = raw.fields?.priority?.name
@@ -120,19 +136,19 @@ export function mapToWorkItem(raw: RawJiraIssue, fieldMeta?: Map<string, string>
   const issueType = raw.fields?.issuetype?.name ?? raw.fields?.issueType?.name ?? raw.issuetype?.name
   const parentRef = raw.fields?.parent?.key
 
+  // Body shows only rich-text (ADF) custom fields like Acceptance Criteria. Scalar
+  // fields (story points, epic link, rank, sprint…) are noise here — the useful ones
+  // already render in the sidebar/breadcrumb as first-class WorkItem fields.
   const customFields: Record<string, string> = {}
   if (raw.fields) {
     for (const [key, value] of Object.entries(raw.fields)) {
       if (!key.startsWith('customfield_')) continue
       if (value == null) continue
-      if (key === 'customfield_10016') continue
+      if (!isAdfDoc(value)) continue
       const name = fieldMeta?.get(key) ?? key
-      const text =
-        typeof value === 'string' ? value
-        : typeof value === 'number' ? String(value)
-        : typeof value === 'object' ? extractADFText(value).trim()
-        : null
-      if (text && text.trim()) customFields[name] = text.trim()
+      if (CUSTOM_FIELD_DENYLIST.has(name)) continue
+      const md = adfToMarkdown(value).trim()
+      if (md) customFields[name] = md
     }
   }
 
@@ -144,6 +160,7 @@ export function mapToWorkItem(raw: RawJiraIssue, fieldMeta?: Map<string, string>
     body: description,
     status: mapStatus(raw.fields?.status ?? raw.status),
     statusLabel: raw.fields?.status?.name ?? raw.status?.name,
+    statusCategory: mapStatusCategory(raw.fields?.status?.statusCategory?.key),
     ...(assignee ? { assignee } : {}),
     ...(reporter ? { reporter } : {}),
     ...(priority ? { priority } : {}),
@@ -199,17 +216,105 @@ interface JiraAuth {
   token: string
 }
 
-function extractADFText(node: unknown): string {
+interface AdfMark {
+  type: string
+  attrs?: Record<string, unknown>
+}
+
+function applyMarks(text: string, marks: AdfMark[] | undefined): string {
+  if (!marks?.length) return text
+  let out = text
+  for (const m of marks) {
+    switch (m.type) {
+      case 'code':   out = '`' + out + '`'; break
+      case 'strong': out = '**' + out + '**'; break
+      case 'em':     out = '*' + out + '*'; break
+      case 'strike': out = '~~' + out + '~~'; break
+      case 'link': {
+        const href = m.attrs?.href as string | undefined
+        if (href) out = `[${out}](${href})`
+        break
+      }
+    }
+  }
+  return out
+}
+
+function adfChildren(n: Record<string, unknown>): unknown[] {
+  return Array.isArray(n.content) ? (n.content as unknown[]) : []
+}
+
+function adfList(node: Record<string, unknown>, ordered: boolean, depth: number): string {
+  const indent = '  '.repeat(depth)
+  let out = ''
+  adfChildren(node).forEach((li, idx) => {
+    const liNode = li as Record<string, unknown>
+    const marker = ordered ? `${idx + 1}. ` : '- '
+    const inline: string[] = []
+    let nested = ''
+    for (const child of adfChildren(liNode)) {
+      const c = child as Record<string, unknown>
+      if (c.type === 'bulletList') nested += adfList(c, false, depth + 1)
+      else if (c.type === 'orderedList') nested += adfList(c, true, depth + 1)
+      else inline.push(adfToMarkdown(c, depth).trim())
+    }
+    out += indent + marker + inline.filter(Boolean).join(' ') + '\n'
+    if (nested) out += nested
+  })
+  return out
+}
+
+// ADF (Atlassian Document Format) → Markdown. Preserves headings, lists (nested),
+// links, inline code/marks, code blocks — rendered downstream by @comark/vue.
+function adfToMarkdown(node: unknown, depth = 0): string {
   if (typeof node === 'string') return node
   if (typeof node !== 'object' || node === null) return ''
   const n = node as Record<string, unknown>
-  if (n.type === 'text' && typeof n.text === 'string') return n.text
-  const children = Array.isArray(n.content)
-    ? (n.content as unknown[]).map(extractADFText).join('')
-    : ''
-  const blockTypes = ['paragraph', 'heading', 'listItem', 'bulletList', 'orderedList',
-    'blockquote', 'codeBlock', 'rule', 'mediaGroup', 'mediaSingle']
-  return blockTypes.includes(n.type as string) ? children + '\n' : children
+  const kids = () => adfChildren(n).map((c) => adfToMarkdown(c, depth)).join('')
+
+  switch (n.type) {
+    case 'text':      return applyMarks(typeof n.text === 'string' ? n.text : '', n.marks as AdfMark[] | undefined)
+    case 'hardBreak': return '\n'
+    case 'paragraph': return kids() + '\n\n'
+    case 'heading': {
+      const level = Math.min(Math.max(Number((n.attrs as { level?: number })?.level ?? 1), 1), 6)
+      return '#'.repeat(level) + ' ' + kids() + '\n\n'
+    }
+    case 'bulletList':  return adfList(n, false, depth) + (depth === 0 ? '\n' : '')
+    case 'orderedList': return adfList(n, true, depth) + (depth === 0 ? '\n' : '')
+    case 'codeBlock': {
+      const lang = (n.attrs as { language?: string })?.language ?? ''
+      return '```' + lang + '\n' + kids().replace(/\n+$/, '') + '\n```\n\n'
+    }
+    case 'blockquote':
+      return adfChildren(n).map((c) => adfToMarkdown(c, depth)).join('').trimEnd().split('\n').map((l) => '> ' + l).join('\n') + '\n\n'
+    case 'rule':        return '---\n\n'
+    case 'inlineCard':
+    case 'blockCard': {
+      const url = (n.attrs as { url?: string })?.url
+      return url ? `[${url}](${url})` : ''
+    }
+    case 'emoji':       return (n.attrs as { text?: string; shortName?: string })?.text ?? (n.attrs as { shortName?: string })?.shortName ?? ''
+    case 'mediaSingle':
+    case 'mediaGroup':
+    case 'media':       return ''
+    default:            return kids()
+  }
+}
+
+// Noise custom fields that should never surface in the body — internal sort keys,
+// dev-panel JSON, and scalars already shown elsewhere (sidebar / breadcrumb).
+const CUSTOM_FIELD_DENYLIST = new Set([
+  'Rank', 'Development', 'Sprint', 'Story Points', 'Story point estimate',
+  'Epic Link', 'Parent Link', 'Flagged',
+])
+
+function isAdfDoc(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { type?: string }).type === 'doc'
+  )
 }
 
 // jira CLI stores server/login in its YAML config; the API token lives in JIRA_API_TOKEN
@@ -293,7 +398,41 @@ export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
   }
 }
 
+// REST returns each transition's target status (`to.name`), which the CLI probe does NOT —
+// the probe only lists transition NAMES (e.g. "Stop work"), which mapStatus can't resolve,
+// collapsing every option to 'open'. Prefer REST; fall back to the probe when auth is absent.
 export async function getIssueTransitions(id: string): Promise<IssueTransition[]> {
+  const auth = readJiraAuth()
+  if (auth) {
+    try {
+      const res = await fetch(`${auth.server}/rest/api/3/issue/${id}/transitions`, {
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(`${auth.login}:${auth.token}`).toString('base64'),
+        },
+      })
+      if (res.ok) {
+        const data = (await res.json()) as {
+          transitions?: Array<{
+            name: string
+            to?: { name?: string; statusCategory?: { name?: string; key?: string } }
+          }>
+        }
+        const transitions = (data.transitions ?? []).map((t) => {
+          const toStatus = mapStatus(t.to)
+          return {
+            name: t.name,
+            toStatus,
+            toStatusLabel: t.to?.name ?? toStatusDisplayLabel[toStatus],
+            toStatusCategory: mapStatusCategory(t.to?.statusCategory?.key),
+          }
+        })
+        if (transitions.length > 0) return transitions
+      }
+    } catch {
+      // fall through to CLI probe
+    }
+  }
+
   try {
     await execFileAsync('jira', ['issue', 'move', id, '__JIRA_TRANSITION_PROBE__'])
     return []

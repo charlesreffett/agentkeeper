@@ -21,6 +21,7 @@ function rowToSession(row: typeof sessions.$inferSelect): Session {
     model: row.model ?? null,
     effort: row.effort as RoleEffort | null,
     permissionMode: row.permissionMode as Session['permissionMode'],
+    harnessId: row.harnessId ?? 'claude-code',
     initialPrompt: row.initialPrompt,
     agencyName: row.agencyName ?? null,
     agencyId: row.agencyId ?? null,
@@ -64,8 +65,21 @@ export function computeSessionStatus(agentList: Agent[]): LiveSessionStatus {
 
 // ── Session CRUD ──────────────────────────────────────────────────────────────
 
+let sessionRegisteredNotifier: ((localId: string) => void) | null = null
+
+// Fired once when a brand-new session row is inserted (not on resume/update),
+// so clients that didn't initiate the create — desktop renderer, mobile — can
+// refresh their session list.
+export function setSessionRegisteredNotifier(fn: (localId: string) => void): void {
+  sessionRegisteredNotifier = fn
+}
+
 export function registerSession(session: Session): void {
   const db = getDb()
+  const existing = db.select({ localId: sessions.localId })
+    .from(sessions)
+    .where(eq(sessions.localId, session.localId))
+    .get()
   db.insert(sessions).values({
     localId: session.localId,
     projectPath: session.projectPath,
@@ -74,6 +88,7 @@ export function registerSession(session: Session): void {
     model: session.model ?? null,
     effort: session.effort ?? null,
     permissionMode: session.permissionMode ?? null,
+    harnessId: session.harnessId ?? 'claude-code',
     initialPrompt: session.initialPrompt ?? '',
     agencyName: session.agencyName ?? null,
     agencyId: session.agencyId ?? null,
@@ -105,6 +120,8 @@ export function registerSession(session: Session): void {
       db.delete(sessions).where(eq(sessions.localId, s.localId)).run()
     }
   }
+
+  if (!existing) sessionRegisteredNotifier?.(session.localId)
 }
 
 export function updateSession(localId: string, partial: Partial<Session>): void {
@@ -126,6 +143,15 @@ export function listSessions(projectPath: string): Session[] {
     .select()
     .from(sessions)
     .where(eq(sessions.projectPath, projectPath))
+    .orderBy(desc(sql`IFNULL(${sessions.lastUserMessageAt}, ${sessions.startedAt})`))
+    .all()
+    .map(rowToSession)
+}
+
+export function listAllSessions(): Session[] {
+  return getDb()
+    .select()
+    .from(sessions)
     .orderBy(desc(sql`IFNULL(${sessions.lastUserMessageAt}, ${sessions.startedAt})`))
     .all()
     .map(rowToSession)

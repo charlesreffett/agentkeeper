@@ -23,6 +23,8 @@ import {
   Pencil,
   MessageSquare,
 } from 'lucide-vue-next'
+import { Comark } from '@comark/vue'
+import { transcriptPlugins } from '@/lib/comark-config'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
@@ -1175,7 +1177,15 @@ Guidelines:
                       class="group flex items-start gap-1.5 text-sm text-foreground/80 leading-relaxed cursor-text hover:bg-muted/40 px-2 py-1 rounded -mx-2 transition-colors"
                       @click.stop="startEdit(index, 'instructions')"
                     >
-                      <span class="flex-1">{{ step.instructions ?? 'Click to add instructions…' }}</span>
+                      <template v-if="step.instructions">
+                        <Suspense>
+                          <Comark class="flex-1 prose prose-sm dark:prose-invert max-w-none" :markdown="step.instructions" :plugins="transcriptPlugins" />
+                          <template #fallback>
+                            <span class="flex-1 whitespace-pre-wrap">{{ step.instructions }}</span>
+                          </template>
+                        </Suspense>
+                      </template>
+                      <span v-else class="flex-1 text-muted-foreground/60 italic">Click to add instructions…</span>
                       <Pencil :size="10" class="opacity-0 group-hover:opacity-50 text-muted-foreground shrink-0 mt-0.5 transition-opacity" />
                     </div>
                   </div>

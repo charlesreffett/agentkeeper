@@ -4,7 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
 import { watch as fsWatch } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import {
   IPC_CHANNELS,
   type AddAgentParams,
@@ -82,6 +82,7 @@ import { generateSkillContent, installSkill, listSkills, previewSkills, removeSk
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
 import { harnessRegistry, getHarness } from './harness/index'
+import { syncMobileServer } from './mobile-server'
 import { startWatching, stopWatching } from './watcher.js'
 import { registerTerminalHandlers } from './terminal'
 import type {
@@ -241,7 +242,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsRead,
-    (_event, projectPath: string, sessionId: string) => readSession(projectPath, sessionId),
+    (_event, projectPath: string, sessionId: string, harnessId?: string) => readSession(projectPath, sessionId, harnessId),
   )
 
   // Sessions — live. Every handler normalizes its error to a plain message
@@ -356,7 +357,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => settingsStore.get())
   ipcMain.handle(
     IPC_CHANNELS.settingsSet,
-    (_event, partial: Partial<AppSettings>) => settingsStore.set(partial),
+    (_event, partial: Partial<AppSettings>) => {
+      const updated = settingsStore.set(partial)
+      syncMobileServer(updated)
+      return updated
+    },
   )
 
   // Worktrees
@@ -970,6 +975,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     (_event, projectPath: string) => sessionRegistry.listSessions(projectPath),
   )
   ipcMain.handle(
+    IPC_CHANNELS.sessionsGetByLocalId,
+    (_event, localId: string) => sessionRegistry.getSession(localId) ?? null,
+  )
+  ipcMain.handle(
     IPC_CHANNELS.sessionsResume,
     async (_event, localId: string) => {
       try {
@@ -1118,9 +1127,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsEditAndRerun,
-    async (_event, agentLocalId: string, truncateFromUuid: string, newText: string) => {
+    async (_event, agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null) => {
       try {
-        await editAndRerun(agentLocalId, truncateFromUuid, newText)
+        await editAndRerun(agentLocalId, truncateFromUuid, newText, originalText)
       } catch (err) {
         console.error('[ipc] sessions:editAndRerun failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -1436,6 +1445,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   startHarnessPluginWatcher()
+
+  ipcMain.handle('mobile:generateKey', () => randomBytes(32).toString('hex'))
+  ipcMain.handle('mobile:getLocalIp', () => {
+    const ifaces = os.networkInterfaces()
+    for (const iface of Object.values(ifaces)) {
+      for (const addr of iface ?? []) {
+        if (addr.family === 'IPv4' && !addr.internal) return addr.address
+      }
+    }
+    return '127.0.0.1'
+  })
 }
 
 function broadcastCommandsChanged(): void {

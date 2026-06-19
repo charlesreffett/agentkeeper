@@ -147,8 +147,8 @@ const api: AgentKeeperApi = {
   sessions: {
     list: (projectPath: string) =>
       invoke(IPC_CHANNELS.sessionsList, projectPath) as Promise<never>,
-    read: (projectPath: string, sessionId: string) =>
-      invoke(IPC_CHANNELS.sessionsRead, projectPath, sessionId) as Promise<never>,
+    read: (projectPath: string, sessionId: string, harnessId?: string) =>
+      invoke(IPC_CHANNELS.sessionsRead, projectPath, sessionId, harnessId) as Promise<never>,
     start: (params: StartSessionParams) =>
       invoke(IPC_CHANNELS.sessionStart, params) as Promise<string>,
     sendInput: (sessionId: string, text: string, attachments?: Attachment[]) =>
@@ -161,8 +161,11 @@ const api: AgentKeeperApi = {
     onStatus: (cb) =>
       onChannel<LiveSessionStatusUpdate>(IPC_CHANNELS.sessionStatus, cb),
     onStats: (cb) => onChannel<LiveSessionStats>(IPC_CHANNELS.sessionStats, cb),
+    onCreated: (cb) => onChannel<string>(IPC_CHANNELS.sessionCreated, cb),
     listPersisted: (projectPath: string) =>
       invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<Session[]>,
+    getByLocalId: (localId: string) =>
+      invoke(IPC_CHANNELS.sessionsGetByLocalId, localId) as Promise<Session | null>,
     resume: (localId: string) =>
       invoke(IPC_CHANNELS.sessionsResume, localId) as Promise<string>,
     deletePersisted: (localId: string) =>
@@ -189,8 +192,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.sessionsListTrackedSdkIds, projectPath) as Promise<string[]>,
     reconnectMcp: (agentLocalId: string) =>
       invoke(IPC_CHANNELS.sessionsReconnectMcp, agentLocalId) as Promise<void>,
-    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string) =>
-      invoke(IPC_CHANNELS.sessionsEditAndRerun, agentLocalId, truncateFromUuid, newText) as Promise<void>,
+    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null) =>
+      invoke(IPC_CHANNELS.sessionsEditAndRerun, agentLocalId, truncateFromUuid, newText, originalText) as Promise<void>,
     undoEditAndRerun: (agentLocalId: string) =>
       invoke(IPC_CHANNELS.sessionsUndoEditAndRerun, agentLocalId) as Promise<void>,
   },
@@ -502,6 +505,10 @@ const api: AgentKeeperApi = {
     list: () => invoke(IPC_CHANNELS.harnessListAdapters) as Promise<HarnessInfo[]>,
     getActive: () => invoke(IPC_CHANNELS.harnessGetActive) as Promise<HarnessInfo>,
     setActive: (id: string) => invoke(IPC_CHANNELS.harnessSetActive, id) as Promise<void>,
+  },
+  mobile: {
+    generateKey: () => invoke(IPC_CHANNELS.mobileGenerateKey) as Promise<string>,
+    getLocalIp: () => invoke(IPC_CHANNELS.mobileGetLocalIp) as Promise<string>,
   },
   ...(process.env.NODE_ENV === 'development' ? {
     dev: {

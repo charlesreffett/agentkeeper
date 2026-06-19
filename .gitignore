@@ -15,6 +15,10 @@ build
 # IDE project files
 .idea/
 
+# Xcode per-user state (window layout, breakpoints, scheme selection). The
+# shared project.xcworkspace/contents.xcworkspacedata stays tracked.
+xcuserdata/
+
 # Git worktrees the app creates live in a sibling dir, not inside the repo
 # (see main/worktrees.ts → `<projectPath>--worktrees/`), so nothing to ignore
 # for those. `.agentkeeper/` holds committed role/agency definitions — DO NOT

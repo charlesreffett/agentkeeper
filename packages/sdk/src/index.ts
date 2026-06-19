@@ -25,6 +25,7 @@ export interface WorkItem {
   body: string
   status: WorkItemStatus
   statusLabel?: string
+  statusCategory?: StatusCategory
   assignee?: string
   reporter?: string
   priority?: string
@@ -151,10 +152,16 @@ export interface EventBus {
   emit<K extends keyof EventMap>(event: K, payload: EventMap[K]): void
 }
 
+// Jira statusCategory.key — a platform constant (only these 4 exist) independent of an
+// org's custom status names. The deterministic color source: matches Jira's own lozenge
+// palette (To Do=gray, In Progress=blue, Done=green) regardless of board or org.
+export type StatusCategory = 'todo' | 'in-progress' | 'done' | 'unknown'
+
 export interface IssueTransition {
   name: string
   toStatus: WorkItemStatus
   toStatusLabel: string
+  toStatusCategory?: StatusCategory
 }
 
 export interface WorkItemSource {

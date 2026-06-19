@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { Bot, ChevronDown, ChevronRight, Plus, SlidersHorizontal } from 'lucide-vue-next'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import { useSessionStore } from '@/stores/sessions'
+import { Input } from '@/components/ui/input'
 import JiraCreateTicketModal from './JiraCreateTicketModal.vue'
 import type { WorkItem, WorkItemStatus } from '@shared/ipc-contract'
 
@@ -147,6 +148,10 @@ const jiraItems = computed(() => allItems.value.filter((i) => i.source === 'jira
 
 const configuredBoards = ref<Array<{ jiraProjectKey: string; projectPath: string }>>([])
 
+// True per-board totals from Jira REST (approximate-count). Keyed by board prefix.
+// Empty when auth unavailable — sidebar falls back to loaded/capped counts.
+const restCounts = ref<Record<string, number>>({})
+
 async function loadConfiguredBoards() {
   try {
     const cfg = (await window.agentkeeper.plugins.getConfig('jira')) as {
@@ -158,30 +163,45 @@ async function loadConfiguredBoards() {
   }
 }
 
-const allBoards = computed(() => {
-  // Issue counts from loaded data
+// Loaded-data counts by board prefix (capped at the paginated fetch limit)
+const loadedCounts = computed(() => {
   const counts = new Map<string, number>()
   for (const item of jiraItems.value) {
     const k = boardOf(item)
     if (k) counts.set(k, (counts.get(k) ?? 0) + 1)
   }
-
-  // Configured mappings are the canonical board list
-  const seen = new Set<string>()
-  const boards: Array<{ key: string; count: number }> = []
-  for (const { jiraProjectKey: key } of configuredBoards.value) {
-    if (seen.has(key)) continue
-    seen.add(key)
-    boards.push({ key, count: counts.get(key) ?? 0 })
-  }
-
-  // Auto-discovered boards not in config (legacy / unconfigured data)
-  for (const [key, count] of counts.entries()) {
-    if (!seen.has(key)) boards.push({ key, count })
-  }
-
-  return boards.sort((a, b) => a.key.localeCompare(b.key))
+  return counts
 })
+
+// Canonical board key list: configured mappings first, then auto-discovered.
+const boardKeys = computed(() => {
+  const seen = new Set<string>()
+  const keys: string[] = []
+  for (const { jiraProjectKey: key } of configuredBoards.value) {
+    if (key && !seen.has(key)) { seen.add(key); keys.push(key) }
+  }
+  for (const key of loadedCounts.value.keys()) {
+    if (!seen.has(key)) { seen.add(key); keys.push(key) }
+  }
+  return keys.sort((a, b) => a.localeCompare(b))
+})
+
+async function loadCounts() {
+  const keys = boardKeys.value
+  if (keys.length === 0) return
+  try {
+    restCounts.value = await window.agentkeeper.workItems.counts(keys)
+  } catch {
+    restCounts.value = {}
+  }
+}
+
+const allBoards = computed(() =>
+  boardKeys.value.map((key) => ({
+    key,
+    count: restCounts.value[key] ?? loadedCounts.value.get(key) ?? 0,
+  })),
+)
 
 function toggleBoard(k: string) {
   const n = new Set(selectedBoards.value)
@@ -305,6 +325,7 @@ async function load() {
 
 const jiraConfigVersion = inject<Ref<number>>('jiraConfigVersion', ref(0))
 watch(jiraConfigVersion, () => { void loadConfiguredBoards() })
+watch(boardKeys, () => { void loadCounts() }, { immediate: true })
 
 let unsub: (() => void) | null = null
 onMounted(() => {
@@ -434,17 +455,17 @@ onUnmounted(() => unsub?.())
           <!-- Search -->
           <div class="relative">
             <svg
-              class="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+              class="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none z-10"
               width="12" height="12" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" stroke-width="2.5"
             >
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
             </svg>
-            <input
+            <Input
               v-model="searchQuery"
               type="text"
               placeholder="Search issues"
-              class="w-44 pl-7 pr-3 py-1 text-xs bg-muted/40 border border-input rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              class="w-44 pl-7 h-7 text-xs"
             />
           </div>
           <!-- Filter -->

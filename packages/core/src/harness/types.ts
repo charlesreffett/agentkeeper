@@ -28,8 +28,8 @@ export interface HarnessSessionOptions {
 }
 
 export type HarnessEvent =
-  | { type: 'user'; message: { role: 'user'; content: unknown } }
-  | { type: 'assistant'; message: { role: 'assistant'; content: unknown; model?: string } }
+  | { type: 'user'; message: { role: 'user'; content: unknown }; uuid?: string; session_id?: string }
+  | { type: 'assistant'; message: { role: 'assistant'; content: unknown; model?: string }; uuid?: string; session_id?: string }
   | { type: 'system'; subtype: string; [key: string]: unknown }
   | { type: 'result'; subtype: string; [key: string]: unknown }
 

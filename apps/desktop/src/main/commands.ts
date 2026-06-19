@@ -118,6 +118,24 @@ export async function listCommands(projectPath: string): Promise<SlashCommand[]>
   return [...project, ...global, ...plugin]
 }
 
+/**
+ * Expand a slash-command input into the command body, mirroring the renderer's
+ * `resolveBody`: leading `/<id>` is matched against the project's commands and
+ * replaced by its body, with `$ARGUMENTS` substituted by the text after the id.
+ * Non-command text (or an unknown id) passes through unchanged.
+ */
+export async function expandCommandInput(projectPath: string, text: string): Promise<string> {
+  const trimmed = text.trimStart()
+  if (!trimmed.startsWith('/')) return text
+  const match = trimmed.match(/^\/(\S+)\s*([\s\S]*)$/)
+  if (!match) return text
+  const [, id, args] = match
+  const commands = await listCommands(projectPath)
+  const cmd = commands.find((c) => c.id === id)
+  if (!cmd) return text
+  return cmd.body.replace(/\$ARGUMENTS/g, args ?? '').trim()
+}
+
 export async function saveCommand(
   scope: 'project' | 'global',
   projectPath: string,

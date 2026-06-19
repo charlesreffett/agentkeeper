@@ -34,6 +34,7 @@ export interface ActiveSession {
   sdkSessionId: string | null
   projectPath: string
   worktreePath: string | undefined
+  harnessId: string
   model: string | undefined
   effort: RoleEffort | undefined
   permissionMode: PermissionMode
@@ -87,9 +88,33 @@ export interface InternalStartExtras {
 const active = new Map<string, ActiveSession>()
 const restartingIds = new Set<string>()
 
+let mobileNotifier: ((sessionId: string, event: unknown) => void) | null = null
+let mobileSessionsNotifier: (() => void) | null = null
+
+export function setMobileEventNotifier(fn: (sessionId: string, event: unknown) => void): void {
+  mobileNotifier = fn
+}
+
+export function setMobileSessionsNotifier(fn: () => void): void {
+  mobileSessionsNotifier = fn
+}
+
+// A session can be created by any client (desktop renderer, mobile, agency
+// orchestrator). Whoever didn't initiate it has no entry in its list yet, so
+// fan a one-shot "created" signal out to every renderer and to mobile.
+function broadcastSessionCreated(localId: string): void {
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) wc.send('session:created', localId)
+  }
+  mobileSessionsNotifier?.()
+}
+
+registry.setSessionRegisteredNotifier(broadcastSessionCreated)
+
 interface UndoBuffer {
   projectPath: string
   sdkSessionId: string
+  harnessId: string
   keptCount: number
   removedLines: string[]
 }
@@ -126,6 +151,7 @@ function broadcastEvent(event: LiveSessionEvent): void {
   for (const wc of webContents.getAllWebContents()) {
     if (!wc.isDestroyed()) wc.send('session:event', payload)
   }
+  mobileNotifier?.(event.sessionId, payload)
 }
 
 export function broadcastStatus(update: LiveSessionStatusUpdate): void {
@@ -133,6 +159,7 @@ export function broadcastStatus(update: LiveSessionStatusUpdate): void {
   for (const wc of webContents.getAllWebContents()) {
     if (!wc.isDestroyed()) wc.send('session:status', payload)
   }
+  mobileSessionsNotifier?.()
 }
 
 function broadcastStats(stats: LiveSessionStats): void {
@@ -427,6 +454,13 @@ export async function startSession(
   const isNewSession = !params.sessionLocalId
   const now = Date.now()
 
+  // Pin the harness for this session: explicit param > the harness the session
+  // already ran on (resume) > the active harness. Routing later JSONL reads and
+  // message-uuid lookups through this id keeps them correct even if the active
+  // harness changes.
+  const harnessId =
+    params.harnessId ?? registry.getSession(sessionLocalId)?.harnessId ?? getHarness().id
+
   const controller = new AbortController()
   const input = new AsyncQueue<{type:'user';message:{role:'user';content:unknown}}>()
   const isResume = !!params.resumeSdkSessionId
@@ -444,6 +478,7 @@ export async function startSession(
       model: params.model ?? null,
       effort: params.effort ?? null,
       permissionMode: params.permissionMode ?? 'bypassPermissions',
+      harnessId,
       initialPrompt: params.initialPrompt ?? '',
       agencyName: params.agencyName ?? null,
       agencyId: params.agencyId ?? null,
@@ -494,11 +529,13 @@ export async function startSession(
   const hasBuiltin = !!mcpServer
   const hasExternal = extras.additionalMcpServers && Object.keys(extras.additionalMcpServers).length > 0
 
-  const stream = getHarness().runSession('', {
+  const stream = getHarness(harnessId).runSession('', {
     model: params.model,
     cwd,
-    preset: 'claude_code',
-    ...(systemPromptAppend ? { systemPrompt: systemPromptAppend } : {}),
+    ...(systemPromptAppend
+      ? { preset: 'claude_code', systemPrompt: systemPromptAppend }
+      : isResume ? {}
+      : { preset: 'claude_code' }),
     env: childEnv as Record<string, string>,
     messageQueue: input,
     ...(params.resumeSdkSessionId ? { resume: params.resumeSdkSessionId } : {}),
@@ -518,6 +555,7 @@ export async function startSession(
     sdkSessionId: null,
     projectPath: params.projectPath,
     worktreePath: params.worktreePath,
+    harnessId,
     model: params.model,
     effort: params.effort,
     permissionMode: params.permissionMode ?? 'bypassPermissions',
@@ -621,6 +659,12 @@ export function isSessionActive(sessionId: string): boolean {
 
 export function getActiveSession(sessionId: string): ActiveSession | null {
   return active.get(sessionId) ?? null
+}
+
+export function getActiveSessionsBySessionLocalId(sessionLocalId: string): ActiveSession[] {
+  return [...active.values()].filter(
+    s => s.sessionLocalId === sessionLocalId || s.agentLocalId === sessionLocalId
+  )
 }
 
 /** Resolve when the session next reaches idle (or a terminal status). */
@@ -806,6 +850,7 @@ export async function editAndRerun(
   agentLocalId: string,
   truncateFromUuid: string,
   newText: string,
+  originalText?: string | null,
 ): Promise<void> {
   const agent = registry.getAgent(agentLocalId)
   if (!agent?.sdkSessionId) throw new Error(`agent ${agentLocalId} has no sdkSessionId`)
@@ -813,18 +858,46 @@ export async function editAndRerun(
   if (!session) throw new Error(`session not found for agent ${agentLocalId}`)
   await interruptSession(agentLocalId)
   active.delete(agentLocalId)
-  const { keptCount, removedLines } = await truncateSessionJsonl(
+  const { keptCount, removedLines, keptHasConversation } = await truncateSessionJsonl(
     session.projectPath,
     agent.sdkSessionId,
     truncateFromUuid,
+    originalText,
+    session.harnessId,
   )
   undoBuffers.set(agentLocalId, {
     projectPath: session.projectPath,
     sdkSessionId: agent.sdkSessionId,
+    harnessId: session.harnessId ?? getHarness().id,
     keptCount,
     removedLines,
   })
-  await sendInput(agentLocalId, newText)
+  if (keptHasConversation) {
+    // Prior turns survive — resume so the model keeps the truncated context.
+    await sendInput(agentLocalId, newText)
+    return
+  }
+  // Editing the first message leaves no conversation to resume from; the
+  // truncated file is only meta lines and `claude --resume` produces nothing.
+  // Start a fresh session (new sdkSessionId) with the edited text as the prompt.
+  await startSession({
+    localId: agentLocalId,
+    agentLocalId,
+    sessionLocalId: agent.sessionLocalId !== agentLocalId ? agent.sessionLocalId : undefined,
+    projectPath: session.projectPath,
+    worktreePath: session.worktreePath ?? undefined,
+    initialPrompt: newText,
+    model: session.model ?? undefined,
+    effort: session.effort ?? undefined,
+    permissionMode: (session.permissionMode as PermissionMode) ?? undefined,
+    harnessId: session.harnessId,
+    roleId: agent.roleId ?? undefined,
+    roleName: agent.roleName ?? undefined,
+    agencyName: session.agencyName ?? undefined,
+    agencyId: session.agencyId ?? undefined,
+    agencyScope: session.agencyScope ?? undefined,
+    isEntryPoint: agent.isEntryPoint,
+  })
 }
 
 export async function undoEditAndRerun(agentLocalId: string): Promise<void> {
@@ -833,5 +906,8 @@ export async function undoEditAndRerun(agentLocalId: string): Promise<void> {
   undoBuffers.delete(agentLocalId)
   await interruptSession(agentLocalId)
   active.delete(agentLocalId)
-  await restoreSessionJsonl(buf.projectPath, buf.sdkSessionId, buf.keptCount, buf.removedLines)
+  await restoreSessionJsonl(buf.projectPath, buf.sdkSessionId, buf.keptCount, buf.removedLines, buf.harnessId)
+  // A fresh-start edit (first-message case) forks agent.sdkSessionId to a new
+  // file; repoint it at the restored original so reload reads the right one.
+  registry.updateAgent(agentLocalId, { sdkSessionId: buf.sdkSessionId })
 }

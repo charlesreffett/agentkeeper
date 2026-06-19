@@ -233,6 +233,10 @@ export interface Session {
   model: string | null
   effort: RoleEffort | null
   permissionMode: PermissionMode | null
+  /** Harness adapter id that ran this session (e.g. 'claude-code'). Determines
+   *  JSONL layout and message-uuid lookup. Always set on persisted sessions;
+   *  may be undefined on transient renderer-constructed sessions. */
+  harnessId?: string
   initialPrompt: string
   agencyName: string | null
   agencyId: string | null
@@ -275,6 +279,8 @@ export interface StartSessionParams {
   worktreePath?: string
   initialPrompt: string
   model?: string
+  /** Harness adapter id to run this session on. Defaults to the active harness. */
+  harnessId?: string
   effort?: RoleEffort
   permissionMode?: PermissionMode
   /** Role-derived options — appended to the default Claude Code preset. */
@@ -553,6 +559,7 @@ export interface AppSettings {
   mcpServers: McpServerEntry[]
   /** Active harness adapter id. Defaults to 'claude-code' when undefined. */
   harnessId?: string
+  mobileServer?: { enabled: boolean; port: number; secretKey: string }
 }
 
 export type SecretKeyName = 'anthropicApiKey'
@@ -742,6 +749,7 @@ export interface AgentKeeperApi {
     read: (
       projectPath: string,
       sessionId: string,
+      harnessId?: string,
     ) => Promise<SessionTranscript | null>
     start: (params: StartSessionParams) => Promise<string>
     sendInput: (sessionId: string, text: string, attachments?: Attachment[]) => Promise<void>
@@ -752,7 +760,9 @@ export interface AgentKeeperApi {
       callback: (update: LiveSessionStatusUpdate) => void,
     ) => () => void
     onStats: (callback: (stats: LiveSessionStats) => void) => () => void
+    onCreated: (callback: (localId: string) => void) => () => void
     listPersisted: (projectPath: string) => Promise<Session[]>
+    getByLocalId: (localId: string) => Promise<Session | null>
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
     touchPersisted: (localId: string) => Promise<void>
@@ -766,7 +776,7 @@ export interface AgentKeeperApi {
     addAgent: (sessionLocalId: string, params: AddAgentParams) => Promise<string>
     listTrackedSdkIds: (projectPath: string) => Promise<string[]>
     reconnectMcp: (agentLocalId: string) => Promise<void>
-    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string) => Promise<void>
+    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null) => Promise<void>
     undoEditAndRerun: (agentLocalId: string) => Promise<void>
   }
   worktrees: {
@@ -965,6 +975,10 @@ export interface AgentKeeperApi {
     getActive: () => Promise<HarnessInfo>
     setActive: (id: string) => Promise<void>
   }
+  mobile: {
+    generateKey: () => Promise<string>
+    getLocalIp: () => Promise<string>
+  }
   /** Only present in development builds (`!app.isPackaged`). */
   dev?: {
     runMigrations: () => Promise<{ applied: number }>
@@ -992,6 +1006,7 @@ export const IPC_CHANNELS = {
   sessionEvent: 'session:event',
   sessionStatus: 'session:status',
   sessionStats: 'session:stats',
+  sessionCreated: 'session:created',
   worktreesList: 'worktrees:list',
   worktreesCreate: 'worktrees:create',
   worktreesRemove: 'worktrees:remove',
@@ -1062,6 +1077,7 @@ export const IPC_CHANNELS = {
   githubCreatePR: 'github:prs:create',
   remotesDetect: 'remotes:detect',
   sessionsListPersisted: 'sessions:listPersisted',
+  sessionsGetByLocalId: 'sessions:getByLocalId',
   sessionsResume: 'sessions:resume',
   sessionsDeletePersisted: 'sessions:deletePersisted',
   sessionsTouchPersisted: 'sessions:touchPersisted',
@@ -1123,4 +1139,6 @@ export const IPC_CHANNELS = {
   harnessListAdapters: 'harness:list',
   harnessGetActive: 'harness:getActive',
   harnessSetActive: 'harness:setActive',
+  mobileGenerateKey: 'mobile:generateKey',
+  mobileGetLocalIp: 'mobile:getLocalIp',
 } as const

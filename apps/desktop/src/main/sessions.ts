@@ -12,16 +12,18 @@ import type {
 
 // ─── Path helpers ───────────────────────────────────────────────────────────
 
-function claudeProjectsRoot(): string {
-  return getHarness().getSessionsRoot()
+function claudeProjectsRoot(harnessId?: string): string {
+  return getHarness(harnessId).getSessionsRoot()
 }
 
-export function encodeCwdForHarness(cwd: string): string {
-  return getHarness().encodeCwd(cwd)
+export function encodeCwdForHarness(cwd: string, harnessId?: string): string {
+  return getHarness(harnessId).encodeCwd(cwd)
 }
 
-function projectDir(projectPath: string): string {
-  return path.join(claudeProjectsRoot(), encodeCwdForHarness(projectPath))
+// harnessId pins the JSONL layout to the harness that ran the session; omit to
+// fall back to the active harness (correct while a single harness exists).
+function projectDir(projectPath: string, harnessId?: string): string {
+  return path.join(claudeProjectsRoot(harnessId), encodeCwdForHarness(projectPath, harnessId))
 }
 
 function snippet(s: string, maxLen = 200): string {
@@ -291,13 +293,15 @@ export async function truncateSessionJsonl(
   projectPath: string,
   sdkSessionId: string,
   fromUuid: string,
-): Promise<{ keptCount: number; removedLines: string[] }> {
-  const filePath = path.join(projectDir(projectPath), `${sdkSessionId}.jsonl`)
+  fallbackUserText?: string | null,
+  harnessId?: string,
+): Promise<{ keptCount: number; removedLines: string[]; keptHasConversation: boolean }> {
+  const filePath = path.join(projectDir(projectPath, harnessId), `${sdkSessionId}.jsonl`)
   let rawContent: string
   try {
     rawContent = await fs.promises.readFile(filePath, 'utf8')
   } catch {
-    return { keptCount: 0, removedLines: [] }
+    return { keptCount: 0, removedLines: [], keptHasConversation: false }
   }
   const allLines = rawContent.split('\n').filter((l) => l.trim())
   let cutIndex = -1
@@ -307,13 +311,40 @@ export async function truncateSessionJsonl(
       if (obj['uuid'] === fromUuid) { cutIndex = i; break }
     } catch { /* skip malformed */ }
   }
-  if (cutIndex === -1) return { keptCount: allLines.length, removedLines: [] }
+  // Live-streamed events carry a renderer-generated uuid that never appears in
+  // the persisted JSONL, so uuid lookup fails for same-session edits. Fall back
+  // to matching the edited user message by text, scanning from the end so the
+  // most recent matching turn wins.
+  if (cutIndex === -1 && fallbackUserText != null) {
+    for (let i = allLines.length - 1; i >= 0; i--) {
+      try {
+        const obj = JSON.parse(allLines[i]!) as Record<string, unknown>
+        if (obj['type'] === 'user' && extractUserTextFromRaw(obj) === fallbackUserText) {
+          cutIndex = i
+          break
+        }
+      } catch { /* skip malformed */ }
+    }
+  }
+  if (cutIndex === -1) return { keptCount: allLines.length, removedLines: [], keptHasConversation: true }
   const keptLines = allLines.slice(0, cutIndex)
   const removedLines = allLines.slice(cutIndex)
+  // A resume needs at least one real user/assistant turn in the kept head. If
+  // the cut lands on the first message, only meta lines (queue-operation /
+  // attachment / system) survive and `claude --resume` can't rebuild context —
+  // the caller must start a fresh session instead.
+  const keptHasConversation = keptLines.some((l) => {
+    try {
+      const t = (JSON.parse(l) as Record<string, unknown>)['type']
+      return t === 'user' || t === 'assistant'
+    } catch {
+      return false
+    }
+  })
   const tmpPath = `${filePath}.tmp`
   await fs.promises.writeFile(tmpPath, keptLines.length > 0 ? keptLines.join('\n') + '\n' : '', 'utf8')
   await fs.promises.rename(tmpPath, filePath)
-  return { keptCount: keptLines.length, removedLines }
+  return { keptCount: keptLines.length, removedLines, keptHasConversation }
 }
 
 export async function restoreSessionJsonl(
@@ -321,9 +352,10 @@ export async function restoreSessionJsonl(
   sdkSessionId: string,
   keptCount: number,
   linesToAppend: string[],
+  harnessId?: string,
 ): Promise<void> {
   if (linesToAppend.length === 0) return
-  const filePath = path.join(projectDir(projectPath), `${sdkSessionId}.jsonl`)
+  const filePath = path.join(projectDir(projectPath, harnessId), `${sdkSessionId}.jsonl`)
   let rawContent = ''
   try { rawContent = await fs.promises.readFile(filePath, 'utf8') } catch { /* new file */ }
   const currentLines = rawContent.split('\n').filter((l) => l.trim())
@@ -336,8 +368,9 @@ export async function restoreSessionJsonl(
 export async function readSession(
   projectPath: string,
   sessionId: string,
+  harnessId?: string,
 ): Promise<SessionTranscript | null> {
-  const filePath = path.join(projectDir(projectPath), `${sessionId}.jsonl`)
+  const filePath = path.join(projectDir(projectPath, harnessId), `${sessionId}.jsonl`)
   let stat: fs.Stats
   try {
     stat = await fs.promises.stat(filePath)

@@ -8,6 +8,7 @@ export const sessions = sqliteTable('sessions', {
   model: text('model'),
   effort: text('effort'),
   permissionMode: text('permission_mode'),
+  harnessId: text('harness_id').notNull().default('claude-code'),
   initialPrompt: text('initial_prompt').notNull().default(''),
   agencyName: text('agency_name'),
   agencyId: text('agency_id'),
