@@ -15,6 +15,8 @@ struct SessionDetailView: View {
     @State private var hasMoreOlder = false
     @State private var loadingOlder = false
     @State private var suppressBottomScroll = false
+    @State private var isRunning = false
+    @FocusState private var inputFocused: Bool
 
     // `events` now holds only a fetched window — the latest page on open, grown
     // toward the top as the user pulls in older pages. Memory is bounded to what's
@@ -83,6 +85,8 @@ struct SessionDetailView: View {
                     }
                     .padding()
                 }
+                .scrollDismissesKeyboard(.interactively)
+                .simultaneousGesture(TapGesture().onEnded { inputFocused = false })
                 .onChange(of: visibleEvents.count) { _, _ in
                     // A prepended older page also changes this count; suppressBottomScroll
                     // tells us to keep position there instead of yanking to the bottom.
@@ -109,16 +113,20 @@ struct SessionDetailView: View {
             HStack(spacing: 8) {
                 TextField("Message…", text: $inputText)
                     .textFieldStyle(.roundedBorder)
+                    .focused($inputFocused)
                     .onSubmit { sendInput() }
-                Button(action: sendInput) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                }
-                .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
-                Button(action: { Task { try? await client.interrupt(sessionId: session.localId) } }) {
-                    Image(systemName: "stop.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.red)
+                if isRunning {
+                    Button(action: { Task { try? await client.interrupt(sessionId: session.localId) } }) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.red)
+                    }
+                } else {
+                    Button(action: sendInput) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title2)
+                    }
+                    .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
             .padding(12)
@@ -134,6 +142,7 @@ struct SessionDetailView: View {
     private func loadDetail() async {
         do {
             detail = try await client.getSession(id: session.localId)
+            isRunning = (detail?.session.status ?? session.status) == "running"
         } catch {
             self.error = error.localizedDescription
         }
@@ -178,6 +187,14 @@ struct SessionDetailView: View {
         )
         wsState = .connected
         for await event in stream {
+            // Turn lifecycle drives the send/stop toggle. `result` ends a turn; an
+            // assistant/user turn (re)starts one. Checked before the empty-text filter
+            // because `result` events carry no prose and would otherwise be dropped.
+            switch event.message?.type {
+            case "result": isRunning = false
+            case "assistant", "user": isRunning = true
+            default: break
+            }
             // Active sessions replay buffered events on subscribe, which overlap the
             // REST history we already loaded. Skip dupes so the count doesn't churn
             // (which would re-trigger scrolling and flicker rows).
@@ -192,6 +209,7 @@ struct SessionDetailView: View {
         let text = inputText.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         inputText = ""
+        isRunning = true
         Task {
             try? await client.sendInput(sessionId: session.localId, text: text)
         }

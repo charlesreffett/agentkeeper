@@ -66,12 +66,28 @@ private struct SessionRowView: View {
                         Text(model).font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(Date(timeIntervalSince1970: (session.lastActivityAt ?? session.startedAt) / 1000), style: .relative)
+                    Text(relativeTime(from: (session.lastActivityAt ?? session.startedAt) / 1000))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private func relativeTime(from epochSeconds: Double, now: Date = Date()) -> String {
+        let diff = now.timeIntervalSince1970 - epochSeconds
+        let minute = 60.0
+        let hour = 3600.0
+        let day = 86400.0
+        let week = 604800.0
+        if diff < minute { return "just now" }
+        if diff < hour { return "\(Int((diff / minute).rounded()))m ago" }
+        if diff < day { return "\(Int((diff / hour).rounded()))h ago" }
+        if diff < week { return "\(Int((diff / day).rounded()))d ago" }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .none
+        return formatter.string(from: Date(timeIntervalSince1970: epochSeconds))
     }
 }
