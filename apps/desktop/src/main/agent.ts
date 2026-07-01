@@ -1,5 +1,6 @@
 import { webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { getHarness } from './harness/index'
 import type { HarnessEvent } from '@agentkeeper/core'
@@ -386,21 +387,49 @@ async function consumeStream(session: ActiveSession): Promise<void> {
   }
 }
 
-function messageFromInput(text: string, attachments?: Attachment[]): {type:'user';message:{role:'user';content:unknown}} {
+// Inlining a whole text file into the prompt blows the context window for large
+// files (e.g. an attached HTML page). Past this size we spill the file to disk
+// under the session cwd and hand the agent a path to Read on demand instead.
+const ATTACHMENT_INLINE_LIMIT = 8_000
+
+async function messageFromInput(
+  text: string,
+  attachments?: Attachment[],
+  cwd?: string,
+): Promise<{type:'user';message:{role:'user';content:unknown}}> {
   if (!attachments || attachments.length === 0) {
     return { type: 'user', message: { role: 'user', content: text } }
   }
-  const blocks: unknown[] = attachments.map((a) => {
+  const blocks: unknown[] = []
+  for (const a of attachments) {
     if (a.mimeType.startsWith('image/')) {
-      return {
+      blocks.push({
         type: 'image',
         source: { type: 'base64', media_type: a.mimeType, data: a.content },
-      }
+      })
+      continue
     }
-    return { type: 'text', text: `<file name="${a.name}">\n${a.content}\n</file>` }
-  })
+    if (a.content.length > ATTACHMENT_INLINE_LIMIT && cwd) {
+      const savedPath = await spillAttachment(a, cwd)
+      blocks.push({
+        type: 'text',
+        text: `User attached file "${a.name}" (${a.content.length} chars, too large to inline). Saved to ${savedPath} — use the Read tool to read it.`,
+      })
+      continue
+    }
+    blocks.push({ type: 'text', text: `<file name="${a.name}">\n${a.content}\n</file>` })
+  }
   if (text.trim()) blocks.push({ type: 'text', text })
   return { type: 'user', message: { role: 'user', content: blocks } }
+}
+
+async function spillAttachment(a: Attachment, cwd: string): Promise<string> {
+  const dir = path.join(cwd, '.agentkeeper', 'attachments')
+  await mkdir(dir, { recursive: true })
+  const safeName = a.name.replace(/[^\w.-]/g, '_')
+  const filePath = path.join(dir, `${randomUUID().slice(0, 8)}-${safeName}`)
+  await writeFile(filePath, a.content, 'utf-8')
+  return filePath
 }
 
 export async function startSession(
@@ -464,8 +493,12 @@ export async function startSession(
   const controller = new AbortController()
   const input = new AsyncQueue<{type:'user';message:{role:'user';content:unknown}}>()
   const isResume = !!params.resumeSdkSessionId
-  if (!isResume) {
-    input.push(messageFromInput(params.initialPrompt, params.initialAttachments))
+  const cwd = params.worktreePath ?? params.projectPath
+  const initialUserMsg = isResume
+    ? null
+    : await messageFromInput(params.initialPrompt, params.initialAttachments, cwd)
+  if (initialUserMsg) {
+    input.push(initialUserMsg)
   }
 
   // Register session row upfront (solo sessions only; agency session was registered by orchestrator).
@@ -522,8 +555,6 @@ export async function startSession(
   if (apiKey) {
     childEnv['ANTHROPIC_API_KEY'] = apiKey
   }
-
-  const cwd = params.worktreePath ?? params.projectPath
 
   const mcpServer = extras.mcpServer ?? extras.mcpFactory?.()
   const hasBuiltin = !!mcpServer
@@ -585,7 +616,7 @@ export async function startSession(
     broadcastEvent({
       sessionId: sessionLocalId,
       agentLocalId,
-      message: messageFromInput(params.initialPrompt, params.initialAttachments),
+      message: initialUserMsg!,
     })
   }
 
@@ -621,7 +652,7 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
     })
     s = active.get(sessionId)!
   }
-  const userMsg = messageFromInput(text, attachments)
+  const userMsg = await messageFromInput(text, attachments, s.worktreePath ?? s.projectPath)
   broadcastEvent({ sessionId: s.sessionLocalId, agentLocalId: s.agentLocalId, message: userMsg })
   s.input.push(userMsg)
   setStatus(s, 'running')

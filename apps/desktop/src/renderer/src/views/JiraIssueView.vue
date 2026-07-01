@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Comark } from '@comark/vue'
-import { transcriptPlugins } from '@/lib/comark-config'
+import { transcriptComponents, transcriptPlugins } from '@/lib/comark-config'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore, relativeTime } from '@/stores/jiraActivity'
@@ -313,7 +313,7 @@ const breadcrumb = computed(() => {
             <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Description</div>
             <div class="prose prose-sm dark:prose-invert max-w-none text-sm bg-muted/20 rounded p-3">
               <Suspense>
-                <Comark :markdown="item.body" :plugins="transcriptPlugins" />
+                <Comark :markdown="item.body" :plugins="transcriptPlugins" :components="transcriptComponents" />
                 <template #fallback>
                   <span class="whitespace-pre-wrap break-words">{{ item.body }}</span>
                 </template>
@@ -327,7 +327,7 @@ const breadcrumb = computed(() => {
               <div class="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{{ name }}</div>
               <div class="prose prose-sm dark:prose-invert max-w-none text-sm bg-muted/20 rounded p-3">
                 <Suspense>
-                  <Comark :markdown="value" :plugins="transcriptPlugins" />
+                  <Comark :markdown="value" :plugins="transcriptPlugins" :components="transcriptComponents" />
                   <template #fallback>
                     <span class="whitespace-pre-wrap break-words">{{ value }}</span>
                   </template>

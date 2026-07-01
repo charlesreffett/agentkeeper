@@ -272,11 +272,11 @@ defineExpose({
             @keydown="onKeyDown"
             @paste="handlePaste"
           />
-          <div class="flex items-center justify-between px-2 py-1.5 border-t border-border/60">
-            <div class="flex items-center gap-1.5">
+          <div class="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-border/60">
+            <div class="flex items-center gap-1.5 min-w-0 overflow-x-auto">
               <button
                 type="button"
-                class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shrink-0"
                 title="Attach file"
                 tabindex="-1"
                 @mousedown.prevent
@@ -285,9 +285,9 @@ defineExpose({
                 <Plus :size="16" />
               </button>
               <slot name="toolbar-left" />
-              <span class="text-[11px] text-muted-foreground px-1">{{ sendHint }}</span>
+              <span class="text-[11px] text-muted-foreground px-1 whitespace-nowrap">{{ sendHint }}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 shrink-0">
               <button
                 class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                 title="Browse commands"

@@ -726,7 +726,7 @@ const streamingEventUuid = computed((): string | undefined => {
         @stop="onStop"
       >
         <template v-if="!isDraft" #toolbar-left>
-          <div class="flex items-center gap-0.5">
+          <div class="flex items-center gap-0.5 shrink-0">
             <Brain :size="13" class="text-muted-foreground shrink-0" />
             <select
               :value="session.effort ?? ''"
@@ -739,7 +739,7 @@ const streamingEventUuid = computed((): string | undefined => {
               <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">{{ e }}</option>
             </select>
           </div>
-          <div class="flex items-center gap-0.5">
+          <div class="flex items-center gap-0.5 shrink-0">
             <KeyRound :size="13" class="text-muted-foreground shrink-0" />
             <select
               :value="session.permissionMode ?? 'bypassPermissions'"
@@ -756,7 +756,7 @@ const streamingEventUuid = computed((): string | undefined => {
           <select
             :value="session.model ?? MODEL_OPTIONS[0]!.value"
             :disabled="!canEditParams"
-            class="text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[72px]"
+            class="text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[72px] shrink-0"
             :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
             @change="changeModel(($event.target as HTMLSelectElement).value)"
           >

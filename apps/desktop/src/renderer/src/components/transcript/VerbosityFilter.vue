@@ -28,7 +28,7 @@ function toggleChip(key: keyof VerbosityState['toggles']) {
 </script>
 
 <template>
-  <div class="flex items-center gap-2.5 text-[11px] select-none min-w-0 flex-1">
+  <div class="flex items-center gap-2.5 text-[11px] select-none min-w-0 flex-1 overflow-x-auto">
 
     <!-- Mode segmented control -->
     <div class="flex rounded border border-border overflow-hidden shrink-0">
@@ -50,9 +50,9 @@ function toggleChip(key: keyof VerbosityState['toggles']) {
     <span class="border-l border-border/60 h-3 shrink-0" />
 
     <!-- Independent content-type toggles -->
-    <div class="flex items-center gap-1 flex-wrap">
+    <div class="flex items-center gap-1 shrink-0">
       <button
-        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors shrink-0 whitespace-nowrap"
         :class="
           modelValue.toggles.toolCalls
             ? 'border-foreground/25 bg-muted text-foreground'
@@ -65,7 +65,7 @@ function toggleChip(key: keyof VerbosityState['toggles']) {
       </button>
 
       <button
-        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors shrink-0 whitespace-nowrap"
         :class="
           modelValue.toggles.thinking
             ? 'border-foreground/25 bg-muted text-foreground'
@@ -78,7 +78,7 @@ function toggleChip(key: keyof VerbosityState['toggles']) {
       </button>
 
       <button
-        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors shrink-0 whitespace-nowrap"
         :class="
           modelValue.toggles.system
             ? 'border-foreground/25 bg-muted text-foreground'
@@ -91,7 +91,7 @@ function toggleChip(key: keyof VerbosityState['toggles']) {
       </button>
 
       <button
-        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+        class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors shrink-0 whitespace-nowrap"
         :class="
           modelValue.toggles.subAgents
             ? 'border-foreground/25 bg-muted text-foreground'
