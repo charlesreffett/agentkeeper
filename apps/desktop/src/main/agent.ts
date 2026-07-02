@@ -302,6 +302,11 @@ async function consumeStream(session: ActiveSession): Promise<void> {
             recordedAt: new Date().toISOString(),
           })
         }
+        // A user message pushed while this result was in flight would be lost
+        // if we close the queue now — keep the stream alive for the next turn.
+        if (session.input.pendingCount > 0) {
+          continue
+        }
         // Agency agents signal 'idle' so routeMessage's waitForNextIdle resolves
         // and can capture the reply text, then close — the subprocess is re-spawned
         // lazily on the next send_message call rather than held alive between turns.
@@ -627,6 +632,12 @@ export async function startSession(
 
 export async function sendInput(sessionId: string, text: string, attachments?: Attachment[]): Promise<void> {
   let s = active.get(sessionId)
+  // Turn-end race: the result handler closes the input queue before the
+  // finally block removes the session from `active`. Pushing into a closed
+  // queue is a silent no-op, so treat this session as inactive and resume.
+  if (s?.input.isClosed) {
+    s = undefined
+  }
   if (!s) {
     const agent = registry.getAgent(sessionId)
     if (!agent?.sdkSessionId) throw new Error(`session ${sessionId} not found`)

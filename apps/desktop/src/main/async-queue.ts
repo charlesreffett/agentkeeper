@@ -11,6 +11,14 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
   private waiters: Array<(v: IteratorResult<T, undefined>) => void> = []
   private closed = false
 
+  get isClosed(): boolean {
+    return this.closed
+  }
+
+  get pendingCount(): number {
+    return this.values.length
+  }
+
   push(value: T): void {
     if (this.closed) return
     const waiter = this.waiters.shift()
