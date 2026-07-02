@@ -66,7 +66,7 @@ import {
 import { getActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index'
 import { detectGithubRepo, recentProjectsStore } from './store'
-import { commit, createBranch, detectRemoteSources, getBranch, getStatus, pull, push, stageFiles, unstageFiles } from './git'
+import { commit, createBranch, detectRemoteSources, getBranch, getStatus, listBranches, pull, push, stageFiles, switchBranch, switchBranchCreate, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp, editAndRerun, undoEditAndRerun } from './agent'
@@ -99,6 +99,8 @@ import type {
   Skill,
   SlashCommand,
   StartAgencyParams,
+  SwitchBranchOptions,
+  SwitchResult,
 } from '../shared/ipc-contract'
 
 async function pickProject(): Promise<RecentProject | null> {
@@ -161,6 +163,12 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(IPC_CHANNELS.projectsSetFocused, (_event, projectPath: string | null) => {
     recentProjectsStore.setFocused(projectPath)
+  })
+  ipcMain.handle(IPC_CHANNELS.projectsGetPinnedBranches, (_event, projectPath: string) => {
+    return recentProjectsStore.getPinnedBranches(projectPath)
+  })
+  ipcMain.handle(IPC_CHANNELS.projectsSetPinnedBranches, (_event, projectPath: string, branches: string[]) => {
+    recentProjectsStore.setPinnedBranches(projectPath, branches)
   })
   ipcMain.handle(IPC_CHANNELS.projectsRename, (_event, oldPath: string, newName: string, renameDir: boolean) => {
     try {
@@ -1190,6 +1198,42 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   ipcMain.handle(IPC_CHANNELS.gitCreateBranch, (_event, projectPath: string, branchName: string) => {
     return createBranch(projectPath, branchName)
   })
+
+  ipcMain.handle(IPC_CHANNELS.gitListBranches, async (_event, projectPath: string) => {
+    try {
+      return await listBranches(projectPath)
+    } catch (err) {
+      console.error('[ipc] git:listBranches failed:', err)
+      return []
+    }
+  })
+
+  // Enforced here (not only in the renderer) — the mobile companion and future
+  // callers hit the same channel. Switching HEAD under a running agent corrupts
+  // its pinned-branch assumptions. Path comparison, not project identity:
+  // sessions in worktree dirs have their own HEAD and must not block.
+  function hasLiveSessionAt(projectPath: string): boolean {
+    const LIVE = new Set(['running', 'starting', 'blocked'])
+    return sessionRegistry
+      .listAllSessions()
+      .some((s) => (s.worktreePath ?? s.projectPath) === projectPath && LIVE.has(s.status ?? ''))
+  }
+
+  ipcMain.handle(
+    IPC_CHANNELS.gitSwitchBranch,
+    (_event, projectPath: string, name: string, opts?: SwitchBranchOptions): Promise<SwitchResult> | SwitchResult => {
+      if (hasLiveSessionAt(projectPath)) return { ok: false, blocked: 'live-session' }
+      return switchBranch(projectPath, name, opts)
+    },
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.gitSwitchBranchCreate,
+    (_event, projectPath: string, name: string, from?: string): Promise<SwitchResult> | SwitchResult => {
+      if (hasLiveSessionAt(projectPath)) return { ok: false, blocked: 'live-session' }
+      return switchBranchCreate(projectPath, name, from)
+    },
+  )
 
   ipcMain.handle(IPC_CHANNELS.gitSuggestCommits, (_event, projectPath: string) => {
     return suggestCommits(projectPath)

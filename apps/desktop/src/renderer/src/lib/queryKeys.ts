@@ -17,6 +17,10 @@ export const queryKeys = {
   projects: {
     list: () => ['projects', 'list'] as const,
     focused: () => ['projects', 'focused'] as const,
+    pinnedBranches: (projectPath: string) => ['projects', 'pinnedBranches', projectPath] as const,
+  },
+  git: {
+    branches: (projectPath: string) => ['git', 'branches', projectPath] as const,
   },
   sessions: {
     persisted: (projectPath: string) => ['sessions', 'persisted', projectPath] as const,

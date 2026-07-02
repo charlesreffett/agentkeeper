@@ -19,6 +19,9 @@ import {
   type GitHubConfig,
   type GitBranchChangedEvent,
   type GitStatusChangedEvent,
+  type BranchInfo,
+  type SwitchBranchOptions,
+  type SwitchResult,
   type CommitSuggestion,
   type GitStatus,
   type IssueTransition,
@@ -135,6 +138,10 @@ const api: AgentKeeperApi = {
     pickFolder: () => invoke(IPC_CHANNELS.projectsPickFolder) as Promise<string | null>,
     create: (params: CreateProjectParams) =>
       invoke(IPC_CHANNELS.projectsCreate, params) as Promise<RecentProject>,
+    getPinnedBranches: (projectPath: string) =>
+      invoke(IPC_CHANNELS.projectsGetPinnedBranches, projectPath) as Promise<string[]>,
+    setPinnedBranches: (projectPath: string, branches: string[]) =>
+      invoke(IPC_CHANNELS.projectsSetPinnedBranches, projectPath, branches) as Promise<void>,
   },
   project: {
     pick: () => invoke(IPC_CHANNELS.projectPick) as Promise<never>,
@@ -425,6 +432,12 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.gitPull, projectPath) as Promise<string>,
     createBranch: (projectPath: string, branchName: string) =>
       invoke(IPC_CHANNELS.gitCreateBranch, projectPath, branchName) as Promise<void>,
+    listBranches: (projectPath: string) =>
+      invoke(IPC_CHANNELS.gitListBranches, projectPath) as Promise<BranchInfo[]>,
+    switchBranch: (projectPath: string, name: string, opts?: SwitchBranchOptions) =>
+      invoke(IPC_CHANNELS.gitSwitchBranch, projectPath, name, opts) as Promise<SwitchResult>,
+    switchBranchCreate: (projectPath: string, name: string, from?: string) =>
+      invoke(IPC_CHANNELS.gitSwitchBranchCreate, projectPath, name, from) as Promise<SwitchResult>,
     suggestCommits: (projectPath: string) =>
       invoke(IPC_CHANNELS.gitSuggestCommits, projectPath) as Promise<CommitSuggestion>,
     onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) =>

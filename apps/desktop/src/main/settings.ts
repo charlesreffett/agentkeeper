@@ -19,6 +19,7 @@ const DEFAULTS: AppSettings = {
   mcpServers: [],
   harnessId: 'claude-code',
   mobileServer: { enabled: false, port: 57372, secretKey: '' },
+  gitSwitchWithoutSoftReject: false,
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']

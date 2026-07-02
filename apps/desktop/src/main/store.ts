@@ -81,6 +81,29 @@ export const recentProjectsStore = {
 
     return { path: newPath, name: newName, repo: row.repo ?? null, lastOpenedAt: row.lastOpenedAt }
   },
+  getPinnedBranches(targetPath: string): string[] {
+    const key = `pinnedBranches:${targetPath}`
+    const row = getDb().select({ value: appState.value }).from(appState).where(eq(appState.key, key)).get()
+    if (!row?.value) return []
+    try {
+      const parsed = JSON.parse(row.value) as unknown
+      return Array.isArray(parsed) ? parsed.filter((b): b is string => typeof b === 'string') : []
+    } catch {
+      return []
+    }
+  },
+  setPinnedBranches(targetPath: string, branches: string[]) {
+    const db = getDb()
+    const key = `pinnedBranches:${targetPath}`
+    if (branches.length === 0) {
+      db.delete(appState).where(eq(appState.key, key)).run()
+    } else {
+      const value = JSON.stringify(branches)
+      db.insert(appState).values({ key, value })
+        .onConflictDoUpdate({ target: appState.key, set: { value } })
+        .run()
+    }
+  },
   getFocused(): string | null {
     return getDb().select({ value: appState.value }).from(appState).where(eq(appState.key, 'focusedProjectPath')).get()?.value ?? null
   },
