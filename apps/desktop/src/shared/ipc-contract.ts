@@ -124,6 +124,41 @@ export interface GitBranchChangedEvent {
   projectPath: string
 }
 
+export interface BranchInfo {
+  name: string
+  isCurrent: boolean
+  /** Repo default branch (origin/HEAD target, falling back to main/master). Always listed first. */
+  isDefault: boolean
+  isRemote: boolean
+  upstream: string | null
+  /** As of last fetch. */
+  ahead: number
+  /** As of last fetch. */
+  behind: number
+  lastCommitSubject: string
+  lastCommitDate: string
+  /** Set when the branch is checked out in a worktree — cannot be switched to in the main repo. */
+  worktreePath: string | null
+  /** Checkout-recency ordinal from the reflog (0 = most recent). null = not in recent history. */
+  recentRank: number | null
+}
+
+export interface SwitchBranchOptions {
+  /** Push through the dirty-tree soft-reject. Changes are carried over, never discarded. */
+  allowDirty?: boolean
+}
+
+export type SwitchResult =
+  | { ok: true }
+  /** Our soft-reject; retry with allowDirty to push through. */
+  | { ok: false; blocked: 'dirty' }
+  /** Git refused; uncommitted changes would be overwritten. Needs commit/stash. */
+  | { ok: false; blocked: 'conflict'; reason: string }
+  /** A session is running with cwd == projectPath. Never forceable. */
+  | { ok: false; blocked: 'live-session' }
+  /** Any other git failure (missing branch, index.lock, …). */
+  | { ok: false; blocked: 'git-error'; reason: string }
+
 export interface FsChangedEvent {
   projectPath: string
 }
@@ -560,6 +595,8 @@ export interface AppSettings {
   /** Active harness adapter id. Defaults to 'claude-code' when undefined. */
   harnessId?: string
   mobileServer?: { enabled: boolean; port: number; secretKey: string }
+  /** Skip the dirty-tree warning when switching branches (changes are carried over, never lost). Default false. */
+  gitSwitchWithoutSoftReject?: boolean
 }
 
 export type SecretKeyName = 'anthropicApiKey'
@@ -736,6 +773,8 @@ export interface AgentKeeperApi {
     setFocused: (path: string | null) => Promise<void>
     pickFolder: () => Promise<string | null>
     create: (params: CreateProjectParams) => Promise<RecentProject>
+    getPinnedBranches: (path: string) => Promise<string[]>
+    setPinnedBranches: (path: string, branches: string[]) => Promise<void>
   }
   project: {
     pick: () => Promise<RecentProject | null>
@@ -925,6 +964,9 @@ export interface AgentKeeperApi {
     push: (projectPath: string) => Promise<string>
     pull: (projectPath: string) => Promise<string>
     createBranch: (projectPath: string, branchName: string) => Promise<void>
+    listBranches: (projectPath: string) => Promise<BranchInfo[]>
+    switchBranch: (projectPath: string, name: string, opts?: SwitchBranchOptions) => Promise<SwitchResult>
+    switchBranchCreate: (projectPath: string, name: string, from?: string) => Promise<SwitchResult>
     suggestCommits: (projectPath: string) => Promise<CommitSuggestion>
     onStatusChanged: (cb: (event: GitStatusChangedEvent) => void) => () => void
     onBranchChanged: (cb: (event: GitBranchChangedEvent) => void) => () => void
@@ -994,6 +1036,8 @@ export const IPC_CHANNELS = {
   projectsPickFolder: 'projects:pickFolder',
   projectsCreate: 'projects:create',
   projectsRename: 'projects:rename',
+  projectsGetPinnedBranches: 'projects:getPinnedBranches',
+  projectsSetPinnedBranches: 'projects:setPinnedBranches',
   projectPick: 'project:pick',
   projectRecentList: 'project:recent:list',
   projectRecentRemove: 'project:recent:remove',
@@ -1103,6 +1147,9 @@ export const IPC_CHANNELS = {
   gitPush: 'git:push',
   gitPull: 'git:pull',
   gitCreateBranch: 'git:createBranch',
+  gitListBranches: 'git:listBranches',
+  gitSwitchBranch: 'git:switchBranch',
+  gitSwitchBranchCreate: 'git:switchBranchCreate',
   gitSuggestCommits: 'git:suggestCommits',
   fsListDirectory: 'fs:listDirectory',
   fsWatchStart: 'fs:watchStart',

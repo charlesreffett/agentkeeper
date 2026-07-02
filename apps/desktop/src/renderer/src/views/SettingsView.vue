@@ -64,6 +64,7 @@ const saving = ref(false)
 const DIRTY_FIELDS = [
   'defaultModel', 'defaultEffort', 'defaultUseWorktree',
   'enterToSend', 'sendModifier', 'sessionExpiryDays', 'notifications', 'notificationSound',
+  'gitSwitchWithoutSoftReject',
 ] as const satisfies ReadonlyArray<keyof AppSettings>
 
 const isDirty = computed(() => {
@@ -163,6 +164,7 @@ async function save() {
         sessionExpiryDays: settings.value.sessionExpiryDays,
         notifications: settings.value.notifications,
         notificationSound: settings.value.notificationSound,
+        gitSwitchWithoutSoftReject: settings.value.gitSwitchWithoutSoftReject,
       }
       await window.agentkeeper.settings.set(toSave)
       queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
@@ -349,6 +351,21 @@ async function onReset() {
                 </div>
                 <label class="relative shrink-0 cursor-pointer">
                   <input v-model="settings.defaultUseWorktree" type="checkbox" class="sr-only peer" />
+                  <div class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors" />
+                  <div class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4" />
+                </label>
+              </div>
+
+              <!-- Branch switch soft-reject -->
+              <div class="flex items-center gap-4 px-4 py-3">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Switch branches without warning</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Skip the uncommitted-changes warning when switching branches. Changes are carried over, never lost.
+                  </p>
+                </div>
+                <label class="relative shrink-0 cursor-pointer">
+                  <input v-model="settings.gitSwitchWithoutSoftReject" type="checkbox" class="sr-only peer" />
                   <div class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors" />
                   <div class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4" />
                 </label>
