@@ -24,7 +24,7 @@ import {
   MessageSquare,
 } from 'lucide-vue-next'
 import { Comark } from '@comark/vue'
-import { transcriptPlugins } from '@/lib/comark-config'
+import { transcriptComponents, transcriptPlugins } from '@/lib/comark-config'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
@@ -1179,7 +1179,7 @@ Guidelines:
                     >
                       <template v-if="step.instructions">
                         <Suspense>
-                          <Comark class="flex-1 prose prose-sm dark:prose-invert max-w-none" :markdown="step.instructions" :plugins="transcriptPlugins" />
+                          <Comark class="flex-1 prose prose-sm dark:prose-invert max-w-none" :markdown="step.instructions" :plugins="transcriptPlugins" :components="transcriptComponents" />
                           <template #fallback>
                             <span class="flex-1 whitespace-pre-wrap">{{ step.instructions }}</span>
                           </template>

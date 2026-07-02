@@ -1,5 +1,10 @@
 import highlight from '@comark/vue/plugins/highlight'
 import type { ThemeRegistration } from 'shiki'
+import CodeBlock from '@/components/transcript/CodeBlock.vue'
+
+export const transcriptComponents = {
+  pre: CodeBlock,
+}
 
 const VALID_TAG = /^[a-zA-Z_][a-zA-Z0-9_\-.:]*/
 
