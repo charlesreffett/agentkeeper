@@ -517,6 +517,11 @@ export interface LiveSessionEvent {
   /** Agent that produced this event. Present for all agent-originated events. */
   agentLocalId?: string
   message: unknown
+  /** Set on the initial user-message broadcast. Lets the renderer classify the
+   *  first message correctly even when it arrives before the agent roster does
+   *  (agency startup race): entry-point → real user prompt, otherwise a
+   *  synthetic "await peers" brief. */
+  isEntryPoint?: boolean
 }
 
 export interface LiveSessionStatusUpdate {
