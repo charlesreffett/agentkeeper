@@ -23,6 +23,7 @@ struct NewSessionOptions: Codable {
     let permissionModes: [String]
     let roles: [RoleOption]?
     let agencies: [AgencyOption]?
+    let commands: [SlashCommand]?
 }
 
 struct RecentProject: Codable, Identifiable {
@@ -80,8 +81,18 @@ struct SlashCommand: Codable, Identifiable {
     let pluginName: String?
 }
 
+// GET /api/sessions/:id returns the session row spread flat with `agents` added.
 struct SessionDetail: Codable {
-    let session: SessionSummary
+    let localId: String
+    let projectPath: String
+    let title: String?
+    let status: String
+    let model: String?
+    let effort: String?
+    let permissionMode: String?
+    let branch: String?
+    let worktreePath: String?
+    let agencyName: String?
     let agents: [AgentSummary]
 }
 
@@ -108,6 +119,7 @@ struct LiveEvent: Codable, Identifiable {
     // Transcript uuid when present (also the pagination cursor); else the fallback.
     var id: String { uuid ?? localId.uuidString }
     var displayText: String { message?.message?.textContent ?? "" }
+    var imageDatas: [Data] { message?.message?.imageDatas ?? [] }
     var isUser: Bool { message?.type == "user" }
 
     // Content-derived key for de-duping WS subscribe-replay against REST history.
@@ -162,9 +174,31 @@ struct MessageBody: Codable {
         case nil: return ""
         }
     }
+
+    // Base64 payloads of image blocks (attachments echoed back in the transcript).
+    var imageDatas: [Data] {
+        guard case .blocks(let bs) = content else { return [] }
+        return bs.compactMap { block in
+            guard block.type == "image", let b64 = block.source?.data else { return nil }
+            return Data(base64Encoded: b64)
+        }
+    }
 }
 
 struct ContentBlock: Codable {
     let type: String
     let text: String?
+    let source: ImageSource?
+}
+
+struct ImageSource: Codable {
+    let type: String?
+    let mediaType: String?
+    let data: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case mediaType = "media_type"
+        case data
+    }
 }

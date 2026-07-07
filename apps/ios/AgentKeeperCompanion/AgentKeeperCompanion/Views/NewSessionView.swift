@@ -34,6 +34,7 @@ struct NewSessionView: View {
     @State private var attachments: [AttachmentPayload] = []
 
     @State private var photoItems: [PhotosPickerItem] = []
+    @State private var activePanel: ComposerPanel? = nil
     @State private var showBranchAlert = false
     @State private var showSaveDraftAlert = false
     @FocusState private var promptFocused: Bool
@@ -117,6 +118,9 @@ struct NewSessionView: View {
                 .padding()
             }
             .scrollDismissesKeyboard(.interactively)
+            // Simultaneous so the tap still reaches the editor / scroll view;
+            // any tap outside the composer bar collapses the open panel.
+            .simultaneousGesture(TapGesture().onEnded { closePanel() })
             .safeAreaInset(edge: .bottom) { composerToolbar }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -203,6 +207,7 @@ struct NewSessionView: View {
             .clipShape(Capsule())
         }
         .foregroundStyle(.primary)
+        .simultaneousGesture(TapGesture().onEnded { closePanel() })
     }
 
     private var attachmentsRow: some View {
@@ -235,109 +240,205 @@ struct NewSessionView: View {
         }
     }
 
+    // In-app drawer instead of UIKit Menu: menus presented from this bar hide
+    // their label during presentation and flicker on dismissal. The drawer is
+    // plain SwiftUI layout inside the safe-area inset, so it expands upward
+    // above the keyboard and the icons never leave the hierarchy.
     private var composerToolbar: some View {
         VStack(spacing: 0) {
             Divider()
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 22) {
-                    PhotosPicker(selection: $photoItems, maxSelectionCount: 5, matching: .images) {
-                        Image(systemName: "photo")
-                    }
-
-                    Menu {
-                        Picker("Agency", selection: $agencyKey) {
-                            Text("None").tag("")
-                            ForEach(options?.agencies ?? []) { agency in
-                                Text(agency.name).tag(agency.key)
-                            }
-                        }
-                        if agencyKey.isEmpty {
-                            Picker("Role", selection: $roleId) {
-                                Text("Freeform").tag("")
-                                ForEach(options?.roles ?? []) { role in
-                                    Text(role.name).tag(role.id)
-                                }
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "person.2")
-                            .foregroundStyle(agencyKey.isEmpty && roleId.isEmpty ? Color.secondary : Color.accentColor)
-                    }
-
-                    Menu {
-                        Picker("Model", selection: $model) {
-                            ForEach(options?.models ?? []) { m in
-                                Text(m.label).tag(m.value)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "cpu")
-                    }
-
-                    if agencyKey.isEmpty {
-                        Menu {
-                            Picker("Effort", selection: $effort) {
-                                ForEach(options?.efforts ?? [], id: \.self) { e in
-                                    Text(e.capitalized).tag(e)
-                                }
-                            }
-                            Picker("Permission Mode", selection: $permissionMode) {
-                                ForEach(options?.permissionModes ?? [], id: \.self) { p in
-                                    Text(p).tag(p)
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "slider.horizontal.3")
-                        }
-                    }
-
-                    Menu {
-                        Toggle("Run in a worktree", isOn: $useWorktree)
-                        if useWorktree {
-                            Button {
-                                showBranchAlert = true
-                            } label: {
-                                Label(branch.isEmpty ? "Branch: auto" : "Branch: \(branch)", systemImage: "arrow.triangle.branch")
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.triangle.branch")
-                            .foregroundStyle(useWorktree ? Color.accentColor : Color.secondary)
-                    }
-
-                    Menu {
-                        Button {
-                            saveDraft()
-                        } label: {
-                            Label("Save Draft", systemImage: "doc.text")
-                        }
-                        .disabled(trimmedPrompt.isEmpty)
-
-                        Button {
-                            Task { await resync() }
-                        } label: {
-                            Label("Re-sync with host", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(isSyncing)
-
-                        if let lastSyncedAt = optionsStore.lastSyncedAt {
-                            Text("Synced \(lastSyncedAt.formatted(.relative(presentation: .named)))")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-
-                    if isSyncing {
-                        ProgressView().frame(width: 16, height: 16)
-                    }
+            HStack(spacing: 22) {
+                PhotosPicker(selection: $photoItems, maxSelectionCount: 5, matching: .images) {
+                    Image(systemName: "photo")
                 }
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+
+                panelButton(
+                    .commands,
+                    systemImage: "slash.circle",
+                    highlighted: trimmedPrompt.hasPrefix("/")
+                )
+                panelButton(
+                    .team,
+                    systemImage: "person.2",
+                    highlighted: !(agencyKey.isEmpty && roleId.isEmpty)
+                )
+                panelButton(.model, systemImage: "cpu", highlighted: false)
+                if agencyKey.isEmpty {
+                    panelButton(.tuning, systemImage: "slider.horizontal.3", highlighted: false)
+                }
+                panelButton(
+                    .worktree,
+                    systemImage: "arrow.triangle.branch",
+                    highlighted: useWorktree
+                )
+                panelButton(.more, systemImage: "ellipsis.circle", highlighted: false)
+
+                if isSyncing {
+                    ProgressView().frame(width: 16, height: 16)
+                }
             }
-            .background(.bar)
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let activePanel {
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        panelContent(activePanel)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 260)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .background(.bar)
+        // Without this the icon row's children animate their positions
+        // individually, so the tapped icon visibly lags behind the bar as
+        // the drawer expands/collapses.
+        .geometryGroup()
+    }
+
+    private func closePanel() {
+        guard activePanel != nil else { return }
+        withAnimation(.snappy(duration: 0.2)) { activePanel = nil }
+    }
+
+    private func panelButton(_ panel: ComposerPanel, systemImage: String, highlighted: Bool) -> some View {
+        ComposerIconButton(systemImage: systemImage, active: activePanel == panel || highlighted) {
+            withAnimation(.snappy(duration: 0.2)) {
+                activePanel = activePanel == panel ? nil : panel
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func panelContent(_ panel: ComposerPanel) -> some View {
+        switch panel {
+        case .commands:
+            panelHeader("Commands")
+            if (options?.commands ?? []).isEmpty {
+                Text("No commands in this project")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
+            }
+            ForEach(options?.commands ?? []) { cmd in
+                optionRow("/\(cmd.id)", selected: false) {
+                    // A slash command must lead the prompt to expand on the host.
+                    if trimmedPrompt.isEmpty {
+                        prompt = "/\(cmd.id) "
+                    } else if !trimmedPrompt.hasPrefix("/") {
+                        prompt = "/\(cmd.id) " + prompt
+                    } else {
+                        prompt = "/\(cmd.id) "
+                    }
+                    promptFocused = true
+                    closePanel()
+                }
+            }
+
+        case .team:
+            panelHeader("Agency")
+            optionRow("None", selected: agencyKey.isEmpty) { agencyKey = "" }
+            ForEach(options?.agencies ?? []) { agency in
+                optionRow(agency.name, selected: agencyKey == agency.key) { agencyKey = agency.key }
+            }
+            if agencyKey.isEmpty {
+                panelHeader("Role")
+                optionRow("Freeform", selected: roleId.isEmpty) { roleId = "" }
+                ForEach(options?.roles ?? []) { role in
+                    optionRow(role.name, selected: roleId == role.id) { roleId = role.id }
+                }
+            }
+
+        case .model:
+            panelHeader("Model")
+            ForEach(options?.models ?? []) { m in
+                optionRow(m.label, selected: model == m.value) { model = m.value }
+            }
+
+        case .tuning:
+            panelHeader("Effort")
+            ForEach(options?.efforts ?? [], id: \.self) { e in
+                optionRow(e.capitalized, selected: effort == e) { effort = e }
+            }
+            panelHeader("Permission Mode")
+            ForEach(options?.permissionModes ?? [], id: \.self) { p in
+                optionRow(p, selected: permissionMode == p) { permissionMode = p }
+            }
+
+        case .worktree:
+            Toggle("Run in a worktree", isOn: $useWorktree)
+                .font(.subheadline)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+            if useWorktree {
+                Button {
+                    showBranchAlert = true
+                } label: {
+                    HStack {
+                        Label(branch.isEmpty ? "Branch: auto" : "Branch: \(branch)", systemImage: "arrow.triangle.branch")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .font(.subheadline)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 4)
+            }
+
+        case .more:
+            Button {
+                saveDraft()
+            } label: {
+                Label("Save Draft", systemImage: "doc.text")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(trimmedPrompt.isEmpty)
+            .font(.subheadline)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+
+            Button {
+                Task { await resync() }
+            } label: {
+                Label("Re-sync with host", systemImage: "arrow.clockwise")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isSyncing)
+            .font(.subheadline)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+
+            if let lastSyncedAt = optionsStore.lastSyncedAt {
+                Text("Synced \(lastSyncedAt.formatted(.relative(presentation: .named)))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
+            }
+        }
+    }
+
+    private func panelHeader(_ text: String) -> some View {
+        ComposerPanelHeader(text: text)
+    }
+
+    private func optionRow(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        ComposerOptionRow(title: title, selected: selected, action: action)
     }
 
     // MARK: - Photos
@@ -402,7 +503,9 @@ struct NewSessionView: View {
             options = cached
             reconcileSelections(cached)
         }
-        guard optionsStore.isStale(projectPath: path) else { return }
+        // Entries cached before commands were added to the payload have nil
+        // commands — treat those as stale so the field backfills on next open.
+        guard optionsStore.isStale(projectPath: path) || options?.commands == nil else { return }
         do {
             let opts = try await optionsStore.sync(client: client, projectPath: path)
             options = opts
@@ -500,7 +603,64 @@ struct NewSessionView: View {
     }
 }
 
-private struct AttachmentThumbnail: View {
+enum ComposerPanel {
+    case commands, team, model, tuning, worktree, more
+}
+
+// MARK: - Shared composer chrome (used by NewSessionView and SessionDetailView
+// so both composers look and behave identically)
+
+struct ComposerIconButton: View {
+    let systemImage: String
+    var active: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .foregroundStyle(active ? Color.accentColor : Color.secondary)
+        }
+    }
+}
+
+struct ComposerPanelHeader: View {
+    let text: String
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.top, 8)
+            .padding(.horizontal, 4)
+    }
+}
+
+struct ComposerOptionRow: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title).foregroundStyle(.primary)
+                Spacer()
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .font(.subheadline)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 4)
+    }
+}
+
+struct AttachmentThumbnail: View {
     let attachment: AttachmentPayload
     let onRemove: () -> Void
 
@@ -536,7 +696,7 @@ private struct AttachmentThumbnail: View {
     }
 }
 
-private extension UIImage {
+extension UIImage {
     func resizedIfNeeded(maxDimension: CGFloat) -> UIImage {
         let largest = max(size.width, size.height)
         guard largest > maxDimension else { return self }

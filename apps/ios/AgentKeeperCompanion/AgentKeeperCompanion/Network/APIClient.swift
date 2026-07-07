@@ -111,8 +111,12 @@ actor APIClient {
         return try JSONDecoder().decode([SlashCommand].self, from: data)
     }
 
-    func sendInput(sessionId: String, text: String) async throws {
-        let body = try JSONEncoder().encode(["text": text])
+    func sendInput(sessionId: String, text: String, attachments: [AttachmentPayload] = []) async throws {
+        var payload: [String: Any] = ["text": text]
+        if !attachments.isEmpty {
+            payload["attachments"] = attachments.map { $0.asJSON }
+        }
+        let body = try JSONSerialization.data(withJSONObject: payload)
         _ = try await request("/api/sessions/\(sessionId)/input", method: "POST", body: body)
     }
 
