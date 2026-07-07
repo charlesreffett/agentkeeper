@@ -112,6 +112,17 @@ function broadcastSessionCreated(localId: string): void {
 
 registry.setSessionRegisteredNotifier(broadcastSessionCreated)
 
+// Deletes fan out the same way: the desktop renderer drops the row from its
+// store, and mobile gets a sessions-list ping to refetch.
+function broadcastSessionDeleted(localId: string): void {
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) wc.send('session:deleted', localId)
+  }
+  mobileSessionsNotifier?.()
+}
+
+registry.setSessionDeletedNotifier(broadcastSessionDeleted)
+
 interface UndoBuffer {
   projectPath: string
   sdkSessionId: string
