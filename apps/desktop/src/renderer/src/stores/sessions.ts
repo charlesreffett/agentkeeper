@@ -1216,7 +1216,16 @@ export const useSessionStore = defineStore('sessions', () => {
       let shouldReclassify = false
       if (evt.isSidechain) {
         shouldReclassify = true
-      } else if (s && (agent ? !agent.isEntryPoint : agentKey !== sessionId)) {
+      } else if (
+        s &&
+        (agent
+          ? !agent.isEntryPoint
+          : // Agent roster may not be registered yet (agency startup race) —
+            // trust the broadcast's own entry-point flag when present.
+            payload.isEntryPoint !== undefined
+            ? !payload.isEntryPoint
+            : agentKey !== sessionId)
+      ) {
         const prior = s.agentEvents[agentKey] ?? []
         shouldReclassify = !prior.some(
           (e) => e.kind === 'user' || e.systemSubtype === 'delegated-task',

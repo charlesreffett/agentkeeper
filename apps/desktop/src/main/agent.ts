@@ -622,6 +622,7 @@ export async function startSession(
       sessionId: sessionLocalId,
       agentLocalId,
       message: initialUserMsg!,
+      isEntryPoint: params.isEntryPoint ?? isNewSession,
     })
   }
 
