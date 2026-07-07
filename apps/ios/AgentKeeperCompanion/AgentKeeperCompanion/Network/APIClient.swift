@@ -1,7 +1,27 @@
 import Foundation
 
-enum APIError: Error {
+enum APIError: LocalizedError {
     case unauthorized, notFound, serverError(Int), decodingError(Error), networkError(Error)
+
+    var errorDescription: String? {
+        switch self {
+        case .unauthorized:
+            return "The secret key was rejected. Check it in Settings."
+        case .notFound:
+            return "The server didn't recognize that request. The desktop app may need an update."
+        case .serverError(let code):
+            return "The desktop app returned an error (\(code))."
+        case .decodingError:
+            return "Received an unexpected response from the desktop app."
+        case .networkError:
+            return "Can't reach the desktop app. Make sure AgentKeeper is running and this device is on the same network."
+        }
+    }
+
+    var isConnectionFailure: Bool {
+        if case .networkError = self { return true }
+        return false
+    }
 }
 
 actor APIClient {
@@ -50,6 +70,10 @@ actor APIClient {
     func getSession(id: String) async throws -> SessionDetail {
         let data = try await request("/api/sessions/\(id)")
         return try JSONDecoder().decode(SessionDetail.self, from: data)
+    }
+
+    func deleteSession(id: String) async throws {
+        _ = try await request("/api/sessions/\(id)", method: "DELETE")
     }
 
     func getEvents(id: String, limit: Int = 25, before: String? = nil) async throws -> [LiveEvent] {

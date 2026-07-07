@@ -9,11 +9,12 @@ import { listCommands, expandCommandInput } from './commands'
 import { settingsStore } from './settings'
 import { startAgency, createProjectMcp, generateAndPersistSessionTitle } from './orchestrator'
 import { listRoles } from './roles'
+import { removeSessionFromPlans } from './plans'
 import { listAgencies } from './agencies'
 import { createWorktree } from './worktrees'
 import { recentProjectsStore } from './store'
 import { ROLE_EFFORT_VALUES } from '../shared/ipc-contract'
-import type { AppSettings, ContentBlock, TranscriptEvent, StartSessionParams, AgencyScope, RoleEffort, PermissionMode } from '../shared/ipc-contract'
+import type { AppSettings, Attachment, ContentBlock, TranscriptEvent, StartSessionParams, AgencyScope, RoleEffort, PermissionMode } from '../shared/ipc-contract'
 
 /** Model list mirrors apps/desktop/src/renderer/src/lib/models.ts. The renderer
  *  lib can't be imported from main, so the values are duplicated here. */
@@ -25,6 +26,19 @@ const MOBILE_MODELS = [
 ]
 
 const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan']
+
+/** Validate a client-supplied attachments array down to well-formed entries. */
+function parseAttachments(value: unknown): Attachment[] {
+  if (!Array.isArray(value)) return []
+  const out: Attachment[] = []
+  for (const item of value) {
+    if (typeof item !== 'object' || item === null) continue
+    const a = item as Record<string, unknown>
+    if (typeof a.name !== 'string' || typeof a.mimeType !== 'string' || typeof a.content !== 'string') continue
+    out.push({ name: a.name, mimeType: a.mimeType, content: a.content })
+  }
+  return out
+}
 
 /** Flatten a transcript event's content blocks into a single display string. */
 function blocksToText(blocks: ContentBlock[]): string {
@@ -161,6 +175,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       const useWorktree = body.useWorktree === true
       const branch = typeof body.branch === 'string' ? body.branch.trim() : ''
       const model = typeof body.model === 'string' && body.model ? body.model : undefined
+      const attachments = parseAttachments(body.attachments)
 
       try {
         const agencyKey = typeof body.agencyKey === 'string' ? body.agencyKey : ''
@@ -207,6 +222,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
           ...(permissionMode ? { permissionMode } : {}),
           ...(role?.name ? { roleName: role.name } : {}),
           ...(role?.id ? { roleId: role.id } : {}),
+          ...(attachments.length ? { initialAttachments: attachments } : {}),
         }
         const agentLocalId = await startSession(params, {
           mcpFactory: () => createProjectMcp(projectPath),
@@ -227,6 +243,19 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       if (!session) { send(res, 404, { error: 'not found' }); return }
       const agents = sessionRegistry.listAgentsBySession(session.localId)
       send(res, 200, { ...session, agents })
+      return
+    }
+
+    if (sessionMatch && req.method === 'DELETE') {
+      const session = resolveSession(sessionMatch[1]!)
+      if (!session) { send(res, 404, { error: 'not found' }); return }
+      if (getActiveSessionsBySessionLocalId(session.localId).length > 0) {
+        send(res, 409, { error: 'session is running — stop it before deleting' })
+        return
+      }
+      await removeSessionFromPlans(session.projectPath, session.localId).catch(() => {})
+      sessionRegistry.deleteSession(session.localId)
+      send(res, 200, { ok: true })
       return
     }
 
@@ -291,7 +320,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       const entry = agents.find(a => a.isEntryPoint) ?? agents[0]
       if (!entry) { send(res, 404, { error: 'entry-point agent not found' }); return }
       const expanded = session ? await expandCommandInput(session.projectPath, text) : text
-      await sendInput(entry.localId, expanded, [])
+      await sendInput(entry.localId, expanded, parseAttachments(body.attachments))
       send(res, 200, { ok: true })
       return
     }

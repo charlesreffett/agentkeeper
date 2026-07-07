@@ -74,6 +74,14 @@ export function setSessionRegisteredNotifier(fn: (localId: string) => void): voi
   sessionRegisteredNotifier = fn
 }
 
+let sessionDeletedNotifier: ((localId: string) => void) | null = null
+
+// Fired when a session row is deleted, so clients that didn't initiate the
+// delete — desktop renderer, mobile — can drop it from their lists.
+export function setSessionDeletedNotifier(fn: (localId: string) => void): void {
+  sessionDeletedNotifier = fn
+}
+
 export function registerSession(session: Session): void {
   const db = getDb()
   const existing = db.select({ localId: sessions.localId })
@@ -159,6 +167,7 @@ export function listAllSessions(): Session[] {
 
 export function deleteSession(localId: string): void {
   getDb().delete(sessions).where(eq(sessions.localId, localId)).run()
+  sessionDeletedNotifier?.(localId)
 }
 
 export function deleteAgency(instanceId: string): void {
@@ -166,6 +175,7 @@ export function deleteAgency(instanceId: string): void {
   db.delete(agencyHandoffs).where(eq(agencyHandoffs.agencyInstanceId, instanceId)).run()
   // ON DELETE CASCADE on agents → sessions handles agents rows.
   db.delete(sessions).where(eq(sessions.localId, instanceId)).run()
+  sessionDeletedNotifier?.(instanceId)
 }
 
 export function deleteAllForProject(projectPath: string): void {

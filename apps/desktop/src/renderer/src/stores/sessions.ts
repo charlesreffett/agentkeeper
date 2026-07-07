@@ -1420,6 +1420,13 @@ export const useSessionStore = defineStore('sessions', () => {
   })
   onScopeDispose(unsubCreated)
 
+  // Sessions deleted by another client (mobile) linger in the store otherwise.
+  // dismiss() is idempotent, so the initiating renderer is unaffected.
+  const unsubDeleted = window.agentkeeper.sessions.onDeleted((localId) => {
+    if (sessions[localId]) dismiss(localId)
+  })
+  onScopeDispose(unsubDeleted)
+
   const unsubNavigate = window.agentkeeper.notifications?.onNavigate((sessionLocalId) => {
     void router.push(`/sessions/${sessionLocalId}`)
   })

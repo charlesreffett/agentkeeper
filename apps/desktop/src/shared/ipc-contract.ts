@@ -805,6 +805,7 @@ export interface AgentKeeperApi {
     ) => () => void
     onStats: (callback: (stats: LiveSessionStats) => void) => () => void
     onCreated: (callback: (localId: string) => void) => () => void
+    onDeleted: (callback: (localId: string) => void) => () => void
     listPersisted: (projectPath: string) => Promise<Session[]>
     getByLocalId: (localId: string) => Promise<Session | null>
     resume: (localId: string) => Promise<string>
@@ -1056,6 +1057,7 @@ export const IPC_CHANNELS = {
   sessionStatus: 'session:status',
   sessionStats: 'session:stats',
   sessionCreated: 'session:created',
+  sessionDeleted: 'session:deleted',
   worktreesList: 'worktrees:list',
   worktreesCreate: 'worktrees:create',
   worktreesRemove: 'worktrees:remove',

@@ -41,19 +41,24 @@ watch(
 
 let unsubPlanUpdated: (() => void) | null = null
 let unsubSessionCreated: (() => void) | null = null
+let unsubSessionDeleted: (() => void) | null = null
 onMounted(() => {
   unsubPlanUpdated = window.agentkeeper.plans.onUpdated(({ projectPath: p }) => {
     if (focusedProject.value?.path === p) void plansStore.refresh(p)
   })
-  // Sessions created elsewhere (mobile, agency orchestrator) aren't in any
-  // query cache yet — refetch the list so they appear without a manual reload.
+  // Sessions created or deleted elsewhere (mobile, agency orchestrator) aren't
+  // reflected in any query cache — refetch the list so the view stays in sync.
   unsubSessionCreated = window.agentkeeper.sessions.onCreated(() => {
+    invalidateSessionsList()
+  })
+  unsubSessionDeleted = window.agentkeeper.sessions.onDeleted(() => {
     invalidateSessionsList()
   })
 })
 onUnmounted(() => {
   unsubPlanUpdated?.(); unsubPlanUpdated = null
   unsubSessionCreated?.(); unsubSessionCreated = null
+  unsubSessionDeleted?.(); unsubSessionDeleted = null
 })
 
 const sessionPlanMap = computed((): Map<string, { planRef: string; stepsCompleted: number; stepsTotal: number }> => {

@@ -18,6 +18,8 @@
 		BF10000A000000000000001A /* SessionsListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000C000000000000001A /* SessionsListView.swift */; };
 		BF10000B000000000000001A /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000D000000000000001A /* SessionDetailView.swift */; };
 		BF10000C000000000000001A /* NewSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000E000000000000001A /* NewSessionView.swift */; };
+		BF10000D000000000000001A /* OptionsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF20000F000000000000001A /* OptionsStore.swift */; };
+		BF10000E000000000000001A /* DraftStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF200010000000000000001A /* DraftStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +37,8 @@
 		BF20000C000000000000001A /* SessionsListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsListView.swift; sourceTree = "<group>"; };
 		BF20000D000000000000001A /* SessionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		BF20000E000000000000001A /* NewSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewSessionView.swift; sourceTree = "<group>"; };
+		BF20000F000000000000001A /* OptionsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptionsStore.swift; sourceTree = "<group>"; };
+		BF200010000000000000001A /* DraftStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DraftStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -84,6 +88,8 @@
 				BF200001000000000000001A /* AgentKeeperCompanionApp.swift */,
 				BF200002000000000000001A /* AppConfig.swift */,
 				BF200003000000000000001A /* ContentView.swift */,
+				BF20000F000000000000001A /* OptionsStore.swift */,
+				BF200010000000000000001A /* DraftStore.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -195,6 +201,8 @@
 				BF10000A000000000000001A /* SessionsListView.swift in Sources */,
 				BF10000B000000000000001A /* SessionDetailView.swift in Sources */,
 				BF10000C000000000000001A /* NewSessionView.swift in Sources */,
+				BF10000D000000000000001A /* OptionsStore.swift in Sources */,
+				BF10000E000000000000001A /* DraftStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

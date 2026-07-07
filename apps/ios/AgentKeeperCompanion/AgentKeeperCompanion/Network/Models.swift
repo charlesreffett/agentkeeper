@@ -58,6 +58,20 @@ struct CreateSessionResponse: Codable {
     let sessionId: String
 }
 
+// Mirrors the desktop `Attachment` shape: base64 content for images.
+struct AttachmentPayload: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    let name: String
+    let mimeType: String
+    let content: String
+
+    enum CodingKeys: String, CodingKey { case name, mimeType, content }
+
+    var asJSON: [String: Any] {
+        ["name": name, "mimeType": mimeType, "content": content]
+    }
+}
+
 struct SlashCommand: Codable, Identifiable {
     let id: String
     let scope: String
