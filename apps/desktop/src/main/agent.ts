@@ -57,6 +57,7 @@ export interface ActiveSession {
   interrupted: boolean
   turnCount: number
   mcpFactory?: NonNullable<InternalStartExtras['mcpFactory']>
+  additionalMcpServers?: Record<string, ExternalMcpConfig>
   onTerminalError?: () => void
 }
 
@@ -80,10 +81,27 @@ export interface InternalStartExtras {
   /** External MCP servers (stdio/http/sse) to activate alongside the built-in
    *  agentkeeper server. Keys become the server names visible to the agent. */
   additionalMcpServers?: Record<string, ExternalMcpConfig>
-  /** Called once when the stream reaches a terminal error (after MCP reconnect
-   *  retries are exhausted and the active-map entry has been removed). Fired in
+  /** Called once when the stream reaches a terminal error with no reconnect
+   *  scheduled, after the active-map entry has been removed. Fired in
    *  consumeStream's finally block so startSession can be called again safely. */
   onTerminalError?: () => void
+}
+
+type DefaultMcpFactoryResolver = (args: {
+  projectPath: string
+  agentLocalId: string
+  isAgency: boolean
+}) => NonNullable<InternalStartExtras['mcpFactory']>
+
+// Injected by ipc.ts at startup. agent.ts can't import the factories from
+// orchestrator.ts directly (orchestrator imports agent — cycle), but every
+// session must carry the agentkeeper MCP server even when a resume path
+// (sendInput auto-resume, resumeSession, restartIdle, editAndRerun) doesn't
+// pass one explicitly.
+let defaultMcpFactoryResolver: DefaultMcpFactoryResolver | null = null
+
+export function setDefaultMcpFactoryResolver(fn: DefaultMcpFactoryResolver): void {
+  defaultMcpFactoryResolver = fn
 }
 
 const active = new Map<string, ActiveSession>()
@@ -120,7 +138,6 @@ interface UndoBuffer {
   removedLines: string[]
 }
 const undoBuffers = new Map<string, UndoBuffer>()
-const MAX_MCP_RESTARTS = 10
 const mcpRestartCounts = new Map<string, number>()
 
 let workItemRegistry: WorkItemRegistryFull | null = null
@@ -193,6 +210,7 @@ function setStatus(s: ActiveSession, status: LiveSessionStatus, error?: string) 
 }
 
 async function consumeStream(session: ActiveSession): Promise<void> {
+  let restartScheduled = false
   try {
     for await (const msg of session.stream) {
       if (session.interrupted) break
@@ -334,12 +352,18 @@ async function consumeStream(session: ActiveSession): Promise<void> {
     if (!session.interrupted) {
       const message = err instanceof Error ? err.message : String(err)
       const restartCount = mcpRestartCounts.get(session.agentLocalId) ?? 0
-      if (session.mcpFactory && restartCount < MAX_MCP_RESTARTS) {
+      if (session.mcpFactory) {
         mcpRestartCounts.set(session.agentLocalId, restartCount + 1)
         const delayMs = Math.min(Math.pow(2, restartCount) * 500, 30_000)
-        console.warn(`[agent] session ${session.agentLocalId} MCP error, reconnecting (${restartCount + 1}/${MAX_MCP_RESTARTS}) in ${delayMs}ms:`, err)
-        setStatus(session, 'error', `MCP disconnected — reconnecting (${restartCount + 1}/${MAX_MCP_RESTARTS})…`)
-        setTimeout(() => void scheduledMcpRestart(session.agentLocalId, session.mcpFactory!), delayMs)
+        console.warn(`[agent] session ${session.agentLocalId} MCP error, reconnecting (attempt ${restartCount + 1}) in ${delayMs}ms:`, err)
+        setStatus(session, 'error', `MCP disconnected — reconnecting (attempt ${restartCount + 1})…`)
+        restartScheduled = true
+        const restartExtras: InternalStartExtras = {
+          mcpFactory: session.mcpFactory,
+          ...(session.additionalMcpServers ? { additionalMcpServers: session.additionalMcpServers } : {}),
+          ...(session.onTerminalError ? { onTerminalError: session.onTerminalError } : {}),
+        }
+        setTimeout(() => void scheduledMcpRestart(session.agentLocalId, restartExtras), delayMs)
       } else {
         console.error(`[agent] session ${session.agentLocalId} stream error:`, err)
         setStatus(session, 'error', message)
@@ -385,8 +409,9 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       active.delete(session.agentLocalId)
     }
     // Fire AFTER active.delete so the orchestrator's retry path can reinstate
-    // a clean session without racing the old entry.
-    if (session.status === 'error' && !session.interrupted) {
+    // a clean session without racing the old entry. Skipped when a reconnect
+    // is scheduled — firing both would double-restart the agent.
+    if (session.status === 'error' && !session.interrupted && !restartScheduled) {
       session.onTerminalError?.()
     }
   }
@@ -561,7 +586,14 @@ export async function startSession(
     childEnv['ANTHROPIC_API_KEY'] = apiKey
   }
 
-  const mcpServer = extras.mcpServer ?? extras.mcpFactory?.()
+  // Resolve the agentkeeper MCP server for this session. Resume paths don't
+  // pass a factory, so fall back to the injected default — otherwise a resumed
+  // agent silently loses plan tools and send_message.
+  const isAgency = !!(params.agencyId ?? registry.getSession(sessionLocalId)?.agencyId)
+  const mcpFactory =
+    extras.mcpFactory ??
+    defaultMcpFactoryResolver?.({ projectPath: params.projectPath, agentLocalId, isAgency })
+  const mcpServer = extras.mcpServer ?? mcpFactory?.()
   const hasBuiltin = !!mcpServer
   const hasExternal = extras.additionalMcpServers && Object.keys(extras.additionalMcpServers).length > 0
 
@@ -609,13 +641,20 @@ export async function startSession(
     idleWaiters: [],
     interrupted: false,
     turnCount: costLedger.getAgentTurnCount(agentLocalId),
-    mcpFactory: extras.mcpFactory,
+    mcpFactory,
+    additionalMcpServers: extras.additionalMcpServers,
     onTerminalError: extras.onTerminalError,
   }
 
   active.set(agentLocalId, session)
   broadcastStatus({ sessionId: sessionLocalId, agentLocalId, status: 'starting' })
-  setStatus(session, 'running')
+  // A resume with nothing queued spawns a subprocess that just waits for
+  // input — reporting 'running' there leaves phantom-running agents in the UI.
+  const resumedWaiting = isResume && input.pendingCount === 0
+  setStatus(
+    session,
+    resumedWaiting ? (sessionLocalId !== agentLocalId ? 'idle' : 'suspended') : 'running',
+  )
 
   if (!isResume) {
     broadcastEvent({
@@ -753,7 +792,7 @@ export async function resumeSession(localId: string): Promise<string> {
 
 async function scheduledMcpRestart(
   agentLocalId: string,
-  mcpFactory: NonNullable<InternalStartExtras['mcpFactory']>,
+  extras: InternalStartExtras,
 ): Promise<void> {
   if (restartingIds.has(agentLocalId)) return
   restartingIds.add(agentLocalId)
@@ -780,7 +819,7 @@ async function scheduledMcpRestart(
         agencyScope: (persistedSession.agencyScope as AgencyScope) ?? undefined,
         isEntryPoint: agent.isEntryPoint,
       },
-      { mcpFactory },
+      extras,
     )
   } catch (err) {
     console.error(`[agent] MCP restart failed for ${agentLocalId}:`, err)
@@ -794,7 +833,7 @@ export async function reconnectSessionMcp(
   mcpFactory: NonNullable<InternalStartExtras['mcpFactory']>,
 ): Promise<void> {
   mcpRestartCounts.delete(agentLocalId)
-  await scheduledMcpRestart(agentLocalId, mcpFactory)
+  await scheduledMcpRestart(agentLocalId, { mcpFactory })
 }
 
 async function restartIdle(
