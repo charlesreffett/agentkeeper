@@ -675,9 +675,16 @@ function buildContextPreamble(opts: {
     ``,
     `Communication protocol:`,
     `- send_message BLOCKS until the peer replies; their response becomes your tool_result.`,
-    `- To run sub-tasks in PARALLEL, emit multiple send_message tool calls in the same`,
-    `  response turn before receiving any results — the orchestrator dispatches them`,
-    `  concurrently and returns all results together.`,
+    `- To run INDEPENDENT sub-tasks in PARALLEL, call send_messages (plural) ONCE with the`,
+    `  full batch — e.g. send_messages(messages: [{to: "developer", content: "task A"},`,
+    `  {to: "developer", content: "task B"}]). The orchestrator delivers all of them`,
+    `  concurrently (load-balancing role-addressed entries across idle instances and`,
+    `  spawning overflow instances as needed) and returns every reply in one tool_result.`,
+    `  Do NOT simulate parallelism with sequential send_message calls.`,
+    `- Use singular send_message only when the next task depends on the previous reply.`,
+    `- Peer delegation goes ONLY through send_message / send_messages. NEVER use the`,
+    `  built-in Agent/Task tool to fan work out — subagents are not agency members,`,
+    `  bypass the orchestrator, and leave your actual peers idle.`,
     `- When another peer addresses YOU via send_message, you'll receive a user turn wrapped`,
     `  in "[message from peer X]" markers. Your plain-text reply is automatically captured`,
     `  and returned to them — DO NOT call send_message back to the peer that addressed you.`,
@@ -834,12 +841,40 @@ export function createOrchestratorMcp(
       }
     },
   )
+  const sendMessagesTool = tool(
+    'send_messages',
+    'Send multiple messages to peer agents IN PARALLEL with a single call. Each entry targets an instance id (e.g. "developer-1") or role id (e.g. "developer" — load-balanced across idle instances, spawning overflow instances when allowed). Blocks until every peer has replied, then returns all replies together. Use this instead of sequential send_message calls whenever sub-tasks are independent.',
+    {
+      messages: z
+        .array(
+          z.object({
+            to: z.string().describe('Target agent instance id (e.g. "developer-1") or role id (e.g. "developer").'),
+            content: z.string().describe('Message body to send to this peer.'),
+          }),
+        )
+        .min(1)
+        .describe('Batch of messages dispatched concurrently.'),
+    },
+    async ({ messages }) => {
+      const replies = await Promise.all(
+        messages.map(async (m, i) => {
+          try {
+            const reply = await routeMessage(sessionId, m.to, m.content)
+            return `[reply ${i + 1}/${messages.length} — to "${m.to}"]\n${reply}`
+          } catch (err) {
+            return `[reply ${i + 1}/${messages.length} — to "${m.to}"]\nError: ${err instanceof Error ? err.message : String(err)}`
+          }
+        }),
+      )
+      return { content: [{ type: 'text', text: replies.join('\n\n---\n\n') }] }
+    },
+  )
   return createSdkMcpServer({
     name: 'agentkeeper',
     version: '1.0.0',
     tools: isGeneralProject(projectPath)
-      ? [sendMessageTool]
-      : [...buildPlanTools(projectPath, sessionId), sendMessageTool],
+      ? [sendMessageTool, sendMessagesTool]
+      : [...buildPlanTools(projectPath, sessionId), sendMessageTool, sendMessagesTool],
   })
 }
 
