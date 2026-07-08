@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 
 @MainActor
 struct SessionDetailView: View {
@@ -17,7 +19,9 @@ struct SessionDetailView: View {
     @State private var suppressBottomScroll = false
     @State private var isRunning = false
     @State private var commands: [SlashCommand] = []
-    @State private var showCommands = false
+    @State private var attachments: [AttachmentPayload] = []
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var activePanel: ComposerPanel? = nil
     @FocusState private var inputFocused: Bool
 
     // `events` now holds only a fetched window — the latest page on open, grown
@@ -30,8 +34,11 @@ struct SessionDetailView: View {
     private var client: APIClient { APIClient(config: config) }
 
     // Live tool-only turns have no prose — drop them so the chat reads cleanly.
+    // Image-only user messages still render (attachment with no caption).
     private var visibleEvents: [LiveEvent] {
-        events.filter { !$0.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        events.filter {
+            !$0.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !$0.imageDatas.isEmpty
+        }
     }
 
     // Inline picker: shown while the user types a `/<prefix>` with no space yet.
@@ -98,7 +105,12 @@ struct SessionDetailView: View {
                     .padding()
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .simultaneousGesture(TapGesture().onEnded { inputFocused = false })
+                .simultaneousGesture(TapGesture().onEnded {
+                    inputFocused = false
+                    if activePanel != nil {
+                        withAnimation(.snappy(duration: 0.2)) { activePanel = nil }
+                    }
+                })
                 .onChange(of: visibleEvents.count) { _, _ in
                     // A prepended older page also changes this count; suppressBottomScroll
                     // tells us to keep position there instead of yanking to the bottom.
@@ -149,12 +161,40 @@ struct SessionDetailView: View {
 
             Divider()
 
-            HStack(spacing: 8) {
-                Button(action: { showCommands = true; Task { await reloadCommands() } }) {
-                    Image(systemName: "slash.circle")
-                        .font(.title2)
+            composerBar
+        }
+        .navigationTitle(session.title ?? "Session")
+        .navigationBarTitleDisplayMode(.inline)
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            Task { await appendPhotos(items) }
+        }
+        .task {
+            await loadDetail()
+            await startWebSocket()
+        }
+    }
+
+    // Mirrors the new-session composer: text row, icon row, expanding drawer.
+    private var composerBar: some View {
+        VStack(spacing: 0) {
+            if !attachments.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(attachments) { attachment in
+                            AttachmentThumbnail(attachment: attachment) {
+                                attachments.removeAll { $0.id == attachment.id }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
                 }
-                TextField("Message…", text: $inputText)
+            }
+
+            HStack(spacing: 8) {
+                TextField("Message…", text: $inputText, axis: .vertical)
+                    .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
                     .focused($inputFocused)
                     .onSubmit { sendInput() }
@@ -176,30 +216,154 @@ struct SessionDetailView: View {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.title2)
                     }
-                    .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty && attachments.isEmpty)
                 }
             }
-            .padding(12)
-        }
-        .navigationTitle(session.title ?? "Session")
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(isPresented: $showCommands) {
-            CommandPicker(commands: commands) { cmd in
-                inputText = "/\(cmd.id) "
-                showCommands = false
-                inputFocused = true
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            HStack(spacing: 22) {
+                PhotosPicker(selection: $photoItems, maxSelectionCount: 5, matching: .images) {
+                    Image(systemName: "photo")
+                }
+                panelButton(.commands, systemImage: "slash.circle", highlighted: inputText.hasPrefix("/"))
+                panelButton(.team, systemImage: "person.2", highlighted: detail?.agencyName != nil || entryRoleName != nil)
+                panelButton(.model, systemImage: "cpu", highlighted: false)
+                panelButton(.tuning, systemImage: "slider.horizontal.3", highlighted: false)
+                panelButton(.worktree, systemImage: "arrow.triangle.branch", highlighted: detail?.worktreePath != nil)
+                panelButton(.more, systemImage: "ellipsis.circle", highlighted: false)
+            }
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if let panel = activePanel {
+                Divider()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        panelContent(panel)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 260)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .task {
-            await loadDetail()
-            await startWebSocket()
+        .background(.bar)
+        .geometryGroup()
+    }
+
+    private var entryRoleName: String? {
+        detail?.agents.first(where: { $0.isEntryPoint })?.roleName
+    }
+
+    private func panelButton(_ panel: ComposerPanel, systemImage: String, highlighted: Bool) -> some View {
+        ComposerIconButton(systemImage: systemImage, active: activePanel == panel || highlighted) {
+            withAnimation(.snappy(duration: 0.2)) {
+                activePanel = activePanel == panel ? nil : panel
+            }
+            if panel == .commands { Task { await reloadCommands() } }
         }
+    }
+
+    // Only commands are actionable mid-session; the rest were fixed when the
+    // session was created, so their panels are read-only summaries.
+    @ViewBuilder
+    private func panelContent(_ panel: ComposerPanel) -> some View {
+        switch panel {
+        case .commands:
+            ComposerPanelHeader(text: "Commands")
+            if commands.isEmpty {
+                Text("No commands in this project")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 4)
+            }
+            ForEach(commands) { cmd in
+                ComposerOptionRow(title: "/\(cmd.id)", selected: false) {
+                    inputText = "/\(cmd.id) "
+                    inputFocused = true
+                    withAnimation(.snappy(duration: 0.2)) { activePanel = nil }
+                }
+            }
+        case .team:
+            ComposerPanelHeader(text: "Team")
+            infoRow("Agency", detail?.agencyName ?? "None")
+            infoRow("Role", entryRoleName ?? "Freeform")
+            fixedAtStartFootnote
+        case .model:
+            ComposerPanelHeader(text: "Model")
+            infoRow("Model", detail?.model ?? session.model ?? "Default")
+            fixedAtStartFootnote
+        case .tuning:
+            ComposerPanelHeader(text: "Tuning")
+            infoRow("Effort", (detail?.effort ?? "default").capitalized)
+            infoRow("Permission Mode", detail?.permissionMode ?? "default")
+            fixedAtStartFootnote
+        case .worktree:
+            ComposerPanelHeader(text: "Worktree")
+            if let path = detail?.worktreePath {
+                infoRow("Branch", detail?.branch ?? "—")
+                infoRow("Path", path)
+            } else {
+                infoRow("Worktree", "Not used")
+            }
+            fixedAtStartFootnote
+        case .more:
+            ComposerPanelHeader(text: "Session")
+            infoRow("Project", detail?.projectPath ?? session.projectPath)
+            infoRow("Status", (detail?.status ?? session.status).capitalized)
+        }
+    }
+
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+    }
+
+    private var fixedAtStartFootnote: some View {
+        Text("Set when the session was created")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .padding(.top, 4)
+            .padding(.horizontal, 4)
+    }
+
+    private func appendPhotos(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data) else { continue }
+            let resized = image.resizedIfNeeded(maxDimension: 1568)
+            guard let jpeg = resized.jpegData(compressionQuality: 0.7) else { continue }
+            attachments.append(AttachmentPayload(
+                name: "photo-\(Int(Date().timeIntervalSince1970))-\(attachments.count + 1).jpg",
+                mimeType: "image/jpeg",
+                content: jpeg.base64EncodedString()
+            ))
+        }
+        photoItems = []
     }
 
     private func loadDetail() async {
         do {
             detail = try await client.getSession(id: session.localId)
-            isRunning = (detail?.session.status ?? session.status) == "running"
+            isRunning = (detail?.status ?? session.status) == "running"
         } catch {
             self.error = error.localizedDescription
         }
@@ -274,57 +438,13 @@ struct SessionDetailView: View {
 
     private func sendInput() {
         let text = inputText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !attachments.isEmpty else { return }
+        let toSend = attachments
         inputText = ""
+        attachments = []
         isRunning = true
         Task {
-            try? await client.sendInput(sessionId: session.localId, text: text)
-        }
-    }
-}
-
-private struct CommandPicker: View {
-    let commands: [SlashCommand]
-    let onSelect: (SlashCommand) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var query = ""
-
-    private var filtered: [SlashCommand] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return commands }
-        return commands.filter { $0.id.lowercased().contains(q) || $0.name.lowercased().contains(q) }
-    }
-
-    var body: some View {
-        NavigationStack {
-            List(filtered) { cmd in
-                Button {
-                    onSelect(cmd)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text("/\(cmd.id)").font(.body.monospaced())
-                            Spacer()
-                            Text(cmd.pluginName ?? cmd.scope)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        if cmd.name != cmd.id {
-                            Text(cmd.name).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .searchable(text: $query, prompt: "Filter commands")
-            .navigationTitle("Commands")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
+            try? await client.sendInput(sessionId: session.localId, text: text, attachments: toSend)
         }
     }
 }
@@ -343,11 +463,28 @@ private struct EventBubble: View {
                 Text(eventType)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                Text(displayText)
-                    .font(.body)
-                    .textSelection(.enabled)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !event.imageDatas.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(Array(event.imageDatas.enumerated()), id: \.offset) { _, data in
+                                if let image = UIImage(data: data) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 140, height: 140)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                    }
+                }
+                if !displayText.isEmpty {
+                    Text(displayText)
+                        .font(.body)
+                        .textSelection(.enabled)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)

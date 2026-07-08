@@ -161,6 +161,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       if (projectPath) {
         payload.roles = await listRoles(projectPath)
         payload.agencies = await listAgencies(projectPath)
+        payload.commands = await listCommands(projectPath)
       }
       send(res, 200, payload)
       return
@@ -169,7 +170,10 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
     if (req.method === 'POST' && pathname === '/api/sessions') {
       const body = await parseBody(req)
       const projectPath = typeof body.projectPath === 'string' ? body.projectPath : ''
-      const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+      // A slash command as the opening prompt expands the same way it does on
+      // the /input path; plain prompts pass through unchanged.
+      const rawPrompt = typeof body.prompt === 'string' ? body.prompt.trim() : ''
+      const prompt = rawPrompt && projectPath ? (await expandCommandInput(projectPath, rawPrompt)).trim() : rawPrompt
       if (!projectPath) { send(res, 400, { error: 'projectPath required' }); return }
       if (!prompt) { send(res, 400, { error: 'prompt required' }); return }
       const useWorktree = body.useWorktree === true
@@ -314,13 +318,14 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
       const id = inputMatch[1]!
       const body = await parseBody(req)
       const text = typeof body.text === 'string' ? body.text : ''
-      if (!text) { send(res, 400, { error: 'text required' }); return }
+      const attachments = parseAttachments(body.attachments)
+      if (!text && attachments.length === 0) { send(res, 400, { error: 'text or attachments required' }); return }
       const session = resolveSession(id)
       const agents = session ? sessionRegistry.listAgentsBySession(session.localId) : []
       const entry = agents.find(a => a.isEntryPoint) ?? agents[0]
       if (!entry) { send(res, 404, { error: 'entry-point agent not found' }); return }
-      const expanded = session ? await expandCommandInput(session.projectPath, text) : text
-      await sendInput(entry.localId, expanded, parseAttachments(body.attachments))
+      const expanded = text && session ? await expandCommandInput(session.projectPath, text) : text
+      await sendInput(entry.localId, expanded, attachments)
       send(res, 200, { ok: true })
       return
     }
