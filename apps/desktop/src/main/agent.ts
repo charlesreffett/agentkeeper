@@ -1024,6 +1024,7 @@ export async function editAndRerun(
   truncateFromUuid: string,
   newText: string,
   originalText?: string | null,
+  attachments?: Attachment[],
 ): Promise<void> {
   const agent = registry.getAgent(agentLocalId)
   if (!agent?.sdkSessionId) throw new Error(`agent ${agentLocalId} has no sdkSessionId`)
@@ -1047,7 +1048,7 @@ export async function editAndRerun(
   })
   if (keptHasConversation) {
     // Prior turns survive — resume so the model keeps the truncated context.
-    await sendInput(agentLocalId, newText)
+    await sendInput(agentLocalId, newText, attachments)
     return
   }
   // Editing the first message leaves no conversation to resume from; the
@@ -1060,6 +1061,7 @@ export async function editAndRerun(
     projectPath: session.projectPath,
     worktreePath: session.worktreePath ?? undefined,
     initialPrompt: newText,
+    initialAttachments: attachments,
     model: session.model ?? undefined,
     effort: session.effort ?? undefined,
     permissionMode: (session.permissionMode as PermissionMode) ?? undefined,

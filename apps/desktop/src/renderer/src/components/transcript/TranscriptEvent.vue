@@ -122,6 +122,9 @@ function blockComponent(block: ContentBlock) {
 
 const editMode = ref(false)
 const editText = ref('')
+const editImageCount = computed(
+  () => props.event.content.filter((b) => b.type === 'image').length,
+)
 
 function startEdit() {
   const textBlocks = props.event.content.filter(b => b.type === 'text')
@@ -287,7 +290,10 @@ function onEditKeydown(e: KeyboardEvent) {
           autofocus
           @keydown="onEditKeydown"
         />
-        <div class="flex gap-2 justify-end">
+        <div class="flex gap-2 items-center justify-end">
+          <span v-if="editImageCount > 0" class="text-xs text-muted-foreground mr-auto">
+            {{ editImageCount }} image{{ editImageCount > 1 ? 's' : '' }} will be kept
+          </span>
           <button
             class="text-xs px-3 py-1 rounded border border-border hover:bg-muted text-muted-foreground"
             @click="cancelEdit"

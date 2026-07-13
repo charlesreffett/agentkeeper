@@ -1527,8 +1527,30 @@ export const useSessionStore = defineStore('sessions', () => {
           .map((b) => b.text)
           .join('\n') || null
       : null
+    // Re-send image blocks from the edited message so attachments survive the edit.
+    const attachments: Attachment[] = []
+    if (target) {
+      for (const b of target.content) {
+        if (b.type !== 'image') continue
+        const src = b.source as { type?: string; media_type?: string; data?: string } | null
+        if (src?.type === 'base64' && src.media_type && src.data) {
+          const ext = src.media_type.split('/')[1] ?? 'png'
+          attachments.push({
+            name: `image-${attachments.length + 1}.${ext}`,
+            mimeType: src.media_type,
+            content: src.data,
+          })
+        }
+      }
+    }
     const removed = truncateAgentEventsAt(sessionEntry.localId, agentLocalId, truncateFromUuid)
-    await window.agentkeeper.sessions.editAndRerun(agentLocalId, truncateFromUuid, newText, originalText)
+    await window.agentkeeper.sessions.editAndRerun(
+      agentLocalId,
+      truncateFromUuid,
+      newText,
+      originalText,
+      attachments.length > 0 ? attachments : undefined,
+    )
     return removed
   }
 

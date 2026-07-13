@@ -203,8 +203,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.sessionsListTrackedSdkIds, projectPath) as Promise<string[]>,
     reconnectMcp: (agentLocalId: string) =>
       invoke(IPC_CHANNELS.sessionsReconnectMcp, agentLocalId) as Promise<void>,
-    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null) =>
-      invoke(IPC_CHANNELS.sessionsEditAndRerun, agentLocalId, truncateFromUuid, newText, originalText) as Promise<void>,
+    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null, attachments?: Attachment[]) =>
+      invoke(IPC_CHANNELS.sessionsEditAndRerun, agentLocalId, truncateFromUuid, newText, originalText, attachments) as Promise<void>,
     undoEditAndRerun: (agentLocalId: string) =>
       invoke(IPC_CHANNELS.sessionsUndoEditAndRerun, agentLocalId) as Promise<void>,
   },

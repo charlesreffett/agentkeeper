@@ -1154,9 +1154,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsEditAndRerun,
-    async (_event, agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null) => {
+    async (_event, agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null, attachments?: Attachment[]) => {
       try {
-        await editAndRerun(agentLocalId, truncateFromUuid, newText, originalText)
+        await editAndRerun(agentLocalId, truncateFromUuid, newText, originalText, attachments)
       } catch (err) {
         console.error('[ipc] sessions:editAndRerun failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
