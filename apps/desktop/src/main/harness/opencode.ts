@@ -1,0 +1,368 @@
+import path from 'node:path'
+import os from 'node:os'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
+import type { OpencodeClient } from '@opencode-ai/sdk/client'
+import type { HarnessAdapter, HarnessAuth, HarnessCLIOptions, HarnessEvent, HarnessSessionOptions } from '@agentkeeper/core'
+import { secrets, SECRET_KEYS } from '../secrets'
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * OpenCode harness adapter — runs agent sessions via the OpenCode server
+ * (https://opencode.ai). OpenCode is model-agnostic and supports 75+ LLM
+ * providers through the Vercel AI SDK.
+ *
+ * Architecture:
+ *   1. `createOpencode()` spawns an OpenCode server process on a local port.
+ *   2. The SDK client connects over HTTP and manages sessions/messages.
+ *   3. SSE event streaming provides real-time assistant output.
+ *   4. The adapter translates OpenCode events into the HarnessEvent format
+ *      consumed by the agent driver.
+ */
+export class OpenCodeHarnessAdapter implements HarnessAdapter {
+  readonly id = 'opencode'
+  readonly name = 'OpenCode'
+  readonly defaultModel = 'anthropic/claude-sonnet-4-20250514'
+
+  /** Active server instances keyed by port. Cleaned up on adapter reset or app exit. */
+  private servers = new Map<number, { url: string; close(): void }>()
+
+  async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
+    const abortController = options.abortController ?? new AbortController()
+    let server: { url: string; close(): void } | undefined
+    let client: OpencodeClient
+
+    // Decide how to connect: if a server URL is already configured (future
+    // setting), use it directly; otherwise spawn a fresh server.
+    const existingUrl = process.env.OPENCODE_SERVER_URL
+    if (existingUrl) {
+      client = createOpencodeClient({ baseUrl: existingUrl })
+    } else {
+      const port = 4096 + Math.floor(Math.random() * 1000)
+      const result = await createOpencode({
+        hostname: '127.0.0.1',
+        port,
+        signal: abortController.signal,
+        config: {
+          ...(options.model ? { model: options.model } : {}),
+          ...(options.cwd ? { path: { root: options.cwd } } : {}),
+        },
+      })
+      server = result.server
+      this.servers.set(port, server)
+      client = createOpencodeClient({ baseUrl: server.url })
+    }
+
+    try {
+      // Create a session in OpenCode.
+      const sessionResp = await client.session.create({
+        body: { title: 'AgentKeeper Session' },
+      })
+      if (!sessionResp.data) {
+        throw new Error(`Failed to create OpenCode session: ${JSON.stringify(sessionResp.error)}`)
+      }
+      const sessionId = sessionResp.data.id
+
+      // Yield the system/init event so the agent driver can capture the
+      // session id for resume support.
+      yield {
+        type: 'system',
+        subtype: 'init',
+        session_id: sessionId,
+      } satisfies HarnessEvent
+
+      // Build the message parts from the prompt or the message queue.
+      const parts = await this.buildParts(prompt, options)
+
+      // Subscribe to the SSE event stream *before* sending the prompt so we
+      // don't miss any events.
+      const eventStream = await client.event.subscribe()
+
+      // Send the prompt asynchronously — the SSE stream will carry the
+      // response events.
+      const promptResp = await client.session.promptAsync({
+        path: { id: sessionId },
+        body: {
+          parts,
+          ...(options.model ? {
+            model: parseModelId(options.model),
+          } : {}),
+          ...(options.systemPrompt ? { system: options.systemPrompt } : {}),
+        },
+      })
+
+      if (!promptResp.response.ok) {
+        throw new Error(`OpenCode prompt failed: ${promptResp.response.status}`)
+      }
+
+      // Wire abort: cancel the in-progress prompt when the caller aborts.
+      if (options.abortController) {
+        options.abortController.signal.addEventListener('abort', () => {
+          void client.session.abort({ path: { id: sessionId } }).catch(() => {})
+        }, { once: true })
+      }
+
+      // Stream events from the SSE feed, translating each one into
+      // HarnessEvents that the agent driver understands.
+      yield* this.consumeEventStream(eventStream, sessionId)
+    } finally {
+      // Clean up: close the server we spawned (not external).
+      if (server) {
+        this.servers.delete(Number(new URL(server.url).port))
+        try { server.close() } catch { /* ignore */ }
+      }
+    }
+  }
+
+  /**
+   * Convert the incoming prompt + messageQueue into OpenCode Part objects.
+   * When messageQueue is present the first message is the initial prompt and
+   * subsequent ones are follow-ups.
+   */
+  private async buildParts(
+    prompt: string,
+    options: HarnessSessionOptions,
+  ): Promise<Array<{ type: 'text'; text: string }>> {
+    const parts: Array<{ type: 'text'; text: string }> = []
+
+    if (options.messageQueue) {
+      // Drain the async queue — each message is a user turn.
+      for await (const msg of options.messageQueue) {
+        const text = extractText(msg.message?.content)
+        if (text) parts.push({ type: 'text', text })
+      }
+    } else if (prompt) {
+      parts.push({ type: 'text', text: prompt })
+    }
+
+    return parts
+  }
+
+  /**
+   * Translate OpenCode SSE events into HarnessEvents. The mapping:
+   *
+   * OpenCode Event                    → HarnessEvent
+   * ──────────────────────────────────────────────────────────
+   * message.part.updated (text delta) → assistant (accumulated)
+   * message.part.updated (tool)       → assistant (tool_use block)
+   * message.updated (assistant msg)   → result (on completion)
+   * session.idle                      → result (subtype: 'success')
+   * session.error                     → result (subtype: 'error')
+   */
+  private async *consumeEventStream(
+    eventStream: Awaited<ReturnType<OpencodeClient['event']['subscribe']>>,
+    sessionId: string,
+  ): AsyncIterable<HarnessEvent> {
+    // Accumulate text deltas per message so we can emit complete assistant
+    // messages once a turn finishes.
+    const textAccumulator = new Map<string, string>()
+    const toolCalls = new Map<string, { id: string; name: string; input: unknown }>()
+
+    for await (const event of eventStream.stream) {
+      // Only process events for our session.
+      const props = (event as Record<string, unknown>)['properties'] as Record<string, unknown> | undefined
+      if (props && typeof props['sessionID'] === 'string' && props['sessionID'] !== sessionId) {
+        continue
+      }
+
+      const eventType = (event as Record<string, unknown>)['type'] as string
+
+      switch (eventType) {
+        case 'message.part.updated': {
+          const part = props?.['part'] as Record<string, unknown> | undefined
+          if (!part) break
+          const partType = part['type'] as string
+          const messageID = part['messageID'] as string
+
+          if (partType === 'text') {
+            // Accumulate text deltas.
+            const delta = (props?.['delta'] as string) ?? (part['text'] as string) ?? ''
+            const prev = textAccumulator.get(messageID) ?? ''
+            textAccumulator.set(messageID, prev + delta)
+
+            // Yield an assistant event with the accumulated text so far.
+            yield {
+              type: 'assistant',
+              message: {
+                role: 'assistant',
+                content: [{ type: 'text', text: textAccumulator.get(messageID)! }],
+              },
+            }
+          } else if (partType === 'tool') {
+            const toolState = part['state'] as Record<string, unknown> | undefined
+            const toolName = part['tool'] as string
+            const callID = part['callID'] as string
+
+            if (toolState?.['status'] === 'pending' || toolState?.['status'] === 'running') {
+              // Tool call starting.
+              toolCalls.set(callID, {
+                id: callID,
+                name: toolName,
+                input: toolState?.['input'] ?? {},
+              })
+              yield {
+                type: 'assistant',
+                message: {
+                  role: 'assistant',
+                  content: [{
+                    type: 'tool_use',
+                    id: callID,
+                    name: toolName,
+                    input: toolState?.['input'] ?? {},
+                  }],
+                },
+              }
+            } else if (toolState?.['status'] === 'completed' || toolState?.['status'] === 'error') {
+              // Tool result.
+              yield {
+                type: 'assistant',
+                message: {
+                  role: 'assistant',
+                  content: [{
+                    type: 'tool_result',
+                    tool_use_id: callID,
+                    content: toolState?.['output'] ?? '',
+                    is_error: toolState?.['status'] === 'error',
+                  }],
+                },
+              }
+            }
+          }
+          break
+        }
+
+        case 'message.updated': {
+          const info = props?.['info'] as Record<string, unknown> | undefined
+          if (info?.['role'] === 'assistant') {
+            // Assistant message completed — yield a result event with usage.
+            const tokens = info['tokens'] as Record<string, unknown> | undefined
+            const cache = tokens?.['cache'] as Record<string, unknown> | undefined
+            yield {
+              type: 'result',
+              subtype: info['error'] ? 'error' : 'success',
+              usage: {
+                input_tokens: (tokens?.['input'] as number) ?? 0,
+                output_tokens: (tokens?.['output'] as number) ?? 0,
+                cache_read_input_tokens: (cache?.['read'] as number) ?? 0,
+                cache_creation_input_tokens: (cache?.['write'] as number) ?? 0,
+              },
+              total_cost_usd: (info['cost'] as number) ?? 0,
+            }
+          }
+          break
+        }
+
+        case 'session.idle': {
+          // Session is idle — final result signal.
+          yield {
+            type: 'result',
+            subtype: 'success',
+          }
+          return // End the stream.
+        }
+
+        case 'session.error': {
+          const error = props?.['error'] as Record<string, unknown> | undefined
+          yield {
+            type: 'result',
+            subtype: 'error',
+            error: error?.['message'] ?? 'Unknown OpenCode error',
+          }
+          return
+        }
+      }
+    }
+  }
+
+  // ─── Path helpers ────────────────────────────────────────────────────────
+
+  getSessionsRoot(): string {
+    return path.join(os.homedir(), '.local', 'share', 'opencode', 'sessions')
+  }
+
+  getCommandsDir(_scope: 'project' | 'global', _projectPath?: string): string {
+    // OpenCode doesn't have a commands directory concept — return empty.
+    return ''
+  }
+
+  getSkillsDir(_scope: 'project' | 'global', _projectPath?: string): string {
+    return ''
+  }
+
+  getPluginsDir(): string {
+    return path.join(os.homedir(), '.local', 'share', 'opencode', 'plugins')
+  }
+
+  getSettingsPath(): string {
+    return path.join(os.homedir(), '.config', 'opencode', 'config.json')
+  }
+
+  encodeCwd(cwd: string): string {
+    return cwd.replaceAll('\\', '-').replaceAll('/', '-').replaceAll(':', '-')
+  }
+
+  // ─── CLI ─────────────────────────────────────────────────────────────────
+
+  async runCLI(args: string[], options?: HarnessCLIOptions): Promise<string> {
+    const { stdout } = await execFileAsync('opencode', args, {
+      cwd: options?.cwd,
+      env: options?.env ? { ...process.env, ...options.env } : process.env,
+      timeout: options?.timeout,
+    })
+    return stdout
+  }
+
+  // ─── Auth ────────────────────────────────────────────────────────────────
+
+  async resolveAuth(): Promise<HarnessAuth> {
+    // OpenCode reads provider keys from environment variables or
+    // ~/.config/opencode/auth.json. We surface any stored Anthropic key
+    // from the keychain as well, so sessions can reuse the same credential.
+    const key = await secrets.get(SECRET_KEYS.anthropicApiKey)
+    if (key) {
+      return { type: 'api-key', key, env: { ANTHROPIC_API_KEY: key } }
+    }
+    return { type: 'cli' }
+  }
+
+  async isAvailable(): Promise<boolean> {
+    try {
+      await execFileAsync('opencode', ['--version'])
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Extract plain text from a Claude-style content block array or string. */
+function extractText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (block && typeof block === 'object' && (block as Record<string, unknown>)['type'] === 'text') {
+        return (block as Record<string, unknown>)['text'] as string
+      }
+    }
+  }
+  return ''
+}
+
+/**
+ * Parse a model string like "anthropic/claude-sonnet-4-20250514" into the
+ * providerID/modelID structure that the OpenCode SDK expects.
+ */
+function parseModelId(model: string): { providerID: string; modelID: string } {
+  const slash = model.indexOf('/')
+  if (slash === -1) {
+    return { providerID: 'anthropic', modelID: model }
+  }
+  return {
+    providerID: model.slice(0, slash),
+    modelID: model.slice(slash + 1),
+  }
+}
