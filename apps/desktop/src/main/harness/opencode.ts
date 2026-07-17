@@ -15,50 +15,72 @@ const execFileAsync = promisify(execFile)
  * providers through the Vercel AI SDK.
  *
  * Architecture:
- *   1. `createOpencode()` spawns an OpenCode server process on a local port.
+ *   1. A singleton OpenCode server is spawned on first use and reused across
+ *      all sessions — this avoids SQLite migration conflicts from multiple
+ *      server processes trying to migrate the same shared state DB.
  *   2. The SDK client connects over HTTP and manages sessions/messages.
  *   3. SSE event streaming provides real-time assistant output.
  *   4. The adapter translates OpenCode events into the HarnessEvent format
  *      consumed by the agent driver.
+ *
+ * Resume: OpenCode uses a parent-child session model. When `options.resume` is
+ * set, a new session is created with `parentID` pointing to the previous
+ * session, preserving its context.
  */
 export class OpenCodeHarnessAdapter implements HarnessAdapter {
   readonly id = 'opencode'
   readonly name = 'OpenCode'
   readonly defaultModel = 'anthropic/claude-sonnet-4-20250514'
 
-  /** Active server instances keyed by port. Cleaned up on adapter reset or app exit. */
-  private servers = new Map<number, { url: string; close(): void }>()
+  /** Singleton server — lazily started, shared across all runSession calls. */
+  private singleton: { url: string; client: OpencodeClient; close(): void } | null = null
+  private starting: Promise<{ url: string; client: OpencodeClient; close(): void }> | null = null
 
-  async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
-    const abortController = options.abortController ?? new AbortController()
-    let server: { url: string; close(): void } | undefined
-    let client: OpencodeClient
+  /**
+   * Get or create the shared OpenCode server. Only one process runs at a time
+   * to avoid SQLite migration conflicts.
+   */
+  private async getOrCreateServer(abortController?: AbortController): Promise<{ url: string; client: OpencodeClient; close(): void }> {
+    if (this.singleton) return this.singleton
 
-    // Decide how to connect: if a server URL is already configured (future
-    // setting), use it directly; otherwise spawn a fresh server.
-    const existingUrl = process.env.OPENCODE_SERVER_URL
-    if (existingUrl) {
-      client = createOpencodeClient({ baseUrl: existingUrl })
-    } else {
+    // If a start is already in-flight, wait for it.
+    if (this.starting) return this.starting
+
+    this.starting = (async () => {
       const port = 4096 + Math.floor(Math.random() * 1000)
       const result = await createOpencode({
         hostname: '127.0.0.1',
         port,
-        signal: abortController.signal,
-        config: {
-          ...(options.model ? { model: options.model } : {}),
-          ...(options.cwd ? { path: { root: options.cwd } } : {}),
-        },
+        signal: abortController?.signal,
+        timeout: 15_000,
       })
-      server = result.server
-      this.servers.set(port, server)
-      client = createOpencodeClient({ baseUrl: server.url })
-    }
+      const client = createOpencodeClient({ baseUrl: result.server.url })
+      this.singleton = { url: result.server.url, client, close: result.server.close }
+      return this.singleton
+    })()
 
     try {
-      // Create a session in OpenCode.
+      return await this.starting
+    } finally {
+      this.starting = null
+    }
+  }
+
+  async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
+    const abortController = options.abortController ?? new AbortController()
+    const { client } = await this.getOrCreateServer(abortController)
+
+    try {
+      // Create a session — if resuming, link to the parent session.
+      const sessionBody: { title: string; parentID?: string } = {
+        title: 'AgentKeeper Session',
+      }
+      if (options.resume) {
+        sessionBody.parentID = options.resume
+      }
       const sessionResp = await client.session.create({
-        body: { title: 'AgentKeeper Session' },
+        body: sessionBody,
+        query: { directory: options.cwd },
       })
       if (!sessionResp.data) {
         throw new Error(`Failed to create OpenCode session: ${JSON.stringify(sessionResp.error)}`)
@@ -107,12 +129,13 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       // Stream events from the SSE feed, translating each one into
       // HarnessEvents that the agent driver understands.
       yield* this.consumeEventStream(eventStream, sessionId)
-    } finally {
-      // Clean up: close the server we spawned (not external).
-      if (server) {
-        this.servers.delete(Number(new URL(server.url).port))
-        try { server.close() } catch { /* ignore */ }
+    } catch (error) {
+      // If the singleton server died, clear it so the next session spawns fresh.
+      if (isConnectionError(error)) {
+        this.singleton?.close()
+        this.singleton = null
       }
+      throw error
     }
   }
 
@@ -276,6 +299,14 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     }
   }
 
+  /** Shut down the singleton server. Called on app exit or adapter reset. */
+  close(): void {
+    if (this.singleton) {
+      this.singleton.close()
+      this.singleton = null
+    }
+  }
+
   // ─── Path helpers ────────────────────────────────────────────────────────
 
   getSessionsRoot(): string {
@@ -283,7 +314,6 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   }
 
   getCommandsDir(_scope: 'project' | 'global', _projectPath?: string): string {
-    // OpenCode doesn't have a commands directory concept — return empty.
     return ''
   }
 
@@ -317,9 +347,6 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   // ─── Auth ────────────────────────────────────────────────────────────────
 
   async resolveAuth(): Promise<HarnessAuth> {
-    // OpenCode reads provider keys from environment variables or
-    // ~/.config/opencode/auth.json. We surface any stored Anthropic key
-    // from the keychain as well, so sessions can reuse the same credential.
     const key = await secrets.get(SECRET_KEYS.anthropicApiKey)
     if (key) {
       return { type: 'api-key', key, env: { ANTHROPIC_API_KEY: key } }
@@ -365,4 +392,11 @@ function parseModelId(model: string): { providerID: string; modelID: string } {
     providerID: model.slice(0, slash),
     modelID: model.slice(slash + 1),
   }
+}
+
+/** Check if an error is a connection/network error that indicates the server died. */
+function isConnectionError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  const msg = error.message.toLowerCase()
+  return msg.includes('econnrefused') || msg.includes('econnreset') || msg.includes('socket hang up')
 }
