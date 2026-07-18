@@ -37,6 +37,7 @@ import {
   type Session,
   type PermissionMode,
   type ModelPricing,
+  type ModelsListResult,
   type RemoteSource,
   type ResetRequest,
   type ReviewEvent,
@@ -479,6 +480,10 @@ const api: AgentKeeperApi = {
   pricing: {
     getTable: () => invoke(IPC_CHANNELS.pricingGetTable) as Promise<Record<string, ModelPricing>>,
     refresh: () => invoke(IPC_CHANNELS.pricingRefresh) as Promise<Record<string, ModelPricing>>,
+  },
+  models: {
+    list: (harnessId?: string) => invoke(IPC_CHANNELS.modelsList, harnessId) as Promise<ModelsListResult>,
+    refresh: (harnessId?: string) => invoke(IPC_CHANNELS.modelsRefresh, harnessId) as Promise<ModelsListResult>,
   },
   drafts: {
     get: (sessionLocalId: string) =>

@@ -12,7 +12,7 @@ import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { useHarnessList, useActiveHarness, useSetActiveHarness } from '@/composables/useHarness'
 import { queryKeys } from '@/lib/queryKeys'
 import { pluginSettingsPanels } from '@/lib/pluginSettingsPanels'
-import { CLAUDE_MODELS } from '@/lib/models'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
@@ -101,7 +101,7 @@ function captureModifier(e: KeyboardEvent) {
   else if (e.key === 'Shift')   settings.value!.sendModifier = 'shift'
 }
 
-const MODEL_OPTIONS = CLAUDE_MODELS
+const { optionsFor: modelOptionsFor, effortLevelsFor, error: modelsError, isEmpty: noModels } = useModelsQuery()
 
 const { data: harnessList } = useHarnessList()
 const { data: activeHarness } = useActiveHarness()
@@ -315,12 +315,14 @@ async function onReset() {
                 </div>
                 <select
                   v-model="settings.defaultModel"
-                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
+                  :disabled="noModels"
+                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring disabled:opacity-50"
                 >
-                  <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
+                  <option v-for="m in modelOptionsFor(settings.defaultModel)" :key="m.value" :value="m.value">
                     {{ m.label }}
                   </option>
                 </select>
+                <p v-if="modelsError" class="text-xs text-destructive">Harness unavailable.</p>
               </div>
 
               <!-- Default effort -->
@@ -335,7 +337,7 @@ async function onReset() {
                   v-model="settings.defaultEffort"
                   class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
                 >
-                  <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+                  <option v-for="e in effortLevelsFor(settings.defaultModel)" :key="e" :value="e">
                     {{ e }}
                   </option>
                 </select>

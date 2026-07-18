@@ -28,6 +28,7 @@ import { transcriptComponents, transcriptPlugins } from '@/lib/comark-config'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 import type { Plan, PlanStep, PlanStepStatus, Session } from '@shared/ipc-contract'
 import type { AgencyScope } from '@shared/ipc-contract'
 import {
@@ -44,6 +45,7 @@ const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 const projectPathRef = computed(() => focusedProject.value?.path ?? '')
 const { agencies } = useAgenciesQuery(projectPathRef)
+const { resolvedLabelFor } = useModelsQuery()
 
 const planId = computed(() => route.params.id as string)
 const plan = ref<Plan | null>(null)
@@ -349,7 +351,7 @@ async function addStep() {
     summary: '',
     instructions: '',
     filesInScope: [],
-    model: 'claude-sonnet-4-5',
+    model: 'default',
     estimatedMinutes: 15,
     agent: 'main',
     parallel: false,
@@ -620,7 +622,7 @@ The patch must have exactly this structure (no other top-level keys):
       "summary": "one-line description of what this step does",
       "instructions": "detailed instructions for the agent executing this step",
       "filesInScope": ["path/to/relevant/file.ts"],
-      "model": "claude-haiku-4-5",
+      "model": "default",
       "estimatedMinutes": 10,
       "agent": "main",
       "parallel": false,
@@ -1091,7 +1093,7 @@ Guidelines:
                 <!-- Meta row -->
                 <div class="flex items-center gap-1.5 px-4 pb-2.5 text-xs text-muted-foreground flex-wrap">
                   <span class="size-2 rounded-full shrink-0" :class="modelDotClass(step.model)" />
-                  <span class="font-mono">{{ step.model }}</span>
+                  <span class="font-mono">{{ resolvedLabelFor(step.model) }}</span>
                   <span class="text-border">·</span>
                   <span>{{ fmtEst(step.estimatedMinutes) }}</span>
                   <template v-if="step.actualMinutes != null">

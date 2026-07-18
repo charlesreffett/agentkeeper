@@ -32,6 +32,7 @@ import { jiraTicketActivity } from './db/schema'
 import { sql, eq, desc } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
 import { getAllPricing, refreshFromLiteLLM } from './pricing'
+import { getAvailableModels, refreshAvailableModels, getDefaultModel } from './models'
 import {
   addComment as ghAddComment,
   createPR as ghCreatePR,
@@ -1312,6 +1313,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     return getAllPricing()
   })
 
+  ipcMain.handle(IPC_CHANNELS.modelsList, (_e, harnessId?: string) => getAvailableModels(harnessId))
+  ipcMain.handle(IPC_CHANNELS.modelsRefresh, (_e, harnessId?: string) => refreshAvailableModels(harnessId))
+
   ipcMain.handle(IPC_CHANNELS.draftsGet, (_e, sessionLocalId: string) =>
     getDraft(sessionLocalId))
   ipcMain.handle(IPC_CHANNELS.draftsSet, (_e, sessionLocalId: string, text: string, attachments: Attachment[]) =>
@@ -1457,7 +1461,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       id: a.id,
       name: a.name,
       available: await a.isAvailable(),
-      defaultModel: a.defaultModel,
+      defaultModel: await getDefaultModel(a.id),
     })))
   })
 
@@ -1467,7 +1471,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       id: active.id,
       name: active.name,
       available: await active.isAvailable(),
-      defaultModel: active.defaultModel,
+      defaultModel: await getDefaultModel(active.id),
     }
   })
 

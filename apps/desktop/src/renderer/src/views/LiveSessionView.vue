@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import {
   ArrowLeft,
   Brain,
+  ChevronDown,
   KeyRound,
   LayoutGrid,
   MoreHorizontal,
@@ -13,6 +14,7 @@ import Transcript from '@/components/transcript/Transcript.vue'
 import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
+import ModelPicker from '@/components/ModelPicker.vue'
 import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
 import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
@@ -25,9 +27,8 @@ import {
   type VerbosityState,
   hiddenCount as computeHiddenCount,
 } from '@/lib/verbosity'
-import { CLAUDE_MODELS } from '@/lib/models'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 import {
-  ROLE_EFFORT_VALUES,
   type Attachment,
   type PermissionMode,
   type RoleEffort,
@@ -396,7 +397,7 @@ function removeFromList() {
 
 // ─── Model / effort / permission selectors ───────────────────────────────────
 
-const MODEL_OPTIONS = CLAUDE_MODELS
+const { effortLevelsFor } = useModelsQuery()
 
 const PERM_MODE_LABELS: Record<PermissionMode, string> = {
   bypassPermissions: 'Bypass',
@@ -736,7 +737,7 @@ const streamingEventUuid = computed((): string | undefined => {
               @change="changeEffort($event)"
             >
               <option value="">default</option>
-              <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">{{ e }}</option>
+              <option v-for="e in effortLevelsFor(session.model)" :key="e" :value="e">{{ e }}</option>
             </select>
           </div>
           <div class="flex items-center gap-0.5 shrink-0">
@@ -753,15 +754,24 @@ const streamingEventUuid = computed((): string | undefined => {
               </option>
             </select>
           </div>
-          <select
-            :value="session.model ?? MODEL_OPTIONS[0]!.value"
+          <ModelPicker
+            :model-value="session.model ?? ''"
             :disabled="!canEditParams"
-            class="text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[72px] shrink-0"
-            :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
-            @change="changeModel(($event.target as HTMLSelectElement).value)"
+            align="end"
+            @update:model-value="changeModel"
           >
-            <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
-          </select>
+            <template #trigger="{ label }">
+              <button
+                type="button"
+                :disabled="!canEditParams"
+                class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
+                :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
+              >
+                <span class="truncate">{{ label }}</span>
+                <ChevronDown class="h-3 w-3 shrink-0" />
+              </button>
+            </template>
+          </ModelPicker>
         </template>
       </MessageInput>
     </div>

@@ -2,9 +2,12 @@
 import { computed } from 'vue'
 import { GitBranch, Users, Clock, Check, MessageSquare } from 'lucide-vue-next'
 import type { LiveSessionStatus, PlanTodo, TranscriptEvent } from '@shared/ipc-contract'
-import { shortModel, formatRelativeTime } from '@/lib/format'
+import { formatRelativeTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { usePlanProgress } from '@/composables/usePlanProgress'
+import { useModelsQuery } from '@/composables/useModelsQuery'
+
+const { resolvedLabelFor } = useModelsQuery()
 
 export interface SessionCardData {
   id: string
@@ -171,7 +174,7 @@ function badgeLabel(status: SessionCardData['status']): string {
     <div class="flex items-center flex-wrap gap-3 text-xs text-muted-foreground/70">
       <span v-if="session.model" class="flex items-center gap-1">
         <span class="size-1.5 rounded-full bg-muted-foreground/50 shrink-0" />
-        {{ shortModel(session.model) }}
+        {{ resolvedLabelFor(session.model) }}
       </span>
       <span v-if="session.branch" class="flex items-center gap-1">
         <GitBranch class="size-3 shrink-0" />

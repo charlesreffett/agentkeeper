@@ -3,7 +3,7 @@ import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { HarnessAdapter, HarnessAuth, HarnessCLIOptions, HarnessEvent, HarnessSessionOptions } from '@agentkeeper/core'
+import type { HarnessAdapter, HarnessAuth, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { resolveClaudeAuth } from '../secrets'
 
 const execFileAsync = promisify(execFile)
@@ -11,7 +11,6 @@ const execFileAsync = promisify(execFile)
 export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   readonly id = 'claude-code'
   readonly name = 'Claude Code'
-  readonly defaultModel = 'claude-sonnet-4-6'
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
     const auth = await resolveClaudeAuth()
@@ -59,13 +58,55 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
 
     if (options.abortController) {
       options.abortController.signal.addEventListener('abort', () => {
-        try { q.interrupt?.() } catch { /* ignore */ }
+        // interrupt() is async — a plain try/catch doesn't catch its rejection
+        // (e.g. "Operation aborted" when the connection is already tearing
+        // down), which otherwise surfaces as an unhandled rejection.
+        try { void q.interrupt?.()?.catch(() => { /* ignore */ }) } catch { /* ignore */ }
         try { (q as { close?: () => void }).close?.() } catch { /* ignore */ }
       }, { once: true })
     }
 
     for await (const msg of q) {
       yield msg as unknown as HarnessEvent
+    }
+  }
+
+  async getSupportedModels(): Promise<HarnessModelInfo[]> {
+    const auth = await resolveClaudeAuth()
+    const childEnv: Record<string, string | undefined> = {
+      ...process.env,
+      CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
+    }
+    if (auth.type === 'api-key' && auth.key) {
+      childEnv['ANTHROPIC_API_KEY'] = auth.key
+    }
+
+    const abortController = new AbortController()
+    const q = query({
+      prompt: 'noop',
+      options: {
+        abortController,
+        env: childEnv,
+        permissionMode: 'bypassPermissions',
+      },
+    })
+    try {
+      const models = await q.supportedModels()
+      return models.map((m) => ({
+        value: m.value,
+        label: m.displayName,
+        description: m.description,
+        resolvedModel: m.resolvedModel,
+        supportsEffort: m.supportsEffort,
+        effortLevels: m.supportedEffortLevels,
+        supportsFastMode: m.supportsFastMode,
+        supportsAutoMode: m.supportsAutoMode,
+        isDefault: m.value === 'default',
+      }))
+    } finally {
+      try { await q.interrupt?.() } catch { /* ignore */ }
+      try { (q as { close?: () => void }).close?.() } catch { /* ignore */ }
+      abortController.abort()
     }
   }
 

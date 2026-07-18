@@ -71,7 +71,7 @@ The plan must have this structure:
       "summary": "one-line description of what this step does",
       "instructions": "detailed instructions for the agent executing this step",
       "filesInScope": ["path/to/relevant/file.ts"],
-      "model": "claude-haiku-4-5",
+      "model": "default",
       "estimatedMinutes": 10,
       "agent": "main",
       "parallel": false,

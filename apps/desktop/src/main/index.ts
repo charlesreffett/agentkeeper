@@ -9,6 +9,7 @@ import * as net from 'node:net'
 import * as fsp from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
+import { warmAvailableModels } from './models'
 import { syncMobileServer, teardownMobileServer } from './mobile-server'
 import { settingsStore } from './settings'
 import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
@@ -172,6 +173,7 @@ app.whenReady().then(async () => {
   setWorkItemRegistry(registry)
   await activatePlugins(registry)
   registerIpcHandlers(registry)
+  warmAvailableModels()
   syncMobileServer(settingsStore.get())
   const win = createWindow()
   setWebContentsOnActiveHosts(win.webContents)

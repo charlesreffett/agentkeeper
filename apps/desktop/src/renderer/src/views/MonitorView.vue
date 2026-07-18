@@ -4,12 +4,14 @@ import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/sessions'
 import PageHeader from '@/components/PageHeader.vue'
 import type { LiveSession } from '@/stores/sessions'
-import { formatRelativeTime, shortModel } from '@/lib/format'
+import { formatRelativeTime } from '@/lib/format'
 import { getPlanProgress } from '@/composables/usePlanProgress'
 import type { PlanProgress } from '@/composables/usePlanProgress'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 
 const router = useRouter()
 const store = useSessionStore()
+const { resolvedLabelFor } = useModelsQuery()
 
 type SessionWithPlan = LiveSession & { plan: PlanProgress }
 
@@ -126,10 +128,10 @@ async function openSession(s: LiveSession) {
                 <span class="size-1.5 rounded-full shrink-0" :class="statusTone(s)" />
                 <span class="font-medium">{{ statusLabel(s) }}</span>
                 <span
-                  v-if="shortModel(s.model)"
+                  v-if="s.model"
                   class="text-muted-foreground font-mono"
                 >
-                  · {{ shortModel(s.model) }}
+                  · {{ resolvedLabelFor(s.model) }}
                 </span>
                 <span class="ml-auto text-muted-foreground tabular-nums">
                   {{ formatRelativeTime(s.lastActivityAt) }}

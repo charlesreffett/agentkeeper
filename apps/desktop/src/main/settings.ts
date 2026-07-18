@@ -7,7 +7,7 @@ import {
 } from '../shared/ipc-contract'
 
 const DEFAULTS: AppSettings = {
-  defaultModel: 'claude-sonnet-4-6',
+  defaultModel: 'default',
   defaultEffort: 'medium',
   defaultUseWorktree: false,
   enterToSend: false,

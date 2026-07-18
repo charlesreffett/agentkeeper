@@ -15,7 +15,7 @@ const session = computed(() => sessionStore.getSession(id.value))
 const loading = ref(true)
 
 const settings = ref<AppSettings>({
-  defaultModel: 'claude-sonnet-4-6',
+  defaultModel: 'default',
   defaultEffort: 'medium',
   defaultUseWorktree: false,
   enterToSend: false,
