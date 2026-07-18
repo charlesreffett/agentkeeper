@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import {
-  ROLE_EFFORT_VALUES,
   type Agency,
   type McpServerEntry,
   type PermissionMode,
@@ -9,8 +8,10 @@ import {
   type RoleEffort,
 } from '@shared/ipc-contract'
 import type { LiveSession } from '@/stores/sessions'
+import { ChevronDown } from 'lucide-vue-next'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
-import { CLAUDE_MODELS } from '@/lib/models'
+import { useModelsQuery } from '@/composables/useModelsQuery'
+import ModelPicker from '@/components/ModelPicker.vue'
 
 const props = defineProps<{
   session: LiveSession
@@ -36,7 +37,25 @@ const selectedRole = computed<Role | null>(() =>
     : null,
 )
 
-const MODEL_OPTIONS = CLAUDE_MODELS
+const { models: availableModels, effortLevelsFor, defaultValue: defaultModel, error: modelsError, isEmpty: noModels } = useModelsQuery()
+
+// Once the user explicitly picks or types a model, respect it — including a
+// deliberate off-list value in freeform mode. The redirect below is only for a
+// stale seeded default the user never touched.
+const modelTouched = ref(false)
+
+// A new draft seeds its model from the app default, which may be a stale value
+// the harness no longer offers. Redirect to the harness default rather than
+// starting a session on an unavailable model. (Live sessions keep their stored
+// value via optionsFor's pass-through row — this only runs in the draft panel.)
+watch([availableModels, () => props.session.model], () => {
+  if (!availableModels.value.length) return
+  if (modelTouched.value) return
+  const m = props.session.model
+  if (m && !availableModels.value.some((x) => x.value === m)) {
+    props.session.model = defaultModel.value
+  }
+}, { immediate: true })
 
 const PERMISSION_MODE_OPTIONS: { value: PermissionMode; label: string }[] = [
   { value: 'bypassPermissions', label: 'Bypass (auto-approve all)' },
@@ -104,8 +123,9 @@ function onBranchInput(event: Event) {
   cfg.value.branch = (event.target as HTMLInputElement).value
 }
 
-function onModelChange(event: Event) {
-  props.session.model = (event.target as HTMLSelectElement).value
+function onModelPicked(value: string) {
+  props.session.model = value
+  modelTouched.value = true
 }
 
 function onPermChange(event: Event) {
@@ -213,15 +233,23 @@ onMounted(() => {
       </div>
       <div class="space-y-1.5">
         <label class="text-sm font-medium">Model</label>
-        <select
-          :value="props.session.model ?? MODEL_OPTIONS[0]!.value"
-          class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-          @change="onModelChange"
+        <ModelPicker
+          :model-value="props.session.model ?? ''"
+          :disabled="noModels"
+          @update:model-value="onModelPicked"
         >
-          <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">
-            {{ m.label }}
-          </option>
-        </select>
+          <template #trigger="{ label }">
+            <button
+              type="button"
+              :disabled="noModels"
+              class="flex w-full items-center justify-between gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent transition-colors focus:outline-none focus:border-ring disabled:opacity-50"
+            >
+              <span class="truncate">{{ label }}</span>
+              <ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            </button>
+          </template>
+        </ModelPicker>
+        <p v-if="modelsError" class="text-xs text-destructive">Harness unavailable — no models. {{ modelsError }}</p>
       </div>
     </div>
     <p
@@ -238,7 +266,7 @@ onMounted(() => {
         class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
         @change="onEffortChange"
       >
-        <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+        <option v-for="e in effortLevelsFor(props.session.model)" :key="e" :value="e">
           {{ e }}
         </option>
       </select>

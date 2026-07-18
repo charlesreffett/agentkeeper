@@ -27,6 +27,24 @@ export interface HarnessSessionOptions {
   messageQueue?: AsyncIterable<{ type: 'user'; message: { role: 'user'; content: unknown } }>
 }
 
+export type HarnessEffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** Normalized model descriptor every harness adapter reports. The harness is the
+ *  only authority for which models exist — never cross-referenced against an
+ *  external DB, which would surface models the harness silently remaps. */
+export interface HarnessModelInfo {
+  value: string
+  label: string
+  description?: string
+  /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`. */
+  resolvedModel?: string
+  supportsEffort?: boolean
+  effortLevels?: HarnessEffortLevel[]
+  supportsFastMode?: boolean
+  supportsAutoMode?: boolean
+  isDefault?: boolean
+}
+
 export type HarnessEvent =
   | { type: 'user'; message: { role: 'user'; content: unknown }; uuid?: string; session_id?: string }
   | { type: 'assistant'; message: { role: 'assistant'; content: unknown; model?: string }; uuid?: string; session_id?: string }
@@ -36,10 +54,11 @@ export type HarnessEvent =
 export interface HarnessAdapter {
   readonly id: string
   readonly name: string
-  readonly defaultModel: string
-  readonly supportedModels?: string[]
 
   runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent>
+  /** Authoritative list of models this harness can run right now. Account/plan
+   *  dependent; may spin up a subprocess, so callers should cache. */
+  getSupportedModels(): Promise<HarnessModelInfo[]>
   getSessionsRoot(): string
   getCommandsDir(scope: 'project' | 'global', projectPath?: string): string
   getSkillsDir(scope: 'project' | 'global', projectPath?: string): string

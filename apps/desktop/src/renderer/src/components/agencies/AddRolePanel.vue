@@ -163,7 +163,7 @@ import {
 } from 'lucide-vue-next'
 import type { Agency, Role } from '../../../../shared/ipc-contract'
 import { queryKeys } from '@/lib/queryKeys'
-import { CLAUDE_MODELS } from '@/lib/models'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 
 const props = defineProps<{
   roles: Role[]
@@ -215,7 +215,7 @@ const ICON_MAP: Record<string, ReturnType<typeof markRaw>> = Object.fromEntries(
   ICONS.map(i => [i.name, i.component])
 )
 
-const MODELS = CLAUDE_MODELS
+const { models: MODELS } = useModelsQuery()
 
 function accentBg(accent: string | undefined) {
   return (ACCENT_PALETTE[accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).bg
@@ -239,7 +239,7 @@ const form = ref({
   id: '',
   icon: 'Layers',
   accent: 'blue',
-  model: 'claude-sonnet-4-6' as string,
+  model: 'default' as string,
   description: '',
 })
 
@@ -253,7 +253,7 @@ function syncId() {
 
 function cancelCreate() {
   showCreate.value = false
-  form.value = { name: '', id: '', icon: 'Layers', accent: 'blue', model: 'claude-sonnet-4-6', description: '' }
+  form.value = { name: '', id: '', icon: 'Layers', accent: 'blue', model: 'default', description: '' }
   createError.value = null
 }
 

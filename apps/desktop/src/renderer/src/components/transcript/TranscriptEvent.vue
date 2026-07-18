@@ -7,9 +7,12 @@ import ToolResultBlock from './ToolResultBlock.vue'
 import ImageBlock from './ImageBlock.vue'
 import UnknownBlock from './UnknownBlock.vue'
 import { CornerDownRight, Info, Pencil, RefreshCw } from 'lucide-vue-next'
-import { formatTimestamp, shortModel } from '@/lib/format'
+import { formatTimestamp } from '@/lib/format'
 import { computed, ref } from 'vue'
 import { type VerbosityState, DEFAULT_VERBOSITY_STATE, isBlockVisible } from '@/lib/verbosity'
+import { useModelsQuery } from '@/composables/useModelsQuery'
+
+const { resolvedLabelFor } = useModelsQuery()
 
 const props = defineProps<{
   event: TranscriptEvent
@@ -246,8 +249,8 @@ function onEditKeydown(e: KeyboardEvent) {
         >
           sub-agent
         </span>
-        <span v-if="shortModel(event.model)" class="font-mono text-muted-foreground/60">
-          {{ shortModel(event.model) }}
+        <span v-if="event.model" class="font-mono text-muted-foreground/60">
+          {{ resolvedLabelFor(event.model) }}
         </span>
         <span class="ml-auto tabular-nums text-muted-foreground/50">
           {{ formatTimestamp(event.timestamp) }}

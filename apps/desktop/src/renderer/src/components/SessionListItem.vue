@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { Pencil } from 'lucide-vue-next'
-import { shortModel, formatRelativeTime } from '@/lib/format'
+import { formatRelativeTime } from '@/lib/format'
+import { useModelsQuery } from '@/composables/useModelsQuery'
+
+const { resolvedLabelFor } = useModelsQuery()
 
 withDefaults(
   defineProps<{
@@ -98,9 +101,9 @@ const emit = defineEmits<{
         <span>·</span>
         <span>{{ messageCount }} msg</span>
       </template>
-      <template v-if="shortModel(model ?? null)">
+      <template v-if="model">
         <span>·</span>
-        <span class="font-mono">{{ shortModel(model ?? null) }}</span>
+        <span class="font-mono">{{ resolvedLabelFor(model) }}</span>
       </template>
     </div>
 

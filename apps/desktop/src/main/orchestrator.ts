@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { BrowserWindow } from 'electron'
 import { createSdkMcpServer, tool, type SdkMcpToolDefinition } from '@anthropic-ai/claude-agent-sdk'
 import { getHarness } from './harness/index'
+import { getDefaultModel } from './models'
 import { z } from 'zod'
 import type {
   AgencyInstance,
@@ -806,7 +807,7 @@ export function createOrchestratorMcp(
 
 async function generateTitle(prompt: string): Promise<string> {
   const instruction = `Summarize the following task as a concise title of at most 8 words. Output only the title, no punctuation, no quotes.\n\n${prompt}`
-  const stream = getHarness().runSession(instruction, { model: getHarness().defaultModel, cwd: process.cwd() })
+  const stream = getHarness().runSession(instruction, { model: await getDefaultModel(), cwd: process.cwd() })
   for await (const event of stream) {
     if (event.type === 'result' && (event as {subtype?:string}).subtype === 'success') {
       return ((event as {result?:string}).result ?? '').trim()

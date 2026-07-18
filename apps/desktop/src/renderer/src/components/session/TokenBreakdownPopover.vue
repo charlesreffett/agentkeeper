@@ -4,7 +4,7 @@ import { Info } from 'lucide-vue-next'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useSessionStore } from '@/stores/sessions'
 import { usePricingQuery } from '@/composables/usePricingQuery'
-import { shortModel } from '@/lib/format'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 
 const props = defineProps<{
   sessionId: string
@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const store = useSessionStore()
 const { estimateBreakdown } = usePricingQuery()
+const { resolvedLabelFor } = useModelsQuery()
 
 const tokenData = computed(() => store.sessionTokens[props.sessionId])
 const session = computed(() => store.getSession(props.sessionId))
@@ -77,7 +78,7 @@ function formatCost(usd: number): string {
       <div class="px-3 pt-2.5 pb-2 border-b border-border/60">
         <div class="font-semibold text-foreground">Token Breakdown</div>
         <div class="text-[10px] text-muted-foreground/60 mt-0.5">
-          {{ shortModel(session?.model ?? null) ?? 'unknown model' }}{{ !hasStoredCosts ? ' · estimated' : '' }}
+          {{ resolvedLabelFor(session?.model) }}{{ !hasStoredCosts ? ' · estimated' : '' }}
         </div>
       </div>
 

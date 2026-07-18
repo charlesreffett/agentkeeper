@@ -1,4 +1,5 @@
 import { getHarness } from './harness/index'
+import { getDefaultModel } from './models'
 import { getDiff, getStatus } from './git'
 import type { CommitSuggestion, CommitGroup } from '../shared/ipc-contract'
 
@@ -106,7 +107,7 @@ function parseResponse(text: string, allFiles: string[]): CommitSuggestion {
 // SDK — same binary the sessions use, picks up CLI credentials automatically.
 
 async function callClaude(prompt: string, cwd?: string): Promise<string> {
-  const stream = getHarness().runSession(prompt, { model: getHarness().defaultModel, cwd: cwd ?? process.cwd() })
+  const stream = getHarness().runSession(prompt, { model: await getDefaultModel(), cwd: cwd ?? process.cwd() })
   for await (const event of stream) {
     if (event.type === 'result') {
       if ((event as {subtype?:string}).subtype === 'success') return (event as {result?:string}).result ?? ''

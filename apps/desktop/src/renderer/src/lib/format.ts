@@ -32,11 +32,3 @@ export function formatTimestamp(ts: string): string {
     hour12: false,
   })
 }
-
-export function shortModel(model: string | null): string | null {
-  if (!model) return null
-  // 'claude-sonnet-4-6' → 'sonnet 4.6', 'claude-opus-4-7' → 'opus 4.7'
-  const m = model.match(/^claude-([a-z]+)-(\d+)-(\d+)/)
-  if (m) return `${m[1]} ${m[2]}.${m[3]}`
-  return model
-}

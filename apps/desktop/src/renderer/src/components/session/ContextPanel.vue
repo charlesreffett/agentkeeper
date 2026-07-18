@@ -6,7 +6,8 @@ import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePluginHealth } from '@/composables/usePluginHealth'
-import { formatRelativeTime, shortModel } from '@/lib/format'
+import { formatRelativeTime } from '@/lib/format'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 import type { Agent, GitDiffStatFile, LiveSessionStatus, Plan } from '@shared/ipc-contract'
 import type { WorkItem } from '@shared/ipc-contract'
 import type { PRDetail } from '@shared/github-types'
@@ -24,6 +25,7 @@ const router = useRouter()
 
 const { isHealthy: githubHealthy } = usePluginHealth('github')
 const { isHealthy: jiraHealthy } = usePluginHealth('jira')
+const { resolvedLabelFor } = useModelsQuery()
 
 const rootSession = computed(() => store.getSession(props.rootSessionId))
 
@@ -496,7 +498,7 @@ async function reconnectMcp() {
           </div>
           <div class="flex items-center justify-between gap-2">
             <span class="text-muted-foreground shrink-0">Model</span>
-            <span class="font-mono text-primary truncate text-right">{{ shortModel(rootSession?.model ?? null) ?? '—' }}</span>
+            <span class="font-mono text-primary truncate text-right">{{ resolvedLabelFor(rootSession?.model ?? null) }}</span>
           </div>
           <div class="flex items-center justify-between gap-2">
             <span class="text-muted-foreground shrink-0">Turns</span>

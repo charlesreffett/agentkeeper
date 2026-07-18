@@ -5,8 +5,7 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore } from '@/stores/jiraActivity'
 import type { Agency, Role, RoleEffort, WorkItem } from '@shared/ipc-contract'
-import { ROLE_EFFORT_VALUES } from '@shared/ipc-contract'
-import { CLAUDE_MODELS } from '@/lib/models'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 
 const props = defineProps<{
   open: boolean
@@ -28,7 +27,7 @@ const activityStore = useJiraActivityStore()
 
 // Solo fields
 const prompt = ref('')
-const model = ref('claude-sonnet-4-6')
+const model = ref('')
 const effort = ref<RoleEffort>('medium')
 const useWorktree = ref(false)
 const branch = ref('')
@@ -49,7 +48,14 @@ const selectedProjectPath = ref('')
 const starting = ref(false)
 const startError = ref<string | null>(null)
 
-const MODEL_OPTIONS = CLAUDE_MODELS
+const { models: availableModels, optionsFor: modelOptionsFor, effortLevelsFor, defaultValue: defaultModel, error: modelsError, isEmpty: noModels } = useModelsQuery()
+// Seed to the harness default; also redirect a stale/unavailable seed value.
+watch([availableModels, defaultModel], () => {
+  if (!availableModels.value.length) return
+  if (!model.value || !availableModels.value.some((m) => m.value === model.value)) {
+    model.value = defaultModel.value
+  }
+}, { immediate: true })
 
 const defaultPrompt = computed(
   () => `Work on ${props.item.externalRef}: ${props.item.title}`,
@@ -96,7 +102,7 @@ watch(
       mode.value = 'solo'
       prompt.value = defaultPrompt.value
       agencyPrompt.value = defaultPrompt.value
-      model.value = 'claude-sonnet-4-6'
+      model.value = 'default'
       effort.value = 'medium'
       useWorktree.value = false
       branch.value = ''
@@ -300,10 +306,12 @@ async function startAgency() {
             <label class="text-xs font-medium">Model</label>
             <select
               v-model="model"
-              class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:border-ring"
+              :disabled="noModels"
+              class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:border-ring disabled:opacity-50"
             >
-              <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value">{{ m.label }}</option>
+              <option v-for="m in modelOptionsFor(model)" :key="m.value" :value="m.value">{{ m.label }}</option>
             </select>
+            <p v-if="modelsError" class="text-xs text-destructive">Harness unavailable — no models.</p>
           </div>
         </div>
 
@@ -313,7 +321,7 @@ async function startAgency() {
             v-model="effort"
             class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:border-ring"
           >
-            <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">{{ e }}</option>
+            <option v-for="e in effortLevelsFor(model)" :key="e" :value="e">{{ e }}</option>
           </select>
         </div>
 

@@ -13,17 +13,9 @@ import { removeSessionFromPlans } from './plans'
 import { listAgencies } from './agencies'
 import { createWorktree } from './worktrees'
 import { recentProjectsStore } from './store'
+import { getAvailableModels } from './models'
 import { ROLE_EFFORT_VALUES } from '../shared/ipc-contract'
 import type { AppSettings, Attachment, ContentBlock, TranscriptEvent, StartSessionParams, AgencyScope, RoleEffort, PermissionMode } from '../shared/ipc-contract'
-
-/** Model list mirrors apps/desktop/src/renderer/src/lib/models.ts. The renderer
- *  lib can't be imported from main, so the values are duplicated here. */
-const MOBILE_MODELS = [
-  { value: 'claude-opus-4-8', label: 'Opus 4.8 (most capable)' },
-  { value: 'claude-opus-4-7', label: 'Opus 4.7' },
-  { value: 'claude-sonnet-4-6', label: 'Sonnet 4.6 (balanced)' },
-  { value: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 (fast)' },
-]
 
 const PERMISSION_MODES: PermissionMode[] = ['default', 'acceptEdits', 'bypassPermissions', 'plan']
 
@@ -148,10 +140,11 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
     if (req.method === 'GET' && pathname === '/api/new-session/options') {
       const settings = settingsStore.get()
       const projectPath = url.searchParams.get('projectPath')
+      const availableModels = await getAvailableModels()
       const payload: Record<string, unknown> = {
         projects: recentProjectsStore.list(),
         focusedProjectPath: recentProjectsStore.getFocused(),
-        models: MOBILE_MODELS,
+        models: availableModels.models.map((m) => ({ value: m.value, label: m.label })),
         defaultModel: settings.defaultModel,
         defaultEffort: settings.defaultEffort,
         defaultUseWorktree: settings.defaultUseWorktree,

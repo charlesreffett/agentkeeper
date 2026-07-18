@@ -2,13 +2,12 @@
 import { ref, watch, computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import {
-  ROLE_EFFORT_VALUES,
   type Role,
   type RoleDraft,
   type RoleScope,
 } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
-import { CLAUDE_MODELS_WITH_DEFAULT } from '@/lib/models'
+import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import PageHeader from '@/components/PageHeader.vue'
@@ -70,7 +69,7 @@ async function generate() {
   }
 }
 
-const MODEL_OPTIONS = CLAUDE_MODELS_WITH_DEFAULT
+const { optionsWithDefaultFor: modelOptionsWithDefaultFor, effortLevelsFor, error: modelsError } = useModelsQuery()
 
 
 function beginNew() {
@@ -305,10 +304,11 @@ watch(
                   v-model="form.model"
                   class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
                 >
-                  <option v-for="m in MODEL_OPTIONS" :key="m.value" :value="m.value || null">
+                  <option v-for="m in modelOptionsWithDefaultFor(form.model)" :key="m.value" :value="m.value || null">
                     {{ m.label }}
                   </option>
                 </select>
+                <p v-if="modelsError" class="text-xs text-destructive">Harness unavailable.</p>
               </div>
               <div class="space-y-1.5">
                 <label class="text-xs font-medium">Effort</label>
@@ -317,7 +317,7 @@ watch(
                   class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
                 >
                   <option :value="null">SDK default</option>
-                  <option v-for="e in ROLE_EFFORT_VALUES" :key="e" :value="e">
+                  <option v-for="e in effortLevelsFor(form.model)" :key="e" :value="e">
                     {{ e }}
                   </option>
                 </select>

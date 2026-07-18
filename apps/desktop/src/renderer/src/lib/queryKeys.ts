@@ -2,6 +2,9 @@ export const queryKeys = {
   pricing: {
     table: () => ['pricing', 'table'] as const,
   },
+  models: {
+    list: (harnessId?: string) => ['models', 'list', harnessId ?? ''] as const,
+  },
   settings: {
     all: () => ['settings'] as const,
     app: () => ['settings', 'app'] as const,

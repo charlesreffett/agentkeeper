@@ -737,6 +737,31 @@ export interface ModelPricing {
   cacheRead: number
 }
 
+export type ModelEffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** A model the active harness reports as runnable. The harness is the sole
+ *  authority; the app never invents or cross-references this list. */
+export interface AvailableModel {
+  value: string
+  label: string
+  description?: string
+  /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`.
+   *  Lets the UI always show the real model+version, not the alias label. */
+  resolvedModel?: string
+  supportsEffort?: boolean
+  effortLevels?: ModelEffortLevel[]
+  supportsFastMode?: boolean
+  supportsAutoMode?: boolean
+  isDefault?: boolean
+}
+
+export interface ModelsListResult {
+  harnessId: string
+  models: AvailableModel[]
+  /** Set when the harness could not be queried; models is then empty. */
+  error?: string
+}
+
 export interface LegacyDayEntry {
   date: string
   tokens: number
@@ -999,6 +1024,10 @@ export interface AgentKeeperApi {
     getTable: () => Promise<Record<string, ModelPricing>>
     refresh: () => Promise<Record<string, ModelPricing>>
   }
+  models: {
+    list: (harnessId?: string) => Promise<ModelsListResult>
+    refresh: (harnessId?: string) => Promise<ModelsListResult>
+  }
   drafts: {
     get: (sessionLocalId: string) => Promise<DraftRecord>
     set: (sessionLocalId: string, text: string, attachments: Attachment[]) => Promise<void>
@@ -1132,6 +1161,8 @@ export const IPC_CHANNELS = {
   sessionsResume: 'sessions:resume',
   sessionsDeletePersisted: 'sessions:deletePersisted',
   sessionsTouchPersisted: 'sessions:touchPersisted',
+  modelsList: 'models:list',
+  modelsRefresh: 'models:refresh',
   sessionsSetModel: 'sessions:setModel',
   sessionsSetEffort: 'sessions:setEffort',
   sessionsSetPermissionMode: 'sessions:setPermissionMode',
