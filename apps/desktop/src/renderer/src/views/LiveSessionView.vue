@@ -15,7 +15,6 @@ import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ModelPicker from '@/components/ModelPicker.vue'
-import DraftSessionPanel from '@/views/DraftSessionPanel.vue'
 import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
@@ -29,6 +28,7 @@ import {
 } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import {
+  type Agency,
   type Attachment,
   type PermissionMode,
   type RoleEffort,
@@ -397,7 +397,7 @@ function removeFromList() {
 
 // ─── Model / effort / permission selectors ───────────────────────────────────
 
-const { effortLevelsFor } = useModelsQuery()
+const { effortLevelsFor, models: availableModels, defaultValue: defaultModel } = useModelsQuery()
 
 const PERM_MODE_LABELS: Record<PermissionMode, string> = {
   bypassPermissions: 'Bypass',
@@ -407,12 +407,61 @@ const PERM_MODE_LABELS: Record<PermissionMode, string> = {
 }
 
 const canEditParams = computed(() => {
+  if (isDraft.value) return true
   const s = session.value?.status
   return s === 'idle' || s === 'suspended'
 })
 
+// ─── Draft config ──────────────────────────────────────────────────────────────
+
+const draftAgencies = ref<Agency[]>([])
+
+async function loadDraftAgencies() {
+  try {
+    draftAgencies.value = await window.agentkeeper.agencies.list(session.value?.projectPath ?? '')
+  } catch {
+    draftAgencies.value = []
+  }
+}
+
+watch(() => session.value?.projectPath, () => {
+  if (isDraft.value) void loadDraftAgencies()
+}, { immediate: true })
+
+watch(isDraft, (v) => { if (v) void loadDraftAgencies() })
+
+const draftCfg = computed(() => session.value?.draftConfig ?? null)
+
+const PERM_SHORT: Record<PermissionMode, string> = {
+  bypassPermissions: 'bypass',
+  acceptEdits: 'accept-edits',
+  default: 'default',
+  plan: 'plan',
+}
+
+const draftConfigSummary = computed(() => {
+  const s = session.value
+  if (!s) return ''
+  return [
+    s.model ?? 'claude-code',
+    s.effort ?? 'medium',
+    PERM_SHORT[s.permissionMode ?? 'bypassPermissions'],
+    draftCfg.value?.useWorktree ? (draftCfg.value.branch || 'worktree') : 'no worktree',
+  ].join(' · ')
+})
+
+watch([availableModels, () => session.value?.model], () => {
+  if (!isDraft.value) return
+  if (!availableModels.value.length) return
+  const m = session.value?.model
+  if (m && !availableModels.value.some(x => x.value === m)) {
+    if (session.value) session.value.model = defaultModel.value
+  }
+}, { immediate: true })
+
 async function changeModel(model: string) {
   if (!session.value) return
+  if (isDraft.value) { session.value.model = model; return }
   await window.agentkeeper.sessions.setModel(session.value.localId, model)
   session.value.model = model
 }
@@ -420,12 +469,14 @@ async function changeModel(model: string) {
 async function changeEffort(e: Event) {
   const val = (e.target as HTMLSelectElement).value
   if (!val || !session.value) return
+  if (isDraft.value) { session.value.effort = val as RoleEffort; return }
   await window.agentkeeper.sessions.setEffort(session.value.localId, val as RoleEffort)
   session.value.effort = val as RoleEffort
 }
 
 async function changePermissionMode(mode: PermissionMode) {
   if (!session.value) return
+  if (isDraft.value) { session.value.permissionMode = mode; return }
   await window.agentkeeper.sessions.setPermissionMode(session.value.localId, mode)
   session.value.permissionMode = mode
 }
@@ -642,7 +693,10 @@ const streamingEventUuid = computed((): string | undefined => {
               {{ session.error || promoteError }}
             </div>
           </div>
-          <DraftSessionPanel v-if="isDraft" :session="session" />
+          <div v-if="isDraft" class="flex-1 flex flex-col items-center justify-center text-center px-6 gap-2">
+            <p class="text-sm text-muted-foreground">No messages yet. The first message starts the session.</p>
+            <p class="text-[11px] text-muted-foreground/60 font-mono">{{ draftConfigSummary }}</p>
+          </div>
           <Transcript
             v-else
             ref="transcriptRef"
@@ -726,7 +780,33 @@ const streamingEventUuid = computed((): string | undefined => {
         @send="onSend"
         @stop="onStop"
       >
-        <template v-if="!isDraft" #toolbar-left>
+        <template #toolbar-left>
+          <!-- Agency pill — draft only -->
+          <div v-if="isDraft" class="flex items-center gap-0.5 shrink-0">
+            <select
+              :value="draftCfg?.agencyKey ?? ''"
+              class="text-[11px] text-muted-foreground bg-transparent border-none outline-none cursor-pointer"
+              @change="draftCfg && (draftCfg.agencyKey = ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">No agency</option>
+              <option
+                v-for="a in draftAgencies"
+                :key="`${a.scope}:${a.id}`"
+                :value="`${a.scope}:${a.id}`"
+              >{{ a.name }}</option>
+            </select>
+          </div>
+          <!-- Worktree pill — draft only -->
+          <div v-if="isDraft" class="flex items-center gap-0.5 shrink-0">
+            <button
+              type="button"
+              class="text-[11px] text-muted-foreground bg-transparent border-none outline-none cursor-pointer hover:text-foreground transition-colors"
+              :class="draftCfg?.useWorktree ? 'text-foreground' : ''"
+              @click="draftCfg && (draftCfg.useWorktree = !draftCfg.useWorktree)"
+            >
+              {{ draftCfg?.useWorktree ? (draftCfg.branch || 'worktree') : 'No worktree' }}
+            </button>
+          </div>
           <div class="flex items-center gap-0.5 shrink-0">
             <Brain :size="13" class="text-muted-foreground shrink-0" />
             <select
