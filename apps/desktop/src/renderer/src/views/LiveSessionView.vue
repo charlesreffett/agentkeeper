@@ -15,6 +15,7 @@ import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ModelPicker from '@/components/ModelPicker.vue'
+import PillSelect from '@/components/PillSelect.vue'
 import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
@@ -406,6 +407,15 @@ const PERM_MODE_LABELS: Record<PermissionMode, string> = {
   plan: 'Plan',
 }
 
+const effortOptions = computed(() => [
+  { value: '', label: 'default' },
+  ...effortLevelsFor(session.value?.model).map((e) => ({ value: e, label: e })),
+])
+
+const permModeOptions = Object.entries(PERM_MODE_LABELS).map(
+  ([value, label]) => ({ value, label }),
+)
+
 const canEditParams = computed(() => {
   if (isDraft.value) return true
   const s = session.value?.status
@@ -429,6 +439,11 @@ watch(() => session.value?.projectPath, () => {
 }, { immediate: true })
 
 watch(isDraft, (v) => { if (v) void loadDraftAgencies() })
+
+const agencyOptions = computed(() => [
+  { value: '', label: 'No agency' },
+  ...draftAgencies.value.map((a) => ({ value: `${a.scope}:${a.id}`, label: a.name })),
+])
 
 const draftCfg = computed(() => session.value?.draftConfig ?? null)
 
@@ -466,8 +481,7 @@ async function changeModel(model: string) {
   session.value.model = model
 }
 
-async function changeEffort(e: Event) {
-  const val = (e.target as HTMLSelectElement).value
+async function changeEffort(val: string) {
   if (!val || !session.value) return
   if (isDraft.value) { session.value.effort = val as RoleEffort; return }
   await window.agentkeeper.sessions.setEffort(session.value.localId, val as RoleEffort)
@@ -783,18 +797,11 @@ const streamingEventUuid = computed((): string | undefined => {
         <template #toolbar-left>
           <!-- Agency pill — draft only -->
           <div v-if="isDraft" class="flex items-center gap-0.5 shrink-0">
-            <select
-              :value="draftCfg?.agencyKey ?? ''"
-              class="text-[11px] text-muted-foreground bg-transparent border-none outline-none cursor-pointer"
-              @change="draftCfg && (draftCfg.agencyKey = ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="">No agency</option>
-              <option
-                v-for="a in draftAgencies"
-                :key="`${a.scope}:${a.id}`"
-                :value="`${a.scope}:${a.id}`"
-              >{{ a.name }}</option>
-            </select>
+            <PillSelect
+              :model-value="draftCfg?.agencyKey ?? ''"
+              :options="agencyOptions"
+              @update:model-value="draftCfg && (draftCfg.agencyKey = $event)"
+            />
           </div>
           <!-- Worktree pill — draft only -->
           <div v-if="isDraft" class="flex items-center gap-0.5 shrink-0">
@@ -809,30 +816,23 @@ const streamingEventUuid = computed((): string | undefined => {
           </div>
           <div class="flex items-center gap-0.5 shrink-0">
             <Brain :size="13" class="text-muted-foreground shrink-0" />
-            <select
-              :value="session.effort ?? ''"
+            <PillSelect
+              :model-value="session.effort ?? ''"
+              :options="effortOptions"
               :disabled="!canEditParams"
-              class="text-[11px] text-muted-foreground bg-transparent border-none outline-none max-w-[60px]"
-              :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
-              @change="changeEffort($event)"
-            >
-              <option value="">default</option>
-              <option v-for="e in effortLevelsFor(session.model)" :key="e" :value="e">{{ e }}</option>
-            </select>
+              trigger-class="max-w-[72px]"
+              @update:model-value="changeEffort"
+            />
           </div>
           <div class="flex items-center gap-0.5 shrink-0">
             <KeyRound :size="13" class="text-muted-foreground shrink-0" />
-            <select
-              :value="session.permissionMode ?? 'bypassPermissions'"
+            <PillSelect
+              :model-value="session.permissionMode ?? 'bypassPermissions'"
+              :options="permModeOptions"
               :disabled="!canEditParams"
-              class="text-[11px] text-muted-foreground bg-transparent border-none outline-none max-w-[80px]"
-              :class="canEditParams ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'"
-              @change="changePermissionMode(($event.target as HTMLSelectElement).value as PermissionMode)"
-            >
-              <option v-for="(label, val) in PERM_MODE_LABELS" :key="val" :value="val">
-                {{ label }}
-              </option>
-            </select>
+              trigger-class="max-w-[92px]"
+              @update:model-value="changePermissionMode($event as PermissionMode)"
+            />
           </div>
           <ModelPicker
             :model-value="session.model ?? ''"
