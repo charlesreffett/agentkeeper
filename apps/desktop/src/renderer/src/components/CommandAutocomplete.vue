@@ -35,7 +35,7 @@ watch(
 
 <template>
   <div
-    class="absolute bottom-full left-0 right-0 mb-1 z-50 rounded-lg border border-border bg-popover shadow-lg overflow-hidden"
+    class="absolute bottom-full left-0 right-0 mb-1 z-50 rounded-lg border border-popover-border bg-popover shadow-overlay overflow-hidden"
   >
     <ul ref="listRef" class="max-h-48 overflow-y-auto">
       <li

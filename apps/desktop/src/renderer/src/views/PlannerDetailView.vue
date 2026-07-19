@@ -1281,7 +1281,7 @@ Guidelines:
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
         @click.self="showStartModal = false"
       >
-        <div class="bg-card border border-border rounded-lg shadow-xl w-full max-w-sm mx-4 p-5 flex flex-col gap-4">
+        <div class="bg-popover border border-popover-border rounded-lg shadow-dialog w-full max-w-sm mx-4 p-5 flex flex-col gap-4">
           <h2 class="text-sm font-semibold">Start plan</h2>
 
           <div class="space-y-1.5">
