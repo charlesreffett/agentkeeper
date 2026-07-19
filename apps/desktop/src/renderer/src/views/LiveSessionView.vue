@@ -422,6 +422,13 @@ const canEditParams = computed(() => {
   return s === 'idle' || s === 'suspended'
 })
 
+// Agency sessions: role instances set their own model/effort and always run
+// bypassPermissions (see orchestrator.ts) — the session-level pills don't apply.
+const isAgencySession = computed(() => {
+  if (isDraft.value) return !!draftCfg.value?.agencyKey
+  return !!session.value?.agencyName
+})
+
 // ─── Draft config ──────────────────────────────────────────────────────────────
 
 const draftAgencies = ref<Agency[]>([])
@@ -457,11 +464,13 @@ const PERM_SHORT: Record<PermissionMode, string> = {
 const draftConfigSummary = computed(() => {
   const s = session.value
   if (!s) return ''
+  const worktreePart = draftCfg.value?.useWorktree ? (draftCfg.value.branch || 'worktree') : 'no worktree'
+  if (isAgencySession.value) return ['agency', worktreePart].join(' · ')
   return [
     s.model ?? 'claude-code',
     s.effort ?? 'medium',
     PERM_SHORT[s.permissionMode ?? 'bypassPermissions'],
-    draftCfg.value?.useWorktree ? (draftCfg.value.branch || 'worktree') : 'no worktree',
+    worktreePart,
   ].join(' · ')
 })
 
@@ -814,7 +823,7 @@ const streamingEventUuid = computed((): string | undefined => {
               {{ draftCfg?.useWorktree ? (draftCfg.branch || 'worktree') : 'No worktree' }}
             </button>
           </div>
-          <div class="flex items-center gap-0.5 shrink-0">
+          <div v-if="!isAgencySession" class="flex items-center gap-0.5 shrink-0">
             <Brain :size="13" class="text-muted-foreground shrink-0" />
             <PillSelect
               :model-value="session.effort ?? ''"
@@ -824,17 +833,21 @@ const streamingEventUuid = computed((): string | undefined => {
               @update:model-value="changeEffort"
             />
           </div>
-          <div class="flex items-center gap-0.5 shrink-0">
+          <div
+            class="flex items-center gap-0.5 shrink-0"
+            :title="isAgencySession ? 'Agency roles always run with bypassed permissions' : undefined"
+          >
             <KeyRound :size="13" class="text-muted-foreground shrink-0" />
             <PillSelect
-              :model-value="session.permissionMode ?? 'bypassPermissions'"
+              :model-value="isAgencySession ? 'bypassPermissions' : (session.permissionMode ?? 'bypassPermissions')"
               :options="permModeOptions"
-              :disabled="!canEditParams"
+              :disabled="isAgencySession || !canEditParams"
               trigger-class="max-w-[92px]"
               @update:model-value="changePermissionMode($event as PermissionMode)"
             />
           </div>
           <ModelPicker
+            v-if="!isAgencySession"
             :model-value="session.model ?? ''"
             :disabled="!canEditParams"
             align="end"
