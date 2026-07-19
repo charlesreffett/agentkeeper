@@ -1177,6 +1177,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
+  ipcMain.handle(
+    IPC_CHANNELS.agenciesSetFallbackModel,
+    (_event, instanceId: string, model: string) => {
+      try {
+        sessionRegistry.updateSession(instanceId, { model })
+      } catch (err) {
+        console.error('[ipc] agencies:setFallbackModel failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
   // Git utilities
   ipcMain.handle(IPC_CHANNELS.gitGetBranch, (_event, projectPath: string) => {
     return getBranch(projectPath)

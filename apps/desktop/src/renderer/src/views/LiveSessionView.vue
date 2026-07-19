@@ -486,7 +486,11 @@ watch([availableModels, () => session.value?.model], () => {
 async function changeModel(model: string) {
   if (!session.value) return
   if (isDraft.value) { session.value.model = model; return }
-  await window.agentkeeper.sessions.setModel(session.value.localId, model)
+  if (isAgencySession.value) {
+    await window.agentkeeper.agencies.setFallbackModel(session.value.localId, model)
+  } else {
+    await window.agentkeeper.sessions.setModel(session.value.localId, model)
+  }
   session.value.model = model
 }
 
@@ -846,25 +850,26 @@ const streamingEventUuid = computed((): string | undefined => {
               @update:model-value="changePermissionMode($event as PermissionMode)"
             />
           </div>
-          <ModelPicker
-            :model-value="session.model ?? ''"
-            :disabled="!canEditParams"
-            align="end"
-            @update:model-value="changeModel"
-          >
-            <template #trigger="{ label }">
-              <button
-                type="button"
-                :disabled="!canEditParams"
-                :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined"
-                class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
-                :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
-              >
-                <span class="truncate">{{ label }}</span>
-                <ChevronDown class="h-3 w-3 shrink-0" />
-              </button>
-            </template>
-          </ModelPicker>
+          <div :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined">
+            <ModelPicker
+              :model-value="session.model ?? ''"
+              :disabled="!canEditParams"
+              align="end"
+              @update:model-value="changeModel"
+            >
+              <template #trigger="{ label }">
+                <button
+                  type="button"
+                  :disabled="!canEditParams"
+                  class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
+                  :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
+                >
+                  <span class="truncate">{{ label }}</span>
+                  <ChevronDown class="h-3 w-3 shrink-0" />
+                </button>
+              </template>
+            </ModelPicker>
+          </div>
         </template>
       </MessageInput>
     </div>
