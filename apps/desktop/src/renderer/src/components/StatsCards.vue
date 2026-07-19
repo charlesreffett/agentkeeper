@@ -139,7 +139,7 @@ const projectTotal = computed(() =>
       <div class="relative mt-auto">
         <div
           v-if="displayBreakdown"
-          class="absolute top-full mt-1.5 left-0 right-0 bg-popover text-popover-foreground border rounded-md shadow-md text-xs p-2 pointer-events-none"
+          class="absolute top-full mt-1.5 left-0 right-0 bg-popover text-popover-foreground border border-popover-border rounded-md shadow-overlay text-xs p-2 pointer-events-none"
         >
           <div class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
             <span class="text-muted-foreground">Input</span>

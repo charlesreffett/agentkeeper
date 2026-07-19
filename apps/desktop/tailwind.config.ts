@@ -42,7 +42,8 @@ export default {
   			},
   			popover: {
   				DEFAULT: 'var(--popover)',
-  				foreground: 'var(--popover-foreground)'
+  				foreground: 'var(--popover-foreground)',
+  				border: 'var(--popover-border)'
   			},
   			card: {
   				DEFAULT: 'var(--card)',
@@ -58,6 +59,10 @@ export default {
   				border: 'var(--sidebar-border)',
   				ring: 'var(--sidebar-ring)'
   			}
+  		},
+  		boxShadow: {
+  			overlay: 'var(--shadow-popover)',
+  			dialog: 'var(--shadow-dialog)'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',
