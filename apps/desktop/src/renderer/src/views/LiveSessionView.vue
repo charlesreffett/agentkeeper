@@ -465,7 +465,7 @@ const draftConfigSummary = computed(() => {
   const s = session.value
   if (!s) return ''
   const worktreePart = draftCfg.value?.useWorktree ? (draftCfg.value.branch || 'worktree') : 'no worktree'
-  if (isAgencySession.value) return ['agency', worktreePart].join(' · ')
+  if (isAgencySession.value) return ['agency', s.model ?? 'claude-code', worktreePart].join(' · ')
   return [
     s.model ?? 'claude-code',
     s.effort ?? 'medium',
@@ -847,7 +847,6 @@ const streamingEventUuid = computed((): string | undefined => {
             />
           </div>
           <ModelPicker
-            v-if="!isAgencySession"
             :model-value="session.model ?? ''"
             :disabled="!canEditParams"
             align="end"
@@ -857,6 +856,7 @@ const streamingEventUuid = computed((): string | undefined => {
               <button
                 type="button"
                 :disabled="!canEditParams"
+                :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined"
                 class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
                 :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
               >
