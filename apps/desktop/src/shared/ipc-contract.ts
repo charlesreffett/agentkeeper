@@ -879,6 +879,7 @@ export interface AgentKeeperApi {
     ) => Promise<void>
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
     resume: (instanceId: string) => Promise<AgencyInstance>
+    setFallbackModel: (instanceId: string, model: string) => Promise<void>
   }
   skills: {
     list: (projectPath: string) => Promise<Skill[]>
@@ -1176,6 +1177,7 @@ export const IPC_CHANNELS = {
   sessionsEditAndRerun: 'sessions:editAndRerun',
   sessionsUndoEditAndRerun: 'sessions:undoEditAndRerun',
   agenciesResume: 'agencies:resume',
+  agenciesSetFallbackModel: 'agencies:setFallbackModel',
   dialogOpenFiles: 'dialog:openFiles',
   gitGetBranch: 'git:getBranch',
   gitGetStatus: 'git:getStatus',

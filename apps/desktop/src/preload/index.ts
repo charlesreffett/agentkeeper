@@ -237,6 +237,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.agenciesStart, params) as Promise<never>,
     resume: (instanceId: string) =>
       invoke(IPC_CHANNELS.agenciesResume, instanceId) as Promise<never>,
+    setFallbackModel: (instanceId: string, model: string) =>
+      invoke(IPC_CHANNELS.agenciesSetFallbackModel, instanceId, model) as Promise<void>,
   },
   skills: {
     list: (projectPath: string) =>

@@ -1135,6 +1135,9 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
   const projectPath = session.projectPath
   const worktreePath = session.worktreePath
   const branch = session.branch
+  // Session-level model recorded at spawn — the fallback for roles that set no
+  // model of their own, matching `role.model ?? params.model` in startAgency().
+  const sessionModel = session.model ?? undefined
 
   const allAgencies = await listAgencies(projectPath)
   const agency = allAgencies.find((a) => a.id === agencyId && a.scope === agencyScope)
@@ -1232,6 +1235,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       })
 
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
+      const resolvedModel = role.model ?? sessionModel
 
       await startSession(
         {
@@ -1242,7 +1246,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
           ...(worktreePath ? { worktreePath } : {}),
           initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
           systemPromptAppend,
-          ...(role.model ? { model: role.model } : {}),
+          ...(resolvedModel ? { model: resolvedModel } : {}),
           ...(role.effort ? { effort: role.effort } : {}),
           ...(withOrchestraMcp(role.allowedTools)
             ? { allowedTools: withOrchestraMcp(role.allowedTools) }
@@ -1261,7 +1265,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
 
       runtime.restartParamsByRole.set(slot.roleId, {
         systemPromptAppend,
-        model: role.model ?? undefined,
+        model: resolvedModel,
         effort: role.effort ?? undefined,
         allowedTools: withOrchestraMcp(role.allowedTools),
       })
