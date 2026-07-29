@@ -43,6 +43,17 @@ interface AgentInstance {
   isOverflow: boolean
 }
 
+/** Backstop so an orchestrator bug degrades to an error string instead of a
+ *  permanent hang. Generous — a peer legitimately works for many minutes. */
+const SEND_MESSAGE_TIMEOUT_MS =
+  Number(process.env['AGENTKEEPER_SEND_MESSAGE_TIMEOUT_MS']) || 15 * 60_000
+
+function timeoutLabel(): string {
+  return SEND_MESSAGE_TIMEOUT_MS >= 60_000
+    ? `${Math.round(SEND_MESSAGE_TIMEOUT_MS / 60_000)} minutes`
+    : `${Math.round(SEND_MESSAGE_TIMEOUT_MS / 1000)} seconds`
+}
+
 interface PendingMessage {
   content: string
   resolve: (r: string) => void
@@ -424,10 +435,24 @@ async function injectAndWait(
   }
 
   let status: Awaited<ReturnType<typeof waitForNextIdle>>
+  let timeoutTimer: NodeJS.Timeout | undefined
   try {
-    status = await waitForNextIdle(toSessionId)
-  } catch {
+    status = await Promise.race([
+      waitForNextIdle(toSessionId),
+      new Promise<never>((_, reject) => {
+        timeoutTimer = setTimeout(
+          () => reject(new Error('send_message timeout')),
+          SEND_MESSAGE_TIMEOUT_MS,
+        )
+      }),
+    ])
+  } catch (err) {
+    if (err instanceof Error && err.message === 'send_message timeout') {
+      return `Error: "${inst.instanceId}" did not reply within ${timeoutLabel()} — it may be stuck. The message was delivered; check that agent's session or retry.`
+    }
     return `Error: target session "${inst.instanceId}" could not be awaited.`
+  } finally {
+    clearTimeout(timeoutTimer)
   }
 
   if (status !== 'idle') {
@@ -555,10 +580,22 @@ async function routeMessage(
       }
     }
 
-    // Enqueue — block until a slot opens
+    // Enqueue — block until a slot opens, or time out so a stuck role can't
+    // hold the caller forever. Entry identity decides who owns the resolution:
+    // once drainPendingForRole shifts it out, the timeout is a no-op and
+    // injectAndWait's own timeout takes over.
     return new Promise<string>((resolve, reject) => {
       if (!runtime.pendingByRole.has(toRole)) runtime.pendingByRole.set(toRole, [])
-      runtime.pendingByRole.get(toRole)!.push({ content: wrapMessage(fromInst.instanceId, content), resolve, reject })
+      const entry: PendingMessage = { content: wrapMessage(fromInst.instanceId, content), resolve, reject }
+      runtime.pendingByRole.get(toRole)!.push(entry)
+      setTimeout(() => {
+        const queue = runtime.pendingByRole.get(toRole)
+        const idx = queue?.indexOf(entry) ?? -1
+        if (idx >= 0) {
+          queue!.splice(idx, 1)
+          resolve(`Error: no "${toRole}" instance became available within ${timeoutLabel()}. The message was NOT delivered; retry later.`)
+        }
+      }, SEND_MESSAGE_TIMEOUT_MS)
     })
   }
 
