@@ -249,15 +249,22 @@ async function consumeStream(session: ActiveSession): Promise<void> {
 
       session.events.push(msg)
 
-      // The CLI resumes a parked turn on its own after background completion: a
-      // synthetic user message (origin task-notification) followed by a fresh
-      // assistant turn. Any turn activity means we are no longer waiting.
-      if (
-        session.backgroundParked &&
-        (msg.type === 'user' || msg.type === 'assistant' || msg.type === 'stream_event')
-      ) {
-        clearBackgroundPark(session)
-        setStatus(session, 'running')
+      // The CLI resumes a parked turn on its own after background completion
+      // (task_notification, then a fresh turn whose result carries
+      // origin.kind 'task-notification'). Background-task messages echo into
+      // the parent stream tagged with parent_tool_use_id — those are progress,
+      // not resumption, and must not clear the park (clearing disarms the
+      // ceiling timer, which is the only exit if the task hangs).
+      if (session.backgroundParked) {
+        const anyMsg = msg as unknown as { subtype?: string; parent_tool_use_id?: string | null }
+        const isNotification = msg.type === 'system' && anyMsg.subtype === 'task_notification'
+        const isParentTurnActivity =
+          (msg.type === 'user' || msg.type === 'assistant' || msg.type === 'stream_event') &&
+          !anyMsg.parent_tool_use_id
+        if (isNotification || isParentTurnActivity) {
+          clearBackgroundPark(session)
+          setStatus(session, 'running')
+        }
       }
 
       if (msg.type === 'system') {
