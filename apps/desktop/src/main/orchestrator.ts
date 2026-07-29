@@ -494,10 +494,16 @@ async function routeMessage(
       return `Error: "${to}" is already waiting on your reply (directly or transitively). Calling send_message now would deadlock. Respond with plain text instead.`
     }
 
+    // Injecting into a mid-turn instance would interleave two conversations and
+    // race both callers' reply capture on the same idle transition.
+    if (runtime.busySessions.has(targetInst.localId)) {
+      return `Error: instance "${to}" is currently handling another message. Retry shortly, or send to role "${targetRoleId}" to reach any idle instance.`
+    }
+
     addWait(fromSessionId, targetInst.localId)
     setAgentStatus(fromSessionId, 'blocked')
     try {
-      return await injectAndWait(runtime, targetInst, wrapMessage(fromInst.instanceId, content))
+      return await deliverToInstance(runtime, targetInst, wrapMessage(fromInst.instanceId, content))
     } catch (err) {
       return `Error: ${err instanceof Error ? err.message : String(err)}`
     } finally {
