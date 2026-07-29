@@ -69,11 +69,6 @@ function parseRoleFile(
     (ROLE_EFFORT_VALUES as string[]).includes(parsed['effort'] as string)
       ? (parsed['effort'] as RoleEffort)
       : null
-  const allowedTools = Array.isArray(parsed['allowedTools'])
-    ? (parsed['allowedTools'] as unknown[]).filter(
-        (t): t is string => typeof t === 'string',
-      )
-    : null
   const icon = typeof parsed['icon'] === 'string' ? parsed['icon'] : undefined
   const accent = typeof parsed['accent'] === 'string' ? parsed['accent'] : undefined
   return {
@@ -84,7 +79,6 @@ function parseRoleFile(
     description,
     model,
     effort,
-    allowedTools,
     systemPrompt: body.trimEnd(),
     icon,
     accent,
@@ -98,8 +92,6 @@ function serializeRole(role: Omit<Role, 'scope' | 'path'>): string {
   }
   if (role.model) fm['model'] = role.model
   if (role.effort) fm['effort'] = role.effort
-  if (role.allowedTools && role.allowedTools.length)
-    fm['allowedTools'] = role.allowedTools
   if (role.icon) fm['icon'] = role.icon
   if (role.accent) fm['accent'] = role.accent
   return `---\n${stringifyYaml(fm).trimEnd()}\n---\n\n${role.systemPrompt.trim()}\n`
@@ -182,12 +174,10 @@ Respond with ONLY a JSON object — no markdown fences, no prose:
   "id": "<lowercase alphanumeric + dashes only, ≤ 30 chars, must match ^[a-z0-9][a-z0-9-]*$>",
   "name": "<short display name, title case, ≤ 30 chars>",
   "description": "<one sentence, what this role does, ≤ 120 chars>",
-  "allowedTools": ["<tool name>", ...],
   "systemPrompt": "<detailed system prompt, 150–400 words, written in second person ('You are…'), covering the role's responsibilities, constraints, and working style>"
 }
 
-For allowedTools, choose from: Read, Edit, Write, Bash, Glob, Grep, WebFetch, WebSearch, Agent, TodoWrite, mcp__agentkeeper__send_message.
-Pick only what the role genuinely needs — a reviewer needs Read/Grep/Glob but not Write/Bash; a developer needs most tools.`
+Roles run with the full default toolset — express behavioral constraints (e.g. "you review, you do not edit") in the systemPrompt, not as tool lists.`
 
 const VALID_ID_RE = /^[a-z0-9][a-z0-9-]*$/
 
@@ -208,15 +198,11 @@ function parseRoleGenerationResponse(text: string): RolesGenerateResult {
   const name = String(parsed.name ?? '')
   const rawId = String(parsed.id ?? '')
   const id = VALID_ID_RE.test(rawId) ? rawId : slugify(name) || 'new-role'
-  const allowedTools = Array.isArray(parsed.allowedTools)
-    ? (parsed.allowedTools as unknown[]).filter((t) => typeof t === 'string').map(String)
-    : null
 
   return {
     id,
     name,
     description: String(parsed.description ?? ''),
-    allowedTools: allowedTools && allowedTools.length > 0 ? allowedTools : null,
     systemPrompt: String(parsed.systemPrompt),
   }
 }

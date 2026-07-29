@@ -175,7 +175,6 @@ async function startSolo() {
       ...(resolvedBranch ? { branch: resolvedBranch } : {}),
       ...(selectedRole?.name ? { roleName: selectedRole.name } : {}),
       ...(selectedRole?.systemPrompt ? { systemPromptAppend: selectedRole.systemPrompt } : {}),
-      ...(selectedRole?.allowedTools?.length ? { allowedTools: selectedRole.allowedTools } : {}),
     })
     await activityStore.addEntry(props.item.externalRef, 'claude', 'Claude opened session')
     emit('started')

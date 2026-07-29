@@ -320,7 +320,8 @@ export interface StartSessionParams {
   permissionMode?: PermissionMode
   /** Role-derived options — appended to the default Claude Code preset. */
   systemPromptAppend?: string
-  allowedTools?: string[]
+  /** Tools removed from the model's context entirely (hard deny). */
+  disallowedTools?: string[]
   roleId?: string
   /** 1-based instance index within the role. */
   roleInstanceIndex?: number
@@ -357,7 +358,6 @@ export interface AddAgentParams {
   effort?: RoleEffort
   permissionMode?: PermissionMode
   systemPromptAppend?: string
-  allowedTools?: string[]
 }
 
 // ─── Worktrees ──────────────────────────────────────────────────────────────
@@ -426,7 +426,6 @@ export interface Role {
   description: string
   model: string | null
   effort: RoleEffort | null
-  allowedTools: string[] | null
   systemPrompt: string
   icon?: string
   accent?: string
@@ -438,7 +437,6 @@ export interface RolesGenerateResult {
   id: string
   name: string
   description: string
-  allowedTools: string[] | null
   systemPrompt: string
 }
 

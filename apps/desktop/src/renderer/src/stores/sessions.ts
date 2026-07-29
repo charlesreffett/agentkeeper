@@ -64,8 +64,8 @@ function computeSessionStatus(agentList: Agent[]): LiveSessionStatus {
 }
 
 function plainParams(p: StartSessionParams): StartSessionParams {
-  // JSON round-trip strips Vue reactive Proxies at any depth (e.g. allowedTools
-  // being a reactive array accessed through a role proxy).
+  // JSON round-trip strips Vue reactive Proxies at any depth (e.g. an array
+  // accessed through a role proxy).
   return JSON.parse(JSON.stringify(toRaw(p))) as StartSessionParams
 }
 
@@ -1012,7 +1012,6 @@ export const useSessionStore = defineStore('sessions', () => {
       projectPath,
       ...(worktreePath ? { worktreePath } : {}),
       ...(role?.systemPrompt ? { systemPromptAppend: role.systemPrompt } : {}),
-      ...(role?.allowedTools && role.allowedTools.length ? { allowedTools: role.allowedTools } : {}),
       initialPrompt: trimmedPrompt,
       ...(draft.model ? { model: draft.model } : {}),
       ...(draft.effort ? { effort: draft.effort } : {}),

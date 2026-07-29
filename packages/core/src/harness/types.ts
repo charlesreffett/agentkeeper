@@ -21,7 +21,10 @@ export interface HarnessSessionOptions {
   effort?: string
   resume?: string
   abortController?: AbortController
-  allowedTools?: string[]
+  /** Tools removed from the model's context entirely. The SDK's `allowedTools`
+   *  is only a permission-prompt bypass list — inert under bypassPermissions —
+   *  so a real restriction must go through `disallowedTools`. */
+  disallowedTools?: string[]
   includePartialMessages?: boolean
   settingSources?: string[]
   messageQueue?: AsyncIterable<{ type: 'user'; message: { role: 'user'; content: unknown } }>

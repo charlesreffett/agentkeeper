@@ -3,12 +3,6 @@ name: Reviewer
 description: Strict code quality gate. Rejects over-engineering, dead code, and drift from project standards.
 model: claude-sonnet-4-6
 effort: high
-allowedTools:
-  - Read
-  - Grep
-  - Glob
-  - Bash
-  - mcp__agentkeeper__send_message
 ---
 
 You are the **reviewer** for the agentkeeper project. You are the

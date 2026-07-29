@@ -33,7 +33,6 @@ interface AgencyRoleRestartParams {
   systemPromptAppend: string
   model: string | undefined
   effort: string | undefined
-  allowedTools: string[] | undefined
 }
 
 interface AgentInstance {
@@ -79,11 +78,6 @@ interface RuntimeAgency {
 const instances = new Map<string, RuntimeAgency>()
 /** localId → instanceId — global index so createOrchestratorMcp can look up without inst ref */
 const sessionToRuntimeId = new Map<string, string>()
-
-function withOrchestraMcp(tools: string[] | null | undefined): string[] | undefined {
-  if (!tools?.length) return undefined
-  return [...new Set([...tools, 'mcp__agentkeeper__send_message'])]
-}
 
 const waitingFor = new Map<string, Set<string>>()
 
@@ -185,7 +179,7 @@ function computeAllowedPeerIds(
 async function spawnOverflow(
   runtime: RuntimeAgency,
   roleId: string,
-  rolesById: Map<string, { name: string; model: string | null; effort: string | null; allowedTools: string[] | null; systemPrompt: string }>,
+  rolesById: Map<string, { name: string; model: string | null; effort: string | null; systemPrompt: string }>,
   allInstanceIds: string[],
 ): Promise<AgentInstance> {
   const existing = runtime.instancesByRole.get(roleId) ?? []
@@ -255,7 +249,6 @@ async function spawnOverflow(
         systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
         ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
-        ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
         agencyId: runtime.agencyId,
         agencyScope: runtime.agencyScope,
         roleId,
@@ -409,7 +402,6 @@ async function injectAndWait(
         ...(restart.effort
           ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort }
           : {}),
-        ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
         agencyId: runtime.agencyId,
         agencyScope: runtime.agencyScope,
         roleId: inst.roleId,
@@ -596,7 +588,7 @@ function buildAllInstanceIds(runtime: RuntimeAgency): string[] {
 
 async function buildRolesById(
   runtime: RuntimeAgency,
-): Promise<Map<string, { name: string; model: string | null; effort: string | null; allowedTools: string[] | null; systemPrompt: string }>> {
+): Promise<Map<string, { name: string; model: string | null; effort: string | null; systemPrompt: string }>> {
   const allRoles = await listRoles(runtime.projectPath)
   return new Map(allRoles.map((r) => [r.id, r]))
 }
@@ -870,7 +862,6 @@ function handleAgentFailure(
           systemPromptAppend: restart.systemPromptAppend,
           ...(restart.model ? { model: restart.model } : {}),
           ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
-          ...(restart.allowedTools ? { allowedTools: restart.allowedTools } : {}),
           agencyId: runtime.agencyId,
           agencyScope: runtime.agencyScope,
           roleId: inst.roleId,
@@ -1009,7 +1000,6 @@ export async function startAgency(
       systemPromptAppend: '', // will be filled per-instance below
       model: resolvedModel ?? undefined,
       effort: role.effort ?? undefined,
-      allowedTools: withOrchestraMcp(role.allowedTools),
     }
 
     for (let idx = 1; idx <= count; idx++) {
@@ -1051,9 +1041,6 @@ export async function startAgency(
           ...(resolvedModel ? { model: resolvedModel } : {}),
           ...(role.effort ? { effort: role.effort } : {}),
           systemPromptAppend,
-          ...(withOrchestraMcp(role.allowedTools)
-            ? { allowedTools: withOrchestraMcp(role.allowedTools) }
-            : {}),
           agencyId: agency.id,
           agencyScope: agency.scope,
           roleId: slot.roleId,
@@ -1248,9 +1235,6 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
           systemPromptAppend,
           ...(resolvedModel ? { model: resolvedModel } : {}),
           ...(role.effort ? { effort: role.effort } : {}),
-          ...(withOrchestraMcp(role.allowedTools)
-            ? { allowedTools: withOrchestraMcp(role.allowedTools) }
-            : {}),
           agencyId: agency.id,
           agencyScope: agency.scope,
           roleId: slot.roleId,
@@ -1267,7 +1251,6 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         systemPromptAppend,
         model: resolvedModel,
         effort: role.effort ?? undefined,
-        allowedTools: withOrchestraMcp(role.allowedTools),
       })
 
       const inst: AgentInstance = {

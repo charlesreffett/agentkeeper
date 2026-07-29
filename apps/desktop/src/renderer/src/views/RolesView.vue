@@ -28,11 +28,9 @@ const form = ref<RoleDraft & { scope: RoleScope }>({
   description: '',
   model: null,
   effort: 'medium',
-  allowedTools: null,
   systemPrompt: '',
   scope: 'project',
 })
-const allowedToolsText = ref('')
 const saving = ref(false)
 const message = ref<string | null>(null)
 
@@ -57,8 +55,6 @@ async function generate() {
     form.value.id = uniqueRoleId(result.id)
     form.value.name = result.name
     form.value.description = result.description
-    form.value.allowedTools = result.allowedTools
-    allowedToolsText.value = result.allowedTools?.join(', ') ?? ''
     form.value.systemPrompt = result.systemPrompt
   } catch (e) {
     if (!handleAuthError(e)) {
@@ -81,11 +77,9 @@ function beginNew() {
     description: '',
     model: null,
     effort: 'medium',
-    allowedTools: null,
     systemPrompt: '',
     scope: 'project',
   }
-  allowedToolsText.value = ''
   resetGenerate()
 }
 
@@ -98,11 +92,9 @@ function beginEdit(role: Role) {
     description: role.description,
     model: role.model,
     effort: role.effort,
-    allowedTools: role.allowedTools,
     systemPrompt: role.systemPrompt,
     scope: role.scope,
   }
-  allowedToolsText.value = (role.allowedTools ?? []).join(', ')
   resetGenerate()
 }
 
@@ -118,14 +110,6 @@ function uniqueRoleId(base: string): string {
   let n = 2
   while (existing.has(`${base}-${n}`)) n++
   return `${base}-${n}`
-}
-
-function parseCsv(text: string): string[] | null {
-  const items = text
-    .split(/[,\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-  return items.length ? items : null
 }
 
 function validId(s: string): boolean {
@@ -156,7 +140,6 @@ async function save() {
       description: form.value.description.trim(),
       model: form.value.model || null,
       effort: form.value.effort || null,
-      allowedTools: parseCsv(allowedToolsText.value),
       systemPrompt: form.value.systemPrompt.trim(),
     }
     await saveRole({ scope: form.value.scope, path: projectPath.value, draft })
@@ -322,16 +305,6 @@ watch(
                   </option>
                 </select>
               </div>
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium">Allowed tools (comma-separated)</label>
-              <input
-                v-model="allowedToolsText"
-                type="text"
-                placeholder="Read, Edit, Write, Bash, Grep"
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-              />
             </div>
 
             <div class="rounded-md border border-border/60 bg-muted/20 p-3 space-y-2">
