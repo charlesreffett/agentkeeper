@@ -672,6 +672,13 @@ export async function startSession(
   const hasBuiltin = !!mcpServer
   const hasExternal = extras.additionalMcpServers && Object.keys(extras.additionalMcpServers).length > 0
 
+  // Agency agents never spawn their own subagents — coordination goes through
+  // send_message. sessionLocalId !== agentLocalId only for agency instances.
+  const disallowedTools = [
+    ...(params.disallowedTools ?? []),
+    ...(sessionLocalId !== agentLocalId ? ['Agent'] : []),
+  ]
+
   const stream = getHarness(harnessId).runSession('', {
     model: params.model,
     cwd,
@@ -687,7 +694,7 @@ export async function startSession(
     permissionMode: params.permissionMode ?? 'bypassPermissions',
     settingSources: ['user', 'project'],
     includePartialMessages: true,
-    ...(params.disallowedTools?.length ? { disallowedTools: params.disallowedTools } : {}),
+    ...(disallowedTools.length ? { disallowedTools } : {}),
     ...(hasBuiltin || hasExternal ? { mcpServers: { ...(hasBuiltin ? { agentkeeper: mcpServer! } : {}), ...(extras.additionalMcpServers ?? {}) } } : {}),
   })
 
