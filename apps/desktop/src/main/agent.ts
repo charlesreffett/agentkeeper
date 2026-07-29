@@ -54,6 +54,14 @@ export interface ActiveSession {
   planState: PlanTodo[] | null
   /** Resolvers awaiting next terminal status (idle/suspended/completed/error/inactive). */
   idleWaiters: Array<(status: LiveSessionStatus) => void>
+  /** Outstanding background task ids from background_tasks_changed (REPLACE semantics,
+   *  empty at startup — the SDK emits no initial snapshot). */
+  backgroundTaskIds: Set<string>
+  /** True while the stream is held open past a result because background work is
+   *  outstanding — the CLI resumes the turn itself when the task completes, but
+   *  only if the input stream stays open. */
+  backgroundParked: boolean
+  backgroundParkTimer: NodeJS.Timeout | null
   interrupted: boolean
   turnCount: number
   mcpFactory?: NonNullable<InternalStartExtras['mcpFactory']>
@@ -220,6 +228,19 @@ function setStatus(s: ActiveSession, status: LiveSessionStatus, error?: string) 
   }
 }
 
+// Mirror of the SDK's background-task wait ceiling (ovS in the CLI bundle) so a
+// task that never completes cannot leak a parked session forever.
+const BG_WAIT_CEILING_MS =
+  Number(process.env['CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS']) || 600_000
+
+function clearBackgroundPark(session: ActiveSession): void {
+  session.backgroundParked = false
+  if (session.backgroundParkTimer) {
+    clearTimeout(session.backgroundParkTimer)
+    session.backgroundParkTimer = null
+  }
+}
+
 async function consumeStream(session: ActiveSession): Promise<void> {
   let restartScheduled = false
   try {
@@ -228,10 +249,25 @@ async function consumeStream(session: ActiveSession): Promise<void> {
 
       session.events.push(msg)
 
+      // The CLI resumes a parked turn on its own after background completion: a
+      // synthetic user message (origin task-notification) followed by a fresh
+      // assistant turn. Any turn activity means we are no longer waiting.
+      if (
+        session.backgroundParked &&
+        (msg.type === 'user' || msg.type === 'assistant' || msg.type === 'stream_event')
+      ) {
+        clearBackgroundPark(session)
+        setStatus(session, 'running')
+      }
+
       if (msg.type === 'system') {
         const anyMsg = msg as unknown as {
           subtype?: string
           session_id?: string
+          tasks?: Array<{ task_id: string }>
+        }
+        if (anyMsg.subtype === 'background_tasks_changed' && Array.isArray(anyMsg.tasks)) {
+          session.backgroundTaskIds = new Set(anyMsg.tasks.map((t) => t.task_id))
         }
         if (anyMsg.subtype === 'init' && typeof anyMsg.session_id === 'string') {
           session.sdkSessionId = anyMsg.session_id
@@ -336,6 +372,26 @@ async function consumeStream(session: ActiveSession): Promise<void> {
         if (session.input.pendingCount > 0) {
           continue
         }
+        // Closing the input queue here would orphan any outstanding background
+        // task: the CLI's completion notification needs a live stream to land
+        // in. Park instead — status still goes idle/suspended so waitForNextIdle
+        // resolves, but the session stays in `active` with the queue open.
+        // terminal_reason corroborates because background_tasks_changed ordering
+        // vs result is unspecified and the set may not be populated yet.
+        const terminalReason = (msg as unknown as { terminal_reason?: string }).terminal_reason
+        if (session.backgroundTaskIds.size > 0 || terminalReason === 'background_requested') {
+          setStatus(session, session.sessionLocalId !== session.agentLocalId ? 'idle' : 'suspended')
+          session.backgroundParked = true
+          if (session.backgroundParkTimer) clearTimeout(session.backgroundParkTimer)
+          session.backgroundParkTimer = setTimeout(() => {
+            if (active.get(session.agentLocalId) !== session || !session.backgroundParked) return
+            console.warn(
+              `[agent] session ${session.agentLocalId} hit background wait ceiling (${BG_WAIT_CEILING_MS}ms), closing input`,
+            )
+            try { session.input.close() } catch { /* ignore */ }
+          }, BG_WAIT_CEILING_MS)
+          continue
+        }
         // Agency agents signal 'idle' so routeMessage's waitForNextIdle resolves
         // and can capture the reply text, then close — the subprocess is re-spawned
         // lazily on the next send_message call rather than held alive between turns.
@@ -381,6 +437,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       }
     }
   } finally {
+    clearBackgroundPark(session)
     const now = Date.now()
     // Guard against clobbering a replacement session started by editAndRerun.
     // active.delete + sendInput in editAndRerun can race with this finally block:
@@ -650,6 +707,9 @@ export async function startSession(
     events: [],
     planState: null,
     idleWaiters: [],
+    backgroundTaskIds: new Set(),
+    backgroundParked: false,
+    backgroundParkTimer: null,
     interrupted: false,
     turnCount: costLedger.getAgentTurnCount(agentLocalId),
     mcpFactory,
@@ -717,6 +777,8 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
   const userMsg = await messageFromInput(text, attachments, s.worktreePath ?? s.projectPath)
   broadcastEvent({ sessionId: s.sessionLocalId, agentLocalId: s.agentLocalId, message: userMsg })
   s.input.push(userMsg)
+  // A parked session's ceiling timer must not fire mid-turn after a manual resume.
+  clearBackgroundPark(s)
   setStatus(s, 'running')
 }
 
