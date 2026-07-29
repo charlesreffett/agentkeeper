@@ -6,10 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Cross-platform Electron desktop app that drives the Claude Agent SDK from a
 GUI, replacing the terminal `claude` workflow. End goal: Jira → worktree →
-agent team → PR → merged, all from the app. Shipped so far (V0–V3 + V2.1 + V6
-partial): live sessions, worktrees, roles, agencies with `send_message`,
-monitor grid, GitHub PR views, project registry with focus model,
-SQLite/Drizzle persistence.
+agent team → PR → merged, all from the app. Shipped so far (V0–V4, V2.1, most
+of V5–V6): live sessions, worktrees, roles, agencies with `send_message`,
+monitor grid, planner (plan files + MCP tools + views), skills + commands
+managers, Jira board, GitHub PR views, project registry with focus model,
+SQLite/Drizzle persistence, iOS companion + mobile server.
 
 ## Stack
 
@@ -28,10 +29,14 @@ apps/desktop/src/main/      Node — agent driver, IPC, git worktrees, secrets
 apps/desktop/src/preload/   contextBridge — exposes typed `window.agentkeeper`
 apps/desktop/src/renderer/  Vue app (views, components, composables, stores)
 apps/desktop/src/shared/    IPC contract types — pure, no runtime imports
-packages/core/              Session engine / Role-Agency engine (stub so far)
+packages/core/              shared harness abstraction (HarnessAdapter, session/event types)
 packages/sdk/               @agentkeeper/sdk — plugin contract (types-only)
+packages/cli/               CLI toolchain for plugin authors
 packages/plugin-github/     GitHub plugin (shipped V6)
-packages/plugin-*/          Future bundled plugins (V5: Jira)
+packages/plugin-jira/       Jira plugin (shipped V5)
+packages/plugin-test*/      installable-plugin test fixtures (.akp bundles)
+packages/skills/            bundled agent skills (e.g. agent-role-generator)
+apps/ios/                   SwiftUI companion app (pairs with the mobile server)
 ```
 
 **Plugin wall:** plugins import ONLY from `@agentkeeper/sdk`, never from
@@ -60,16 +65,15 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
 - V4 ✅ skills + commands manager (wraps `npx skills`)
   - ✅ Skills: list, install, remove, preview — project + global scope
   - ✅ Commands: list, create, edit, delete — project + global scope
-  - ✅ Full backend (skills.ts, commands.ts), IPC, preload, modal UI
-  - ✅ Modal-based UI accessible from ProjectHome header (intentional — no sidebar route)
+  - ✅ Full backend (skills.ts, commands.ts), IPC, preload
+  - ✅ Routed views at `/skills` and `/commands`
 - V5 🔄 Jira plugin (wraps user's `jira` CLI, Jira Cloud)
   - ✅ Plugin package (`packages/plugin-jira`) — CLI wrapping, WorkItemSource, activation lifecycle
   - ✅ IPC handlers — workItems list/get/transition/updateStatus, plugin config get/set
   - ✅ Preload bridge — workItems + plugins config APIs
-  - ✅ Modal UI — JiraPanel, JiraIssueDetail, JiraSettingsModal; accessible from ProjectHome
-  - ⬜ Routed page — add `/jira` route + JiraLayout to match GitHub pattern; migrate
-    JiraPanel content out of ProjectHome modal into a global sidebar-accessible view;
-    wire focused project filter. Sidebar `/jira` entry currently 404s until this lands.
+  - ✅ Routed page — `/jira` (JiraLayout → board + issue views), start-session and
+    create-ticket modals
+  - ⬜ Wire focused project filter into the Jira views
 - V6 🔄 GitHub plugin (PRs via `gh` CLI)
   - ✅ Phase 0 — sidebar shell + plugin nav registry
   - ✅ Phase 1+2 — GitHub settings, plugin health banner, GitHub routes
@@ -82,10 +86,9 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
     `ProjectPicker` dialog (pre-populated, always shown, never skipped);
     `NewSessionModal` project field; GitHub filter + skills list react to
     focused project; adding a project auto-registers its GitHub repo
-  - ⬜ Sessions view — migrate to global list (all projects); focused project
-    acts as filter; "New session" picker already done
+  - ✅ Sessions view — global list (all projects); focused project acts as filter
   - ⬜ Monitor view — wire focused project filter
-  - ⬜ Project-as-filter plumbing for V5 Jira views when built
+  - ⬜ Project-as-filter plumbing for V5 Jira views (see V5)
 
 
 ## Commands
@@ -129,10 +132,11 @@ Plugins activate in the main process (Node.js) and cannot contribute Vue compone
 
 <body: what changed and why. Call out deferred work or known gaps.>
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Co-Authored-By: <the authoring model> <noreply@anthropic.com>
 ```
 
-Every commit gets the `Co-Authored-By` trailer.
+Every commit gets a `Co-Authored-By` trailer naming the model that wrote it
+(e.g. `Claude Fable 5 <noreply@anthropic.com>`).
 
 ## Agency workflow
 
@@ -144,9 +148,21 @@ Fresh worktree per task keeps runs isolated.
 
 Inter-agent messaging via `mcp__agentkeeper__send_message(to, content)`.
 The orchestrator blocks the caller until the target idles; the target's
-plain-text reply is returned as the caller's tool_result. Calling
-`send_message` back at the peer that addressed you is a cycle and will be
-rejected — reply with plain text, which is auto-captured.
+plain-text reply is returned as the caller's tool_result. Rules and limits:
+
+- Calling `send_message` back at the peer that addressed you is a cycle and
+  will be rejected — reply with plain text, which is auto-captured.
+- Direct instance-id sends (`to: "developer-2"`) to an instance mid-message
+  are rejected with a retry error; address the role to reach any idle
+  instance.
+- Waits are bounded: if the target doesn't idle within 15 minutes
+  (`AGENTKEEPER_SEND_MESSAGE_TIMEOUT_MS` override), the caller gets an error
+  string instead of hanging. Queued role-targeted messages time out the same
+  way with a NOT-delivered error.
+- Agency agents cannot spawn subagents — the `Agent` tool is removed from
+  their context (`disallowedTools`). Delegation goes through `send_message`.
+  Solo sessions keep subagents, including background ones: the session parks
+  after its turn and auto-resumes when the background task completes.
 
 ## Gotchas
 
@@ -159,12 +175,16 @@ rejected — reply with plain text, which is auto-captured.
 - **Permission mode**: currently `'bypassPermissions'` — no prompt UI yet.
   Do not introduce a `canUseTool` callback; functions in SDK options
   can't cross its internal serialization boundary.
+- **`allowedTools` restricts nothing**: it is only a permission-prompt bypass
+  list, inert under `bypassPermissions`. A real restriction is
+  `disallowedTools`, which removes the tool from the model's context — that
+  is how agencies deny `Agent`. Roles do not carry tool lists; behavioral
+  constraints belong in the role's system prompt.
 - **zod**: pinned to ^4 for SDK compatibility.
 
 ## What NOT to do
 
 - Don't push or force-push without explicit instruction.
-- Don't edit from the `planner` role — it's tool-restricted for a reason.
 - Don't reach into `packages/core` from a plugin. Only `@agentkeeper/sdk`.
 - Don't write comments that describe WHAT code does — only non-obvious
   WHY. No file-level docstrings.
