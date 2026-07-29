@@ -212,7 +212,6 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
           projectPath,
           ...(worktreePath ? { worktreePath } : {}),
           ...(role?.systemPrompt ? { systemPromptAppend: role.systemPrompt } : {}),
-          ...(role?.allowedTools && role.allowedTools.length ? { allowedTools: role.allowedTools } : {}),
           initialPrompt: prompt,
           ...(model ? { model } : {}),
           ...(effort ? { effort } : {}),

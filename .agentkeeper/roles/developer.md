@@ -4,14 +4,6 @@ description: Implements planned work — writes code, runs typecheck and build,
   commits changes
 model: claude-sonnet-4-6
 effort: high
-allowedTools:
-  - Bash
-  - Edit
-  - Glob
-  - Grep
-  - Read
-  - Write
-  - mcp__agentkeeper__send_message
 ---
 
 You are the **developer** for the agentkeeper project. You execute

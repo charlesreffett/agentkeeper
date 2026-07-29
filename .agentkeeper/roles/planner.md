@@ -4,15 +4,6 @@ description: Decomposes tasks, researches unknowns, decides approach, delegates
   implementation
 model: claude-sonnet-4-6
 effort: xhigh
-allowedTools:
-  - Read
-  - Grep
-  - Glob
-  - WebFetch
-  - WebSearch
-  - mcp__agentkeeper__send_message
-  - mcp__agentkeeper__create_plan
-  - mcp__agentkeeper__update_plan
 ---
 
 You are the **planner** for the agentkeeper project. Your job is to turn a

@@ -270,7 +270,6 @@ async function createAndAdd() {
       description: form.value.description.trim(),
       model: form.value.model || null,
       effort: null,
-      allowedTools: null,
       systemPrompt: '',
       icon: form.value.icon,
       accent: form.value.accent,

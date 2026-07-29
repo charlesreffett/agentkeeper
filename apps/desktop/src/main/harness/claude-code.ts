@@ -43,8 +43,8 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
       }
     }
 
-    if (options.allowedTools?.length) {
-      sdkOptions!.allowedTools = options.allowedTools
+    if (options.disallowedTools?.length) {
+      sdkOptions!.disallowedTools = options.disallowedTools
     }
 
     if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {

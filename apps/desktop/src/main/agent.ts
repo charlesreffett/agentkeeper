@@ -623,7 +623,7 @@ export async function startSession(
     permissionMode: params.permissionMode ?? 'bypassPermissions',
     settingSources: ['user', 'project'],
     includePartialMessages: true,
-    ...(params.allowedTools?.length ? { allowedTools: params.allowedTools } : {}),
+    ...(params.disallowedTools?.length ? { disallowedTools: params.disallowedTools } : {}),
     ...(hasBuiltin || hasExternal ? { mcpServers: { ...(hasBuiltin ? { agentkeeper: mcpServer! } : {}), ...(extras.additionalMcpServers ?? {}) } } : {}),
   })
 
