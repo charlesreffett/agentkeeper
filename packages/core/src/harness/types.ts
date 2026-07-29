@@ -53,6 +53,7 @@ export type HarnessEvent =
   | { type: 'assistant'; message: { role: 'assistant'; content: unknown; model?: string }; uuid?: string; session_id?: string }
   | { type: 'system'; subtype: string; [key: string]: unknown }
   | { type: 'result'; subtype: string; [key: string]: unknown }
+  | { type: 'stream_event'; [key: string]: unknown }
 
 export interface HarnessAdapter {
   readonly id: string
