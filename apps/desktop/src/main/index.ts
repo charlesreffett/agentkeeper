@@ -12,6 +12,7 @@ import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { warmAvailableModels } from './models'
 import { syncMobileServer, teardownMobileServer } from './mobile-server'
 import { settingsStore } from './settings'
+import { pruneExpiredIfEnabled } from './session-registry'
 import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
 import { loadDevPlugin, unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
 import { setWebContentsOnActiveHosts } from './plugin-loader.js'
@@ -127,6 +128,7 @@ app.on('second-instance', (_event, argv) => {
 })
 
 app.on('before-quit', () => {
+  pruneExpiredIfEnabled()
   stopAllWatchers()
   flushCostLedger()
   clearDevPluginRegistry()

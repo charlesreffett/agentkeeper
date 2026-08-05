@@ -2,6 +2,7 @@ import { and, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencyHandoffs, agents, sessions } from './db/schema'
 import type { Agent, AgencyScope, LiveSessionStatus, PlanTodo, RoleEffort, Session } from '../shared/ipc-contract'
+import { settingsStore } from './settings'
 export type { Agent, Session }
 
 const SESSION_CAP = 100
@@ -317,6 +318,13 @@ export function resetStaleRunning(): void {
     .set({ status: 'inactive' })
     .where(inArray(sessions.status, staleStatuses))
     .run()
+}
+
+// Prune only when the user has opted in. Called on app startup and shutdown.
+export function pruneExpiredIfEnabled(): void {
+  const { sessionExpiryEnabled, sessionExpiryDays } = settingsStore.get()
+  if (!sessionExpiryEnabled) return
+  pruneExpired(sessionExpiryDays)
 }
 
 export function pruneExpired(thresholdDays: number | null): void {

@@ -63,7 +63,7 @@ const saving = ref(false)
 
 const DIRTY_FIELDS = [
   'defaultModel', 'defaultEffort', 'defaultUseWorktree',
-  'enterToSend', 'sendModifier', 'sessionExpiryDays', 'notifications', 'notificationSound',
+  'enterToSend', 'sendModifier', 'sessionExpiryEnabled', 'sessionExpiryDays', 'notifications', 'notificationSound',
   'gitSwitchWithoutSoftReject',
 ] as const satisfies ReadonlyArray<keyof AppSettings>
 
@@ -161,6 +161,7 @@ async function save() {
         defaultUseWorktree: settings.value.defaultUseWorktree,
         enterToSend: settings.value.enterToSend,
         sendModifier: settings.value.sendModifier,
+        sessionExpiryEnabled: settings.value.sessionExpiryEnabled,
         sessionExpiryDays: settings.value.sessionExpiryDays,
         notifications: settings.value.notifications,
         notificationSound: settings.value.notificationSound,
@@ -373,12 +374,30 @@ async function onReset() {
                 </label>
               </div>
 
-              <!-- Session expiry -->
+              <!-- Auto-delete old sessions (opt-in) -->
               <div class="flex items-center gap-4 px-4 py-3">
                 <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium">Session history</p>
+                  <p class="text-sm font-medium">Auto-delete old sessions</p>
                   <p class="text-xs text-muted-foreground mt-0.5">
-                    Persisted sessions older than this are pruned at startup.
+                    When on, persisted sessions older than the age below are deleted on app startup and shutdown. Off by default.
+                  </p>
+                </div>
+                <label class="relative shrink-0 cursor-pointer">
+                  <input v-model="settings.sessionExpiryEnabled" type="checkbox" class="sr-only peer" />
+                  <div class="w-9 h-5 rounded-full border border-input bg-muted peer-checked:bg-primary peer-checked:border-primary transition-colors" />
+                  <div class="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-background shadow transition-transform peer-checked:translate-x-4" />
+                </label>
+              </div>
+
+              <!-- Session age limit -->
+              <div
+                v-if="settings.sessionExpiryEnabled"
+                class="flex items-center gap-4 px-4 py-3"
+              >
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Session age limit</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    Sessions inactive longer than this are eligible for deletion.
                   </p>
                 </div>
                 <select

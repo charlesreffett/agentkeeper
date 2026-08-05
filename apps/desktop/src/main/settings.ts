@@ -12,6 +12,7 @@ const DEFAULTS: AppSettings = {
   defaultUseWorktree: false,
   enterToSend: false,
   sendModifier: 'auto' as const,
+  sessionExpiryEnabled: false,
   sessionExpiryDays: 14,
   theme: 'dark',
   notifications: 'all',
