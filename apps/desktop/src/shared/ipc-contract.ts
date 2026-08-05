@@ -1060,10 +1060,37 @@ export interface AgentKeeperApi {
     generateKey: () => Promise<string>
     getLocalIp: () => Promise<string>
   }
+  performance: {
+    getSummary: (opts: { projectPath: string | null; rangeDays: number }) => Promise<PerformanceSummary>
+  }
   /** Only present in development builds (`!app.isPackaged`). */
   dev?: {
     runMigrations: () => Promise<{ applied: number }>
   }
+}
+
+// ─── Performance ────────────────────────────────────────────────────────────
+export interface CostPerWorkItem {
+  workItemKey: string
+  workItemTitle: string | null
+  totalCostUsd: number
+}
+
+export interface PerformanceSummary {
+  sessionCount: number
+  avgDurationMinutes: number
+  medianDurationMinutes: number
+  outcomes: { completed: number; error: number; inactive: number }
+  errorRate: number
+  avgTurnsPerSession: number
+  totalCostUsd: number
+  avgCostPerSessionUsd: number
+  costPerWorkItem: CostPerWorkItem[]
+  planCount: number
+  planCompleteRate: number
+  stepCompleteRate: number
+  failedStepCount: number
+  estimateAccuracy: number
 }
 
 export const IPC_CHANNELS = {
@@ -1232,4 +1259,5 @@ export const IPC_CHANNELS = {
   harnessSetActive: 'harness:setActive',
   mobileGenerateKey: 'mobile:generateKey',
   mobileGetLocalIp: 'mobile:getLocalIp',
+  performanceGetSummary: 'performance:getSummary',
 } as const

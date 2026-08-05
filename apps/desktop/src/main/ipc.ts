@@ -83,6 +83,7 @@ import { executeReset } from './reset'
 import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
+import { getPerformanceSummary } from './performance'
 import { harnessRegistry, getHarness } from './harness/index'
 import { syncMobileServer } from './mobile-server'
 import { startWatching, stopWatching } from './watcher.js'
@@ -1353,6 +1354,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       upsertStats(e.sessionLocalId, e.totalTokens, e.totalCostUsd, e.turnCount, e.inProgressTokens)
     }
     markStatsImported()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.performanceGetSummary, (_e, opts: { projectPath: string | null; rangeDays: number }) => {
+    try {
+      return getPerformanceSummary(opts)
+    } catch (err) {
+      console.error('[ipc] performance:getSummary failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
   })
 
   if (!app.isPackaged) {

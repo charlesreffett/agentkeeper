@@ -4,8 +4,9 @@ import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { useTimeSeries } from '@/composables/useTimeSeries'
+import { usePerformanceQuery } from '@/composables/usePerformanceQuery'
+import { formatDuration } from '@/lib/format'
 import SparklineChart from '@/components/SparklineChart.vue'
-import DonutChart from '@/components/DonutChart.vue'
 
 const props = defineProps<{
   /** When set, every metric is scoped to this project. `null` → all projects. */
@@ -17,6 +18,10 @@ const { projects } = useProjectsQuery()
 const { persistedSessions } = useSessionsListQuery(projects)
 
 const scopePath = computed(() => props.projectPath ?? null)
+
+const { data: perfData } = usePerformanceQuery(scopePath)
+const avgDuration = computed(() => perfData.value?.avgDurationMinutes ?? 0)
+const medianDuration = computed(() => perfData.value?.medianDurationMinutes ?? 0)
 
 function inScope(path: string): boolean {
   return scopePath.value === null || path === scopePath.value
@@ -121,30 +126,6 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)} est.`
 }
 
-// Card 4 — cache efficiency. Share of the displayed day's input tokens that
-// was served from cache (cache read) rather than billed at fresh input rate.
-// Cache write is the premium paid to seed the cache for later reads.
-const cacheSegments = computed(() => {
-  const b = displayBreakdown.value
-  if (!b) return []
-  const segs: Array<{ label: string; value: number; color: string }> = []
-  if (b.inputTokens > 0) segs.push({ label: 'Fresh', value: b.inputTokens, color: '#6366f1' })
-  if (b.cacheReadTokens > 0) segs.push({ label: 'Cache read', value: b.cacheReadTokens, color: '#10b981' })
-  if (b.cacheCreationTokens > 0) segs.push({ label: 'Cache write', value: b.cacheCreationTokens, color: '#f59e0b' })
-  return segs
-})
-
-const cacheInputTotal = computed(() => {
-  const b = displayBreakdown.value
-  if (!b) return 0
-  return b.inputTokens + b.cacheReadTokens + b.cacheCreationTokens
-})
-
-const cacheHitRate = computed(() => {
-  const b = displayBreakdown.value
-  if (!b || cacheInputTotal.value === 0) return null
-  return (b.cacheReadTokens / cacheInputTotal.value) * 100
-})
 </script>
 
 <template>
@@ -214,35 +195,19 @@ const cacheHitRate = computed(() => {
       </div>
     </div>
 
-    <!-- Card 4: Cache Efficiency -->
+    <!-- Card 4: Avg Duration -->
     <div class="rounded-xl border bg-card p-4 flex flex-col gap-2">
       <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-        Cache Efficiency · {{ displayLabel }}
+        Avg Duration
       </span>
       <div class="flex items-baseline gap-1.5">
         <span class="text-3xl font-bold leading-none">
-          {{ cacheHitRate === null ? '—' : `${cacheHitRate.toFixed(0)}%` }}
+          {{ avgDuration === 0 ? '—' : formatDuration(avgDuration) }}
         </span>
-        <span class="text-sm text-muted-foreground">of input from cache</span>
       </div>
-      <div class="flex items-center gap-4 flex-1">
-        <DonutChart
-          :segments="cacheSegments"
-          :total="cacheInputTotal"
-          :size="72"
-        />
-        <div class="flex flex-col gap-1 min-w-0">
-          <div
-            v-for="seg in cacheSegments"
-            :key="seg.label"
-            class="flex items-center gap-1.5 text-xs text-muted-foreground"
-          >
-            <span class="size-2 rounded-full shrink-0" :style="{ backgroundColor: seg.color }" />
-            <span class="truncate">{{ seg.label }}</span>
-            <span class="ml-auto font-medium text-foreground tabular-nums">{{ formatTokens(seg.value) }}</span>
-          </div>
-        </div>
-      </div>
+      <span class="text-sm text-muted-foreground mt-auto">
+        median {{ medianDuration === 0 ? '—' : formatDuration(medianDuration) }}
+      </span>
     </div>
   </div>
 </template>

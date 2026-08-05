@@ -32,3 +32,11 @@ export function formatTimestamp(ts: string): string {
     hour12: false,
   })
 }
+
+export function formatDuration(minutes: number): string {
+  if (minutes < 1) return '<1m'
+  const h = Math.floor(minutes / 60)
+  const m = Math.round(minutes % 60)
+  if (h === 0) return `${m}m`
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
+}

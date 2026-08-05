@@ -61,6 +61,7 @@ import {
   type JiraActivityEntry,
   type PluginRecord,
   type UpdateAvailable,
+  type PerformanceSummary,
 } from '../shared/ipc-contract'
 
 /**
@@ -533,6 +534,10 @@ const api: AgentKeeperApi = {
   mobile: {
     generateKey: () => invoke(IPC_CHANNELS.mobileGenerateKey) as Promise<string>,
     getLocalIp: () => invoke(IPC_CHANNELS.mobileGetLocalIp) as Promise<string>,
+  },
+  performance: {
+    getSummary: (opts: { projectPath: string | null; rangeDays: number }) =>
+      invoke(IPC_CHANNELS.performanceGetSummary, opts) as Promise<PerformanceSummary>,
   },
   ...(process.env.NODE_ENV === 'development' ? {
     dev: {
