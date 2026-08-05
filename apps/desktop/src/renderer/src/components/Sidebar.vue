@@ -18,6 +18,7 @@ import {
   Map,
   Puzzle,
   Plug,
+  ChartColumnBig,
 } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import IconSessions from '@/components/icons/IconSessions.vue'
@@ -66,11 +67,13 @@ const iconMap: Record<string, Component> = {
   Map,
   Puzzle,
   Plug,
+  ChartColumnBig,
 }
 
 const coreItems = [
   { id: 'sessions', label: 'Sessions', icon: 'IconSessions', path: '/sessions' },
   { id: 'monitor', label: 'Monitor', icon: 'Activity', path: '/monitor' },
+  { id: 'stats', label: 'Stats', icon: 'ChartColumnBig', path: '/stats' },
   { id: 'planner', label: 'Planner', icon: 'Sparkles', path: '/planner' },
 ]
 
