@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { CheckSquare, ChevronRight, Plus, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
-import { ChevronRight, Plus } from 'lucide-vue-next'
-import { useSessionStore } from '@/stores/sessions'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
-import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
-import { useProjectStore } from '@/stores/project'
+import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
 import { formatRelativeTime } from '@/lib/format'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
 
 const props = defineProps<{
@@ -17,47 +24,41 @@ const props = defineProps<{
 defineEmits<{ collapse: []; expand: [] }>()
 
 const router = useRouter()
-const sessionStore = useSessionStore()
-const projectStore = useProjectStore()
-const { focusedProject, projects, setFocused } = useProjectsQuery()
-const { persistedSessions } = useSessionsListQuery(projects)
+const { unifiedSessions, open, createNewSession, remove } = useUnifiedSessions()
 
 const filterText = ref('')
+const selectedProjectPath = ref<string | null>(null)
+
+const activeProjects = computed(() => {
+  const map = new Map<string, { path: string; name: string; count: number }>()
+  for (const s of unifiedSessions.value) {
+    const existing = map.get(s.projectPath)
+    if (existing) {
+      existing.count++
+    } else {
+      map.set(s.projectPath, { path: s.projectPath, name: s.projectName, count: 1 })
+    }
+  }
+  return Array.from(map.values())
+})
 
 const sessions = computed(() => {
-  const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
-
-  const live = sessionStore.visibleSessions.filter((s) => !s.isDraft)
-
-  const previous = persistedSessions.value
-    .filter((s) => !liveIds.has(s.localId))
-    .map((s) => ({
-      localId: s.localId,
-      status: s.status,
-      projectPath: s.projectPath,
-      workItemKey: s.workItemKey ?? null,
-      workItemTitle: s.workItemTitle ?? null,
-      title: s.title ?? null,
-      initialPrompt: s.initialPrompt,
-      lastActivityAt: s.lastActivityAt,
-    }))
-
-  const all = [...live, ...previous]
-
   const q = filterText.value.toLowerCase().trim()
-  const filtered = q
-    ? all.filter(
-        (s) =>
-          (s.workItemKey ?? '').toLowerCase().includes(q) ||
-          (s.workItemTitle ?? '').toLowerCase().includes(q) ||
-          (s.title ?? '').toLowerCase().includes(q) ||
-          s.initialPrompt.toLowerCase().includes(q),
-      )
-    : all
+  const filtered = unifiedSessions.value.filter((s) => {
+    if (selectedProjectPath.value && s.projectPath !== selectedProjectPath.value) return false
+    if (!q) return true
+    return (
+      (s.workItemKey ?? '').toLowerCase().includes(q) ||
+      (s.workItemTitle ?? '').toLowerCase().includes(q) ||
+      (s.description ?? '').toLowerCase().includes(q) ||
+      (s.title ?? '').toLowerCase().includes(q) ||
+      s.initialPrompt.toLowerCase().includes(q)
+    )
+  })
   return filtered.slice().sort((a, b) => b.lastActivityAt - a.lastActivityAt)
 })
 
-function statusDotClass(status: LiveSessionStatus): string {
+function statusDotClass(status: LiveSessionStatus | 'inactive'): string {
   switch (status) {
     case 'running':
     case 'starting':
@@ -77,50 +78,123 @@ function statusDotClass(status: LiveSessionStatus): string {
   }
 }
 
-function itemTitle(s: (typeof sessions.value)[number]): string {
-  return s.workItemTitle ?? s.title ?? s.initialPrompt.split('\n')[0] ?? ''
-}
-
-// Show the dynamic title as a description only when a work item title is the primary heading.
-function itemDescription(s: (typeof sessions.value)[number]): string | null {
-  if (s.workItemTitle && s.title && s.title !== s.workItemTitle) return s.title
-  return null
-}
-
 function projectName(path: string): string {
   return path.split('/').at(-1) ?? path
 }
 
-function isRunning(status: LiveSessionStatus): boolean {
+function isRunning(status: LiveSessionStatus | 'inactive'): boolean {
   return status === 'running' || status === 'starting'
 }
 
-function handleSessionClick(s: (typeof sessions.value)[number]): void {
-  const live = sessionStore.getSession(s.localId)
-  const persisted = live ? null : persistedSessions.value.find((p) => p.localId === s.localId)
-  const projectPath = live?.projectPath ?? persisted?.projectPath
-  if (projectPath && projectPath !== focusedProject.value?.path) {
-    void setFocused(projectPath)
+function onRowClick(entry: UnifiedSession) {
+  if (isSelectMode.value) {
+    toggleSelectCard(entry.localId)
+    return
   }
-  if (!live && persisted) sessionStore.openPersisted(persisted)
-  void router.push(`/sessions/${s.localId}`)
+  open(entry)
 }
 
 async function handleNew() {
-  const target = focusedProject.value ?? projectStore.currentProject
-  if (target) {
-    const settings = await window.agentkeeper.settings.get()
-    projectStore.setProject(target)
-    const localId = sessionStore.createOrFocusDraft({
-      projectPath: target.path,
-      defaultModel: settings.defaultModel,
-      defaultEffort: settings.defaultEffort,
-      defaultUseWorktree: settings.defaultUseWorktree,
-    })
-    void router.push(`/sessions/${localId}`)
-    return
-  }
-  void router.push('/')
+  const localId = await createNewSession()
+  if (!localId) void router.push('/')
+}
+
+// ── Multi-select + bulk delete ───────────────────────────────────────────────
+
+const isSelectMode = ref(false)
+const selectedIds = ref(new Set<string>())
+const confirmDeleteSelectedOpen = ref(false)
+const confirmDeleteAllOpen = ref(false)
+const confirmDeleteSingleOpen = ref(false)
+const singleDeleteTarget = ref<UnifiedSession | null>(null)
+
+const selectedCount = computed(() => selectedIds.value.size)
+const allSelected = computed(() => sessions.value.length > 0 && selectedCount.value === sessions.value.length)
+
+const selectionWarning = computed(() => {
+  const sel = sessions.value.filter((s) => selectedIds.value.has(s.localId))
+  const running = sel.filter((s) => s.status === 'running' || s.status === 'starting').length
+  const blocked = sel.filter((s) => s.status === 'blocked').length
+  return { running, blocked, any: running + blocked > 0 }
+})
+
+const allWarning = computed(() => {
+  const running = sessions.value.filter(
+    (s) => s.status === 'running' || s.status === 'starting',
+  ).length
+  const blocked = sessions.value.filter((s) => s.status === 'blocked').length
+  return { running, blocked, any: running + blocked > 0 }
+})
+
+const singleWarning = computed(() => {
+  const target = singleDeleteTarget.value
+  if (!target) return { running: 0, blocked: 0, any: false }
+  const running = target.status === 'running' || target.status === 'starting' ? 1 : 0
+  const blocked = target.status === 'blocked' ? 1 : 0
+  return { running, blocked, any: running + blocked > 0 }
+})
+
+function warningText(w: { running: number; blocked: number }): string {
+  const parts: string[] = []
+  if (w.running > 0) parts.push(`${w.running} running`)
+  if (w.blocked > 0) parts.push(`${w.blocked} blocked`)
+  return parts.join(' · ')
+}
+
+function toggleSelectMode() {
+  isSelectMode.value = !isSelectMode.value
+  if (!isSelectMode.value) selectedIds.value = new Set()
+}
+
+function toggleSelectCard(id: string) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+function selectAll() {
+  selectedIds.value = new Set(sessions.value.map((s) => s.localId))
+}
+
+function clearSelection() {
+  selectedIds.value = new Set()
+}
+
+function confirmDeleteSingle(entry: UnifiedSession) {
+  singleDeleteTarget.value = entry
+  confirmDeleteSingleOpen.value = true
+}
+
+function handleDeleteSelected() {
+  confirmDeleteSelectedOpen.value = true
+}
+
+function handleDeleteAll() {
+  confirmDeleteAllOpen.value = true
+}
+
+async function executeDeleteSelected() {
+  const toDelete = sessions.value.filter((s) => selectedIds.value.has(s.localId))
+  await Promise.all(toDelete.map(remove))
+  selectedIds.value = new Set()
+  if (toDelete.some((s) => s.localId === props.activeId)) void router.push('/sessions')
+}
+
+async function executeDeleteAll() {
+  const deletedActive = sessions.value.some((s) => s.localId === props.activeId)
+  await Promise.all(sessions.value.map(remove))
+  selectedIds.value = new Set()
+  if (deletedActive) void router.push('/sessions')
+}
+
+async function executeDeleteSingle() {
+  const target = singleDeleteTarget.value
+  if (!target) return
+  await remove(target)
+  selectedIds.value.delete(target.localId)
+  singleDeleteTarget.value = null
+  if (target.localId === props.activeId) void router.push('/sessions')
 }
 </script>
 
@@ -147,13 +221,23 @@ async function handleNew() {
     <!-- Header -->
     <div class="px-3 h-10 shrink-0 flex items-center justify-between border-b border-border">
       <span class="text-sm font-semibold text-foreground">Sessions</span>
-      <button
-        class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-        @click="handleNew"
-      >
-        <Plus class="size-3" />
-        New
-      </button>
+      <div class="flex items-center gap-1">
+        <button
+          class="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
+          :title="isSelectMode ? 'Done selecting' : 'Select sessions'"
+          :class="isSelectMode ? 'text-foreground bg-muted' : ''"
+          @click="toggleSelectMode"
+        >
+          <component :is="isSelectMode ? CheckSquare : Square" class="size-3.5" />
+        </button>
+        <button
+          class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          @click="handleNew"
+        >
+          <Plus class="size-3" />
+          New
+        </button>
+      </div>
     </div>
 
     <!-- Filter -->
@@ -166,24 +250,91 @@ async function handleNew() {
       />
     </div>
 
+    <!-- Project filter -->
+    <div v-if="activeProjects.length > 0" class="px-2 py-1.5 border-b border-border/50">
+      <select
+        v-model="selectedProjectPath"
+        class="w-full bg-transparent text-[11px] font-medium text-muted-foreground outline-none cursor-pointer"
+        :class="selectedProjectPath ? 'text-foreground' : ''"
+      >
+        <option :value="null">All projects · {{ unifiedSessions.length }}</option>
+        <option v-for="p in activeProjects" :key="p.path" :value="p.path">
+          {{ p.name }} · {{ p.count }}
+        </option>
+      </select>
+    </div>
+
+    <!-- Selection bar -->
+    <div
+      v-if="isSelectMode"
+      class="px-2 py-1.5 border-b border-border/50 flex flex-col gap-1.5 shrink-0"
+    >
+      <div class="flex items-center justify-between gap-2">
+        <button
+          class="inline-flex items-center gap-1 text-[11px] font-medium transition-colors"
+          :class="allSelected ? 'text-primary' : 'text-foreground hover:text-primary'"
+          @click="allSelected ? clearSelection() : selectAll()"
+        >
+          <component :is="allSelected ? CheckSquare : Square" class="size-3.5" />
+          Select all
+        </button>
+        <span class="text-[11px] text-muted-foreground tabular-nums">
+          {{ selectedCount }} / {{ sessions.length }} selected
+        </span>
+        <button
+          v-if="selectedCount > 0"
+          class="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          @click="clearSelection"
+        >
+          Clear
+        </button>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <button
+          class="flex-1 inline-flex items-center justify-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium border border-border/60 transition-colors disabled:opacity-40"
+          :class="selectedCount > 0 ? 'text-destructive border-destructive/40 hover:bg-destructive/10' : 'text-muted-foreground'"
+          :disabled="selectedCount === 0"
+          @click="handleDeleteSelected"
+        >
+          <Trash2 class="size-3" />
+          Delete ({{ selectedCount }})
+        </button>
+        <button
+          class="flex-1 inline-flex items-center justify-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium border border-border/60 transition-colors disabled:opacity-40"
+          :class="sessions.length > 0 ? 'text-destructive border-destructive/40 hover:bg-destructive/10' : 'text-muted-foreground'"
+          :disabled="sessions.length === 0"
+          @click="handleDeleteAll"
+        >
+          <Trash2 class="size-3" />
+          Delete all
+        </button>
+      </div>
+    </div>
+
     <!-- Session list -->
     <div class="flex-1 overflow-y-auto">
-      <button
+      <div
         v-for="s in sessions"
         :key="s.localId"
-        class="w-full text-left px-3 py-2.5 border-b border-border/30 transition-colors"
-        :class="
-          s.localId === activeId
-            ? 'bg-muted'
-            : 'hover:bg-muted/50'
-        "
-        @click="handleSessionClick(s)"
+        class="w-full text-left px-3 py-2.5 border-b border-border/30 transition-colors cursor-pointer"
+        :class="s.localId === activeId ? 'bg-muted' : 'hover:bg-muted/50'"
+        @click="onRowClick(s)"
       >
-        <!-- Row 1: dot + title -->
+        <!-- Row 1: checkbox (select mode) + dot + title -->
         <div class="flex items-center gap-1.5 mb-0.5">
+          <input
+            v-if="isSelectMode"
+            type="checkbox"
+            :checked="selectedIds.has(s.localId)"
+            class="size-3 accent-primary cursor-pointer shrink-0"
+            @click.stop="toggleSelectCard(s.localId)"
+          />
           <span class="size-1.5 rounded-full shrink-0" :class="statusDotClass(s.status)" />
+          <span v-if="s.isDraft" class="text-[9px] font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400 shrink-0">
+            Draft
+          </span>
           <span class="text-[12px] font-medium text-foreground line-clamp-1 min-w-0">
-            {{ itemTitle(s) }}
+            {{ s.title }}
           </span>
         </div>
 
@@ -199,20 +350,113 @@ async function handleNew() {
 
         <!-- Row 3: dynamic description (shown only when different from title) -->
         <div
-          v-if="itemDescription(s)"
+          v-if="s.description"
           class="text-[11px] pl-3 line-clamp-2 mt-0.5"
           :class="isRunning(s.status) ? 'text-primary/80' : 'text-muted-foreground'"
         >
-          {{ itemDescription(s) }}
+          {{ s.description }}
         </div>
-      </button>
+      </div>
 
       <div
         v-if="sessions.length === 0"
         class="px-3 py-4 text-[12px] text-muted-foreground/50 text-center"
       >
-        No sessions
+        {{ unifiedSessions.length === 0 ? 'No sessions' : 'No matches' }}
       </div>
     </div>
   </div>
+
+  <!-- Confirm: delete single -->
+  <AlertDialog v-model:open="confirmDeleteSingleOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <div class="flex size-10 items-center justify-center rounded-full bg-destructive/10 mb-1">
+          <TriangleAlert class="size-5 text-destructive" />
+        </div>
+        <AlertDialogTitle>Delete this session?</AlertDialogTitle>
+        <AlertDialogDescription>
+          {{ singleDeleteTarget?.title }}
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <div
+        v-if="singleWarning.any"
+        class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2"
+      >
+        <TriangleAlert class="size-4 shrink-0 mt-0.5" />
+        <span>{{ warningText(singleWarning) }} — agents will be stopped immediately.</span>
+      </div>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          @click="executeDeleteSingle"
+        >
+          Delete
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
+  <!-- Confirm: delete selected -->
+  <AlertDialog v-model:open="confirmDeleteSelectedOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <div class="flex size-10 items-center justify-center rounded-full bg-destructive/10 mb-1">
+          <TriangleAlert class="size-5 text-destructive" />
+        </div>
+        <AlertDialogTitle>Delete {{ selectedCount }} session{{ selectedCount === 1 ? '' : 's' }}?</AlertDialogTitle>
+        <AlertDialogDescription>
+          You're about to delete {{ selectedCount }} selected session{{ selectedCount === 1 ? '' : 's' }}. This can't be undone.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <div
+        v-if="selectionWarning.any"
+        class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2"
+      >
+        <TriangleAlert class="size-4 shrink-0 mt-0.5" />
+        <span>{{ warningText(selectionWarning) }} — agents will be stopped immediately.</span>
+      </div>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          @click="executeDeleteSelected"
+        >
+          Delete {{ selectedCount }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
+  <!-- Confirm: delete all -->
+  <AlertDialog v-model:open="confirmDeleteAllOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <div class="flex size-10 items-center justify-center rounded-full bg-destructive/10 mb-1">
+          <TriangleAlert class="size-5 text-destructive" />
+        </div>
+        <AlertDialogTitle>Delete all {{ sessions.length }} sessions?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This removes {{ sessions.length }} session{{ sessions.length === 1 ? '' : 's' }} currently in view. Plans, transcripts, and sub-agent history will be discarded.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <div
+        v-if="allWarning.any"
+        class="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2"
+      >
+        <TriangleAlert class="size-4 shrink-0 mt-0.5" />
+        <span>{{ warningText(allWarning) }} — agents will be stopped immediately.</span>
+      </div>
+      <AlertDialogFooter>
+        <AlertDialogCancel>Cancel</AlertDialogCancel>
+        <AlertDialogAction
+          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          @click="executeDeleteAll"
+        >
+          Delete {{ sessions.length }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>
