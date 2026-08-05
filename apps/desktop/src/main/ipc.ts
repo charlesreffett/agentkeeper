@@ -984,10 +984,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Reset any sessions left mid-flight by a previous process, then prune old ones.
   sessionRegistry.resetStaleRunning()
   flushInProgressTokens()
-  {
-    const { sessionExpiryDays } = settingsStore.get()
-    sessionRegistry.pruneExpired(sessionExpiryDays)
-  }
+  sessionRegistry.pruneExpiredIfEnabled()
 
   ipcMain.handle(
     IPC_CHANNELS.sessionsListPersisted,

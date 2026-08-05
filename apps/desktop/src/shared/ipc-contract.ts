@@ -588,7 +588,9 @@ export interface AppSettings {
   enterToSend: boolean
   /** Which modifier triggers send. 'auto' = platform default (meta on Mac, ctrl elsewhere). */
   sendModifier: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
-  /** Days of inactivity before a persisted session is auto-pruned. null = never expire. */
+  /** When true, persisted sessions older than sessionExpiryDays are pruned on app startup and shutdown. Opt-in; default false. */
+  sessionExpiryEnabled: boolean
+  /** Days of inactivity before a persisted session is auto-pruned, when sessionExpiryEnabled. null = never expire. */
   sessionExpiryDays: number | null
   theme: 'light' | 'dark'
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'

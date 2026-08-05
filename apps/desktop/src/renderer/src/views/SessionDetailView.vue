@@ -20,6 +20,7 @@ const settings = ref<AppSettings>({
   defaultUseWorktree: false,
   enterToSend: false,
   sendModifier: 'auto',
+  sessionExpiryEnabled: false,
   sessionExpiryDays: 14,
   theme: 'dark',
   notifications: 'all',
