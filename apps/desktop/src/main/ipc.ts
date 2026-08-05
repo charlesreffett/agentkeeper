@@ -13,6 +13,7 @@ import {
   type CreatePRParams,
   type CreateProjectParams,
   type DayTotal,
+  type ProjectDayTotal,
   type HarnessInfo,
   type MergeMethod,
   type PRFilters,
@@ -1309,6 +1310,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Cost ledger + pricing
   ipcMain.handle(IPC_CHANNELS.costsGetDailySummary, (): DayTotal[] =>
     costLedger.getDailySummary(),
+  )
+  ipcMain.handle(IPC_CHANNELS.costsGetDailySummaryByProject, (): ProjectDayTotal[] =>
+    costLedger.getDailySummaryByProject(),
   )
   ipcMain.handle(
     IPC_CHANNELS.costsAddLegacy,

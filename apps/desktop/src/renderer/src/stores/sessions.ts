@@ -141,6 +141,9 @@ export const useSessionStore = defineStore('sessions', () => {
 
   const dailyUsage = reactive<Record<string, DayUsage>>({})
 
+  // Daily usage split by project path → same DayUsage keyed by date.
+  const dailyUsageByProject = reactive<Record<string, Record<string, DayUsage>>>({})
+
   // Per-session token/cost accumulator — keyed by sessionLocalId.
   const sessionTokens = reactive<Record<string, TokenStats>>({})
 
@@ -257,6 +260,17 @@ export const useSessionStore = defineStore('sessions', () => {
         } catch { /* ignore corrupt legacy data */ }
       }
       localStorage.setItem('agentkeeper:legacyImported', '1')
+    }
+  }).catch(() => { /* non-fatal */ })
+
+  void queryClient.fetchQuery({
+    queryKey: queryKeys.costs.dailyByProject(),
+    queryFn: () => window.agentkeeper.costs.getDailySummaryByProject(),
+    staleTime: 60_000,
+  }).then((rows) => {
+    for (const row of rows) {
+      const map = dailyUsageByProject[row.projectPath] ?? (dailyUsageByProject[row.projectPath] = {})
+      map[row.date] = { tokens: row.tokens, costUsd: row.costUsd, inputTokens: row.inputTokens, outputTokens: row.outputTokens, cacheReadTokens: row.cacheReadTokens, cacheCreationTokens: row.cacheCreationTokens }
     }
   }).catch(() => { /* non-fatal */ })
 
@@ -1052,16 +1066,16 @@ export const useSessionStore = defineStore('sessions', () => {
     return session.agents.length || 1
   }
 
-  const tokenStats = computed(() => {
+  function buildTokenStats(usage: Record<string, DayUsage>) {
     const todayKey = localDateKey()
-    const today = dailyUsage[todayKey] ?? { tokens: 0, costUsd: 0 }
+    const today = usage[todayKey] ?? { tokens: 0, costUsd: 0 }
     const now = new Date()
     const history: Array<{ date: string; tokens: number; costUsd: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }> = []
     for (let i = 29; i >= 0; i--) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
       const key = localDateKey(d)
-      const day = dailyUsage[key]
+      const day = usage[key]
       history.push({
         date: key,
         tokens: day?.tokens ?? 0,
@@ -1077,7 +1091,17 @@ export const useSessionStore = defineStore('sessions', () => {
       costUsdToday: today.costUsd,
       dailyHistory: history,
     }
-  })
+  }
+
+  const tokenStats = computed(() => buildTokenStats(dailyUsage))
+
+  // Same shape as `tokenStats` but scoped to a single project; `null` returns
+  // the global roll-up. Persisted history comes from the per-project cost
+  // summary; live turns are attributed in the onStats handler below.
+  function tokenStatsFor(projectPath: string | null) {
+    if (!projectPath) return buildTokenStats(dailyUsage)
+    return buildTokenStats(dailyUsageByProject[projectPath] ?? {})
+  }
 
   // ─── IPC subscriptions — set up once ───────────────────────────────────
 
@@ -1279,6 +1303,20 @@ export const useSessionStore = defineStore('sessions', () => {
       dailyUsage[key]!.outputTokens += u.outputTokens
       dailyUsage[key]!.cacheReadTokens += u.cacheReadInputTokens
       dailyUsage[key]!.cacheCreationTokens += u.cacheCreationInputTokens
+
+      // Per-project daily accumulation — mirrors the global roll-up so the
+      // dashboard can scope Token Activity to the selected project.
+      const projectPath = sessions[u.sessionId]?.projectPath
+      if (projectPath) {
+        const projMap = dailyUsageByProject[projectPath] ?? (dailyUsageByProject[projectPath] = {})
+        if (!projMap[key]) projMap[key] = { tokens: 0, costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+        projMap[key]!.tokens += tokens
+        projMap[key]!.costUsd += costUsd
+        projMap[key]!.inputTokens += u.inputTokens
+        projMap[key]!.outputTokens += u.outputTokens
+        projMap[key]!.cacheReadTokens += u.cacheReadInputTokens
+        projMap[key]!.cacheCreationTokens += u.cacheCreationInputTokens
+      }
 
       // Session-level accumulation
       if (!sessionTokens[u.sessionId]) {
@@ -1544,6 +1582,7 @@ export const useSessionStore = defineStore('sessions', () => {
     statusCounts,
     subAgentCount,
     tokenStats,
+    tokenStatsFor,
     activeAgentCount,
     runningSessionCount,
     editAndRerun,

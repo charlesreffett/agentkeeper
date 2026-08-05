@@ -37,6 +37,7 @@ export const queryKeys = {
   },
   costs: {
     daily: () => ['costs', 'daily'] as const,
+    dailyByProject: () => ['costs', 'dailyByProject'] as const,
   },
   plugins: {
     all: ['plugins'] as const,

@@ -12,6 +12,7 @@ import {
   type HarnessInfo,
   type CreatePRParams,
   type DayTotal,
+  type ProjectDayTotal,
   type DraftRecord,
   type LegacyDayEntry,
   type FsEntry,
@@ -476,6 +477,8 @@ const api: AgentKeeperApi = {
   costs: {
     getDailySummary: () =>
       invoke(IPC_CHANNELS.costsGetDailySummary) as Promise<DayTotal[]>,
+    getDailySummaryByProject: () =>
+      invoke(IPC_CHANNELS.costsGetDailySummaryByProject) as Promise<ProjectDayTotal[]>,
     addLegacy: (entries: Array<LegacyDayEntry>) =>
       invoke(IPC_CHANNELS.costsAddLegacy, entries) as Promise<void>,
   },

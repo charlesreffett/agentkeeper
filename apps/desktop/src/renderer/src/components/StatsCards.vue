@@ -8,26 +8,60 @@ import { useTimeSeries } from '@/composables/useTimeSeries'
 import SparklineChart from '@/components/SparklineChart.vue'
 import DonutChart from '@/components/DonutChart.vue'
 
+const props = defineProps<{
+  /** When set, every metric is scoped to this project. `null` → all projects. */
+  projectPath?: string | null
+}>()
+
 const sessionStore = useSessionStore()
 const { projects } = useProjectsQuery()
 const { persistedSessions } = useSessionsListQuery(projects)
 
-const runningCount = computed(() => sessionStore.statusCounts.running)
-const totalCount = computed(() => sessionStore.visibleSessions.length)
+const scopePath = computed(() => props.projectPath ?? null)
+
+function inScope(path: string): boolean {
+  return scopePath.value === null || path === scopePath.value
+}
+
+function isToday(ts: number): boolean {
+  const d = new Date(ts)
+  const n = new Date()
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate()
+}
+
+// Live (in-memory) sessions in scope — running counts must come from these,
+// persisted snapshots carry stale status.
+const liveScoped = computed(() =>
+  sessionStore.visibleSessions.filter((s) => inScope(s.projectPath)),
+)
+const runningSessions = computed(() =>
+  liveScoped.value.filter((s) => s.status === 'running' || s.status === 'starting'),
+)
+const runningCount = computed(() => runningSessions.value.length)
+
+// Sessions started today, in scope — merge live + persisted, dedup by localId.
+const todayCount = computed(() => {
+  const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
+  let count = 0
+  for (const s of sessionStore.visibleSessions) {
+    if (inScope(s.projectPath) && isToday(s.startedAt)) count++
+  }
+  for (const s of persistedSessions.value) {
+    if (liveIds.has(s.localId)) continue
+    if (inScope(s.projectPath) && isToday(s.startedAt)) count++
+  }
+  return count
+})
 const activeSparkline = useTimeSeries(() => runningCount.value, { intervalMs: 30_000 })
 
-const subAgentStats = computed(() => {
-  const runningSessions = sessionStore.visibleSessions.filter(
-    (s) => (s.status === 'running' || s.status === 'starting') && s.agencyId,
-  )
-  return {
-    total: runningSessions.reduce((sum, s) => sum + sessionStore.subAgentCount(s), 0),
-    sessionCount: runningSessions.length,
-  }
-})
-const agentSparkline = useTimeSeries(() => subAgentStats.value.total, { intervalMs: 30_000 })
+// Every agent (main + sub) in each running session counts equally.
+const agentStats = computed(() => ({
+  total: runningSessions.value.reduce((sum, s) => sum + sessionStore.subAgentCount(s), 0),
+  sessionCount: runningSessions.value.length,
+}))
+const agentSparkline = useTimeSeries(() => agentStats.value.total, { intervalMs: 30_000 })
 
-const tokenStats = computed(() => sessionStore.tokenStats)
+const tokenStats = computed(() => sessionStore.tokenStatsFor(scopePath.value))
 const tokenSparkline = computed(() => tokenStats.value.dailyHistory.map((d) => d.tokens))
 
 const hoveredDayIndex = ref<number | null>(null)
@@ -61,6 +95,21 @@ const displayBreakdown = computed(() => {
     cacheReadTokens: day.cacheReadTokens,
     cacheCreationTokens: day.cacheCreationTokens,
   }
+})
+
+const dominantSummary = computed(() => {
+  const b = displayBreakdown.value
+  if (!b) return null
+  const cats: Array<[string, number]> = [
+    ['input', b.inputTokens],
+    ['output', b.outputTokens],
+    ['cache read', b.cacheReadTokens],
+    ['cache write', b.cacheCreationTokens],
+  ]
+  const total = cats.reduce((sum, [, v]) => sum + v, 0)
+  if (total === 0) return null
+  const [label, val] = cats.reduce((a, c) => (c[1] > a[1] ? c : a))
+  return `${((val / total) * 100).toFixed(1)}% ${label}`
 })
 
 function formatTokens(n: number): string {
@@ -107,21 +156,21 @@ const projectTotal = computed(() =>
       </span>
       <div class="flex items-baseline gap-1.5">
         <span class="text-3xl font-bold leading-none">{{ runningCount }}</span>
-        <span class="text-sm text-muted-foreground">of {{ totalCount }}</span>
+        <span class="text-sm text-muted-foreground">active · {{ todayCount }} today</span>
       </div>
       <SparklineChart :data="activeSparkline" color="#6366f1" :height="36" class="mt-auto" />
     </div>
 
-    <!-- Card 2: Sub-Agents Working -->
+    <!-- Card 2: Running Agents -->
     <div class="rounded-xl border bg-card p-4 flex flex-col gap-2">
       <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-        Sub-Agents Working
+        Running Agents
       </span>
       <div class="flex items-baseline gap-1.5">
-        <span class="text-3xl font-bold leading-none">{{ subAgentStats.total }}</span>
+        <span class="text-3xl font-bold leading-none">{{ agentStats.total }}</span>
         <span class="text-sm text-muted-foreground">
-          across {{ subAgentStats.sessionCount }}
-          {{ subAgentStats.sessionCount === 1 ? 'session' : 'sessions' }}
+          across {{ agentStats.sessionCount }}
+          {{ agentStats.sessionCount === 1 ? 'session' : 'sessions' }}
         </span>
       </div>
       <SparklineChart :data="agentSparkline" color="#a855f7" :height="36" class="mt-auto" />
@@ -130,7 +179,7 @@ const projectTotal = computed(() =>
     <!-- Card 3: Tokens -->
     <div class="rounded-xl border bg-card p-4 flex flex-col gap-2">
       <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-        Tokens · {{ displayLabel }}
+        Token Activity · {{ displayLabel }}
       </span>
       <div class="flex items-baseline gap-1.5">
         <span class="text-3xl font-bold leading-none">{{ formatTokens(displayTokens) }}</span>
@@ -150,6 +199,9 @@ const projectTotal = computed(() =>
             <span class="text-right tabular-nums">{{ displayBreakdown.cacheReadTokens.toLocaleString() }}</span>
             <span class="text-muted-foreground">Cache write</span>
             <span class="text-right tabular-nums">{{ displayBreakdown.cacheCreationTokens.toLocaleString() }}</span>
+          </div>
+          <div v-if="dominantSummary" class="mt-1.5 pt-1.5 border-t border-border/60 text-muted-foreground">
+            {{ dominantSummary }}
           </div>
         </div>
         <SparklineChart

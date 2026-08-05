@@ -727,6 +727,10 @@ export interface DayTotal {
   cacheCreationTokens: number
 }
 
+export interface ProjectDayTotal extends DayTotal {
+  projectPath: string
+}
+
 export interface ModelPricing {
   input: number
   output: number
@@ -1017,6 +1021,7 @@ export interface AgentKeeperApi {
   }
   costs: {
     getDailySummary: () => Promise<DayTotal[]>
+    getDailySummaryByProject: () => Promise<ProjectDayTotal[]>
     addLegacy: (entries: Array<LegacyDayEntry>) => Promise<void>
   }
   pricing: {
@@ -1202,6 +1207,7 @@ export const IPC_CHANNELS = {
   plansDelete: 'plans:delete',
   planUpdated: 'plan:updated',
   costsGetDailySummary: 'costs:getDailySummary',
+  costsGetDailySummaryByProject: 'costs:getDailySummaryByProject',
   costsAddLegacy: 'costs:addLegacy',
   pricingRefresh: 'pricing:refresh',
   pricingGetTable: 'pricing:getTable',

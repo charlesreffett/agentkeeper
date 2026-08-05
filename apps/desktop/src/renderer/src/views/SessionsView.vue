@@ -473,7 +473,7 @@ function handleCardClick(card: SessionCardData) {
     </div>
 
     <!-- Stats overview -->
-    <StatsCards />
+    <StatsCards :project-path="selectedProjectPath" />
 
     <!-- Selection action bar -->
     <div
