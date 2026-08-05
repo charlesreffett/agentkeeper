@@ -37,6 +37,7 @@ export const queryKeys = {
   },
   costs: {
     daily: () => ['costs', 'daily'] as const,
+    dailyByProject: () => ['costs', 'dailyByProject'] as const,
   },
   plugins: {
     all: ['plugins'] as const,
@@ -46,5 +47,9 @@ export const queryKeys = {
   harness: {
     list: () => ['harness', 'list'] as const,
     active: () => ['harness', 'active'] as const,
+  },
+  performance: {
+    summary: (projectPath: string | null, rangeDays: number) =>
+      ['performance', 'summary', projectPath ?? '', rangeDays] as const,
   },
 }

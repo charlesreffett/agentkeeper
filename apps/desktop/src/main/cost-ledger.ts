@@ -1,6 +1,6 @@
 import { eq, like } from 'drizzle-orm'
 import { getDb } from './db/index'
-import { agents, costEntries } from './db/schema'
+import { agents, costEntries, sessions } from './db/schema'
 
 export interface CostEntry {
   key: string
@@ -26,6 +26,10 @@ export interface DayTotal {
   outputTokens: number
   cacheReadTokens: number
   cacheCreationTokens: number
+}
+
+export interface ProjectDayTotal extends DayTotal {
+  projectPath: string
 }
 
 // Kept to avoid changing index.ts call sites.
@@ -146,6 +150,41 @@ export function getDailySummary(): DayTotal[] {
     days[entry.date]!.tokens += entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens
   }
   return Object.values(days).sort((a, b) => a.date.localeCompare(b.date))
+}
+
+// Per-day totals split by owning project. Cost entry keys are
+// `<agentLocalId>:turn:<n>`; join agent → session → project_path to attribute
+// each entry. Legacy entries (`legacy:` prefix) carry no project and are
+// dropped from this breakdown.
+export function getDailySummaryByProject(): ProjectDayTotal[] {
+  const costRows = getDb().select().from(costEntries).all()
+  const agentRows = getDb().select({ localId: agents.localId, sessionLocalId: agents.sessionLocalId }).from(agents).all()
+  const sessionRows = getDb().select({ localId: sessions.localId, projectPath: sessions.projectPath }).from(sessions).all()
+
+  const agentToSession: Record<string, string> = {}
+  for (const a of agentRows) agentToSession[a.localId] = a.sessionLocalId
+  const sessionToProject: Record<string, string> = {}
+  for (const s of sessionRows) sessionToProject[s.localId] = s.projectPath
+
+  const byKey: Record<string, ProjectDayTotal> = {}
+  for (const entry of costRows) {
+    const turnIdx = entry.key.indexOf(':turn:')
+    if (turnIdx === -1) continue
+    const agentId = entry.key.slice(0, turnIdx)
+    const sessionId = agentToSession[agentId] ?? agentId
+    const projectPath = sessionToProject[sessionId]
+    if (!projectPath) continue
+    const k = `${projectPath}\n${entry.date}`
+    if (!byKey[k]) byKey[k] = { projectPath, date: entry.date, costUsd: 0, tokens: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 }
+    const d = byKey[k]!
+    d.costUsd += entry.costUsd
+    d.inputTokens += entry.inputTokens
+    d.outputTokens += entry.outputTokens
+    d.cacheReadTokens += entry.cacheReadTokens
+    d.cacheCreationTokens += entry.cacheCreationTokens
+    d.tokens += entry.inputTokens + entry.outputTokens + entry.cacheReadTokens + entry.cacheCreationTokens
+  }
+  return Object.values(byKey)
 }
 
 // Bulk-import legacy per-day totals stored in renderer's localStorage

@@ -12,6 +12,7 @@ import {
   type HarnessInfo,
   type CreatePRParams,
   type DayTotal,
+  type ProjectDayTotal,
   type DraftRecord,
   type LegacyDayEntry,
   type FsEntry,
@@ -60,6 +61,7 @@ import {
   type JiraActivityEntry,
   type PluginRecord,
   type UpdateAvailable,
+  type PerformanceSummary,
 } from '../shared/ipc-contract'
 
 /**
@@ -476,6 +478,8 @@ const api: AgentKeeperApi = {
   costs: {
     getDailySummary: () =>
       invoke(IPC_CHANNELS.costsGetDailySummary) as Promise<DayTotal[]>,
+    getDailySummaryByProject: () =>
+      invoke(IPC_CHANNELS.costsGetDailySummaryByProject) as Promise<ProjectDayTotal[]>,
     addLegacy: (entries: Array<LegacyDayEntry>) =>
       invoke(IPC_CHANNELS.costsAddLegacy, entries) as Promise<void>,
   },
@@ -530,6 +534,10 @@ const api: AgentKeeperApi = {
   mobile: {
     generateKey: () => invoke(IPC_CHANNELS.mobileGenerateKey) as Promise<string>,
     getLocalIp: () => invoke(IPC_CHANNELS.mobileGetLocalIp) as Promise<string>,
+  },
+  performance: {
+    getSummary: (opts: { projectPath: string | null; rangeDays: number }) =>
+      invoke(IPC_CHANNELS.performanceGetSummary, opts) as Promise<PerformanceSummary>,
   },
   ...(process.env.NODE_ENV === 'development' ? {
     dev: {
