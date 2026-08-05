@@ -17,16 +17,17 @@ import RolesView from '@/views/RolesView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import CommandsView from '@/views/CommandsView.vue'
 import SettingsView from '@/views/SettingsView.vue'
-import SessionsView from '@/views/SessionsView.vue'
-import SessionDetailView from '@/views/SessionDetailView.vue'
+import SessionsWorkspace from '@/views/SessionsWorkspace.vue'
+import StatsView from '@/views/StatsView.vue'
 
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', redirect: '/sessions' },
-    { path: '/sessions', component: SessionsView },
-    { path: '/sessions/:id', component: SessionDetailView },
+    { path: '/sessions', component: SessionsWorkspace },
+    { path: '/sessions/:id', component: SessionsWorkspace },
     { path: '/monitor', component: MonitorView },
+    { path: '/stats', component: StatsView },
     { path: '/planner', component: PlannerListView },
     { path: '/planner/:id', component: PlannerDetailView },
     { path: '/agencies', component: AgenciesView },

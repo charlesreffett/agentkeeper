@@ -2,7 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ArrowLeft,
   Brain,
   ChevronDown,
   KeyRound,
@@ -16,7 +15,6 @@ import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ModelPicker from '@/components/ModelPicker.vue'
 import PillSelect from '@/components/PillSelect.vue'
-import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -544,13 +542,7 @@ function writePanelCollapsed(name: string, value: boolean) {
   }
 }
 
-const leftCollapsed = ref(readPanelCollapsed('left', false))
 const rightCollapsed = ref(readPanelCollapsed('right', false))
-
-function setLeftCollapsed(v: boolean) {
-  leftCollapsed.value = v
-  writePanelCollapsed('left', v)
-}
 
 function setRightCollapsed(v: boolean) {
   rightCollapsed.value = v
@@ -588,28 +580,11 @@ const streamingEventUuid = computed((): string | undefined => {
 <template>
   <div v-if="session" class="h-full flex overflow-hidden">
 
-    <!-- ── Left column: Sessions list ────────────────────────────────────── -->
-    <SessionsSidebar
-      :collapsed="leftCollapsed"
-      :active-id="props.liveId"
-      @collapse="setLeftCollapsed(true)"
-      @expand="setLeftCollapsed(false)"
-    />
-
     <!-- ── Center column: Chat ────────────────────────────────────────────── -->
     <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
 
       <!-- Header -->
       <header class="border-b border-border px-3 h-10 shrink-0 flex items-center gap-2">
-        <!-- Back to sessions list -->
-        <button
-          class="shrink-0 p-1 -ml-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-          title="Back to sessions"
-          @click="router.push('/sessions')"
-        >
-          <ArrowLeft class="size-4" />
-        </button>
-
         <!-- Session title -->
         <h1 class="text-sm font-medium truncate flex-1 min-w-0">
           {{ sessionTitle }}

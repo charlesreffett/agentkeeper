@@ -36,7 +36,7 @@ export interface DraftSessionConfig {
 
 export interface LiveSession extends Session {
   // Runtime-only — not persisted, not IPC-transferable
-  /** All events in chronological order — kept for backward compat with SessionCard.vue. */
+  /** All events in chronological order — used by MonitorView and ContextPanel. */
   events: TranscriptEvent[]
   /** Per-agent event streams. Key = agentLocalId. */
   agentEvents: Record<string, TranscriptEvent[]>
