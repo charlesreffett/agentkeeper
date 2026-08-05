@@ -3,7 +3,6 @@ import { computed, ref } from 'vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
-import { projectColor } from '@/lib/projectColor'
 import { useTimeSeries } from '@/composables/useTimeSeries'
 import SparklineChart from '@/components/SparklineChart.vue'
 import DonutChart from '@/components/DonutChart.vue'
@@ -122,29 +121,30 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)} est.`
 }
 
-const projectSegments = computed(() => {
-  const pathCounts = new Map<string, number>()
-  const liveIds = new Set(sessionStore.visibleSessions.map((s) => s.localId))
-  for (const s of sessionStore.visibleSessions) {
-    pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
-  }
-  for (const s of persistedSessions.value) {
-    if (!liveIds.has(s.localId)) {
-      pathCounts.set(s.projectPath, (pathCounts.get(s.projectPath) ?? 0) + 1)
-    }
-  }
-  return projects.value
-    .filter((p) => pathCounts.has(p.path))
-    .map((p) => ({
-      label: p.name,
-      value: pathCounts.get(p.path)!,
-      color: projectColor(p.name),
-    }))
+// Card 4 — cache efficiency. Share of the displayed day's input tokens that
+// was served from cache (cache read) rather than billed at fresh input rate.
+// Cache write is the premium paid to seed the cache for later reads.
+const cacheSegments = computed(() => {
+  const b = displayBreakdown.value
+  if (!b) return []
+  const segs: Array<{ label: string; value: number; color: string }> = []
+  if (b.inputTokens > 0) segs.push({ label: 'Fresh', value: b.inputTokens, color: '#6366f1' })
+  if (b.cacheReadTokens > 0) segs.push({ label: 'Cache read', value: b.cacheReadTokens, color: '#10b981' })
+  if (b.cacheCreationTokens > 0) segs.push({ label: 'Cache write', value: b.cacheCreationTokens, color: '#f59e0b' })
+  return segs
 })
 
-const projectTotal = computed(() =>
-  projectSegments.value.reduce((sum, seg) => sum + seg.value, 0),
-)
+const cacheInputTotal = computed(() => {
+  const b = displayBreakdown.value
+  if (!b) return 0
+  return b.inputTokens + b.cacheReadTokens + b.cacheCreationTokens
+})
+
+const cacheHitRate = computed(() => {
+  const b = displayBreakdown.value
+  if (!b || cacheInputTotal.value === 0) return null
+  return (b.cacheReadTokens / cacheInputTotal.value) * 100
+})
 </script>
 
 <template>
@@ -214,26 +214,32 @@ const projectTotal = computed(() =>
       </div>
     </div>
 
-    <!-- Card 4: By Project -->
+    <!-- Card 4: Cache Efficiency -->
     <div class="rounded-xl border bg-card p-4 flex flex-col gap-2">
       <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
-        By Project
+        Cache Efficiency · {{ displayLabel }}
       </span>
+      <div class="flex items-baseline gap-1.5">
+        <span class="text-3xl font-bold leading-none">
+          {{ cacheHitRate === null ? '—' : `${cacheHitRate.toFixed(0)}%` }}
+        </span>
+        <span class="text-sm text-muted-foreground">of input from cache</span>
+      </div>
       <div class="flex items-center gap-4 flex-1">
         <DonutChart
-          :segments="projectSegments"
-          :total="projectTotal"
+          :segments="cacheSegments"
+          :total="cacheInputTotal"
           :size="72"
         />
         <div class="flex flex-col gap-1 min-w-0">
           <div
-            v-for="seg in projectSegments"
+            v-for="seg in cacheSegments"
             :key="seg.label"
             class="flex items-center gap-1.5 text-xs text-muted-foreground"
           >
             <span class="size-2 rounded-full shrink-0" :style="{ backgroundColor: seg.color }" />
             <span class="truncate">{{ seg.label }}</span>
-            <span class="ml-auto font-medium text-foreground tabular-nums">{{ seg.value }}</span>
+            <span class="ml-auto font-medium text-foreground tabular-nums">{{ formatTokens(seg.value) }}</span>
           </div>
         </div>
       </div>
