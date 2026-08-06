@@ -7,6 +7,7 @@ import { watch as fsWatch } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
 import {
   IPC_CHANNELS,
+  isGeneralProject,
   type AddAgentParams,
   type AppSettings,
   type Attachment,
@@ -138,12 +139,15 @@ function secretKeyToKeytarKey(k: SecretKeyName) {
 
 export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Every session — including ones revived via resume/auto-resume paths that
-  // don't pass an mcpFactory — gets the agentkeeper MCP server.
-  setDefaultMcpFactoryResolver(({ projectPath, agentLocalId, isAgency }) =>
-    isAgency
+  // don't pass an mcpFactory — gets the agentkeeper MCP server. General chats
+  // skip it entirely: no project means no plan store, so the agent stays a
+  // clean Claude Code.
+  setDefaultMcpFactoryResolver(({ projectPath, agentLocalId, isAgency }) => {
+    if (isGeneralProject(projectPath)) return undefined
+    return isAgency
       ? () => createOrchestratorMcp(projectPath, agentLocalId)
-      : () => createProjectMcp(projectPath),
-  )
+      : () => createProjectMcp(projectPath)
+  })
 
   // Projects (registry)
   ipcMain.handle(IPC_CHANNELS.projectsAdd, async (_event, projectPath: string) => {
@@ -297,7 +301,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         }
 
         const agentLocalId = await startSession(params, {
-          mcpFactory: () => createProjectMcp(params.projectPath),
+          ...(!isGeneralProject(params.projectPath)
+            ? { mcpFactory: () => createProjectMcp(params.projectPath) }
+            : {}),
           ...(Object.keys(additionalMcpServers).length > 0 ? { additionalMcpServers } : {}),
         })
         if (params.initialPrompt) {
@@ -1117,7 +1123,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
             worktreePath: session.worktreePath ?? undefined,
             ...params,
           },
-          { mcpFactory: () => createProjectMcp(session.projectPath) },
+          // General chats carry no agentkeeper MCP server.
+          isGeneralProject(session.projectPath)
+            ? {}
+            : { mcpFactory: () => createProjectMcp(session.projectPath) },
         )
       } catch (err) {
         console.error('[ipc] sessions:addAgent failed:', err)

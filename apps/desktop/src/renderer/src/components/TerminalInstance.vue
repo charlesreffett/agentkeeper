@@ -4,13 +4,14 @@ import { Terminal } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { useTerminalStore } from '@/stores/terminalStore'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useSessionStore } from '@/stores/sessions'
+import { isGeneralProject } from '@shared/ipc-contract'
 import type { TerminalTab } from '@/stores/terminalStore'
 
 const props = defineProps<{ tab: TerminalTab; active: boolean }>()
 
 const terminalStore = useTerminalStore()
-const { focusedProject } = useProjectsQuery()
+const sessionStore = useSessionStore()
 
 const container = ref<HTMLDivElement | null>(null)
 
@@ -53,7 +54,8 @@ onMounted(async () => {
     if (buffered) xterm.write(buffered)
     wireListeners(props.tab.ptyId)
   } else {
-    const cwd = focusedProject.value?.path ?? '/'
+    const active = sessionStore.currentSession?.projectPath
+    const cwd = active && !isGeneralProject(active) ? active : '/'
     const id = await window.agentkeeper.terminal.create(cwd)
     terminalStore.setPtyId(props.tab.key, id)
     wireListeners(id)

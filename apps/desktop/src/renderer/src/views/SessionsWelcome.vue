@@ -4,15 +4,11 @@ import { useRouter } from 'vue-router'
 import { Activity, ChartColumnBig, MessageSquarePlus } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { useUnifiedSessions } from '@/composables/useUnifiedSessions'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 
 const router = useRouter()
 const sessionStore = useSessionStore()
-const { projects, focusedProject } = useProjectsQuery()
 const { createNewSession } = useUnifiedSessions()
-
-const hasProjects = computed(() => projects.value.length > 0)
 
 const statusCounts = computed(() => sessionStore.statusCounts)
 
@@ -24,10 +20,8 @@ const statusLine = computed(() => {
   return parts.join(' · ') || 'No active sessions'
 })
 
-const projectLabel = computed(() => focusedProject.value?.name)
-
 async function handleNew() {
-  // No project to start in — the header project picker is the entry point.
+  // Starts a General (no-project) draft; context is chosen in the compose header.
   await createNewSession()
 }
 </script>
@@ -48,14 +42,10 @@ async function handleNew() {
       </div>
 
       <div class="w-full flex flex-col items-center gap-2">
-        <Button size="lg" class="gap-2 px-6" :disabled="!hasProjects" @click="handleNew">
+        <Button size="lg" class="gap-2 px-6" @click="handleNew">
           <MessageSquarePlus class="size-4" />
           New session
-          <span v-if="projectLabel" class="font-normal opacity-80">in {{ projectLabel }}</span>
         </Button>
-        <p v-if="!hasProjects" class="text-xs text-muted-foreground/70">
-          Add a project from the header to start your first session.
-        </p>
       </div>
 
       <div class="w-full pt-2 border-t border-border/50 flex flex-col items-center gap-3">

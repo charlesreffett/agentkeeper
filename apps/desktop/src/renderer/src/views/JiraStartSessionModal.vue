@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore } from '@/stores/jiraActivity'
+import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 import type { Agency, Role, RoleEffort, WorkItem } from '@shared/ipc-contract'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 
@@ -21,7 +21,6 @@ type Mode = 'solo' | 'agency'
 
 const dialog = ref<HTMLDialogElement | null>(null)
 const mode = ref<Mode>('solo')
-const { focusedProject } = useProjectsQuery()
 const sessionStore = useSessionStore()
 const activityStore = useJiraActivityStore()
 
@@ -70,7 +69,7 @@ function detectProjectPath(): string {
     )
     if (mapping?.projectPath) return mapping.projectPath
   }
-  return focusedProject.value?.path ?? ''
+  return GENERAL_PROJECT_PATH
 }
 
 const isMappedProject = computed(() => {

@@ -16,6 +16,11 @@ export function useProjectsQuery() {
   })
 
   const projects = computed(() => projectsData.value ?? [])
+
+  // Legacy app-wide "focused project" knob. Pages no longer read it — context
+  // is a per-page scope (usePageScope) and a per-session choice. Kept for the
+  // transition: the main process still stores it for the iOS companion and a
+  // few legacy consumers.
   const focusedProject = computed(() => focusedData.value ?? null)
 
   function invalidateAll() {

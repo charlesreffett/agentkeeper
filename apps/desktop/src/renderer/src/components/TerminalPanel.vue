@@ -2,7 +2,8 @@
 import { computed, onMounted, onBeforeUnmount, nextTick, ref } from 'vue'
 import { X, RotateCcw, Plus } from 'lucide-vue-next'
 import { useTerminalStore } from '@/stores/terminalStore'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useSessionStore } from '@/stores/sessions'
+import { isGeneralProject } from '@shared/ipc-contract'
 import TerminalInstance from '@/components/TerminalInstance.vue'
 import {
   Tooltip,
@@ -12,7 +13,7 @@ import {
 } from '@/components/ui/tooltip'
 
 const terminalStore = useTerminalStore()
-const { focusedProject } = useProjectsQuery()
+const sessionStore = useSessionStore()
 
 const root = ref<HTMLDivElement | null>(null)
 const activeKey = computed(() => terminalStore.activeKey)
@@ -42,7 +43,9 @@ function cancelRename(): void {
 }
 
 function projectBase(): string {
-  return focusedProject.value?.name ?? 'Terminal'
+  const active = sessionStore.currentSession?.projectPath
+  if (!active || isGeneralProject(active)) return 'Terminal'
+  return active.split('/').pop() ?? 'Terminal'
 }
 
 function onFocusIn(): void {

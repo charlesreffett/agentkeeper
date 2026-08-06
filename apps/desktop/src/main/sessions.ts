@@ -1,7 +1,9 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import { getHarness } from './harness/index'
+import { isGeneralProject } from '../shared/ipc-contract'
 import type {
   ContentBlock,
   EventKind,
@@ -22,8 +24,12 @@ export function encodeCwdForHarness(cwd: string, harnessId?: string): string {
 
 // harnessId pins the JSONL layout to the harness that ran the session; omit to
 // fall back to the active harness (correct while a single harness exists).
+// General (no-project) sessions run with home as their cwd, so their JSONL
+// lives under the home-encoded directory — not a directory named after the
+// sentinel project key.
 function projectDir(projectPath: string, harnessId?: string): string {
-  return path.join(claudeProjectsRoot(harnessId), encodeCwdForHarness(projectPath, harnessId))
+  const cwd = isGeneralProject(projectPath) ? os.homedir() : projectPath
+  return path.join(claudeProjectsRoot(harnessId), encodeCwdForHarness(cwd, harnessId))
 }
 
 function snippet(s: string, maxLen = 200): string {

@@ -1,19 +1,42 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import type { Skill, SkillPreview } from '@shared/ipc-contract'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useSkillsDataStore } from '@/stores/skillsData'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import PageHeader from '@/components/PageHeader.vue'
+import ScopeBar from '@/components/ScopeBar.vue'
 
-const { focusedProject } = useProjectsQuery()
+const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
+  usePageScope('skills', { includeGlobal: true })
+const { projects } = useProjectsQuery()
+const queryClient = useQueryClient()
 const skillsDataStore = useSkillsDataStore()
-const projectPath = computed(() => focusedProject.value?.path ?? '')
+// Scoped load input: project → its path (project + global); Global/All → ''
+// (global-only for the store; the union query below serves All).
+const projectPath = computed(() =>
+  isAll.value || isGlobal.value ? '' : isProject.value ? currentProject.value?.path ?? '' : '',
+)
 const { handleAuthError } = useClaudeAuth()
 
-const skills = computed(() => skillsDataStore.skills)
-const loading = computed(() => skillsDataStore.loading)
+// All scope = union of global + every project's skills, deduped by file path.
+const { data: allSkills, isLoading: allLoading } = useQuery({
+  queryKey: computed(() => ['skills', 'list', SCOPE_ALL, projects.value.map((p) => p.path).sort().join('|')]),
+  enabled: isAll,
+  queryFn: async () => {
+    const paths = ['', ...projects.value.map((p) => p.path)]
+    const lists = await Promise.all(paths.map((p) => window.agentkeeper.skills.list(p)))
+    const byPath = new Map<string, Skill>()
+    for (const list of lists) for (const s of list) byPath.set(s.path, s)
+    return Array.from(byPath.values())
+  },
+})
+
+const skills = computed<Skill[]>(() => (isAll.value ? allSkills.value ?? [] : skillsDataStore.skills))
+const loading = computed(() => (isAll.value ? allLoading.value : skillsDataStore.loading))
 const expanded = ref<string | null>(null)
 const message = ref<string | null>(null)
 
@@ -41,6 +64,16 @@ const createDescription = ref('')
 const createBody = ref('')
 const createScope = ref<'project' | 'global'>('project')
 const saving = ref(false)
+
+// Scope defaults follow the page: Global/All → global (no project to write to).
+watch(
+  () => scope.value,
+  () => {
+    const next = isGlobal.value || isAll.value ? 'global' : 'project'
+    installScope.value = next
+    createScope.value = next
+  },
+)
 
 function toSlug(s: string): string {
   return s
@@ -121,8 +154,12 @@ async function doSaveSkill() {
 async function refresh() {
   message.value = null
   try {
-    skillsDataStore.invalidate()
-    await skillsDataStore.load(projectPath.value)
+    if (isAll.value) {
+      await queryClient.invalidateQueries({ queryKey: ['skills', 'list', SCOPE_ALL] })
+    } else {
+      skillsDataStore.invalidate()
+      await skillsDataStore.load(projectPath.value)
+    }
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   }
@@ -228,9 +265,10 @@ function toggleExpand(skill: Skill) {
 }
 
 watch(
-  () => focusedProject.value?.path,
-  async (path) => {
-    if (path !== undefined) await skillsDataStore.load(path ?? '')
+  () => scope.value,
+  async () => {
+    expanded.value = null
+    await refresh()
   },
 )
 
@@ -238,13 +276,24 @@ onMounted(async () => {
   expanded.value = null
   activeTab.value = 'install'
   resetInstallForm()
-  await skillsDataStore.load(projectPath.value)
+  await refresh()
 })
 </script>
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Skills" />
+    <PageHeader title="Skills">
+      <template #actions>
+        <ScopeBar
+          :scope="scope"
+          :options="options"
+          :label="label"
+          :color="color"
+          @select="setScope"
+          @pick-and-add="pickAndAdd"
+        />
+      </template>
+    </PageHeader>
 
     <div class="flex-1 overflow-y-auto min-h-0">
       <!-- Tab bar -->

@@ -4,6 +4,7 @@ import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import Anthropic from '@anthropic-ai/sdk'
 import {
+  isGeneralProject,
   ROLE_EFFORT_VALUES,
   type Role,
   type RoleEffort,
@@ -126,7 +127,8 @@ async function listScope(
 
 export async function listRoles(projectPath: string): Promise<Role[]> {
   const [project, global] = await Promise.all([
-    listScope('project', projectPath),
+    // General chats have no project directory — only global roles apply.
+    isGeneralProject(projectPath) ? [] : listScope('project', projectPath),
     listScope('global', projectPath),
   ])
   // project takes precedence over global on id collision

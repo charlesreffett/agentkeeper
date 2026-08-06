@@ -41,10 +41,9 @@ function openLightbox(index: number) {
   lightboxOpen.value = true
 }
 
-const { projects, focusedProject } = useProjectsQuery()
-const resolvedProjectPath = computed(
-  () => props.projectPath ?? focusedProject.value?.path ?? '',
-)
+const { projects } = useProjectsQuery()
+// Context is the session's own project — no app-wide focus fallback.
+const resolvedProjectPath = computed(() => props.projectPath ?? '')
 
 const isMac = /Mac/i.test(navigator.platform)
 

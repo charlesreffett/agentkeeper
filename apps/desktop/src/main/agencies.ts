@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import type { Agency, AgencyDraft, AgencyScope, OnFailurePolicy, RoleSlot } from '../shared/ipc-contract'
+import { isGeneralProject, type Agency, type AgencyDraft, type AgencyScope, type OnFailurePolicy, type RoleSlot } from '../shared/ipc-contract'
 
 const PROJECT_DIR = '.agentkeeper/agencies'
 const GLOBAL_DIR = '.agentkeeper/agencies'
@@ -174,7 +174,8 @@ async function listScope(
 
 export async function listAgencies(projectPath: string): Promise<Agency[]> {
   const [project, global] = await Promise.all([
-    listScope('project', projectPath),
+    // General chats have no project directory — only global agencies apply.
+    isGeneralProject(projectPath) ? [] : listScope('project', projectPath),
     listScope('global', projectPath),
   ])
   const byId = new Map<string, Agency>()

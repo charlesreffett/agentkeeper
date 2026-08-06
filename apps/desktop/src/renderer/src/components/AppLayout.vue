@@ -5,20 +5,30 @@ import Sidebar from '@/components/Sidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import RightPanel from '@/components/RightPanel.vue'
 import TerminalPanel from '@/components/TerminalPanel.vue'
+import { computed } from 'vue'
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar'
 import { useLayoutStore } from '@/stores/layout'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { useSessionStore } from '@/stores/sessions'
 import { useTerminalStore } from '@/stores/terminalStore'
+import { isGeneralProject } from '@shared/ipc-contract'
 
 const layoutStore = useLayoutStore()
-const { focusedProject } = useProjectsQuery()
+const sessionStore = useSessionStore()
 const terminalStore = useTerminalStore()
+
+// The right panel + terminal follow the active session's context, not an
+// app-wide focus. General (no-project) sessions have no repository to inspect.
+const activeProjectPath = computed(() => {
+  const p = sessionStore.currentSession?.projectPath
+  return p && !isGeneralProject(p) ? p : ''
+})
+const activeProjectName = computed(() => activeProjectPath.value.split('/').pop() ?? 'Terminal')
 
 function onKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.key === 't' || e.key === 'T')) {
     if (!terminalStore.isOpen || !terminalStore.focused) return
     e.preventDefault()
-    terminalStore.addTab(focusedProject.value?.name ?? 'Terminal')
+    terminalStore.addTab(activeProjectName.value)
   }
 }
 
@@ -42,7 +52,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             </div>
             <RightPanel
               v-if="layoutStore.rightPanelOpen"
-              :project-path="focusedProject?.path ?? ''"
+              :project-path="activeProjectPath"
             />
           </div>
           <TerminalPanel v-if="terminalStore.isOpen" />

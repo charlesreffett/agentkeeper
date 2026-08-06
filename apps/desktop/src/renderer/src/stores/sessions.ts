@@ -15,6 +15,7 @@ import type {
   StartSessionParams,
   TranscriptEvent,
 } from '@shared/ipc-contract'
+import { isGeneralProject } from '@shared/ipc-contract'
 import { sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
 import { playNotificationSound } from '@/lib/notificationSound'
 import { queryClient } from '@/lib/queryClient'
@@ -899,6 +900,21 @@ export const useSessionStore = defineStore('sessions', () => {
     return localId
   }
 
+  /** Re-point a draft at a different project context. Context is a per-session
+   *  choice now, so retargeting a not-yet-started draft mutates it in place
+   *  rather than spawning a new one. Worktree branch resets since it was scoped
+   *  to the old project. */
+  function retargetDraft(localId: string, projectPath: string): void {
+    const s = sessions[localId]
+    if (!s || !s.isDraft) return
+    s.projectPath = projectPath
+    if (s.draftConfig) {
+      s.draftConfig.branch = ''
+      s.draftConfig.branchTouched = false
+      if (isGeneralProject(projectPath)) s.draftConfig.useWorktree = false
+    }
+  }
+
   function setDraftMessage(localId: string, text: string, attachments: Attachment[] = []): void {
     const s = sessions[localId]
     if (!s) return
@@ -935,8 +951,8 @@ export const useSessionStore = defineStore('sessions', () => {
         agencyScope: agency.scope,
         initialPrompt: trimmedPrompt,
         ...(attachments && attachments.length > 0 ? { initialAttachments: attachments } : {}),
-        useWorktree: cfg.useWorktree,
-        ...(cfg.useWorktree && cfg.branch.trim() ? { branch: cfg.branch.trim() } : {}),
+        useWorktree: cfg.useWorktree && !isGeneralProject(projectPath),
+        ...(cfg.useWorktree && cfg.branch.trim() && !isGeneralProject(projectPath) ? { branch: cfg.branch.trim() } : {}),
         ...(draft.model ? { model: draft.model } : {}),
       })
       delete sessions[localId]
@@ -979,7 +995,8 @@ export const useSessionStore = defineStore('sessions', () => {
 
     let worktreePath: string | undefined
     let branch: string | undefined
-    if (cfg.useWorktree && cfg.branch.trim()) {
+    // General chats have no project — never spin up a worktree for them.
+    if (cfg.useWorktree && cfg.branch.trim() && !isGeneralProject(projectPath)) {
       const wt = await window.agentkeeper.worktrees.create(projectPath, cfg.branch.trim())
       worktreePath = wt.path
       branch = wt.branch
@@ -1576,6 +1593,7 @@ export const useSessionStore = defineStore('sessions', () => {
     openPersistedAgency,
     resumeFromHistory,
     createOrFocusDraft,
+    retargetDraft,
     setDraftMessage,
     promoteDraft,
     visibleSessions,

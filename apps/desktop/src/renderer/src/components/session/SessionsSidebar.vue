@@ -4,6 +4,7 @@ import { CheckSquare, ChevronRight, Plus, Square, Trash2, TriangleAlert } from '
 import { useRouter } from 'vue-router'
 import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
 import { formatRelativeTime } from '@/lib/format'
+import { projectColor } from '@/lib/projectColor'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,6 +16,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
+import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 
 const props = defineProps<{
   collapsed: boolean
@@ -79,7 +81,13 @@ function statusDotClass(status: LiveSessionStatus | 'inactive'): string {
 }
 
 function projectName(path: string): string {
+  if (path === GENERAL_PROJECT_PATH) return ''
   return path.split('/').at(-1) ?? path
+}
+
+function contextDotColor(path: string): string {
+  if (path === GENERAL_PROJECT_PATH) return 'hsl(0, 0%, 55%)'
+  return projectColor(projectName(path))
 }
 
 function isRunning(status: LiveSessionStatus | 'inactive'): boolean {
@@ -250,18 +258,32 @@ async function executeDeleteSingle() {
       />
     </div>
 
-    <!-- Project filter -->
-    <div v-if="activeProjects.length > 0" class="px-2 py-1.5 border-b border-border/50">
-      <select
-        v-model="selectedProjectPath"
-        class="w-full bg-transparent text-[11px] font-medium text-muted-foreground outline-none cursor-pointer"
-        :class="selectedProjectPath ? 'text-foreground' : ''"
+    <!-- Context filter pills -->
+    <div
+      v-if="activeProjects.length > 1"
+      class="px-2 py-1.5 border-b border-border/50 flex flex-wrap gap-1"
+    >
+      <button
+        class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors"
+        :class="selectedProjectPath === null
+          ? 'border-primary/50 bg-primary/10 text-foreground'
+          : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'"
+        @click="selectedProjectPath = null"
       >
-        <option :value="null">All projects · {{ unifiedSessions.length }}</option>
-        <option v-for="p in activeProjects" :key="p.path" :value="p.path">
-          {{ p.name }} · {{ p.count }}
-        </option>
-      </select>
+        All · {{ unifiedSessions.length }}
+      </button>
+      <button
+        v-for="p in activeProjects"
+        :key="p.path"
+        class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors max-w-[140px]"
+        :class="selectedProjectPath === p.path
+          ? 'border-primary/50 bg-primary/10 text-foreground'
+          : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'"
+        @click="selectedProjectPath = p.path"
+      >
+        <span class="size-1.5 rounded-full shrink-0" :style="{ backgroundColor: contextDotColor(p.path) }" />
+        <span class="truncate">{{ p.name }}{{ p.name ? ' · ' : '' }}{{ p.count }}</span>
+      </button>
     </div>
 
     <!-- Selection bar -->
@@ -338,10 +360,11 @@ async function executeDeleteSingle() {
           </span>
         </div>
 
-        <!-- Row 2: project + ticket + time -->
+        <!-- Row 2: context badge + ticket + time -->
         <div class="flex items-center gap-1.5 pl-3">
+          <span class="size-1.5 rounded-full shrink-0" :style="{ backgroundColor: contextDotColor(s.projectPath) }" />
           <span class="text-[11px] font-mono text-muted-foreground truncate flex-1 min-w-0">
-            {{ projectName(s.projectPath) }}{{ s.workItemKey ? ` · ${s.workItemKey}` : '' }}
+            {{ [projectName(s.projectPath), s.workItemKey].filter(Boolean).join(' · ') }}
           </span>
           <span class="text-[11px] text-muted-foreground/50 tabular-nums shrink-0">
             {{ formatRelativeTime(s.lastActivityAt) }}

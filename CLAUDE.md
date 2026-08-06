@@ -80,13 +80,15 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
   - ✅ Phase 3 — PR list, detail views, and review form
   - ✅ Multi-repo config — `GitHubConfig.repos[]`, fan-out `listPRs`, per-repo
     filter dropdown, `?repo=` query param on PR detail routes
-  - ✅ Project registry + focus model — `recentProjectsStore` extended with
-    `repo` (auto-detected from `.git/config`) and `focusedProjectPath`;
-    `useProjectsStore` Pinia store; sidebar project panel with focus toggle;
-    `ProjectPicker` dialog (pre-populated, always shown, never skipped);
-    `NewSessionModal` project field; GitHub filter + skills list react to
-    focused project; adding a project auto-registers its GitHub repo
-  - ✅ Sessions view — global list (all projects); focused project acts as filter
+  - ✅ Project registry — `recentProjectsStore` extended with `repo`
+    (auto-detected from `.git/config`); adding a project auto-registers its
+    GitHub repo. Context is now per-page (`usePageScope` + `ScopeBar`) and
+    per-session (a session carries its own `projectPath`); the app-wide
+    `focusedProjectPath` knob and `ProjectPicker` were removed. The legacy
+    `projects.getFocused()`/`setFocused()` IPC still exists for the iOS
+    companion and migration only — the renderer never reads it.
+  - ✅ Sessions view — global list (all projects + General); per-session
+    context badge and per-context filter pills
   - ⬜ Monitor view — wire focused project filter
   - ⬜ Project-as-filter plumbing for V5 Jira views (see V5)
 

@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
 import { NOTIFICATION_SOUND_VALUES, NOTIFICATION_SOUND_LABELS, playNotificationSound } from '@/lib/notificationSound'
 import { useLayoutStore } from '@/stores/layout'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope } from '@/composables/usePageScope'
+import ScopeBar from '@/components/ScopeBar.vue'
 import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { useHarnessList, useActiveHarness, useSetActiveHarness } from '@/composables/useHarness'
 import { queryKeys } from '@/lib/queryKeys'
@@ -19,14 +20,17 @@ const route = useRoute()
 const router = useRouter()
 const queryClient = useQueryClient()
 const layoutStore = useLayoutStore()
-const { focusedProject } = useProjectsQuery()
+// Settings are global except the danger-zone project reset, which targets the
+// scoped project. Global/All → no project selected; a project scope enables it.
+const { scope, options, setScope, pickAndAdd, label, color, isProject, currentProject } =
+  usePageScope('settings', { includeGlobal: true })
 const {
   settings: storedSettings,
   apiKeyStored: storedApiKeyStored,
   isLoading,
   invalidateAll,
 } = useSettingsQuery()
-const projectPath = computed(() => focusedProject.value?.path ?? '')
+const projectPath = computed(() => (isProject.value ? currentProject.value?.path ?? '' : ''))
 
 // ─── Tab routing ──────────────────────────────────────────────────────────────
 
@@ -235,7 +239,18 @@ async function onReset() {
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Settings" />
+    <PageHeader title="Settings">
+      <template #actions>
+        <ScopeBar
+          :scope="scope"
+          :options="options"
+          :label="label"
+          :color="color"
+          @select="setScope"
+          @pick-and-add="pickAndAdd"
+        />
+      </template>
+    </PageHeader>
 
     <!-- Tab bar -->
     <div class="shrink-0 flex border-b border-border px-4 gap-1">

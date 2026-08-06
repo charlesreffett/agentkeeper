@@ -2,28 +2,38 @@ import { computed } from 'vue'
 import type { Ref } from 'vue'
 import { useQueries, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
+import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 import type { RecentProject, Session, SessionSummary } from '@shared/ipc-contract'
 
 export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
   const queryClient = useQueryClient()
 
+  // Buckets to fan out over: every registered project plus the synthetic
+  // General (no-project) bucket, so general chats show up in the home list
+  // even though they're not backed by a registered project.
+  const bucketPaths = computed(() => {
+    const paths = projects.value.map((p) => p.path)
+    if (!paths.includes(GENERAL_PROJECT_PATH)) paths.push(GENERAL_PROJECT_PATH)
+    return paths
+  })
+
   const persistedResults = useQueries({
     queries: computed(() =>
-      projects.value.map((p) => ({
-        queryKey: queryKeys.sessions.persisted(p.path),
+      bucketPaths.value.map((projectPath) => ({
+        queryKey: queryKeys.sessions.persisted(projectPath),
         queryFn: (): Promise<Session[]> =>
-          window.agentkeeper.sessions.listPersisted(p.path).catch(() => []),
+          window.agentkeeper.sessions.listPersisted(projectPath).catch(() => []),
       })),
     ),
   })
 
   const historicalResults = useQueries({
     queries: computed(() =>
-      projects.value.map((p) => ({
-        queryKey: queryKeys.sessions.historical(p.path),
+      bucketPaths.value.map((projectPath) => ({
+        queryKey: queryKeys.sessions.historical(projectPath),
         queryFn: (): Promise<{ projectPath: string; summary: SessionSummary }[]> =>
-          window.agentkeeper.sessions.list(p.path)
-            .then((items) => items.map((s) => ({ projectPath: p.path, summary: s })))
+          window.agentkeeper.sessions.list(projectPath)
+            .then((items) => items.map((s) => ({ projectPath, summary: s })))
             .catch(() => []),
       })),
     ),
@@ -31,10 +41,10 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
 
   const trackedSdkIdResults = useQueries({
     queries: computed(() =>
-      projects.value.map((p) => ({
-        queryKey: queryKeys.sessions.trackedSdkIds(p.path),
+      bucketPaths.value.map((projectPath) => ({
+        queryKey: queryKeys.sessions.trackedSdkIds(projectPath),
         queryFn: (): Promise<string[]> =>
-          window.agentkeeper.sessions.listTrackedSdkIds(p.path).catch(() => []),
+          window.agentkeeper.sessions.listTrackedSdkIds(projectPath).catch(() => []),
       })),
     ),
   })
@@ -83,7 +93,7 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
   }
 
   function invalidateAll() {
-    for (const p of projects.value) invalidateForProject(p.path)
+    for (const projectPath of bucketPaths.value) invalidateForProject(projectPath)
   }
 
   return {

@@ -35,6 +35,17 @@ export type {
   ReviewEvent,
 }
 
+// ─── General (no-project) sessions ─────────────────────────────────────────
+
+/** Sentinel project key for chats started with no project attached. Sessions
+ *  carrying this path run with `os.homedir()` as their cwd and skip all
+ *  project-scoped features (worktrees, plan MCP tools, project roles/agencies). */
+export const GENERAL_PROJECT_PATH = '__general__'
+
+export function isGeneralProject(projectPath: string | null | undefined): boolean {
+  return !projectPath || projectPath === GENERAL_PROJECT_PATH
+}
+
 // ─── Attachments ────────────────────────────────────────────────────────────
 
 export interface Attachment {

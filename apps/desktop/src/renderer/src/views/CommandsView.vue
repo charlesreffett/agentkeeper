@@ -1,24 +1,50 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import type { SlashCommand } from '@shared/ipc-contract'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useCommandsDataStore } from '@/stores/commandsData'
 import PageHeader from '@/components/PageHeader.vue'
 import SidebarHeader from '@/components/SidebarHeader.vue'
+import ScopeBar from '@/components/ScopeBar.vue'
 import { Terminal } from 'lucide-vue-next'
 
-const { focusedProject } = useProjectsQuery()
+const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
+  usePageScope('commands', { includeGlobal: true })
+const { projects } = useProjectsQuery()
+const queryClient = useQueryClient()
 const commandsDataStore = useCommandsDataStore()
-const projectPath = computed(() => focusedProject.value?.path ?? '')
+// Scoped load input: project → its path (project + global); Global/All → ''
+// (global + plugin for the store; the union query below serves All).
+const projectPath = computed(() =>
+  isAll.value || isGlobal.value ? '' : isProject.value ? currentProject.value?.path ?? '' : '',
+)
 const { handleAuthError } = useClaudeAuth()
 
-const commands = computed(() => commandsDataStore.commands)
+// All scope = union of global + every project's commands (+ plugin commands,
+// which are global by nature), deduped by file path.
+const { data: allCommands, isLoading: allLoading } = useQuery({
+  queryKey: computed(() => ['commands', 'list', SCOPE_ALL, projects.value.map((p) => p.path).sort().join('|')]),
+  enabled: isAll,
+  queryFn: async () => {
+    const paths = ['', ...projects.value.map((p) => p.path)]
+    const lists = await Promise.all(paths.map((p) => window.agentkeeper.commands.list(p)))
+    const byPath = new Map<string, SlashCommand>()
+    for (const list of lists) for (const c of list) byPath.set(c.path, c)
+    return Array.from(byPath.values())
+  },
+})
+
+const commands = computed<SlashCommand[]>(() =>
+  isAll.value ? allCommands.value ?? [] : commandsDataStore.commands,
+)
 const selectedCommand = computed(() =>
   selectedId.value ? commands.value.find((c) => `${c.scope}:${c.id}` === selectedId.value) ?? null : null,
 )
-const loading = computed(() => commandsDataStore.loading)
+const loading = computed(() => (isAll.value ? allLoading.value : commandsDataStore.loading))
 const selectedId = ref<string | null>(null)
 const editing = ref(false)
 const message = ref<string | null>(null)
@@ -66,8 +92,12 @@ async function generateCommand() {
 async function refresh() {
   message.value = null
   try {
-    commandsDataStore.invalidate()
-    await commandsDataStore.load(projectPath.value)
+    if (isAll.value) {
+      await queryClient.invalidateQueries({ queryKey: ['commands', 'list', SCOPE_ALL] })
+    } else {
+      commandsDataStore.invalidate()
+      await commandsDataStore.load(projectPath.value)
+    }
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   }
@@ -77,7 +107,8 @@ function beginNew() {
   selectedId.value = null
   isNew.value = true
   editing.value = true
-  form.value = { id: '', scope: 'project', body: '' }
+  // Global/All scopes have no project to write to — new commands go global.
+  form.value = { id: '', scope: isGlobal.value || isAll.value ? 'global' : 'project', body: '' }
   generatePrompt.value = ''
   message.value = null
 }
@@ -145,18 +176,18 @@ async function remove(cmd: SlashCommand) {
 }
 
 watch(
-  () => focusedProject.value?.path,
-  async (path) => {
+  () => scope.value,
+  async () => {
     editing.value = false
     selectedId.value = null
-    if (path !== undefined) await commandsDataStore.load(path ?? '')
+    await refresh()
   },
 )
 
 onMounted(async () => {
   editing.value = false
   selectedId.value = null
-  await commandsDataStore.load(projectPath.value)
+  await refresh()
 })
 </script>
 
@@ -164,6 +195,14 @@ onMounted(async () => {
   <div class="h-full flex flex-col overflow-hidden">
     <PageHeader title="Commands">
       <template #actions>
+        <ScopeBar
+          :scope="scope"
+          :options="options"
+          :label="label"
+          :color="color"
+          @select="setScope"
+          @pick-and-add="pickAndAdd"
+        />
         <Button size="sm" @click="beginNew">New command</Button>
       </template>
     </PageHeader>
