@@ -24,8 +24,6 @@ export interface UnifiedSession {
   projectColor: string
   workItemKey: string | null
   workItemTitle: string | null
-  /** Dynamic session title when it differs from the work-item title. */
-  description: string | null
   initialPrompt: string
   lastActivityAt: number
   lastUserMessageAt: number | null
@@ -88,7 +86,6 @@ export function useUnifiedSessions() {
         projectColor: projectColor(projectName),
         workItemKey: s.workItemKey,
         workItemTitle: s.workItemTitle,
-        description: s.title && s.title !== s.workItemTitle ? s.title : null,
         initialPrompt: s.initialPrompt,
         lastActivityAt: s.lastActivityAt,
         lastUserMessageAt: s.lastUserMessageAt,
@@ -114,7 +111,6 @@ export function useUnifiedSessions() {
           projectColor: projectColor(projectName),
           workItemKey: s.workItemKey,
           workItemTitle: s.workItemTitle,
-          description: s.workItemTitle && s.title && s.title !== s.workItemTitle ? s.title : null,
           initialPrompt: s.initialPrompt,
           lastActivityAt: s.lastActivityAt,
           lastUserMessageAt: s.lastUserMessageAt,
@@ -140,7 +136,6 @@ export function useUnifiedSessions() {
           projectColor: projectColor(projectName),
           workItemKey: null,
           workItemTitle: null,
-          description: null,
           initialPrompt: s.firstUserMessage ?? '',
           lastActivityAt: s.lastActivityAt,
           lastUserMessageAt: null,

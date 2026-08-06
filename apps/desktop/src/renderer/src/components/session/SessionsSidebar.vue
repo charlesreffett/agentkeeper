@@ -52,7 +52,6 @@ const sessions = computed(() => {
     return (
       (s.workItemKey ?? '').toLowerCase().includes(q) ||
       (s.workItemTitle ?? '').toLowerCase().includes(q) ||
-      (s.description ?? '').toLowerCase().includes(q) ||
       (s.title ?? '').toLowerCase().includes(q) ||
       s.initialPrompt.toLowerCase().includes(q)
     )
@@ -88,10 +87,6 @@ function projectName(path: string | null): string {
 function contextDotColor(path: string | null): string {
   if (!path) return 'hsl(0, 0%, 55%)'
   return projectColor(projectName(path))
-}
-
-function isRunning(status: LiveSessionStatus | 'inactive'): boolean {
-  return status === 'running' || status === 'starting'
 }
 
 function onRowClick(entry: UnifiedSession) {
@@ -362,22 +357,17 @@ async function executeDeleteSingle() {
 
         <!-- Row 2: context badge + ticket + time -->
         <div class="flex items-center gap-1.5 pl-3">
-          <span class="size-1.5 rounded-full shrink-0" :style="{ backgroundColor: contextDotColor(s.projectPath) }" />
+          <span
+            v-if="s.projectPath"
+            class="size-1.5 rounded-full shrink-0"
+            :style="{ backgroundColor: contextDotColor(s.projectPath) }"
+          />
           <span class="text-[11px] font-mono text-muted-foreground truncate flex-1 min-w-0">
             {{ [projectName(s.projectPath), s.workItemKey].filter(Boolean).join(' · ') }}
           </span>
           <span class="text-[11px] text-muted-foreground/50 tabular-nums shrink-0">
             {{ formatRelativeTime(s.lastActivityAt) }}
           </span>
-        </div>
-
-        <!-- Row 3: dynamic description (shown only when different from title) -->
-        <div
-          v-if="s.description"
-          class="text-[11px] pl-3 line-clamp-2 mt-0.5"
-          :class="isRunning(s.status) ? 'text-primary/80' : 'text-muted-foreground'"
-        >
-          {{ s.description }}
         </div>
       </div>
 
