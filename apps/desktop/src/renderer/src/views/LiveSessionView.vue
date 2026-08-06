@@ -17,6 +17,7 @@ import ModelPicker from '@/components/ModelPicker.vue'
 import PillSelect from '@/components/PillSelect.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
+import BranchSwitcher from '@/components/BranchSwitcher.vue'
 import type { ScopeOption } from '@/composables/usePageScope'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -89,12 +90,6 @@ const sessionProjectName = computed(() => {
 
 // No-project sessions have no worktree/branch affordances.
 const isNoProject = computed(() => !rootSession.value?.projectPath)
-
-const sessionTitle = computed(() => {
-  const s = rootSession.value
-  if (!s) return ''
-  return s.title ?? s.agencyName ?? s.initialPrompt ?? props.liveId
-})
 
 // ─── Session context (per-session project choice) ────────────────────────────
 
@@ -637,10 +632,6 @@ const streamingEventUuid = computed((): string | undefined => {
 
       <!-- Header -->
       <header class="border-b border-border px-3 h-10 shrink-0 flex items-center gap-2">
-        <!-- Session title -->
-        <h1 class="text-sm font-medium truncate flex-1 min-w-0">
-          {{ sessionTitle }}
-        </h1>
 
         <!-- Pills + actions -->
         <div class="flex items-center gap-1.5 shrink-0">
@@ -652,6 +643,7 @@ const streamingEventUuid = computed((): string | undefined => {
             :options="contextOptions"
             :label="contextScopeLabel"
             :color="contextScopeColor"
+            :show-branch-switcher="!isDraft"
             @select="changeContext"
             @pick-and-add="pickContextProject"
           />
@@ -741,7 +733,9 @@ const streamingEventUuid = computed((): string | undefined => {
         </template>
         <template v-else>
           <span class="font-medium text-foreground">{{ contextScopeLabel }}</span>
-          <span v-if="rootSession?.branch" class="font-mono">· {{ rootSession.branch }}</span>
+          <!-- Draft: switch/update branches before the session starts -->
+          <BranchSwitcher v-if="isDraft" :project-path="contextPath" />
+          <span v-else-if="rootSession?.branch" class="font-mono">· {{ rootSession.branch }}</span>
           <span class="font-mono truncate">· {{ contextPath }}</span>
         </template>
       </div>
