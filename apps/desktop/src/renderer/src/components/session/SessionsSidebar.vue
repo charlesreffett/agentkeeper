@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { CheckSquare, ChevronRight, Plus, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
+import { CheckSquare, ChevronRight, Folder, Plus, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
 import { formatRelativeTime } from '@/lib/format'
 import { projectColor } from '@/lib/projectColor'
@@ -29,6 +30,7 @@ const { unifiedSessions, open, createNewSession, remove } = useUnifiedSessions()
 
 const filterText = ref('')
 const selectedProjectPath = ref<string | null>(null)
+const projectFilterOpen = ref(false)
 
 const activeProjects = computed(() => {
   const map = new Map<string, { path: string; name: string; count: number }>()
@@ -43,6 +45,10 @@ const activeProjects = computed(() => {
   }
   return Array.from(map.values())
 })
+
+const selectedProject = computed(
+  () => activeProjects.value.find((p) => p.path === selectedProjectPath.value) ?? null,
+)
 
 const sessions = computed(() => {
   const q = filterText.value.toLowerCase().trim()
@@ -244,41 +250,55 @@ async function executeDeleteSingle() {
     </div>
 
     <!-- Filter -->
-    <div class="px-2 py-1.5 border-b border-border/50">
+    <div class="px-2 py-1.5 border-b border-border/50 flex items-center gap-1">
       <input
         v-model="filterText"
         type="text"
         placeholder="Filter sessions…"
         class="w-full bg-transparent text-[12px] text-foreground placeholder:text-muted-foreground/50 outline-none px-1"
       />
-    </div>
-
-    <!-- Context filter pills -->
-    <div
-      v-if="activeProjects.length > 1"
-      class="px-2 py-1.5 border-b border-border/50 flex flex-wrap gap-1"
-    >
-      <button
-        class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors"
-        :class="selectedProjectPath === null
-          ? 'border-primary/50 bg-primary/10 text-foreground'
-          : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'"
-        @click="selectedProjectPath = null"
-      >
-        All · {{ unifiedSessions.length }}
-      </button>
-      <button
-        v-for="p in activeProjects"
-        :key="p.path"
-        class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors max-w-[140px]"
-        :class="selectedProjectPath === p.path
-          ? 'border-primary/50 bg-primary/10 text-foreground'
-          : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'"
-        @click="selectedProjectPath = p.path"
-      >
-        <span class="size-1.5 rounded-full shrink-0" :style="{ backgroundColor: contextDotColor(p.path) }" />
-        <span class="truncate">{{ p.name }}{{ p.name ? ' · ' : '' }}{{ p.count }}</span>
-      </button>
+      <Popover v-if="activeProjects.length > 1" v-model:open="projectFilterOpen">
+        <PopoverTrigger as-child>
+          <button
+            class="shrink-0 inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium transition-colors"
+            :class="selectedProjectPath === null
+              ? 'border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+              : 'border-primary/50 bg-primary/10 text-foreground'"
+          >
+            <span
+              v-if="selectedProject"
+              class="size-1.5 rounded-full shrink-0"
+              :style="{ backgroundColor: contextDotColor(selectedProjectPath) }"
+            />
+            <Folder class="size-3" />
+            <span class="max-w-[90px] truncate">{{ selectedProject?.name ?? 'All projects' }}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent class="w-64 p-1" align="end">
+          <button
+            class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded transition-colors hover:bg-accent"
+            :class="selectedProjectPath === null ? 'bg-accent/50' : ''"
+            @click="selectedProjectPath = null; projectFilterOpen = false"
+          >
+            <Folder class="size-4 shrink-0 text-muted-foreground" />
+            <span class="flex-1 min-w-0 truncate text-left">All projects · {{ unifiedSessions.length }}</span>
+          </button>
+          <template v-for="p in activeProjects" :key="p.path">
+            <button
+              class="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded transition-colors hover:bg-accent"
+              :class="selectedProjectPath === p.path ? 'bg-accent/50' : ''"
+              @click="selectedProjectPath = p.path; projectFilterOpen = false"
+            >
+              <span
+                class="size-2.5 rounded-full shrink-0"
+                :style="{ backgroundColor: contextDotColor(p.path) }"
+              />
+              <span class="flex-1 min-w-0 truncate text-left">{{ p.name }}</span>
+              <span class="text-xs text-muted-foreground tabular-nums">{{ p.count }}</span>
+            </button>
+          </template>
+        </PopoverContent>
+      </Popover>
     </div>
 
     <!-- Selection bar -->
