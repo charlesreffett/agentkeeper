@@ -7,8 +7,8 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useSkillsDataStore } from '@/stores/skillsData'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
-import PageHeader from '@/components/PageHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
+import { Download, Sparkles } from 'lucide-vue-next'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
   usePageScope('skills', { includeGlobal: true })
@@ -37,15 +37,33 @@ const { data: allSkills, isLoading: allLoading } = useQuery({
 
 const skills = computed<Skill[]>(() => (isAll.value ? allSkills.value ?? [] : skillsDataStore.skills))
 const loading = computed(() => (isAll.value ? allLoading.value : skillsDataStore.loading))
-const expanded = ref<string | null>(null)
 const message = ref<string | null>(null)
+
+// Skills rail → detail in the main content area.
+const view = ref<'skill' | 'install' | 'create'>('skill')
+const selectedId = ref<string | null>(null)
+const selectedSkill = computed(() =>
+  selectedId.value ? skills.value.find((s) => `${s.scope}:${s.id}` === selectedId.value) ?? null : null,
+)
+
+function selectSkill(skill: Skill) {
+  selectedId.value = `${skill.scope}:${skill.id}`
+  view.value = 'skill'
+}
+
+function beginInstall() {
+  view.value = 'install'
+}
+
+function beginCreate() {
+  view.value = 'create'
+}
 
 // ── Install tab ──────────────────────────────────────────────────────────────
 
 type Step = 'source' | 'select'
 const step = ref<Step>('source')
 const installSource = ref('')
-const installScope = ref<'project' | 'global'>('project')
 const previewing = ref(false)
 const previews = ref<SkillPreview[]>([])
 const selectedIds = ref<string[]>([])
@@ -53,26 +71,18 @@ const installing = ref(false)
 
 // ── Create tab ───────────────────────────────────────────────────────────────
 
-type ModalTab = 'install' | 'create'
-const activeTab = ref<ModalTab>('install')
-
 const createPrompt = ref('')
 const generating = ref(false)
 const createId = ref('')
 const createName = ref('')
 const createDescription = ref('')
 const createBody = ref('')
-const createScope = ref<'project' | 'global'>('project')
 const saving = ref(false)
 
-// Scope defaults follow the page: Global/All → global (no project to write to).
-watch(
-  () => scope.value,
-  () => {
-    const next = isGlobal.value || isAll.value ? 'global' : 'project'
-    installScope.value = next
-    createScope.value = next
-  },
+// Write target derives from the page context: Global/All → global (no project
+// to write to), a scoped project → that project.
+const writeScope = computed<'project' | 'global'>(() =>
+  isGlobal.value || isAll.value ? 'global' : 'project',
 )
 
 function toSlug(s: string): string {
@@ -135,7 +145,7 @@ async function doSaveSkill() {
       '',
       createBody.value.trim(),
     ].join('\n')
-    await window.agentkeeper.skills.save(projectPath.value, id, createScope.value, content)
+    await window.agentkeeper.skills.save(projectPath.value, id, writeScope.value, content)
     createPrompt.value = ''
     createId.value = ''
     createName.value = ''
@@ -200,7 +210,7 @@ async function doInstall(skillIds?: string[]) {
   const payload = {
     projectPath: projectPath.value,
     source,
-    scope: installScope.value,
+    scope: writeScope.value,
     skillIds: skillIds ? [...skillIds] : undefined,
     skillIdsCount: skillIds?.length ?? 0,
   }
@@ -209,7 +219,7 @@ async function doInstall(skillIds?: string[]) {
     await window.agentkeeper.skills.install(
       projectPath.value,
       source,
-      installScope.value,
+      writeScope.value,
       skillIds,
     )
     console.log('[skills] install ok', { source, count: payload.skillIdsCount })
@@ -253,37 +263,32 @@ async function remove(skill: Skill) {
   try {
     await window.agentkeeper.skills.remove({ ...skill })
     await refresh()
-    if (expanded.value === `${skill.scope}:${skill.id}`) expanded.value = null
+    if (selectedId.value === `${skill.scope}:${skill.id}`) selectedId.value = null
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   }
 }
 
-function toggleExpand(skill: Skill) {
-  const key = `${skill.scope}:${skill.id}`
-  expanded.value = expanded.value === key ? null : key
-}
-
 watch(
   () => scope.value,
   async () => {
-    expanded.value = null
+    selectedId.value = null
     await refresh()
   },
 )
 
 onMounted(async () => {
-  expanded.value = null
-  activeTab.value = 'install'
+  selectedId.value = null
+  view.value = 'install'
   resetInstallForm()
   await refresh()
 })
 </script>
 
 <template>
-  <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Skills">
-      <template #actions>
+  <div class="h-full flex overflow-hidden">
+    <aside class="w-64 shrink-0 border-r border-border flex flex-col bg-card/30">
+      <div class="p-3 border-b border-border shrink-0">
         <ScopeBar
           :scope="scope"
           :options="options"
@@ -292,27 +297,90 @@ onMounted(async () => {
           @select="setScope"
           @pick-and-add="pickAndAdd"
         />
-      </template>
-    </PageHeader>
-
-    <div class="flex-1 overflow-y-auto min-h-0">
-      <!-- Tab bar -->
-      <div class="px-6 pt-3 flex gap-1 border-b border-border shrink-0">
-        <button
-          v-for="tab in (['install', 'create'] as const)"
-          :key="tab"
-          class="px-3 py-1.5 text-xs rounded-t-md transition-colors"
-          :class="activeTab === tab
-            ? 'bg-card text-foreground border border-border border-b-card -mb-px z-10'
-            : 'text-muted-foreground hover:text-foreground'"
-          @click="activeTab = tab; message = null"
+      </div>
+      <div class="p-2 border-b border-border shrink-0 space-y-2">
+        <Button class="w-full gap-1.5" @click="beginInstall">
+          <Download class="size-3.5" />
+          Install skill
+        </Button>
+        <Button class="w-full gap-1.5" variant="secondary" @click="beginCreate">
+          <Sparkles class="size-3.5" />
+          Create with AI
+        </Button>
+      </div>
+      <div class="flex-1 overflow-y-auto">
+        <div v-if="loading" class="p-4 text-sm text-muted-foreground">Loading…</div>
+        <div
+          v-else-if="skills.length === 0"
+          class="p-4 text-sm text-muted-foreground leading-relaxed"
         >
-          {{ tab === 'install' ? 'Install' : 'Create with AI' }}
-        </button>
+          No skills installed. They live in
+          <code class="font-mono text-foreground">.claude/skills/</code>
+          (project) or
+          <code class="font-mono text-foreground">~/.claude/skills/</code>
+          (global).
+        </div>
+        <ul v-else>
+          <li
+            v-for="skill in skills"
+            :key="`${skill.scope}:${skill.id}`"
+            class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
+            :class="selectedId === `${skill.scope}:${skill.id}` ? 'bg-accent' : ''"
+            @click="selectSkill(skill)"
+          >
+            <div class="text-sm font-medium truncate">{{ skill.name }}</div>
+            <div class="text-xs text-muted-foreground truncate">
+              {{ skill.description || '(no description)' }}
+            </div>
+            <div class="mt-1 flex items-center gap-2 text-[10px] tabular-nums">
+              <span
+                class="px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono"
+              >
+                {{ skill.scope }}
+              </span>
+              <span class="text-muted-foreground font-mono truncate">{{ skill.id }}</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </aside>
+
+    <main class="flex-1 min-w-0 overflow-y-auto">
+      <!-- Selected skill detail -->
+      <div v-if="view === 'skill' && selectedSkill" class="p-6 space-y-3">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="text-lg font-semibold truncate">{{ selectedSkill.name }}</span>
+              <span
+                class="px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono text-[10px] shrink-0"
+              >
+                {{ selectedSkill.scope }}
+              </span>
+            </div>
+            <p v-if="selectedSkill.description" class="text-sm text-muted-foreground mt-1">
+              {{ selectedSkill.description }}
+            </p>
+            <div class="text-xs text-muted-foreground font-mono mt-1">{{ selectedSkill.id }}</div>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <Button
+              variant="ghost"
+              size="sm"
+              class="text-destructive text-xs"
+              @click="remove(selectedSkill)"
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+        <pre
+          class="rounded-md border border-border bg-muted/20 p-4 text-xs font-mono whitespace-pre-wrap leading-relaxed overflow-x-auto"
+        >{{ selectedSkill.body }}</pre>
       </div>
 
-      <!-- Install tab -->
-      <div v-if="activeTab === 'install'" class="px-6 py-4 border-b border-border space-y-3">
+      <!-- Install panel -->
+      <div v-else-if="view === 'install'" class="p-6 space-y-3">
         <template v-if="step === 'source'">
           <p class="text-xs font-medium">Install skill</p>
           <div class="flex gap-2">
@@ -324,14 +392,6 @@ onMounted(async () => {
               :disabled="previewing || installing"
               @keydown.enter="startPreview"
             />
-            <select
-              v-model="installScope"
-              class="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-              :disabled="previewing || installing"
-            >
-              <option value="project">Project</option>
-              <option value="global">Global</option>
-            </select>
             <Button size="sm" :disabled="previewing || installing" @click="startPreview">
               {{ previewing ? 'Previewing…' : 'Preview skills' }}
             </Button>
@@ -344,7 +404,7 @@ onMounted(async () => {
             <p class="text-xs font-medium">
               Select skills from
               <span class="font-mono">{{ installSource }}</span>
-              <span class="ml-1 text-muted-foreground">({{ installScope }})</span>
+              <span class="ml-1 text-muted-foreground">({{ writeScope }})</span>
             </p>
           </div>
 
@@ -412,8 +472,8 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- Create with AI tab -->
-      <div v-else class="px-6 py-4 border-b border-border space-y-3">
+      <!-- Create with AI panel -->
+      <div v-else-if="view === 'create'" class="p-6 space-y-3">
         <p class="text-xs font-medium">Generate a skill with AI</p>
         <textarea
           v-model="createPrompt"
@@ -423,14 +483,6 @@ onMounted(async () => {
           :disabled="generating || saving"
         />
         <div class="flex gap-2">
-          <select
-            v-model="createScope"
-            :disabled="generating || saving"
-            class="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-          >
-            <option value="project">Project</option>
-            <option value="global">Global</option>
-          </select>
           <Button size="sm" :disabled="generating || saving" @click="generateSkill">
             {{ generating ? 'Generating…' : 'Generate' }}
           </Button>
@@ -493,71 +545,13 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div v-if="loading" class="p-6 text-sm text-muted-foreground">Loading…</div>
+      <!-- Empty state -->
       <div
-        v-else-if="skills.length === 0"
-        class="p-6 text-sm text-muted-foreground leading-relaxed"
+        v-else
+        class="h-full flex items-center justify-center text-muted-foreground text-sm p-8"
       >
-        No skills installed. Install one using a GitHub URL or
-        <code class="font-mono text-foreground">owner/repo</code> shorthand.
-        They live in
-        <code class="font-mono text-foreground">.claude/skills/</code>
-        (project) or
-        <code class="font-mono text-foreground">~/.claude/skills/</code>
-        (global).
+        Select a skill to preview, or install a new one.
       </div>
-      <ul v-else class="divide-y divide-border/50">
-        <li
-          v-for="skill in skills"
-          :key="`${skill.scope}:${skill.id}`"
-          class="px-6 py-4"
-        >
-          <div class="flex items-start gap-3">
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-medium truncate">{{ skill.name }}</span>
-                <span
-                  class="px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono text-[10px]"
-                >
-                  {{ skill.scope }}
-                </span>
-              </div>
-              <div
-                v-if="skill.description"
-                class="text-xs text-muted-foreground mt-0.5 truncate"
-              >
-                {{ skill.description }}
-              </div>
-              <div class="text-[10px] text-muted-foreground font-mono mt-0.5">
-                {{ skill.id }}
-              </div>
-              <div v-if="expanded === `${skill.scope}:${skill.id}`" class="mt-3">
-                <pre
-                  class="text-xs bg-muted/30 rounded-md p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed"
-                >{{ skill.body }}</pre>
-              </div>
-            </div>
-            <div class="flex items-center gap-1 shrink-0">
-              <Button
-                variant="ghost"
-                size="sm"
-                class="text-xs"
-                @click="toggleExpand(skill)"
-              >
-                {{ expanded === `${skill.scope}:${skill.id}` ? 'Hide' : 'Show' }}
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                class="text-destructive text-xs"
-                @click="remove(skill)"
-              >
-                Remove
-              </Button>
-            </div>
-          </div>
-        </li>
-      </ul>
-    </div>
+    </main>
   </div>
 </template>

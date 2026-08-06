@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import PageHeader from '@/components/PageHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import StatsCards from '@/components/StatsCards.vue'
 import PerformanceSection from '@/components/PerformanceSection.vue'
@@ -10,14 +9,12 @@ const { scope, options, label, color, setScope, pickAndAdd, isAll, currentProjec
   usePageScope('stats')
 
 const projectPath = computed(() => (isAll.value ? null : currentProject.value?.path ?? null))
-
-const description = computed(() => (isAll.value ? 'All projects' : label.value))
 </script>
 
 <template>
-  <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Stats" :description="description">
-      <template #actions>
+  <div class="h-full flex overflow-hidden">
+    <aside class="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+      <div class="p-3 border-b border-border shrink-0">
         <ScopeBar
           :scope="scope"
           :options="options"
@@ -26,8 +23,8 @@ const description = computed(() => (isAll.value ? 'All projects' : label.value))
           @select="setScope"
           @pick-and-add="pickAndAdd"
         />
-      </template>
-    </PageHeader>
+      </div>
+    </aside>
 
     <div class="flex-1 overflow-auto p-6">
       <div class="max-w-6xl mx-auto flex flex-col gap-6">

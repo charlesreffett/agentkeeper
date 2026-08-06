@@ -12,10 +12,8 @@ import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useRolesQuery } from '@/composables/useRolesQuery'
-import PageHeader from '@/components/PageHeader.vue'
-import SidebarHeader from '@/components/SidebarHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
-import { Bot, Plus } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
   usePageScope('roles', { includeGlobal: true })
@@ -215,35 +213,26 @@ watch(
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Roles">
-      <template #actions>
-        <ScopeBar
-          :scope="scope"
-          :options="options"
-          :label="label"
-          :color="color"
-          @select="setScope"
-          @pick-and-add="pickAndAdd"
-        />
-      </template>
-    </PageHeader>
-
     <div class="flex min-h-0 flex-1">
       <aside
         class="w-64 border-r border-border shrink-0 flex flex-col bg-card/30"
       >
-        <SidebarHeader title="Roles">
-          <template #icon><Bot class="size-3" /></template>
-          <template #actions>
-            <button
-              class="p-0.5 text-muted-foreground hover:text-foreground transition-colors rounded"
-              title="New role"
-              @click="beginNew"
-            >
-              <Plus class="size-3.5" />
-            </button>
-          </template>
-        </SidebarHeader>
+        <div class="p-3 border-b border-border shrink-0">
+          <ScopeBar
+            :scope="scope"
+            :options="options"
+            :label="label"
+            :color="color"
+            @select="setScope"
+            @pick-and-add="pickAndAdd"
+          />
+        </div>
+        <div class="p-2 border-b border-border shrink-0">
+          <Button class="w-full gap-1.5" @click="beginNew">
+            <Plus class="size-3.5" />
+            New role
+          </Button>
+        </div>
         <div class="flex-1 overflow-y-auto">
         <div v-if="loading" class="p-4 text-sm text-muted-foreground">
           Loading…
@@ -290,26 +279,14 @@ watch(
         <div v-else class="grid grid-cols-[2fr_3fr] h-full">
           <!-- Left column: metadata fields -->
           <div class="overflow-y-auto p-6 space-y-4">
-            <div class="grid grid-cols-2 gap-3">
-              <div class="space-y-1.5">
-                <label class="text-xs font-medium">ID (filename)</label>
-                <input
-                  v-model="form.id"
-                  type="text"
-                  placeholder="developer"
-                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-                />
-              </div>
-              <div class="space-y-1.5">
-                <label class="text-xs font-medium">Scope</label>
-                <select
-                  v-model="form.scope"
-                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-                >
-                  <option value="project">Project</option>
-                  <option value="global">Global</option>
-                </select>
-              </div>
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium">ID (filename)</label>
+              <input
+                v-model="form.id"
+                type="text"
+                placeholder="developer"
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+              />
             </div>
 
             <div class="space-y-1.5">

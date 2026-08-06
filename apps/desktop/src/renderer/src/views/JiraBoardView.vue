@@ -2,7 +2,7 @@
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, ChevronDown, ChevronRight, Plus, SlidersHorizontal } from 'lucide-vue-next'
+import { Bot, ChevronDown, ChevronRight, Plus, Settings, SlidersHorizontal } from 'lucide-vue-next'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import { useSessionStore } from '@/stores/sessions'
 import { Input } from '@/components/ui/input'
@@ -352,12 +352,21 @@ onUnmounted(() => unsub?.())
         <span class="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
           Filters
         </span>
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
-          title="Add filter"
-        >
-          <Plus :size="11" />
-        </button>
+        <div class="flex items-center gap-1">
+          <button
+            class="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+            title="Jira settings"
+            @click="void router.push('/settings?tab=jira')"
+          >
+            <Settings :size="12" />
+          </button>
+          <button
+            class="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
+            title="Add filter"
+          >
+            <Plus :size="11" />
+          </button>
+        </div>
       </div>
 
       <!-- SCOPE -->

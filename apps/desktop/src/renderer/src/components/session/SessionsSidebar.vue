@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { CheckSquare, ChevronRight, Folder, Plus, Square, Trash2, TriangleAlert } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
+import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
 import { formatRelativeTime } from '@/lib/format'
@@ -96,10 +98,6 @@ function contextDotColor(path: string | null): string {
 }
 
 function onRowClick(entry: UnifiedSession) {
-  if (isSelectMode.value) {
-    toggleSelectCard(entry.localId)
-    return
-  }
   open(entry)
 }
 
@@ -110,7 +108,6 @@ async function handleNew() {
 
 // ── Multi-select + bulk delete ───────────────────────────────────────────────
 
-const isSelectMode = ref(false)
 const selectedIds = ref(new Set<string>())
 const confirmDeleteSelectedOpen = ref(false)
 const confirmDeleteAllOpen = ref(false)
@@ -148,11 +145,6 @@ function warningText(w: { running: number; blocked: number }): string {
   if (w.running > 0) parts.push(`${w.running} running`)
   if (w.blocked > 0) parts.push(`${w.blocked} blocked`)
   return parts.join(' · ')
-}
-
-function toggleSelectMode() {
-  isSelectMode.value = !isSelectMode.value
-  if (!isSelectMode.value) selectedIds.value = new Set()
 }
 
 function toggleSelectCard(id: string) {
@@ -228,25 +220,11 @@ async function executeDeleteSingle() {
     class="w-[260px] shrink-0 flex flex-col border-r border-border overflow-hidden"
   >
     <!-- Header -->
-    <div class="px-3 h-10 shrink-0 flex items-center justify-between border-b border-border">
-      <span class="text-sm font-semibold text-foreground">Sessions</span>
-      <div class="flex items-center gap-1">
-        <button
-          class="p-1 rounded text-muted-foreground hover:text-foreground transition-colors"
-          :title="isSelectMode ? 'Done selecting' : 'Select sessions'"
-          :class="isSelectMode ? 'text-foreground bg-muted' : ''"
-          @click="toggleSelectMode"
-        >
-          <component :is="isSelectMode ? CheckSquare : Square" class="size-3.5" />
-        </button>
-        <button
-          class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-          @click="handleNew"
-        >
-          <Plus class="size-3" />
-          New
-        </button>
-      </div>
+    <div class="p-2 shrink-0 border-b border-border">
+      <Button class="w-full gap-1.5" @click="handleNew">
+        <Plus class="size-3.5" />
+        New session
+      </Button>
     </div>
 
     <!-- Filter -->
@@ -303,7 +281,7 @@ async function executeDeleteSingle() {
 
     <!-- Selection bar -->
     <div
-      v-if="isSelectMode"
+      v-if="selectedCount > 0"
       class="px-2 py-1.5 border-b border-border/50 flex flex-col gap-1.5 shrink-0"
     >
       <div class="flex items-center justify-between gap-2">
@@ -357,13 +335,10 @@ async function executeDeleteSingle() {
         :class="s.localId === activeId ? 'bg-muted' : 'hover:bg-muted/50'"
         @click="onRowClick(s)"
       >
-        <!-- Row 1: checkbox (select mode) + dot + title -->
+        <!-- Row 1: checkbox + dot + title -->
         <div class="flex items-center gap-1.5 mb-0.5">
-          <input
-            v-if="isSelectMode"
-            type="checkbox"
+          <Checkbox
             :checked="selectedIds.has(s.localId)"
-            class="size-3 accent-primary cursor-pointer shrink-0"
             @click.stop="toggleSelectCard(s.localId)"
           />
           <span class="size-1.5 rounded-full shrink-0" :class="statusDotClass(s.status)" />

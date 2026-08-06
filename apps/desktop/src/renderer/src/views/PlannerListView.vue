@@ -3,7 +3,6 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useRouter } from 'vue-router'
 import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from 'lucide-vue-next'
-import PageHeader from '@/components/PageHeader.vue'
 import NewPlanModal from '@/components/planner/NewPlanModal.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -216,9 +215,9 @@ function projectNameForPlan(plan: PlanWithProject): string {
 </script>
 
 <template>
-  <div class="h-full flex flex-col bg-background">
-    <PageHeader title="Plans" description="Drafted by Claude">
-      <template #actions>
+  <div class="h-full flex bg-background">
+    <aside class="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+      <div class="p-3 border-b border-border shrink-0">
         <ScopeBar
           :scope="scope"
           :options="options"
@@ -227,12 +226,10 @@ function projectNameForPlan(plan: PlanWithProject): string {
           @select="setScope"
           @pick-and-add="pickAndAdd"
         />
-        <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
-          <Filter :size="14" />
-          Filter
-        </button>
+      </div>
+      <div class="p-2 border-b border-border shrink-0 space-y-2">
         <button
-          class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+          class="w-full flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
           :disabled="!isProject"
           :title="isProject ? '' : 'Scope to a project to create plans'"
           @click="showNewPlan = true"
@@ -240,8 +237,14 @@ function projectNameForPlan(plan: PlanWithProject): string {
           <Sparkles :size="14" />
           Plan with Claude
         </button>
-      </template>
-    </PageHeader>
+        <button
+          class="w-full flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-md border border-border hover:bg-muted/60 transition-colors"
+        >
+          <Filter :size="14" />
+          Filter
+        </button>
+      </div>
+    </aside>
 
     <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
       <!-- Loading -->

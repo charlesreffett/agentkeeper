@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, provide, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { Settings } from 'lucide-vue-next'
 import { usePluginHealth } from '@/composables/usePluginHealth'
-import PageHeader from '@/components/PageHeader.vue'
 
-const router = useRouter()
 const { isHealthy } = usePluginHealth('jira')
 
 // Increment when Jira settings change so child views re-fetch configured boards.
@@ -40,17 +36,6 @@ onUnmounted(() => {
       <span>⚠</span>
       <span>Jira CLI not found. Install <code class="font-mono">jira</code> and restart the app.</span>
     </div>
-    <PageHeader title="Jira">
-      <template #actions>
-        <button
-          class="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-          title="Jira settings"
-          @click="void router.push('/settings?tab=jira')"
-        >
-          <Settings :size="14" />
-        </button>
-      </template>
-    </PageHeader>
     <div class="flex-1 min-h-0 overflow-hidden">
       <RouterView />
     </div>

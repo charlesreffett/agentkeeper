@@ -7,10 +7,8 @@ import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useCommandsDataStore } from '@/stores/commandsData'
-import PageHeader from '@/components/PageHeader.vue'
-import SidebarHeader from '@/components/SidebarHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
-import { Terminal } from 'lucide-vue-next'
+import { Plus } from 'lucide-vue-next'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
   usePageScope('commands', { includeGlobal: true })
@@ -193,27 +191,26 @@ onMounted(async () => {
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Commands">
-      <template #actions>
-        <ScopeBar
-          :scope="scope"
-          :options="options"
-          :label="label"
-          :color="color"
-          @select="setScope"
-          @pick-and-add="pickAndAdd"
-        />
-        <Button size="sm" @click="beginNew">New command</Button>
-      </template>
-    </PageHeader>
-
     <div class="flex min-h-0 flex-1">
       <aside
         class="w-64 border-r border-border shrink-0 flex flex-col bg-card/30"
       >
-        <SidebarHeader title="Commands">
-          <template #icon><Terminal class="size-3" /></template>
-        </SidebarHeader>
+        <div class="p-3 border-b border-border shrink-0">
+          <ScopeBar
+            :scope="scope"
+            :options="options"
+            :label="label"
+            :color="color"
+            @select="setScope"
+            @pick-and-add="pickAndAdd"
+          />
+        </div>
+        <div class="p-2 border-b border-border shrink-0">
+          <Button class="w-full gap-1.5" @click="beginNew">
+            <Plus class="size-3.5" />
+            New command
+          </Button>
+        </div>
         <div class="flex-1 overflow-y-auto">
         <div v-if="loading" class="p-4 text-sm text-muted-foreground">Loading…</div>
         <div
@@ -279,28 +276,15 @@ onMounted(async () => {
           Select a command to edit, or create a new one.
         </div>
         <div v-else class="p-6 space-y-4">
-          <div class="grid grid-cols-2 gap-3">
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium">ID (slash command name)</label>
-              <input
-                v-model="form.id"
-                type="text"
-                placeholder="my-command"
-                :disabled="!isNew"
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono disabled:opacity-50"
-              />
-            </div>
-            <div class="space-y-1.5">
-              <label class="text-xs font-medium">Scope</label>
-              <select
-                v-model="form.scope"
-                :disabled="!isNew"
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring disabled:opacity-50"
-              >
-                <option value="project">Project</option>
-                <option value="global">Global</option>
-              </select>
-            </div>
+          <div class="space-y-1.5">
+            <label class="text-xs font-medium">ID (slash command name)</label>
+            <input
+              v-model="form.id"
+              type="text"
+              placeholder="my-command"
+              :disabled="!isNew"
+              class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono disabled:opacity-50"
+            />
           </div>
 
           <div v-if="isNew" class="space-y-1.5 border border-border rounded-md p-3 bg-muted/20">

@@ -1,29 +1,33 @@
 <template>
-  <div class="h-full flex flex-col overflow-hidden bg-background">
-    <PageHeader title="Agencies">
-      <template #actions>
-        <ScopeBar
-          :scope="scope"
-          :options="options"
-          :label="label"
-          :color="color"
-          @select="setScope"
-          @pick-and-add="pickAndAdd"
-        />
-      </template>
-    </PageHeader>
-
+  <div class="h-full flex overflow-hidden bg-background">
     <!-- Three-panel body -->
     <div class="flex flex-1 overflow-hidden">
-      <!-- Left sidebar: agency list -->
-      <aside class="w-60 shrink-0 border-r border-border overflow-y-auto">
-        <AgencyList
-          :agencies="agencies"
-          :selected-id="selectedAgencyId"
-          :loading="isLoading"
-          @select="selectAgency"
-          @create="beginCreate"
-        />
+      <!-- Left sidebar: scope + new agency + agency list -->
+      <aside class="w-60 shrink-0 border-r border-border flex flex-col overflow-hidden">
+        <div class="p-3 border-b border-border shrink-0">
+          <ScopeBar
+            :scope="scope"
+            :options="options"
+            :label="label"
+            :color="color"
+            @select="setScope"
+            @pick-and-add="pickAndAdd"
+          />
+        </div>
+        <div class="p-2 border-b border-border shrink-0">
+          <Button class="w-full gap-1.5" @click="beginCreate">
+            <Plus class="size-3.5" />
+            New agency
+          </Button>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <AgencyList
+            :agencies="agencies"
+            :selected-id="selectedAgencyId"
+            :loading="isLoading"
+            @select="selectAgency"
+          />
+        </div>
       </aside>
 
       <!-- Center: graph canvas -->
@@ -141,6 +145,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Plus, Check } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -153,11 +158,10 @@ import RoleInAgencyPanel from '@/components/agencies/RoleInAgencyPanel.vue'
 import ConnectionPanel from '@/components/agencies/ConnectionPanel.vue'
 import NewAgencyModal from '@/components/agencies/NewAgencyModal.vue'
 import AddRolePanel from '@/components/agencies/AddRolePanel.vue'
-import PageHeader from '@/components/PageHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import { type Agency, type AgencyDraft, type AgencyScope } from '@shared/ipc-contract'
 
-const { scope, options, label, color, setScope, pickAndAdd, isAll, isProject, currentProject } =
+const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
   usePageScope('agencies', { includeGlobal: true })
 const { projects } = useProjectsQuery()
 const queryClient = useQueryClient()
@@ -276,7 +280,10 @@ function beginCreate() {
   showCreateModal.value = true
 }
 
-async function onCreateAgency(draft: AgencyDraft, scope: AgencyScope) {
+async function onCreateAgency(draft: AgencyDraft) {
+  // Write target derives from the page context: Global/All → global (no
+  // project to write to), a scoped project → that project.
+  const scope: AgencyScope = isGlobal.value || isAll.value ? 'global' : 'project'
   await saveAgencyMutation({ scope, path: scopedProjectPath.value, draft })
   invalidateAllScope()
   showCreateModal.value = false

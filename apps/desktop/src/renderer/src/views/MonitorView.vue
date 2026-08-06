@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/sessions'
-import PageHeader from '@/components/PageHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import type { LiveSession } from '@/stores/sessions'
 import { formatRelativeTime } from '@/lib/format'
@@ -105,9 +104,9 @@ async function openSession(s: LiveSession) {
 </script>
 
 <template>
-  <div class="h-full flex flex-col">
-    <PageHeader title="Monitor" :description="subtitle" :back-to="'/'">
-      <template #actions>
+  <div class="h-full flex overflow-hidden">
+    <aside class="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
+      <div class="p-3 border-b border-border shrink-0">
         <ScopeBar
           :scope="scope"
           :options="options"
@@ -116,8 +115,11 @@ async function openSession(s: LiveSession) {
           @select="setScope"
           @pick-and-add="pickAndAdd"
         />
-      </template>
-    </PageHeader>
+      </div>
+      <div class="px-3 py-2 border-b border-border/50 shrink-0 text-xs text-muted-foreground">
+        {{ subtitle }}
+      </div>
+    </aside>
 
     <div class="flex-1 overflow-y-auto p-6">
       <div

@@ -25,30 +25,18 @@
             @input="onNameInput"
           />
         </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1">
-            <label class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-              ID
-              <span v-if="!idTouched && form.id" class="ml-1 normal-case tracking-normal text-muted-foreground/70">· auto from name</span>
-            </label>
-            <input
-              v-model="form.id"
-              type="text"
-              placeholder="delivery-team"
-              class="rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/40"
-              @input="idTouched = true"
-            />
-          </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Scope</label>
-            <select
-              v-model="form.scope"
-              class="rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
-            >
-              <option value="project">Project</option>
-              <option value="global">Global</option>
-            </select>
-          </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+            ID
+            <span v-if="!idTouched && form.id" class="ml-1 normal-case tracking-normal text-muted-foreground/70">· auto from name</span>
+          </label>
+          <input
+            v-model="form.id"
+            type="text"
+            placeholder="delivery-team"
+            class="rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/40"
+            @input="idTouched = true"
+          />
         </div>
         <div class="flex flex-col gap-1">
           <label class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Description</label>
@@ -91,7 +79,7 @@ import { Button } from '@/components/ui/button'
 import NewAgencyTransfer from './NewAgencyTransfer.vue'
 import { emptyComposition } from './composition'
 import type { AgencyComposition } from './composition'
-import type { Role, AgencyDraft, AgencyScope } from '../../../../shared/ipc-contract'
+import type { Role, AgencyDraft } from '../../../../shared/ipc-contract'
 
 defineProps<{
   allRoles: Role[]
@@ -99,7 +87,7 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  (e: 'save', draft: AgencyDraft, scope: AgencyScope): void
+  (e: 'save', draft: AgencyDraft): void
   (e: 'cancel'): void
 }>()
 
@@ -110,13 +98,11 @@ const form = ref<{
   id: string
   name: string
   description: string
-  scope: AgencyScope
   notes: string
 }>({
   id: '',
   name: '',
   description: '',
-  scope: 'project',
   notes: '',
 })
 
@@ -175,6 +161,6 @@ function handleSave() {
     notes: form.value.notes.trim(),
   }
 
-  emit('save', draft, form.value.scope)
+  emit('save', draft)
 }
 </script>
