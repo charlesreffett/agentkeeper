@@ -10,20 +10,19 @@ import { getPlanProgress } from '@/composables/usePlanProgress'
 import type { PlanProgress } from '@/composables/usePlanProgress'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { usePageScope } from '@/composables/usePageScope'
-import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 
 const router = useRouter()
 const store = useSessionStore()
 const { resolvedLabelFor } = useModelsQuery()
 
-const { scope, scopePath, options, label, color, setScope, pickAndAdd, isAll, isGeneral } =
-  usePageScope('monitor', { includeGeneral: true })
+const { scope, scopePath, options, label, color, setScope, pickAndAdd, isAll } =
+  usePageScope('monitor')
 
 type SessionWithPlan = LiveSession & { plan: PlanProgress }
 
+// The monitor is a per-project read — no-project sessions have no grid bucket.
 function inScope(projectPath: string): boolean {
   if (isAll.value) return true
-  if (isGeneral.value) return projectPath === GENERAL_PROJECT_PATH || !projectPath
   return projectPath === scopePath.value
 }
 
@@ -31,10 +30,11 @@ function inScope(projectPath: string): boolean {
 const grouped = computed(() => {
   const byProject = new Map<string, SessionWithPlan[]>()
   for (const s of store.liveList) {
-    if (!inScope(s.projectPath)) continue
-    const arr = byProject.get(s.projectPath) ?? []
+    const path = s.projectPath
+    if (!path || !inScope(path)) continue
+    const arr = byProject.get(path) ?? []
     arr.push({ ...s, plan: getPlanProgress(s) })
-    byProject.set(s.projectPath, arr)
+    byProject.set(path, arr)
   }
   return Array.from(byProject.entries()).sort(([a], [b]) => a.localeCompare(b))
 })

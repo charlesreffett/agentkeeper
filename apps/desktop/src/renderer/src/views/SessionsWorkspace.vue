@@ -7,7 +7,7 @@ import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import SessionsWelcome from '@/views/SessionsWelcome.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useUnifiedSessions } from '@/composables/useUnifiedSessions'
-import { GENERAL_PROJECT_PATH, type AppSettings } from '@shared/ipc-contract'
+import { type AppSettings } from '@shared/ipc-contract'
 
 const route = useRoute()
 const router = useRouter()
@@ -84,10 +84,10 @@ async function focusDraftForCurrentProject() {
   preparingDraft.value = true
   try {
     // Context is a per-session choice made in the compose header — default a
-    // fresh draft to General rather than inheriting an app-wide focus.
+    // fresh draft to no project (it gets one from the picker when started).
     const settingsNow = await window.agentkeeper.settings.get()
     const localId = sessionStore.createOrFocusDraft({
-      projectPath: GENERAL_PROJECT_PATH,
+      projectPath: null,
       defaultModel: settingsNow.defaultModel,
       defaultEffort: settingsNow.defaultEffort,
       defaultUseWorktree: settingsNow.defaultUseWorktree,

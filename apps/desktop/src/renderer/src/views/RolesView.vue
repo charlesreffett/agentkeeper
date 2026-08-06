@@ -15,7 +15,6 @@ import { useRolesQuery } from '@/composables/useRolesQuery'
 import PageHeader from '@/components/PageHeader.vue'
 import SidebarHeader from '@/components/SidebarHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
-import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 import { Bot, Plus } from 'lucide-vue-next'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
@@ -23,11 +22,11 @@ const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isP
 const { projects } = useProjectsQuery()
 const queryClient = useQueryClient()
 
-// Scoped list input: project → its path (project + global); Global → the
-// general sentinel (global-only); All → '' disables the scoped query (the
-// union query below serves All).
+// Scoped list input: project → its path (project + global); Global → null
+// (global-only); All → '' disables the scoped query (the union query below
+// serves All).
 const rolesQueryPath = computed(() =>
-  isAll.value ? '' : isProject.value ? currentProject.value?.path ?? '' : GENERAL_PROJECT_PATH,
+  isAll.value ? '' : isProject.value ? currentProject.value?.path ?? null : null,
 )
 
 const {
@@ -42,7 +41,7 @@ const { data: allRoles, isLoading: allLoading } = useQuery({
   queryKey: computed(() => ['roles', 'list', SCOPE_ALL, projects.value.map((p) => p.path).sort().join('|')]),
   enabled: isAll,
   queryFn: async () => {
-    const paths = [GENERAL_PROJECT_PATH, ...projects.value.map((p) => p.path)]
+    const paths = [null, ...projects.value.map((p) => p.path)]
     const lists = await Promise.all(paths.map((p) => window.agentkeeper.roles.list(p)))
     const byPath = new Map<string, Role>()
     for (const list of lists) for (const r of list) byPath.set(r.path, r)

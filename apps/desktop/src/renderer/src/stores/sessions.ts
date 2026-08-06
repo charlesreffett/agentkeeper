@@ -504,7 +504,7 @@ export const useSessionStore = defineStore('sessions', () => {
   function registerExternal(entry: {
     localId: string
     sessionLocalId: string
-    projectPath: string
+    projectPath: string | null
     worktreePath?: string | null
     branch?: string | null
     roleName?: string | null
@@ -595,7 +595,7 @@ export const useSessionStore = defineStore('sessions', () => {
   async function loadAgentTranscriptFromDisk(
     sessionLocalId: string,
     agentLocalId: string,
-    projectPath: string,
+    projectPath: string | null,
     sdkSessionId: string,
   ): Promise<void> {
     const s = sessions[sessionLocalId]
@@ -688,7 +688,7 @@ export const useSessionStore = defineStore('sessions', () => {
     })
   }
 
-  function openHistorical(projectPath: string, summary: SessionSummary): string {
+  function openHistorical(projectPath: string | null, summary: SessionSummary): string {
     const existing = Object.values(sessions).find(
       (s) => s.agents.some((a) => a.sdkSessionId === summary.id),
     )
@@ -757,7 +757,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   async function resumeFromHistory(params: {
     sdkSessionId: string
-    projectPath: string
+    projectPath: string | null
     firstMessage: string
     model: string
     effort: RoleEffort
@@ -835,7 +835,7 @@ export const useSessionStore = defineStore('sessions', () => {
   // ─── Drafts ──────────────────────────────────────────────────────────────
 
   function createOrFocusDraft(params: {
-    projectPath: string
+    projectPath: string | null
     defaultModel: string
     defaultEffort: RoleEffort
     defaultUseWorktree: boolean
@@ -904,7 +904,7 @@ export const useSessionStore = defineStore('sessions', () => {
    *  choice now, so retargeting a not-yet-started draft mutates it in place
    *  rather than spawning a new one. Worktree branch resets since it was scoped
    *  to the old project. */
-  function retargetDraft(localId: string, projectPath: string): void {
+  function retargetDraft(localId: string, projectPath: string | null): void {
     const s = sessions[localId]
     if (!s || !s.isDraft) return
     s.projectPath = projectPath

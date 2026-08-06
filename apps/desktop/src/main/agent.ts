@@ -35,7 +35,7 @@ export interface ActiveSession {
   /** Session UUID. Equals id for solo sessions; the shared instance UUID for agency agents. */
   sessionLocalId: string
   sdkSessionId: string | null
-  projectPath: string
+  projectPath: string | null
   worktreePath: string | undefined
   harnessId: string
   model: string | undefined
@@ -98,7 +98,7 @@ export interface InternalStartExtras {
 }
 
 type DefaultMcpFactoryResolver = (args: {
-  projectPath: string
+  projectPath: string | null
   agentLocalId: string
   isAgency: boolean
 }) => NonNullable<InternalStartExtras['mcpFactory']> | undefined
@@ -152,7 +152,7 @@ function broadcastSessionDeleted(localId: string): void {
 registry.setSessionDeletedNotifier(broadcastSessionDeleted)
 
 interface UndoBuffer {
-  projectPath: string
+  projectPath: string | null
   sdkSessionId: string
   harnessId: string
   keptCount: number
@@ -414,7 +414,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       if (session.workItemId && workItemRegistry) {
         const branch = session.worktreePath
           ? path.basename(session.worktreePath)
-          : path.basename(session.projectPath)
+          : path.basename(session.projectPath ?? '')
         const ts = new Date().toISOString()
         workItemRegistry
           .addComment(
@@ -792,7 +792,7 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
     })
     s = active.get(sessionId)!
   }
-  const userMsg = await messageFromInput(text, attachments, s.worktreePath ?? s.projectPath)
+  const userMsg = await messageFromInput(text, attachments, s.worktreePath ?? s.projectPath ?? os.homedir())
   broadcastEvent({ sessionId: s.sessionLocalId, agentLocalId: s.agentLocalId, message: userMsg })
   s.input.push(userMsg)
   // A parked session's ceiling timer must not fire mid-turn after a manual resume.
@@ -1000,7 +1000,7 @@ export function listActiveSessions(): Array<{
   agentLocalId: string
   sessionLocalId: string
   sdkSessionId: string | null
-  projectPath: string
+  projectPath: string | null
   status: LiveSessionStatus
   startedAt: number
   model: string | undefined

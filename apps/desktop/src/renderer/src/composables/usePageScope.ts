@@ -1,19 +1,17 @@
 import { computed, ref, watch, type Ref } from 'vue'
-import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { projectColor } from '@/lib/projectColor'
 
 /** Sentinel scope values. Real project scopes are the project's own `path`. */
 export const SCOPE_ALL = 'all'
 export const SCOPE_GLOBAL = 'global'
-export const SCOPE_GENERAL = GENERAL_PROJECT_PATH
 
 export type PageScope = string
 
 export interface ScopeOption {
   value: PageScope
   label: string
-  kind: 'all' | 'global' | 'general' | 'project' | 'new'
+  kind: 'all' | 'global' | 'project' | 'new'
   color?: string
   path?: string
 }
@@ -22,8 +20,6 @@ export interface PageScopeConfig {
   /** Show the "Global" (scope: 'global') option — for pages that split
    *  global vs project items (roles, agencies, skills, commands, settings). */
   includeGlobal?: boolean
-  /** Show the "General" (no-repository) option — session-context pages. */
-  includeGeneral?: boolean
   /** Initial scope when nothing is persisted. Defaults to Global when the
    *  page splits global/project, otherwise All. */
   defaultScope?: PageScope
@@ -52,7 +48,7 @@ function writeStored(pageId: string, value: PageScope): void {
  * Replaces the app-wide focused-project knob: each page owns its own filter.
  */
 export function usePageScope(pageId: string, config: PageScopeConfig = {}) {
-  const { includeGlobal = false, includeGeneral = false } = config
+  const { includeGlobal = false } = config
   const defaultScope = config.defaultScope ?? (includeGlobal ? SCOPE_GLOBAL : SCOPE_ALL)
 
   const { projects, pickAndAdd } = useProjectsQuery()
@@ -76,7 +72,6 @@ export function usePageScope(pageId: string, config: PageScopeConfig = {}) {
   const options = computed<ScopeOption[]>(() => {
     const opts: ScopeOption[] = [{ value: SCOPE_ALL, label: 'All', kind: 'all' }]
     if (includeGlobal) opts.push({ value: SCOPE_GLOBAL, label: 'Global', kind: 'global' })
-    if (includeGeneral) opts.push({ value: SCOPE_GENERAL, label: 'General', kind: 'general' })
     for (const p of [...projects.value].sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))) {
       opts.push({ value: p.path, label: p.name, kind: 'project', color: projectColor(p.name), path: p.path })
     }
@@ -86,9 +81,8 @@ export function usePageScope(pageId: string, config: PageScopeConfig = {}) {
 
   const isAll = computed(() => scope.value === SCOPE_ALL)
   const isGlobal = computed(() => scope.value === SCOPE_GLOBAL)
-  const isGeneral = computed(() => scope.value === SCOPE_GENERAL)
   const isProject = computed(
-    () => !isAll.value && !isGlobal.value && !isGeneral.value,
+    () => !isAll.value && !isGlobal.value,
   )
 
   const currentProject = computed(() =>
@@ -101,7 +95,6 @@ export function usePageScope(pageId: string, config: PageScopeConfig = {}) {
   const label = computed(() => {
     if (isAll.value) return 'All'
     if (isGlobal.value) return 'Global'
-    if (isGeneral.value) return 'General'
     return currentProject.value?.name ?? 'All'
   })
 
@@ -124,7 +117,6 @@ export function usePageScope(pageId: string, config: PageScopeConfig = {}) {
     pickAndAdd: pickAndAdd_,
     isAll,
     isGlobal,
-    isGeneral,
     isProject,
     currentProject,
     label,

@@ -12,10 +12,10 @@ export const queryKeys = {
     github: () => ['settings', 'github'] as const,
   },
   agencies: {
-    list: (projectPath?: string) => ['agencies', 'list', projectPath ?? ''] as const,
+    list: (projectPath?: string | null) => ['agencies', 'list', projectPath ?? null] as const,
   },
   roles: {
-    list: (projectPath?: string) => ['roles', 'list', projectPath ?? ''] as const,
+    list: (projectPath?: string | null) => ['roles', 'list', projectPath ?? null] as const,
   },
   projects: {
     list: () => ['projects', 'list'] as const,
@@ -25,10 +25,10 @@ export const queryKeys = {
     branches: (projectPath: string) => ['git', 'branches', projectPath] as const,
   },
   sessions: {
-    persisted: (projectPath: string) => ['sessions', 'persisted', projectPath] as const,
-    historical: (projectPath: string) => ['sessions', 'historical', projectPath] as const,
-    trackedSdkIds: (projectPath: string) => ['sessions', 'trackedSdkIds', projectPath] as const,
-    transcript: (projectPath: string, sdkSessionId: string) =>
+    persisted: (projectPath: string | null) => ['sessions', 'persisted', projectPath] as const,
+    historical: (projectPath: string | null) => ['sessions', 'historical', projectPath] as const,
+    trackedSdkIds: (projectPath: string | null) => ['sessions', 'trackedSdkIds', projectPath] as const,
+    transcript: (projectPath: string | null, sdkSessionId: string) =>
       ['sessions', 'transcript', projectPath, sdkSessionId] as const,
   },
   stats: {

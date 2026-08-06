@@ -66,7 +66,7 @@ interface RuntimeAgency {
   agencyId: string
   agencyScope: AgencyScope
   agencyName: string
-  projectPath: string
+  projectPath: string | null
   worktreePath: string | null
   branch: string | null
   /** roleId → all spawned instances for this role */
@@ -803,7 +803,7 @@ function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefi
 }
 
 export function createProjectMcp(
-  projectPath: string,
+  projectPath: string | null,
 ): ReturnType<typeof createSdkMcpServer> {
   // General chats have no plan store to bind to — expose an empty toolset so
   // the agent stays a clean Claude Code with no agentkeeper MCP surface.
@@ -815,7 +815,7 @@ export function createProjectMcp(
 }
 
 export function createOrchestratorMcp(
-  projectPath: string,
+  projectPath: string | null,
   sessionId: string,
 ): ReturnType<typeof createSdkMcpServer> {
   const sendMessageTool = tool(

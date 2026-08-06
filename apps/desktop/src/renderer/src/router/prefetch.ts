@@ -2,10 +2,10 @@ import type { Router } from 'vue-router'
 import { usePlansStore } from '@/stores/plans'
 import { useCommandsDataStore } from '@/stores/commandsData'
 import { useSkillsDataStore } from '@/stores/skillsData'
-import { SCOPE_ALL, SCOPE_GLOBAL, SCOPE_GENERAL } from '@/composables/usePageScope'
+import { SCOPE_ALL, SCOPE_GLOBAL } from '@/composables/usePageScope'
 
 // A concrete project path when the page's persisted scope is a project; '' for
-// All/Global/General (the data stores treat '' as the global/no-project load).
+// All/Global (the data stores treat '' as the global/no-project load).
 function scopedPath(pageId: string): string {
   let scope: string | null = null
   try {
@@ -13,7 +13,7 @@ function scopedPath(pageId: string): string {
   } catch {
     scope = null
   }
-  if (!scope || scope === SCOPE_ALL || scope === SCOPE_GLOBAL || scope === SCOPE_GENERAL) return ''
+  if (!scope || scope === SCOPE_ALL || scope === SCOPE_GLOBAL) return ''
   return scope
 }
 

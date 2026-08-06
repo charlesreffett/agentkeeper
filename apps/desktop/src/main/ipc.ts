@@ -260,12 +260,12 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
 
   // Sessions — historical
-  ipcMain.handle(IPC_CHANNELS.sessionsList, (_event, projectPath: string) =>
+  ipcMain.handle(IPC_CHANNELS.sessionsList, (_event, projectPath: string | null) =>
     listSessions(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsRead,
-    (_event, projectPath: string, sessionId: string, harnessId?: string) => readSession(projectPath, sessionId, harnessId),
+    (_event, projectPath: string | null, sessionId: string, harnessId?: string) => readSession(projectPath, sessionId, harnessId),
   )
 
   // Sessions — live. Every handler normalizes its error to a plain message
@@ -436,7 +436,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   // Roles
-  ipcMain.handle(IPC_CHANNELS.rolesList, async (_event, projectPath: string) => {
+  ipcMain.handle(IPC_CHANNELS.rolesList, async (_event, projectPath: string | null) => {
     try {
       return await listRoles(projectPath)
     } catch (err) {
@@ -449,7 +449,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     async (
       _event,
       scope: RoleScope,
-      projectPath: string,
+      projectPath: string | null,
       role: RoleDraft,
     ) => {
       try {
@@ -462,7 +462,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.rolesRemove,
-    async (_event, scope: RoleScope, projectPath: string, id: string) => {
+    async (_event, scope: RoleScope, projectPath: string | null, id: string) => {
       try {
         return await deleteRole(scope, projectPath, id)
       } catch (err) {
@@ -486,7 +486,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Agencies
   ipcMain.handle(
     IPC_CHANNELS.agenciesList,
-    async (_event, projectPath: string) => {
+    async (_event, projectPath: string | null) => {
       try {
         return await listAgencies(projectPath)
       } catch (err) {
@@ -500,7 +500,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     async (
       _event,
       scope: AgencyScope,
-      projectPath: string,
+      projectPath: string | null,
       agency: AgencyDraft,
     ) => {
       try {
@@ -513,7 +513,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.agenciesRemove,
-    async (_event, scope: AgencyScope, projectPath: string, id: string) => {
+    async (_event, scope: AgencyScope, projectPath: string | null, id: string) => {
       try {
         return await deleteAgency(scope, projectPath, id)
       } catch (err) {
@@ -994,7 +994,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   ipcMain.handle(
     IPC_CHANNELS.sessionsListPersisted,
-    (_event, projectPath: string) => sessionRegistry.listSessions(projectPath),
+    (_event, projectPath: string | null) => sessionRegistry.listSessions(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsGetByLocalId,
@@ -1085,16 +1085,16 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeleteHistorical,
-    (_event, projectPath: string, sessionId: string) =>
+    (_event, projectPath: string | null, sessionId: string) =>
       deleteHistoricalSession(projectPath, sessionId),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeleteAllHistorical,
-    (_event, projectPath: string) => deleteAllHistoricalSessions(projectPath),
+    (_event, projectPath: string | null) => deleteAllHistoricalSessions(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeleteAllPersisted,
-    async (_event, projectPath: string) => {
+    async (_event, projectPath: string | null) => {
       await removeAllSessionsFromPlans(projectPath).catch(() => {})
       sessionRegistry.deleteAllForProject(projectPath)
     },
@@ -1105,7 +1105,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsListTrackedSdkIds,
-    (_event, projectPath: string) => sessionRegistry.listTrackedSdkIds(projectPath),
+    (_event, projectPath: string | null) => sessionRegistry.listTrackedSdkIds(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsAddAgent,

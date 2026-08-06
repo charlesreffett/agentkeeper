@@ -3,13 +3,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
 import type { AgencyDraft, AgencyScope } from '@shared/ipc-contract'
 
-export function useAgenciesQuery(projectPath: { value: string }) {
+export function useAgenciesQuery(projectPath: { value: string | null }) {
   const queryClient = useQueryClient()
 
   const { data: agencies, isLoading } = useQuery({
     queryKey: computed(() => queryKeys.agencies.list(projectPath.value)),
     queryFn: () => window.agentkeeper.agencies.list(projectPath.value),
-    enabled: computed(() => !!projectPath.value),
+    // '' = All scope — the union query serves that page state.
+    enabled: computed(() => projectPath.value !== ''),
   })
 
   const { mutateAsync: saveAgency } = useMutation({

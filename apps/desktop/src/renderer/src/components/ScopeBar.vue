@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, Folder, FolderPlus, Globe, Layers, Sparkles } from 'lucide-vue-next'
+import { ChevronDown, Folder, FolderPlus, Globe, Layers } from 'lucide-vue-next'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import ProjectManagerDialog from '@/components/ProjectManagerDialog.vue'
 import type { ScopeOption, PageScope } from '@/composables/usePageScope'
 
 const props = defineProps<{
-  scope: PageScope
+  scope: PageScope | null
   options: ScopeOption[]
   label: string
   /** hsl color for a project scope, null otherwise */
@@ -51,7 +51,6 @@ function openManage(): void {
           :style="{ backgroundColor: color }"
         />
         <Globe v-else-if="activeOption?.kind === 'global'" class="size-3.5 text-muted-foreground" />
-        <Sparkles v-else-if="activeOption?.kind === 'general'" class="size-3.5 text-muted-foreground" />
         <Layers v-else class="size-3.5 text-muted-foreground" />
         <span>{{ label }}</span>
         <ChevronDown class="size-3.5 text-muted-foreground" />
@@ -72,9 +71,7 @@ function openManage(): void {
           />
           <Layers v-else-if="opt.kind === 'all'" class="size-4 shrink-0 text-muted-foreground" />
           <Globe v-else-if="opt.kind === 'global'" class="size-4 shrink-0 text-muted-foreground" />
-          <Sparkles v-else class="size-4 shrink-0 text-muted-foreground" />
           <span class="flex-1 min-w-0 truncate text-left">{{ opt.label }}</span>
-          <span v-if="opt.kind === 'general'" class="text-[10px] text-muted-foreground/60">no repo</span>
         </button>
       </template>
       <div class="my-1 h-px bg-border" />

@@ -155,7 +155,7 @@ import NewAgencyModal from '@/components/agencies/NewAgencyModal.vue'
 import AddRolePanel from '@/components/agencies/AddRolePanel.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
-import { GENERAL_PROJECT_PATH, type Agency, type AgencyDraft, type AgencyScope } from '@shared/ipc-contract'
+import { type Agency, type AgencyDraft, type AgencyScope } from '@shared/ipc-contract'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isProject, currentProject } =
   usePageScope('agencies', { includeGlobal: true })
@@ -165,16 +165,16 @@ const queryClient = useQueryClient()
 // Concrete project path when a project is scoped, else '' (global/all).
 const scopedProjectPath = computed(() => (isProject.value ? currentProject.value?.path ?? '' : ''))
 
-// Scoped list input: project → its path (project + global); Global → general
-// sentinel (global-only); All → '' to disable this query (the union query below
-// serves All).
+// Scoped list input: project → its path (project + global); Global → null
+// (global-only); All → '' to disable this query (the union query below serves
+// All).
 const agenciesQueryPath = computed(() =>
-  isAll.value ? '' : isProject.value ? scopedProjectPath.value : GENERAL_PROJECT_PATH,
+  isAll.value ? '' : isProject.value ? scopedProjectPath.value : null,
 )
 
 // Editor role options: project + global when a project is scoped, else global-only.
 const rolesQueryPath = computed(() =>
-  isProject.value && currentProject.value ? currentProject.value.path : GENERAL_PROJECT_PATH,
+  isProject.value && currentProject.value ? currentProject.value.path : null,
 )
 
 const {
@@ -190,7 +190,7 @@ const { data: allAgencies, isLoading: allLoading } = useQuery({
   queryKey: computed(() => ['agencies', 'list', SCOPE_ALL, projects.value.map((p) => p.path).sort().join('|')]),
   enabled: isAll,
   queryFn: async () => {
-    const paths = [GENERAL_PROJECT_PATH, ...projects.value.map((p) => p.path)]
+    const paths = [null, ...projects.value.map((p) => p.path)]
     const lists = await Promise.all(paths.map((p) => window.agentkeeper.agencies.list(p)))
     const byPath = new Map<string, Agency>()
     for (const list of lists) for (const a of list) byPath.set(a.path, a)

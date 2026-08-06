@@ -2,7 +2,8 @@ import { integer, primaryKey, real, sqliteTable, text } from 'drizzle-orm/sqlite
 
 export const sessions = sqliteTable('sessions', {
   localId: text('local_id').primaryKey(),
-  projectPath: text('project_path').notNull(),
+  /** null = no-project (general) session. */
+  projectPath: text('project_path'),
   worktreePath: text('worktree_path'),
   branch: text('branch'),
   model: text('model'),

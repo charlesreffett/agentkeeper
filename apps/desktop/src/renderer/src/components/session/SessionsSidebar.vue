@@ -16,7 +16,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
-import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 
 const props = defineProps<{
   collapsed: boolean
@@ -34,6 +33,7 @@ const selectedProjectPath = ref<string | null>(null)
 const activeProjects = computed(() => {
   const map = new Map<string, { path: string; name: string; count: number }>()
   for (const s of unifiedSessions.value) {
+    if (!s.projectPath) continue
     const existing = map.get(s.projectPath)
     if (existing) {
       existing.count++
@@ -80,13 +80,13 @@ function statusDotClass(status: LiveSessionStatus | 'inactive'): string {
   }
 }
 
-function projectName(path: string): string {
-  if (path === GENERAL_PROJECT_PATH) return ''
+function projectName(path: string | null): string {
+  if (!path) return ''
   return path.split('/').at(-1) ?? path
 }
 
-function contextDotColor(path: string): string {
-  if (path === GENERAL_PROJECT_PATH) return 'hsl(0, 0%, 55%)'
+function contextDotColor(path: string | null): string {
+  if (!path) return 'hsl(0, 0%, 55%)'
   return projectColor(projectName(path))
 }
 

@@ -155,9 +155,9 @@ const api: AgentKeeperApi = {
     },
   },
   sessions: {
-    list: (projectPath: string) =>
+    list: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.sessionsList, projectPath) as Promise<never>,
-    read: (projectPath: string, sessionId: string, harnessId?: string) =>
+    read: (projectPath: string | null, sessionId: string, harnessId?: string) =>
       invoke(IPC_CHANNELS.sessionsRead, projectPath, sessionId, harnessId) as Promise<never>,
     start: (params: StartSessionParams) =>
       invoke(IPC_CHANNELS.sessionStart, params) as Promise<string>,
@@ -173,7 +173,7 @@ const api: AgentKeeperApi = {
     onStats: (cb) => onChannel<LiveSessionStats>(IPC_CHANNELS.sessionStats, cb),
     onCreated: (cb) => onChannel<string>(IPC_CHANNELS.sessionCreated, cb),
     onDeleted: (cb) => onChannel<string>(IPC_CHANNELS.sessionDeleted, cb),
-    listPersisted: (projectPath: string) =>
+    listPersisted: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.sessionsListPersisted, projectPath) as Promise<Session[]>,
     getByLocalId: (localId: string) =>
       invoke(IPC_CHANNELS.sessionsGetByLocalId, localId) as Promise<Session | null>,
@@ -189,17 +189,17 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.sessionsSetEffort, localId, effort) as Promise<void>,
     setPermissionMode: (localId: string, mode: PermissionMode) =>
       invoke(IPC_CHANNELS.sessionsSetPermissionMode, localId, mode) as Promise<void>,
-    deleteHistorical: (projectPath: string, sessionId: string) =>
+    deleteHistorical: (projectPath: string | null, sessionId: string) =>
       invoke(IPC_CHANNELS.sessionsDeleteHistorical, projectPath, sessionId) as Promise<void>,
-    deleteAllHistorical: (projectPath: string) =>
+    deleteAllHistorical: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.sessionsDeleteAllHistorical, projectPath) as Promise<void>,
-    deleteAllPersisted: (projectPath: string) =>
+    deleteAllPersisted: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.sessionsDeleteAllPersisted, projectPath) as Promise<void>,
     getAgents: (sessionLocalId: string) =>
       invoke(IPC_CHANNELS.sessionsGetAgents, sessionLocalId) as Promise<Agent[]>,
     addAgent: (sessionLocalId: string, params: AddAgentParams) =>
       invoke(IPC_CHANNELS.sessionsAddAgent, sessionLocalId, params) as Promise<string>,
-    listTrackedSdkIds: (projectPath: string) =>
+    listTrackedSdkIds: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.sessionsListTrackedSdkIds, projectPath) as Promise<string[]>,
     reconnectMcp: (agentLocalId: string) =>
       invoke(IPC_CHANNELS.sessionsReconnectMcp, agentLocalId) as Promise<void>,
@@ -219,21 +219,21 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.worktreesGitDiffStat, worktreePath, baseBranch) as Promise<GitDiffStatFile[]>,
   },
   roles: {
-    list: (projectPath: string) =>
+    list: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.rolesList, projectPath) as Promise<never>,
-    save: (scope: RoleScope, projectPath: string, role: RoleDraft) =>
+    save: (scope: RoleScope, projectPath: string | null, role: RoleDraft) =>
       invoke(IPC_CHANNELS.rolesSave, scope, projectPath, role) as Promise<never>,
-    remove: (scope: RoleScope, projectPath: string, id: string) =>
+    remove: (scope: RoleScope, projectPath: string | null, id: string) =>
       invoke(IPC_CHANNELS.rolesRemove, scope, projectPath, id) as Promise<void>,
     generate: (prompt: string): Promise<RolesGenerateResult> =>
       invoke(IPC_CHANNELS.rolesGenerate, prompt) as Promise<RolesGenerateResult>,
   },
   agencies: {
-    list: (projectPath: string) =>
+    list: (projectPath: string | null) =>
       invoke(IPC_CHANNELS.agenciesList, projectPath) as Promise<never>,
-    save: (scope: AgencyScope, projectPath: string, agency: AgencyDraft) =>
+    save: (scope: AgencyScope, projectPath: string | null, agency: AgencyDraft) =>
       invoke(IPC_CHANNELS.agenciesSave, scope, projectPath, agency) as Promise<never>,
-    remove: (scope: AgencyScope, projectPath: string, id: string) =>
+    remove: (scope: AgencyScope, projectPath: string | null, id: string) =>
       invoke(IPC_CHANNELS.agenciesRemove, scope, projectPath, id) as Promise<void>,
     start: (params: StartAgencyParams) =>
       invoke(IPC_CHANNELS.agenciesStart, params) as Promise<never>,

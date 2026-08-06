@@ -3,7 +3,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore } from '@/stores/jiraActivity'
-import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 import type { Agency, Role, RoleEffort, WorkItem } from '@shared/ipc-contract'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 
@@ -69,7 +68,7 @@ function detectProjectPath(): string {
     )
     if (mapping?.projectPath) return mapping.projectPath
   }
-  return GENERAL_PROJECT_PATH
+  return ''
 }
 
 const isMappedProject = computed(() => {

@@ -235,8 +235,10 @@ export async function deletePlan(projectPath: string, id: string): Promise<boole
 }
 
 // Removes the session reference from all plans in a project that cite it.
-// Intentionally leaves plan status and step statuses untouched.
-export async function removeSessionFromPlans(projectPath: string, sessionLocalId: string): Promise<void> {
+// Intentionally leaves plan status and step statuses untouched. General sessions
+// have no project, hence no plans.
+export async function removeSessionFromPlans(projectPath: string | null, sessionLocalId: string): Promise<void> {
+  if (!projectPath) return
   const db = getDb()
   await db.update(plansTable)
     .set({ sessionId: null })
@@ -244,7 +246,8 @@ export async function removeSessionFromPlans(projectPath: string, sessionLocalId
 }
 
 // Clears all session references from every plan in the project (used on bulk delete).
-export async function removeAllSessionsFromPlans(projectPath: string): Promise<void> {
+export async function removeAllSessionsFromPlans(projectPath: string | null): Promise<void> {
+  if (!projectPath) return
   const db = getDb()
   await db.update(plansTable)
     .set({ sessionId: null })

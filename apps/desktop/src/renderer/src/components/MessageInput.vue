@@ -14,7 +14,7 @@ const props = defineProps<{
   autofocus?: boolean
   /** When true: Enter sends; modifier+Enter inserts newline. */
   enterToSend?: boolean
-  projectPath?: string
+  projectPath?: string | null
   sendModifier?: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
   roleName?: string | null
   agencyName?: string | null

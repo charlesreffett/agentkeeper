@@ -15,13 +15,14 @@ function globalAgenciesDir(): string {
   return path.join(os.homedir(), GLOBAL_DIR)
 }
 
-function scopeDir(scope: AgencyScope, projectPath: string): string {
+function scopeDir(scope: AgencyScope, projectPath: string | null): string {
+  // Project-scoped saves always carry a real path; global scope ignores it.
   return scope === 'project'
-    ? projectAgenciesDir(projectPath)
+    ? projectAgenciesDir(projectPath!)
     : globalAgenciesDir()
 }
 
-function agencyPath(scope: AgencyScope, projectPath: string, id: string): string {
+function agencyPath(scope: AgencyScope, projectPath: string | null, id: string): string {
   return path.join(scopeDir(scope, projectPath), `${id}.md`)
 }
 
@@ -147,7 +148,7 @@ function serializeAgency(a: AgencyDraft): string {
 
 async function listScope(
   scope: AgencyScope,
-  projectPath: string,
+  projectPath: string | null,
 ): Promise<Agency[]> {
   const dir = scopeDir(scope, projectPath)
   let entries: string[]
@@ -172,7 +173,7 @@ async function listScope(
   return out
 }
 
-export async function listAgencies(projectPath: string): Promise<Agency[]> {
+export async function listAgencies(projectPath: string | null): Promise<Agency[]> {
   const [project, global] = await Promise.all([
     // General chats have no project directory — only global agencies apply.
     isGeneralProject(projectPath) ? [] : listScope('project', projectPath),
@@ -186,7 +187,7 @@ export async function listAgencies(projectPath: string): Promise<Agency[]> {
 
 export async function saveAgency(
   scope: AgencyScope,
-  projectPath: string,
+  projectPath: string | null,
   draft: AgencyDraft,
 ): Promise<Agency> {
   const dir = scopeDir(scope, projectPath)
@@ -198,7 +199,7 @@ export async function saveAgency(
 
 export async function deleteAgency(
   scope: AgencyScope,
-  projectPath: string,
+  projectPath: string | null,
   id: string,
 ): Promise<void> {
   const filePath = agencyPath(scope, projectPath, id)

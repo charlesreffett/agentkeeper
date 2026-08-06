@@ -29,7 +29,7 @@ import {
   hiddenCount as computeHiddenCount,
 } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
-import { isGeneralProject, GENERAL_PROJECT_PATH, type Agency, type Attachment, type PermissionMode, type RoleEffort, type TranscriptEvent } from '@shared/ipc-contract'
+import type { Agency, Attachment, PermissionMode, RoleEffort, TranscriptEvent } from '@shared/ipc-contract'
 
 interface UndoBuf {
   agentLocalId: string
@@ -80,7 +80,6 @@ const agentEvents = computed(() => {
 // Always derived from the root session — the header always shows the top-level task.
 const sessionProjectName = computed(() => {
   const path = rootSession.value?.projectPath ?? ''
-  if (isGeneralProject(path)) return ''
   return (
     projects.value.find((p) => p.path === path)?.name ??
     path.split('/').filter(Boolean).pop() ??
@@ -88,11 +87,8 @@ const sessionProjectName = computed(() => {
   )
 })
 
-// General chats have no project scope — hide project/worktree affordances.
-const isGeneralSession = computed(() => {
-  const path = rootSession.value?.projectPath ?? ''
-  return isGeneralProject(path)
-})
+// No-project sessions have no worktree/branch affordances.
+const isNoProject = computed(() => !rootSession.value?.projectPath)
 
 const sessionTitle = computed(() => {
   const s = rootSession.value
@@ -102,21 +98,19 @@ const sessionTitle = computed(() => {
 
 // ─── Session context (per-session project choice) ────────────────────────────
 
-const contextPath = computed(() => rootSession.value?.projectPath ?? GENERAL_PROJECT_PATH)
+const contextPath = computed(() => rootSession.value?.projectPath ?? null)
 
-const contextScopeLabel = computed(() =>
-  isGeneralSession.value ? 'General' : sessionProjectName.value || 'General',
-)
+const contextScopeLabel = computed(() => sessionProjectName.value || 'No repository')
 const contextScopeColor = computed(() =>
-  isGeneralSession.value ? null : projectColor(sessionProjectName.value),
+  isNoProject.value ? null : projectColor(sessionProjectName.value),
 )
 const contextOpen = ref(false)
 
-// Options fed to ScopeBar: General + registered projects (it appends "New
-// project…" itself). No All/Global — a session runs in exactly one context.
-const contextOptions = computed<ScopeOption[]>(() => [
-  { value: GENERAL_PROJECT_PATH, label: 'General', kind: 'general' },
-  ...[...projects.value]
+// Options fed to ScopeBar: the registered projects (it appends "New project…"
+// itself). No All/Global/no-project — a session runs in exactly one context,
+// and no-project sessions can't be reached from the picker.
+const contextOptions = computed<ScopeOption[]>(() =>
+  [...projects.value]
     .sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0))
     .map((p) => ({
       value: p.path,
@@ -125,7 +119,7 @@ const contextOptions = computed<ScopeOption[]>(() => [
       color: projectColor(p.name),
       path: p.path,
     })),
-])
+)
 
 // Draft → re-target in place. Running/terminal session → the context is fixed
 // once started; changing it spawns a fresh draft in the chosen context (live
@@ -742,8 +736,8 @@ const streamingEventUuid = computed((): string | undefined => {
           class="size-2 rounded-full shrink-0"
           :style="{ backgroundColor: contextScopeColor }"
         />
-        <template v-if="isGeneralSession">
-          <span>General — no repository attached</span>
+        <template v-if="isNoProject">
+          <span>No repository attached</span>
         </template>
         <template v-else>
           <span class="font-medium text-foreground">{{ contextScopeLabel }}</span>
@@ -776,11 +770,11 @@ const streamingEventUuid = computed((): string | undefined => {
           </div>
           <div v-if="isDraft" class="flex-1 flex flex-col items-center justify-center text-center px-6 gap-3">
             <h2 class="text-lg font-semibold">
-              {{ isGeneralSession ? 'What can I help with?' : `Working in ${contextScopeLabel}` }}
+              {{ isNoProject ? 'What can I help with?' : `Working in ${contextScopeLabel}` }}
             </h2>
             <p class="text-sm text-muted-foreground">
               Type the first message to start the session.
-              <template v-if="!isGeneralSession"> Change context from the badge above.</template>
+              <template v-if="!isNoProject"> Change context from the badge above.</template>
             </p>
             <p class="text-[11px] text-muted-foreground/60 font-mono">{{ draftConfigSummary }}</p>
           </div>
@@ -877,7 +871,7 @@ const streamingEventUuid = computed((): string | undefined => {
             />
           </div>
           <!-- Worktree pill — draft only -->
-          <div v-if="isDraft && !isGeneralSession" class="flex items-center gap-0.5 shrink-0">
+          <div v-if="isDraft && !isNoProject" class="flex items-center gap-0.5 shrink-0">
             <button
               type="button"
               class="text-[11px] text-muted-foreground bg-transparent border-none outline-none cursor-pointer hover:text-foreground transition-colors"

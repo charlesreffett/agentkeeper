@@ -2,18 +2,17 @@ import { computed } from 'vue'
 import type { Ref } from 'vue'
 import { useQueries, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
-import { GENERAL_PROJECT_PATH } from '@shared/ipc-contract'
 import type { RecentProject, Session, SessionSummary } from '@shared/ipc-contract'
 
 export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
   const queryClient = useQueryClient()
 
-  // Buckets to fan out over: every registered project plus the synthetic
-  // General (no-project) bucket, so general chats show up in the home list
-  // even though they're not backed by a registered project.
-  const bucketPaths = computed(() => {
-    const paths = projects.value.map((p) => p.path)
-    if (!paths.includes(GENERAL_PROJECT_PATH)) paths.push(GENERAL_PROJECT_PATH)
+  // Buckets to fan out over: every registered project plus the null
+  // (no-project) bucket, so general chats show up in the home list even
+  // though they're not backed by a registered project.
+  const bucketPaths = computed<(string | null)[]>(() => {
+    const paths: (string | null)[] = projects.value.map((p) => p.path)
+    if (!paths.includes(null)) paths.push(null)
     return paths
   })
 
@@ -31,7 +30,7 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
     queries: computed(() =>
       bucketPaths.value.map((projectPath) => ({
         queryKey: queryKeys.sessions.historical(projectPath),
-        queryFn: (): Promise<{ projectPath: string; summary: SessionSummary }[]> =>
+        queryFn: (): Promise<{ projectPath: string | null; summary: SessionSummary }[]> =>
           window.agentkeeper.sessions.list(projectPath)
             .then((items) => items.map((s) => ({ projectPath, summary: s })))
             .catch(() => []),
@@ -65,7 +64,7 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
   })
 
   const historicalSessions = computed(() => {
-    const all: { projectPath: string; summary: SessionSummary }[] = historicalResults.value.flatMap(
+    const all: { projectPath: string | null; summary: SessionSummary }[] = historicalResults.value.flatMap(
       (r) => r.data ?? [],
     )
     const seen = new Set<string>()
@@ -86,7 +85,7 @@ export function useSessionsListQuery(projects: Ref<RecentProject[]>) {
       trackedSdkIdResults.value.some((r) => r.isLoading),
   )
 
-  function invalidateForProject(projectPath: string) {
+  function invalidateForProject(projectPath: string | null) {
     void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.persisted(projectPath) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.historical(projectPath) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.trackedSdkIds(projectPath) })

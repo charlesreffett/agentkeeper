@@ -4,7 +4,7 @@ import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { projectColor } from '@/lib/projectColor'
-import { GENERAL_PROJECT_PATH, type LiveSessionStatus } from '@shared/ipc-contract'
+import type { LiveSessionStatus } from '@shared/ipc-contract'
 
 export type UnifiedSessionSource = 'live' | 'persisted' | 'historical'
 
@@ -18,7 +18,8 @@ export interface UnifiedSession {
   status: LiveSessionStatus | 'inactive'
   source: UnifiedSessionSource
   isDraft: boolean
-  projectPath: string
+  /** null = no-project (general) session. */
+  projectPath: string | null
   projectName: string
   projectColor: string
   workItemKey: string | null
@@ -55,8 +56,8 @@ export function useUnifiedSessions() {
     { immediate: true },
   )
 
-  function pathToProjectName(projectPath: string): string {
-    if (projectPath === GENERAL_PROJECT_PATH) return ''
+  function pathToProjectName(projectPath: string | null): string {
+    if (!projectPath) return ''
     const found = projects.value.find((p) => p.path === projectPath)
     if (found) return found.name
     return projectPath.split('/').pop() ?? projectPath
@@ -199,13 +200,13 @@ export function useUnifiedSessions() {
     }
   }
 
-  /** Create (or focus) a draft. Defaults to a General (no-project) draft —
-   *  context is now a per-session choice made in the compose header, not
-   *  inherited from an app-wide focus. */
+  /** Create (or focus) a draft. Defaults to a no-project draft — context is
+   *  now a per-session choice made in the compose header, not inherited from
+   *  an app-wide focus. */
   async function createNewSession(): Promise<string | null> {
     const settings = await window.agentkeeper.settings.get()
     const localId = sessionStore.createOrFocusDraft({
-      projectPath: GENERAL_PROJECT_PATH,
+      projectPath: null,
       defaultModel: settings.defaultModel,
       defaultEffort: settings.defaultEffort,
       defaultUseWorktree: settings.defaultUseWorktree,
