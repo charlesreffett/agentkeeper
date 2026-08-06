@@ -23,7 +23,7 @@ const { data: perfData } = usePerformanceQuery(scopePath)
 const avgDuration = computed(() => perfData.value?.avgDurationMinutes ?? 0)
 const medianDuration = computed(() => perfData.value?.medianDurationMinutes ?? 0)
 
-function inScope(path: string): boolean {
+function inScope(path: string | null): boolean {
   return scopePath.value === null || path === scopePath.value
 }
 

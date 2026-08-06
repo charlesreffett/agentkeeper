@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencyHandoffs, agents, sessions } from './db/schema'
 import type { Agent, AgencyScope, LiveSessionStatus, PlanTodo, RoleEffort, Session } from '../shared/ipc-contract'
@@ -6,6 +6,10 @@ import { settingsStore } from './settings'
 export type { Agent, Session }
 
 const SESSION_CAP = 100
+
+function projectPathCondition(projectPath: string | null) {
+  return projectPath === null ? isNull(sessions.projectPath) : eq(sessions.projectPath, projectPath)
+}
 
 export interface HandoffRecord {
   instanceIndex: number
@@ -119,7 +123,7 @@ export function registerSession(session: Session): void {
   // Cap sessions at SESSION_CAP per project (all sessions are top-level after migration).
   const all = db.select({ localId: sessions.localId, lastActivityAt: sessions.lastActivityAt })
     .from(sessions)
-    .where(eq(sessions.projectPath, session.projectPath))
+    .where(projectPathCondition(session.projectPath))
     .orderBy(sessions.lastActivityAt)
     .all()
 
@@ -147,11 +151,11 @@ export function getSession(localId: string): Session | null {
   return row ? rowToSession(row) : null
 }
 
-export function listSessions(projectPath: string): Session[] {
+export function listSessions(projectPath: string | null): Session[] {
   return getDb()
     .select()
     .from(sessions)
-    .where(eq(sessions.projectPath, projectPath))
+    .where(projectPathCondition(projectPath))
     .orderBy(desc(sql`IFNULL(${sessions.lastUserMessageAt}, ${sessions.startedAt})`))
     .all()
     .map(rowToSession)
@@ -179,18 +183,18 @@ export function deleteAgency(instanceId: string): void {
   sessionDeletedNotifier?.(instanceId)
 }
 
-export function deleteAllForProject(projectPath: string): void {
+export function deleteAllForProject(projectPath: string | null): void {
   const db = getDb()
   // Collect session ids that are also agency instance ids before deleting so we can clean up handoffs.
   const sessionIds = db.select({ localId: sessions.localId })
     .from(sessions)
-    .where(eq(sessions.projectPath, projectPath))
+    .where(projectPathCondition(projectPath))
     .all()
     .map((s) => s.localId)
   for (const id of sessionIds) {
     db.delete(agencyHandoffs).where(eq(agencyHandoffs.agencyInstanceId, id)).run()
   }
-  db.delete(sessions).where(eq(sessions.projectPath, projectPath)).run()
+  db.delete(sessions).where(projectPathCondition(projectPath)).run()
 }
 
 export function touchSession(localId: string): void {
@@ -259,13 +263,13 @@ export function listAgentsBySession(sessionLocalId: string): Agent[] {
     .map(rowToAgent)
 }
 
-export function listTrackedSdkIds(projectPath: string): string[] {
+export function listTrackedSdkIds(projectPath: string | null): string[] {
   const db = getDb()
   return db
     .selectDistinct({ sdkSessionId: agents.sdkSessionId })
     .from(agents)
     .innerJoin(sessions, eq(agents.sessionLocalId, sessions.localId))
-    .where(and(eq(sessions.projectPath, projectPath), isNotNull(agents.sdkSessionId)))
+    .where(and(projectPathCondition(projectPath), isNotNull(agents.sdkSessionId)))
     .all()
     .map((r) => r.sdkSessionId!)
 }

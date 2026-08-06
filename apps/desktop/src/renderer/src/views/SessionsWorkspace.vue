@@ -6,16 +6,12 @@ import LiveSessionView from '@/views/LiveSessionView.vue'
 import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import SessionsWelcome from '@/views/SessionsWelcome.vue'
 import { useSessionStore } from '@/stores/sessions'
-import { useProjectStore } from '@/stores/project'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useUnifiedSessions } from '@/composables/useUnifiedSessions'
-import type { AppSettings } from '@shared/ipc-contract'
+import { type AppSettings } from '@shared/ipc-contract'
 
 const route = useRoute()
 const router = useRouter()
 const sessionStore = useSessionStore()
-const projectStore = useProjectStore()
-const { focusedProject } = useProjectsQuery()
 const { invalidateAll } = useUnifiedSessions()
 
 const id = computed(() => (route.params.id as string) ?? '')
@@ -87,12 +83,11 @@ async function focusDraftForCurrentProject() {
   if (id.value) return
   preparingDraft.value = true
   try {
-    const target = focusedProject.value ?? projectStore.currentProject
-    if (!target) return
+    // Context is a per-session choice made in the compose header — default a
+    // fresh draft to no project (it gets one from the picker when started).
     const settingsNow = await window.agentkeeper.settings.get()
-    projectStore.setProject(target)
     const localId = sessionStore.createOrFocusDraft({
-      projectPath: target.path,
+      projectPath: null,
       defaultModel: settingsNow.defaultModel,
       defaultEffort: settingsNow.defaultEffort,
       defaultUseWorktree: settingsNow.defaultUseWorktree,

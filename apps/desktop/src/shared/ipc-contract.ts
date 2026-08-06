@@ -35,6 +35,15 @@ export type {
   ReviewEvent,
 }
 
+// ─── General (no-project) sessions ─────────────────────────────────────────
+
+/** True when a session has no project attached (`projectPath` is null). No-project
+ *  chats run with `os.homedir()` as their cwd and skip all project-scoped
+ *  features (worktrees, plan MCP tools, project roles/agencies). */
+export function isGeneralProject(projectPath: string | null | undefined): projectPath is null | undefined {
+  return !projectPath
+}
+
 // ─── Attachments ────────────────────────────────────────────────────────────
 
 export interface Attachment {
@@ -225,7 +234,7 @@ export interface TranscriptEvent {
 export interface SessionTranscript {
   id: string
   path: string
-  projectPath: string
+  projectPath: string | null
   gitBranch: string | null
   versions: string[]
   events: TranscriptEvent[]
@@ -262,7 +271,8 @@ export interface Agent {
 
 export interface Session {
   localId: string
-  projectPath: string
+  /** The logical project the session belongs to. null = no-project (general) session. */
+  projectPath: string | null
   worktreePath: string | null
   branch: string | null
   model: string | null
@@ -305,8 +315,9 @@ export interface StartSessionParams {
    * share the same UUID).
    */
   sessionLocalId?: string
-  /** The logical project the session belongs to (the main repo root). */
-  projectPath: string
+  /** The logical project the session belongs to (the main repo root).
+   *  null = no-project (general) session. */
+  projectPath: string | null
   /**
    * Actual cwd for the SDK subprocess. Defaults to projectPath. Set this
    * to a worktree path when a session should run in a separate branch/dir.
@@ -474,7 +485,8 @@ export type AgencyDraft = Omit<Agency, 'scope' | 'path'>
 /** Parameters to launch an agency: creates one shared worktree (optional)
  *  and spawns one session per role. Entry-point roles receive initialPrompt. */
 export interface StartAgencyParams {
-  projectPath: string
+  /** null = no-project (general) agency. */
+  projectPath: string | null
   agencyId: string
   agencyScope: AgencyScope
   initialPrompt: string
@@ -503,7 +515,8 @@ export interface AgencyInstance {
   instanceId: string
   agencyId: string
   agencyName: string
-  projectPath: string
+  /** null = no-project (general) agency. */
+  projectPath: string | null
   worktreePath: string | null
   branch: string | null
   sessions: AgencyInstanceSession[]
@@ -818,9 +831,9 @@ export interface AgentKeeperApi {
     }
   }
   sessions: {
-    list: (projectPath: string) => Promise<SessionSummary[]>
+    list: (projectPath: string | null) => Promise<SessionSummary[]>
     read: (
-      projectPath: string,
+      projectPath: string | null,
       sessionId: string,
       harnessId?: string,
     ) => Promise<SessionTranscript | null>
@@ -835,7 +848,7 @@ export interface AgentKeeperApi {
     onStats: (callback: (stats: LiveSessionStats) => void) => () => void
     onCreated: (callback: (localId: string) => void) => () => void
     onDeleted: (callback: (localId: string) => void) => () => void
-    listPersisted: (projectPath: string) => Promise<Session[]>
+    listPersisted: (projectPath: string | null) => Promise<Session[]>
     getByLocalId: (localId: string) => Promise<Session | null>
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
@@ -843,12 +856,12 @@ export interface AgentKeeperApi {
     setModel: (localId: string, model: string) => Promise<void>
     setEffort: (localId: string, effort: RoleEffort) => Promise<void>
     setPermissionMode: (localId: string, mode: PermissionMode) => Promise<void>
-    deleteHistorical: (projectPath: string, sessionId: string) => Promise<void>
-    deleteAllHistorical: (projectPath: string) => Promise<void>
-    deleteAllPersisted: (projectPath: string) => Promise<void>
+    deleteHistorical: (projectPath: string | null, sessionId: string) => Promise<void>
+    deleteAllHistorical: (projectPath: string | null) => Promise<void>
+    deleteAllPersisted: (projectPath: string | null) => Promise<void>
     getAgents: (sessionLocalId: string) => Promise<Agent[]>
     addAgent: (sessionLocalId: string, params: AddAgentParams) => Promise<string>
-    listTrackedSdkIds: (projectPath: string) => Promise<string[]>
+    listTrackedSdkIds: (projectPath: string | null) => Promise<string[]>
     reconnectMcp: (agentLocalId: string) => Promise<void>
     editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null) => Promise<void>
     undoEditAndRerun: (agentLocalId: string) => Promise<void>
@@ -860,25 +873,25 @@ export interface AgentKeeperApi {
     gitDiffStat: (worktreePath: string, baseBranch?: string) => Promise<GitDiffStatFile[]>
   }
   roles: {
-    list: (projectPath: string) => Promise<Role[]>
+    list: (projectPath: string | null) => Promise<Role[]>
     save: (
       scope: RoleScope,
-      projectPath: string,
+      projectPath: string | null,
       role: RoleDraft,
     ) => Promise<Role>
-    remove: (scope: RoleScope, projectPath: string, id: string) => Promise<void>
+    remove: (scope: RoleScope, projectPath: string | null, id: string) => Promise<void>
     generate: (prompt: string) => Promise<RolesGenerateResult>
   }
   agencies: {
-    list: (projectPath: string) => Promise<Agency[]>
+    list: (projectPath: string | null) => Promise<Agency[]>
     save: (
       scope: AgencyScope,
-      projectPath: string,
+      projectPath: string | null,
       agency: AgencyDraft,
     ) => Promise<Agency>
     remove: (
       scope: AgencyScope,
-      projectPath: string,
+      projectPath: string | null,
       id: string,
     ) => Promise<void>
     start: (params: StartAgencyParams) => Promise<AgencyInstance>

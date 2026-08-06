@@ -6,6 +6,8 @@ import { useRouter } from 'vue-router'
 import type { PRComment, PRDetail } from '@shared/github-types'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope } from '@/composables/usePageScope'
+import type { RecentProject } from '@shared/ipc-contract'
 
 const route = useRoute()
 const prNumber = computed(() => Number(route.params.number))
@@ -21,7 +23,17 @@ const submitError = ref<string | null>(null)
 
 const router = useRouter()
 const sessionStore = useSessionStore()
-const { focusedProject } = useProjectsQuery()
+const { projects } = useProjectsQuery()
+const { currentProject } = usePageScope('github')
+
+// A PR is repo-bound: resolve the git context from its repo. The github page
+// scope wins when it points at the same repo; otherwise any registered project
+// owning the repo works.
+function projectForRepo(): RecentProject | null {
+  const scoped = currentProject.value
+  if (scoped && scoped.repo === prRepo.value) return scoped
+  return projects.value.find((p) => p.repo === prRepo.value) ?? null
+}
 
 const sendingCommentId = ref<number | null>(null)
 const sendingAll = ref(false)
@@ -104,9 +116,9 @@ function avatarInitial(author: string): string {
 }
 
 async function sendCommentToClaude(comment: PRComment) {
-  const focused = focusedProject.value
-  if (!focused) {
-    claudeError.value = 'No focused project — focus a project first.'
+  const project = projectForRepo()
+  if (!project) {
+    claudeError.value = `No registered project matches repo ${prRepo.value} — add it as a project first.`
     return
   }
   sendingCommentId.value = comment.id
@@ -114,7 +126,7 @@ async function sendCommentToClaude(comment: PRComment) {
   try {
     const location = comment.path && comment.line ? `\nFile: ${comment.path}:${comment.line}\n` : ''
     const prompt = `Address the following comment on PR #${prNumber.value} (${prRepo.value}) by @${comment.author}:${location}\n${comment.body}`
-    const localId = await sessionStore.start({ projectPath: focused.path, initialPrompt: prompt })
+    const localId = await sessionStore.start({ projectPath: project.path, initialPrompt: prompt })
     await router.push(`/sessions/${localId}`)
   } catch (e) {
     claudeError.value = e instanceof Error ? e.message : String(e)
@@ -124,9 +136,9 @@ async function sendCommentToClaude(comment: PRComment) {
 }
 
 async function sendAllToClaude() {
-  const focused = focusedProject.value
-  if (!focused) {
-    claudeError.value = 'No focused project — focus a project first.'
+  const project = projectForRepo()
+  if (!project) {
+    claudeError.value = `No registered project matches repo ${prRepo.value} — add it as a project first.`
     return
   }
   if (comments.value.length === 0) return
@@ -140,7 +152,7 @@ async function sendAllToClaude() {
       })
       .join('\n\n---\n\n')
     const prompt = `Address all reviewer comments on PR #${prNumber.value} (${prRepo.value}):\n\n${commentsList}`
-    const localId = await sessionStore.start({ projectPath: focused.path, initialPrompt: prompt })
+    const localId = await sessionStore.start({ projectPath: project.path, initialPrompt: prompt })
     await router.push(`/sessions/${localId}`)
   } catch (e) {
     claudeError.value = e instanceof Error ? e.message : String(e)

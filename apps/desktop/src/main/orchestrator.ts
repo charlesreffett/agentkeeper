@@ -13,6 +13,7 @@ import type {
   RoleSlot,
   StartAgencyParams,
 } from '../shared/ipc-contract'
+import { isGeneralProject } from '../shared/ipc-contract'
 import { listAgencies } from './agencies'
 import { listRoles } from './roles'
 import { createWorktree } from './worktrees'
@@ -65,7 +66,7 @@ interface RuntimeAgency {
   agencyId: string
   agencyScope: AgencyScope
   agencyName: string
-  projectPath: string
+  projectPath: string | null
   worktreePath: string | null
   branch: string | null
   /** roleId → all spawned instances for this role */
@@ -802,41 +803,43 @@ function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefi
 }
 
 export function createProjectMcp(
-  projectPath: string,
+  projectPath: string | null,
 ): ReturnType<typeof createSdkMcpServer> {
+  // General chats have no plan store to bind to — expose an empty toolset so
+  // the agent stays a clean Claude Code with no agentkeeper MCP surface.
   return createSdkMcpServer({
     name: 'agentkeeper',
     version: '1.0.0',
-    tools: buildPlanTools(projectPath),
+    tools: isGeneralProject(projectPath) ? [] : buildPlanTools(projectPath),
   })
 }
 
 export function createOrchestratorMcp(
-  projectPath: string,
+  projectPath: string | null,
   sessionId: string,
 ): ReturnType<typeof createSdkMcpServer> {
+  const sendMessageTool = tool(
+    'send_message',
+    'Send a message to a peer agent by instance id (e.g. "developer-1") or role id (e.g. "developer" for load-balanced delivery). Waits for their reply and returns it as the tool result.',
+    {
+      to: z.string().describe('Target agent instance id (e.g. "developer-1") or role id (e.g. "developer").'),
+      content: z.string().describe('Message body to send to the peer.'),
+    },
+    async ({ to, content }) => {
+      try {
+        const reply = await routeMessage(sessionId, to, content)
+        return { content: [{ type: 'text', text: reply }] }
+      } catch (err) {
+        return { content: [{ type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` }] }
+      }
+    },
+  )
   return createSdkMcpServer({
     name: 'agentkeeper',
     version: '1.0.0',
-    tools: [
-      ...buildPlanTools(projectPath, sessionId),
-      tool(
-        'send_message',
-        'Send a message to a peer agent by instance id (e.g. "developer-1") or role id (e.g. "developer" for load-balanced delivery). Waits for their reply and returns it as the tool result.',
-        {
-          to: z.string().describe('Target agent instance id (e.g. "developer-1") or role id (e.g. "developer").'),
-          content: z.string().describe('Message body to send to the peer.'),
-        },
-        async ({ to, content }) => {
-          try {
-            const reply = await routeMessage(sessionId, to, content)
-            return { content: [{ type: 'text', text: reply }] }
-          } catch (err) {
-            return { content: [{ type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` }] }
-          }
-        },
-      ),
-    ],
+    tools: isGeneralProject(projectPath)
+      ? [sendMessageTool]
+      : [...buildPlanTools(projectPath, sessionId), sendMessageTool],
   })
 }
 
@@ -948,7 +951,7 @@ export async function startAgency(
 
   let worktreePath: string | null = null
   let branch: string | null = null
-  if (params.useWorktree && params.branch) {
+  if (params.useWorktree && params.branch && !isGeneralProject(params.projectPath)) {
     const wt = await createWorktree(params.projectPath, { branchRequest: params.branch })
     worktreePath = wt.path
     branch = wt.branch

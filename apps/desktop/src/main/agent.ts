@@ -1,12 +1,14 @@
 import { webContents } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { getHarness } from './harness/index'
 import type { HarnessEvent } from '@agentkeeper/core'
 import * as costLedger from './cost-ledger'
 import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
 import { calculateCost, calculateCostBreakdown } from './pricing'
+import { isGeneralProject } from '../shared/ipc-contract'
 import type {
   Agent,
   AgencyScope,
@@ -33,7 +35,7 @@ export interface ActiveSession {
   /** Session UUID. Equals id for solo sessions; the shared instance UUID for agency agents. */
   sessionLocalId: string
   sdkSessionId: string | null
-  projectPath: string
+  projectPath: string | null
   worktreePath: string | undefined
   harnessId: string
   model: string | undefined
@@ -96,10 +98,10 @@ export interface InternalStartExtras {
 }
 
 type DefaultMcpFactoryResolver = (args: {
-  projectPath: string
+  projectPath: string | null
   agentLocalId: string
   isAgency: boolean
-}) => NonNullable<InternalStartExtras['mcpFactory']>
+}) => NonNullable<InternalStartExtras['mcpFactory']> | undefined
 
 // Injected by ipc.ts at startup. agent.ts can't import the factories from
 // orchestrator.ts directly (orchestrator imports agent — cycle), but every
@@ -150,7 +152,7 @@ function broadcastSessionDeleted(localId: string): void {
 registry.setSessionDeletedNotifier(broadcastSessionDeleted)
 
 interface UndoBuffer {
-  projectPath: string
+  projectPath: string | null
   sdkSessionId: string
   harnessId: string
   keptCount: number
@@ -412,7 +414,7 @@ async function consumeStream(session: ActiveSession): Promise<void> {
       if (session.workItemId && workItemRegistry) {
         const branch = session.worktreePath
           ? path.basename(session.worktreePath)
-          : path.basename(session.projectPath)
+          : path.basename(session.projectPath ?? '')
         const ts = new Date().toISOString()
         workItemRegistry
           .addComment(
@@ -598,7 +600,9 @@ export async function startSession(
   const controller = new AbortController()
   const input = new AsyncQueue<{type:'user';message:{role:'user';content:unknown}}>()
   const isResume = !!params.resumeSdkSessionId
-  const cwd = params.worktreePath ?? params.projectPath
+  // General chats have no project — run from home so the agent can reach the
+  // whole user directory. Project sessions use the worktree (when present).
+  const cwd = params.worktreePath ?? (isGeneralProject(params.projectPath) ? os.homedir() : params.projectPath)
   const initialUserMsg = isResume
     ? null
     : await messageFromInput(params.initialPrompt, params.initialAttachments, cwd)
@@ -788,7 +792,7 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
     })
     s = active.get(sessionId)!
   }
-  const userMsg = await messageFromInput(text, attachments, s.worktreePath ?? s.projectPath)
+  const userMsg = await messageFromInput(text, attachments, s.worktreePath ?? s.projectPath ?? os.homedir())
   broadcastEvent({ sessionId: s.sessionLocalId, agentLocalId: s.agentLocalId, message: userMsg })
   s.input.push(userMsg)
   // A parked session's ceiling timer must not fire mid-turn after a manual resume.
@@ -996,7 +1000,7 @@ export function listActiveSessions(): Array<{
   agentLocalId: string
   sessionLocalId: string
   sdkSessionId: string | null
-  projectPath: string
+  projectPath: string | null
   status: LiveSessionStatus
   startedAt: number
   model: string | undefined

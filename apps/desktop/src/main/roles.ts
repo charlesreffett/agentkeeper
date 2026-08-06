@@ -4,6 +4,7 @@ import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import Anthropic from '@anthropic-ai/sdk'
 import {
+  isGeneralProject,
   ROLE_EFFORT_VALUES,
   type Role,
   type RoleEffort,
@@ -31,11 +32,12 @@ function globalRolesDir(): string {
   return path.join(os.homedir(), GLOBAL_ROLES_DIR)
 }
 
-function scopeDir(scope: RoleScope, projectPath: string): string {
-  return scope === 'project' ? projectRolesDir(projectPath) : globalRolesDir()
+function scopeDir(scope: RoleScope, projectPath: string | null): string {
+  // Project-scoped saves always carry a real path; global scope ignores it.
+  return scope === 'project' ? projectRolesDir(projectPath!) : globalRolesDir()
 }
 
-function rolePath(scope: RoleScope, projectPath: string, id: string): string {
+function rolePath(scope: RoleScope, projectPath: string | null, id: string): string {
   return path.join(scopeDir(scope, projectPath), `${id}.md`)
 }
 
@@ -99,7 +101,7 @@ function serializeRole(role: Omit<Role, 'scope' | 'path'>): string {
 
 async function listScope(
   scope: RoleScope,
-  projectPath: string,
+  projectPath: string | null,
 ): Promise<Role[]> {
   const dir = scopeDir(scope, projectPath)
   let entries: string[]
@@ -124,9 +126,10 @@ async function listScope(
   return results
 }
 
-export async function listRoles(projectPath: string): Promise<Role[]> {
+export async function listRoles(projectPath: string | null): Promise<Role[]> {
   const [project, global] = await Promise.all([
-    listScope('project', projectPath),
+    // General chats have no project directory — only global roles apply.
+    isGeneralProject(projectPath) ? [] : listScope('project', projectPath),
     listScope('global', projectPath),
   ])
   // project takes precedence over global on id collision
@@ -140,7 +143,7 @@ export async function listRoles(projectPath: string): Promise<Role[]> {
 
 export async function saveRole(
   scope: RoleScope,
-  projectPath: string,
+  projectPath: string | null,
   role: Omit<Role, 'scope' | 'path'>,
 ): Promise<Role> {
   const dir = scopeDir(scope, projectPath)
@@ -152,7 +155,7 @@ export async function saveRole(
 
 export async function deleteRole(
   scope: RoleScope,
-  projectPath: string,
+  projectPath: string | null,
   id: string,
 ): Promise<void> {
   const filePath = rolePath(scope, projectPath, id)

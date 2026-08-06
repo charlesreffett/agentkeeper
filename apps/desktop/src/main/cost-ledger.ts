@@ -163,7 +163,7 @@ export function getDailySummaryByProject(): ProjectDayTotal[] {
 
   const agentToSession: Record<string, string> = {}
   for (const a of agentRows) agentToSession[a.localId] = a.sessionLocalId
-  const sessionToProject: Record<string, string> = {}
+  const sessionToProject: Record<string, string | null> = {}
   for (const s of sessionRows) sessionToProject[s.localId] = s.projectPath
 
   const byKey: Record<string, ProjectDayTotal> = {}

@@ -11,14 +11,16 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Comark } from '@comark/vue'
 import { transcriptComponents, transcriptPlugins } from '@/lib/comark-config'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope } from '@/composables/usePageScope'
 import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore, relativeTime } from '@/stores/jiraActivity'
 import JiraStartSessionModal from './JiraStartSessionModal.vue'
 import type { IssueTransition, StatusCategory, WorkItem, WorkItemStatus } from '@shared/ipc-contract'
 
 const route = useRoute()
-const { focusedProject } = useProjectsQuery()
+// Plans are project-bound — when no Jira mapping exists, planning runs in the
+// Planner's explicitly scoped project (never an app-wide focus).
+const { scopePath: plannerScopePath, isProject: isPlannerProject } = usePageScope('planner')
 const sessionStore = useSessionStore()
 const activityStore = useJiraActivityStore()
 
@@ -178,13 +180,16 @@ async function planWithClaude() {
       if (mapping) projectPath = mapping.projectPath
     }
   } catch {
-    // config fetch failure is non-fatal; fall through to focused project
+    // config fetch failure is non-fatal; fall through to the planner scope
   }
-  if (!projectPath) projectPath = focusedProject.value?.path
   if (!projectPath) {
-    planError.value = 'No project mapping found for this Jira project. Configure mappings in Jira settings or focus a project in the sidebar.'
-    planRunning.value = false
-    return
+    if (isPlannerProject.value) {
+      projectPath = plannerScopePath.value
+    } else {
+      planError.value = 'No project mapping found for this Jira project. Configure mappings in Jira settings or scope the Planner to a project.'
+      planRunning.value = false
+      return
+    }
   }
 
   let planId: string | null = null

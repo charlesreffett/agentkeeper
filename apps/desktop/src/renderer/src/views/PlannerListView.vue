@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useRouter } from 'vue-router'
 import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from 'lucide-vue-next'
 import PageHeader from '@/components/PageHeader.vue'
 import NewPlanModal from '@/components/planner/NewPlanModal.vue'
+import ScopeBar from '@/components/ScopeBar.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
+import { projectColor } from '@/lib/projectColor'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,17 +19,70 @@ import {
 import { usePlansStore } from '@/stores/plans'
 import type { Plan, PlanStatus } from '@shared/ipc-contract'
 
+type PlanWithProject = Plan & { projectPath?: string }
+
 const router = useRouter()
-const { focusedProject } = useProjectsQuery()
+const { scope, options, label, color, setScope, pickAndAdd, isAll, isProject, currentProject } =
+  usePageScope('planner')
+const { projects } = useProjectsQuery()
+const queryClient = useQueryClient()
 const plansStore = usePlansStore()
-const plans = computed(() => plansStore.plans.filter((p) => p.status !== 'archived'))
-const loading = computed(() => plansStore.loading)
+const loading = computed(() => (isAll.value ? allLoading.value : plansStore.loading))
+
+// All scope = union across every registered project, tagged with each plan's
+// owning project so archive/delete/refresh target the right one.
+const { data: allPlans, isLoading: allLoading } = useQuery({
+  queryKey: computed(() => ['plans', 'list', SCOPE_ALL, projects.value.map((p) => p.path).sort().join('|')]),
+  enabled: isAll,
+  queryFn: async () => {
+    const paths = projects.value.map((p) => p.path)
+    const lists = await Promise.all(paths.map((p) => window.agentkeeper.plans.list(p)))
+    const seen = new Set<string>()
+    const out: PlanWithProject[] = []
+    for (let i = 0; i < lists.length; i++) {
+      const projectPath = paths[i]!
+      for (const plan of lists[i]!) {
+        if (seen.has(plan.id)) continue
+        seen.add(plan.id)
+        out.push({ ...plan, projectPath })
+      }
+    }
+    return out
+  },
+})
+
+const plans = computed<PlanWithProject[]>(() =>
+  isAll.value
+    ? (allPlans.value ?? []).filter((p) => p.status !== 'archived')
+    : plansStore.plans.filter((p) => p.status !== 'archived'),
+)
+
+// The concrete project backing a plan row: its own path in All, the scoped
+// project otherwise. null when the page is scoped to nothing (planner is
+// project-bound — All is a read-only union).
+function planProjectPath(plan: PlanWithProject): string | null {
+  if (isAll.value) return plan.projectPath ?? null
+  return isProject.value ? currentProject.value?.path ?? null : null
+}
+
+function refreshPlans(planPath?: string): void {
+  if (isAll.value) {
+    void queryClient.invalidateQueries({ queryKey: ['plans', 'list', SCOPE_ALL] })
+  } else if (planPath) {
+    void plansStore.refresh(planPath)
+  }
+}
 
 watch(
-  () => focusedProject.value?.path,
+  () => scope.value,
   (path) => {
-    if (path) void plansStore.refresh(path)
-    else plansStore.invalidate()
+    if (isAll.value) {
+      void queryClient.invalidateQueries({ queryKey: ['plans', 'list', SCOPE_ALL] })
+    } else if (isProject.value && path) {
+      void plansStore.refresh(path)
+    } else {
+      plansStore.invalidate()
+    }
   },
   { immediate: true },
 )
@@ -36,7 +93,9 @@ let unsubPlanUpdated: (() => void) | null = null
 
 onMounted(() => {
   unsubPlanUpdated = window.agentkeeper.plans.onUpdated(({ projectPath: p }) => {
-    if (focusedProject.value?.path === p) {
+    if (isAll.value) {
+      void queryClient.invalidateQueries({ queryKey: ['plans', 'list', SCOPE_ALL] })
+    } else if (isProject.value && currentProject.value?.path === p) {
       void plansStore.refresh(p)
     }
   })
@@ -127,23 +186,32 @@ async function openSession(plan: Plan) {
   void router.push(`/sessions/${sessionId}`)
 }
 
-async function pausePlan(plan: Plan) {
+async function pausePlan(plan: PlanWithProject) {
   const sessionId = plan.sessionIds?.[plan.sessionIds.length - 1]
   if (!sessionId) return
   await window.agentkeeper.sessions.interrupt(sessionId)
-  if (focusedProject.value) void plansStore.refresh(focusedProject.value.path)
+  refreshPlans(planProjectPath(plan) ?? undefined)
 }
 
-async function archivePlan(plan: Plan) {
-  if (!focusedProject.value) return
-  await window.agentkeeper.plans.update(focusedProject.value.path, plan.id, { status: 'archived' })
-  void plansStore.refresh(focusedProject.value.path)
+async function archivePlan(plan: PlanWithProject) {
+  const p = planProjectPath(plan)
+  if (!p) return
+  await window.agentkeeper.plans.update(p, plan.id, { status: 'archived' })
+  refreshPlans(p)
 }
 
-async function removePlan(plan: Plan) {
-  if (!focusedProject.value) return
-  await window.agentkeeper.plans.delete(focusedProject.value.path, plan.id)
-  void plansStore.refresh(focusedProject.value.path)
+async function removePlan(plan: PlanWithProject) {
+  const p = planProjectPath(plan)
+  if (!p) return
+  await window.agentkeeper.plans.delete(p, plan.id)
+  refreshPlans(p)
+}
+
+function projectNameForPlan(plan: PlanWithProject): string {
+  if (!plan.projectPath) return ''
+  const found = projects.value.find((pr) => pr.path === plan.projectPath)
+  if (found) return found.name
+  return plan.projectPath.split('/').pop() ?? plan.projectPath
 }
 </script>
 
@@ -151,12 +219,22 @@ async function removePlan(plan: Plan) {
   <div class="h-full flex flex-col bg-background">
     <PageHeader title="Plans" description="Drafted by Claude">
       <template #actions>
+        <ScopeBar
+          :scope="scope"
+          :options="options"
+          :label="label"
+          :color="color"
+          @select="setScope"
+          @pick-and-add="pickAndAdd"
+        />
         <button class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md border border-border hover:bg-muted/60 transition-colors">
           <Filter :size="14" />
           Filter
         </button>
         <button
           class="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+          :disabled="!isProject"
+          :title="isProject ? '' : 'Scope to a project to create plans'"
           @click="showNewPlan = true"
         >
           <Sparkles :size="14" />
@@ -166,13 +244,8 @@ async function removePlan(plan: Plan) {
     </PageHeader>
 
     <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-6">
-      <!-- No project -->
-      <div v-if="!focusedProject" class="flex items-center justify-center h-48 text-sm text-muted-foreground">
-        Focus a project to see its plans.
-      </div>
-
       <!-- Loading -->
-      <div v-else-if="loading" class="flex items-center justify-center h-48 text-sm text-muted-foreground">
+      <div v-if="loading" class="flex items-center justify-center h-48 text-sm text-muted-foreground">
         <Loader2 class="size-4 animate-spin mr-2" />
         Loading…
       </div>
@@ -261,7 +334,21 @@ async function removePlan(plan: Plan) {
               </div>
 
               <div class="min-w-0">
-                <div class="text-sm font-semibold truncate">{{ plan.title }}</div>
+                <div class="text-sm font-semibold truncate">
+                  <span
+                    v-if="isAll && plan.projectPath"
+                    class="inline-flex items-center gap-1 mr-1.5 align-middle"
+                  >
+                    <span
+                      class="size-2 rounded-full shrink-0"
+                      :style="{ backgroundColor: projectColor(projectNameForPlan(plan)) }"
+                    />
+                    <span class="text-xs font-normal text-muted-foreground">
+                      {{ projectNameForPlan(plan) }}
+                    </span>
+                  </span>
+                  {{ plan.title }}
+                </div>
                 <div class="text-xs text-muted-foreground mt-0.5">
                   <template v-if="plan.status === 'drafting'">
                     {{ plan.steps.length > 0 ? `${plan.steps.length} step${plan.steps.length !== 1 ? 's' : ''} so far` : 'Being written…' }}

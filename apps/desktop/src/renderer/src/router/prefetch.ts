@@ -1,25 +1,35 @@
 import type { Router } from 'vue-router'
-import { queryClient } from '@/lib/queryClient'
-import { queryKeys } from '@/lib/queryKeys'
 import { usePlansStore } from '@/stores/plans'
 import { useCommandsDataStore } from '@/stores/commandsData'
 import { useSkillsDataStore } from '@/stores/skillsData'
-import type { RecentProject } from '@shared/ipc-contract'
+import { SCOPE_ALL, SCOPE_GLOBAL } from '@/composables/usePageScope'
+
+// A concrete project path when the page's persisted scope is a project; '' for
+// All/Global (the data stores treat '' as the global/no-project load).
+function scopedPath(pageId: string): string {
+  let scope: string | null = null
+  try {
+    scope = localStorage.getItem(`scope.${pageId}`)
+  } catch {
+    scope = null
+  }
+  if (!scope || scope === SCOPE_ALL || scope === SCOPE_GLOBAL) return ''
+  return scope
+}
 
 export function installPrefetchGuard(router: Router): void {
   router.beforeEach((to) => {
-    const focusedProject = queryClient.getQueryData<RecentProject | null>(queryKeys.projects.focused())
-    const focusedPath = focusedProject?.path ?? ''
-
     switch (to.path) {
-      case '/planner':
-        if (focusedPath) void usePlansStore().load(focusedPath)
+      case '/planner': {
+        const path = scopedPath('planner')
+        if (path) void usePlansStore().load(path)
         break
+      }
       case '/commands':
-        void useCommandsDataStore().load(focusedPath)
+        void useCommandsDataStore().load(scopedPath('commands'))
         break
       case '/skills':
-        void useSkillsDataStore().load(focusedPath)
+        void useSkillsDataStore().load(scopedPath('skills'))
         break
     }
   })

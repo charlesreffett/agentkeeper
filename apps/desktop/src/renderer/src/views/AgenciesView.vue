@@ -1,6 +1,17 @@
 <template>
   <div class="h-full flex flex-col overflow-hidden bg-background">
-    <PageHeader title="Agencies" />
+    <PageHeader title="Agencies">
+      <template #actions>
+        <ScopeBar
+          :scope="scope"
+          :options="options"
+          :label="label"
+          :color="color"
+          @select="setScope"
+          @pick-and-add="pickAndAdd"
+        />
+      </template>
+    </PageHeader>
 
     <!-- Three-panel body -->
     <div class="flex flex-1 overflow-hidden">
@@ -57,7 +68,7 @@
             v-if="showAddRolePanel"
             :roles="roles"
             :agency="selectedAgency"
-            :project-path="focusedProjectPath"
+            :project-path="scopedProjectPath"
             class="absolute top-0 left-0 z-10 h-full"
             @add-role="graph.addRole"
             @close="showAddRolePanel = false"
@@ -118,7 +129,7 @@
     <NewAgencyModal
       v-if="showCreateModal"
       :all-roles="roles"
-      :project-path="focusedProjectPath"
+      :project-path="scopedProjectPath"
       @save="onCreateAgency"
       @cancel="showCreateModal = false"
     />
@@ -128,10 +139,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Plus, Check } from 'lucide-vue-next'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useFlowGraph } from '@/components/graph/useFlowGraph'
 import FlowCanvas from '@/components/graph/FlowCanvas.vue'
 import AgencyList from '@/components/agencies/AgencyList.vue'
@@ -141,14 +154,56 @@ import ConnectionPanel from '@/components/agencies/ConnectionPanel.vue'
 import NewAgencyModal from '@/components/agencies/NewAgencyModal.vue'
 import AddRolePanel from '@/components/agencies/AddRolePanel.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import type { Agency, AgencyDraft, AgencyScope } from '@shared/ipc-contract'
+import ScopeBar from '@/components/ScopeBar.vue'
+import { type Agency, type AgencyDraft, type AgencyScope } from '@shared/ipc-contract'
 
-const { focusedProject } = useProjectsQuery()
+const { scope, options, label, color, setScope, pickAndAdd, isAll, isProject, currentProject } =
+  usePageScope('agencies', { includeGlobal: true })
+const { projects } = useProjectsQuery()
+const queryClient = useQueryClient()
 
-const focusedProjectPath = computed(() => focusedProject.value?.path ?? '')
+// Concrete project path when a project is scoped, else '' (global/all).
+const scopedProjectPath = computed(() => (isProject.value ? currentProject.value?.path ?? '' : ''))
 
-const { agencies, isLoading, saveAgency: saveAgencyMutation, removeAgency: removeAgencyMutation } = useAgenciesQuery(focusedProjectPath)
-const { roles } = useRolesQuery(focusedProjectPath)
+// Scoped list input: project → its path (project + global); Global → null
+// (global-only); All → '' to disable this query (the union query below serves
+// All).
+const agenciesQueryPath = computed(() =>
+  isAll.value ? '' : isProject.value ? scopedProjectPath.value : null,
+)
+
+// Editor role options: project + global when a project is scoped, else global-only.
+const rolesQueryPath = computed(() =>
+  isProject.value && currentProject.value ? currentProject.value.path : null,
+)
+
+const {
+  agencies: scopedAgencies,
+  isLoading: scopedLoading,
+  saveAgency: saveAgencyMutation,
+  removeAgency: removeAgencyMutation,
+} = useAgenciesQuery(agenciesQueryPath)
+const { roles } = useRolesQuery(rolesQueryPath)
+
+// All scope = union of global + every project's agencies, deduped by file path.
+const { data: allAgencies, isLoading: allLoading } = useQuery({
+  queryKey: computed(() => ['agencies', 'list', SCOPE_ALL, projects.value.map((p) => p.path).sort().join('|')]),
+  enabled: isAll,
+  queryFn: async () => {
+    const paths = [null, ...projects.value.map((p) => p.path)]
+    const lists = await Promise.all(paths.map((p) => window.agentkeeper.agencies.list(p)))
+    const byPath = new Map<string, Agency>()
+    for (const list of lists) for (const a of list) byPath.set(a.path, a)
+    return Array.from(byPath.values()).sort((a, b) => a.name.localeCompare(b.name))
+  },
+})
+
+const agencies = computed<Agency[]>(() => (isAll.value ? allAgencies.value ?? [] : scopedAgencies.value))
+const isLoading = computed(() => (isAll.value ? allLoading.value : scopedLoading.value))
+
+function invalidateAllScope(): void {
+  void queryClient.invalidateQueries({ queryKey: ['agencies', 'list', SCOPE_ALL] })
+}
 
 const selectedAgencyId = ref<string | null>(null)
 const showAddRolePanel = ref(false)
@@ -167,15 +222,15 @@ const selectedAgency = computed<Agency | null>(() => {
 })
 
 // Derive the project root for a project-scoped agency from its own file path.
-// This is always authoritative: focusedProjectPath can diverge from the agency's
-// actual location if the user switches projects while a mutation is in-flight.
-function agencyProjectPath(scope: Agency['scope'], filePath: string): string {
-  if (scope === 'project' && filePath) {
+// This is always authoritative: the scoped path can diverge from the agency's
+// actual location if the user switches scope while a mutation is in-flight.
+function agencyProjectPath(agencyScope: Agency['scope'], filePath: string): string {
+  if (agencyScope === 'project' && filePath) {
     const marker = '/.agentkeeper/agencies/'
     const idx = filePath.indexOf(marker)
     if (idx !== -1) return filePath.slice(0, idx)
   }
-  return focusedProjectPath.value
+  return scopedProjectPath.value
 }
 
 async function saveHelper(draft: Agency) {
@@ -186,6 +241,7 @@ async function saveHelper(draft: Agency) {
   // Vue proxy arrays (roles, entryPoints) that survive a top-level spread.
   const plainDraft = JSON.parse(JSON.stringify(agencyDraft)) as typeof agencyDraft
   await saveAgencyMutation({ scope, path: projectPath, draft: plainDraft })
+  invalidateAllScope()
   flashSaved()
 }
 
@@ -197,6 +253,7 @@ async function deleteHelper() {
     path: agencyProjectPath(scope, agencyFilePath),
     id,
   })
+  invalidateAllScope()
   selectedAgencyId.value = null
 }
 
@@ -220,7 +277,8 @@ function beginCreate() {
 }
 
 async function onCreateAgency(draft: AgencyDraft, scope: AgencyScope) {
-  await saveAgencyMutation({ scope, path: focusedProjectPath.value, draft })
+  await saveAgencyMutation({ scope, path: scopedProjectPath.value, draft })
+  invalidateAllScope()
   showCreateModal.value = false
   // Select the newly created agency
   selectedAgencyId.value = draft.id
@@ -244,6 +302,7 @@ async function onUpdateAgency(draft: Agency) {
       path: agencyProjectPath(current.scope, current.path),
       id: current.id,
     })
+    invalidateAllScope()
   }
 
   if (idChanged) {
@@ -251,14 +310,11 @@ async function onUpdateAgency(draft: Agency) {
   }
 }
 
-watch(
-  () => focusedProject.value,
-  () => {
-    selectedAgencyId.value = null
-    showAddRolePanel.value = false
-    graph.clearSelection()
-  },
-)
+watch(scope, () => {
+  selectedAgencyId.value = null
+  showAddRolePanel.value = false
+  graph.clearSelection()
+})
 
 watch(
   () => selectedAgencyId.value,

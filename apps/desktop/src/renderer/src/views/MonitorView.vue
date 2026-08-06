@@ -3,25 +3,38 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/sessions'
 import PageHeader from '@/components/PageHeader.vue'
+import ScopeBar from '@/components/ScopeBar.vue'
 import type { LiveSession } from '@/stores/sessions'
 import { formatRelativeTime } from '@/lib/format'
 import { getPlanProgress } from '@/composables/usePlanProgress'
 import type { PlanProgress } from '@/composables/usePlanProgress'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { usePageScope } from '@/composables/usePageScope'
 
 const router = useRouter()
 const store = useSessionStore()
 const { resolvedLabelFor } = useModelsQuery()
 
+const { scope, scopePath, options, label, color, setScope, pickAndAdd, isAll } =
+  usePageScope('monitor')
+
 type SessionWithPlan = LiveSession & { plan: PlanProgress }
+
+// The monitor is a per-project read — no-project sessions have no grid bucket.
+function inScope(projectPath: string): boolean {
+  if (isAll.value) return true
+  return projectPath === scopePath.value
+}
 
 // Group live sessions by project so the grid gives a quick per-project read.
 const grouped = computed(() => {
   const byProject = new Map<string, SessionWithPlan[]>()
   for (const s of store.liveList) {
-    const arr = byProject.get(s.projectPath) ?? []
+    const path = s.projectPath
+    if (!path || !inScope(path)) continue
+    const arr = byProject.get(path) ?? []
     arr.push({ ...s, plan: getPlanProgress(s) })
-    byProject.set(s.projectPath, arr)
+    byProject.set(path, arr)
   }
   return Array.from(byProject.entries()).sort(([a], [b]) => a.localeCompare(b))
 })
@@ -93,11 +106,22 @@ async function openSession(s: LiveSession) {
 
 <template>
   <div class="h-full flex flex-col">
-    <PageHeader title="Monitor" :description="subtitle" :back-to="'/'" />
+    <PageHeader title="Monitor" :description="subtitle" :back-to="'/'">
+      <template #actions>
+        <ScopeBar
+          :scope="scope"
+          :options="options"
+          :label="label"
+          :color="color"
+          @select="setScope"
+          @pick-and-add="pickAndAdd"
+        />
+      </template>
+    </PageHeader>
 
     <div class="flex-1 overflow-y-auto p-6">
       <div
-        v-if="store.liveList.length === 0"
+        v-if="grouped.length === 0"
         class="h-full flex items-center justify-center text-muted-foreground text-sm"
       >
         No active sessions. Start one from a project.

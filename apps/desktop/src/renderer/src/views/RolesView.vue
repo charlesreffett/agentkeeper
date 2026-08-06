@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
+import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import {
   type Role,
@@ -9,15 +10,52 @@ import {
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import PageHeader from '@/components/PageHeader.vue'
 import SidebarHeader from '@/components/SidebarHeader.vue'
+import ScopeBar from '@/components/ScopeBar.vue'
 import { Bot, Plus } from 'lucide-vue-next'
 
-const { focusedProject } = useProjectsQuery()
-const projectPath = computed(() => focusedProject.value?.path ?? '')
+const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
+  usePageScope('roles', { includeGlobal: true })
+const { projects } = useProjectsQuery()
+const queryClient = useQueryClient()
 
-const { roles, isLoading: loading, saveRole, removeRole } = useRolesQuery(projectPath)
+// Scoped list input: project → its path (project + global); Global → null
+// (global-only); All → '' disables the scoped query (the union query below
+// serves All).
+const rolesQueryPath = computed(() =>
+  isAll.value ? '' : isProject.value ? currentProject.value?.path ?? null : null,
+)
+
+const {
+  roles: scopedRoles,
+  isLoading: scopedLoading,
+  saveRole,
+  removeRole,
+} = useRolesQuery(rolesQueryPath)
+
+// All scope = union of global + every project's roles, deduped by file path.
+const { data: allRoles, isLoading: allLoading } = useQuery({
+  queryKey: computed(() => ['roles', 'list', SCOPE_ALL, projects.value.map((p) => p.path).sort().join('|')]),
+  enabled: isAll,
+  queryFn: async () => {
+    const paths = [null, ...projects.value.map((p) => p.path)]
+    const lists = await Promise.all(paths.map((p) => window.agentkeeper.roles.list(p)))
+    const byPath = new Map<string, Role>()
+    for (const list of lists) for (const r of list) byPath.set(r.path, r)
+    return Array.from(byPath.values()).sort((a, b) => a.name.localeCompare(b.name))
+  },
+})
+
+const roles = computed<Role[]>(() => (isAll.value ? allRoles.value ?? [] : scopedRoles.value))
+const loading = computed(() => (isAll.value ? allLoading.value : scopedLoading.value))
+
+function invalidateAllScope(): void {
+  void queryClient.invalidateQueries({ queryKey: ['roles', 'list', SCOPE_ALL] })
+}
+
 const selectedId = ref<string | null>(null)
 const editing = ref(false)
 
@@ -78,7 +116,8 @@ function beginNew() {
     model: null,
     effort: 'medium',
     systemPrompt: '',
-    scope: 'project',
+    // Global/All scopes have no project to write to — new roles go global.
+    scope: isGlobal.value || isAll.value ? 'global' : 'project',
   }
   resetGenerate()
 }
@@ -142,7 +181,8 @@ async function save() {
       effort: form.value.effort || null,
       systemPrompt: form.value.systemPrompt.trim(),
     }
-    await saveRole({ scope: form.value.scope, path: projectPath.value, draft })
+    await saveRole({ scope: form.value.scope, path: rolesQueryPath.value, draft })
+    invalidateAllScope()
     editing.value = false
     resetGenerate()
   } catch (e) {
@@ -156,7 +196,8 @@ async function remove(role: Role) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove role "${role.name}" (${role.scope})?`)) return
   try {
-    await removeRole({ scope: role.scope, path: projectPath.value, id: role.id })
+    await removeRole({ scope: role.scope, path: rolesQueryPath.value, id: role.id })
+    invalidateAllScope()
     if (selectedId.value === role.id) cancelEdit()
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
@@ -164,7 +205,7 @@ async function remove(role: Role) {
 }
 
 watch(
-  () => focusedProject.value?.path,
+  () => scope.value,
   () => {
     editing.value = false
     selectedId.value = null
@@ -174,7 +215,18 @@ watch(
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <PageHeader title="Roles" />
+    <PageHeader title="Roles">
+      <template #actions>
+        <ScopeBar
+          :scope="scope"
+          :options="options"
+          :label="label"
+          :color="color"
+          @select="setScope"
+          @pick-and-add="pickAndAdd"
+        />
+      </template>
+    </PageHeader>
 
     <div class="flex min-h-0 flex-1">
       <aside

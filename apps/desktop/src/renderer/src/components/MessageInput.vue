@@ -14,7 +14,7 @@ const props = defineProps<{
   autofocus?: boolean
   /** When true: Enter sends; modifier+Enter inserts newline. */
   enterToSend?: boolean
-  projectPath?: string
+  projectPath?: string | null
   sendModifier?: 'auto' | 'meta' | 'ctrl' | 'alt' | 'shift'
   roleName?: string | null
   agencyName?: string | null
@@ -41,10 +41,9 @@ function openLightbox(index: number) {
   lightboxOpen.value = true
 }
 
-const { projects, focusedProject } = useProjectsQuery()
-const resolvedProjectPath = computed(
-  () => props.projectPath ?? focusedProject.value?.path ?? '',
-)
+const { projects } = useProjectsQuery()
+// Context is the session's own project — no app-wide focus fallback.
+const resolvedProjectPath = computed(() => props.projectPath ?? '')
 
 const isMac = /Mac/i.test(navigator.platform)
 

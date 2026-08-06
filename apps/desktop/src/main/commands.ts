@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import Anthropic from '@anthropic-ai/sdk'
-import type { SlashCommand } from '../shared/ipc-contract'
+import { isGeneralProject, type SlashCommand } from '../shared/ipc-contract'
 import { resolveClaudeAuth } from './secrets'
 import { getHarness } from './harness/index'
 
@@ -13,9 +13,9 @@ function nameFromBody(body: string, id: string): string {
 
 async function listScope(
   scope: 'project' | 'global',
-  projectPath: string,
+  projectPath: string | null,
 ): Promise<SlashCommand[]> {
-  const dir = getHarness().getCommandsDir(scope, projectPath)
+  const dir = getHarness().getCommandsDir(scope, projectPath ?? undefined)
   let entries: string[]
   try {
     entries = await fs.readdir(dir)
@@ -109,9 +109,10 @@ async function listPluginCommands(): Promise<SlashCommand[]> {
   return results
 }
 
-export async function listCommands(projectPath: string): Promise<SlashCommand[]> {
+export async function listCommands(projectPath: string | null): Promise<SlashCommand[]> {
   const [project, global, plugin] = await Promise.all([
-    listScope('project', projectPath),
+    // General chats have no project directory — only global commands apply.
+    isGeneralProject(projectPath) ? [] : listScope('project', projectPath),
     listScope('global', projectPath),
     listPluginCommands(),
   ])
@@ -124,7 +125,7 @@ export async function listCommands(projectPath: string): Promise<SlashCommand[]>
  * replaced by its body, with `$ARGUMENTS` substituted by the text after the id.
  * Non-command text (or an unknown id) passes through unchanged.
  */
-export async function expandCommandInput(projectPath: string, text: string): Promise<string> {
+export async function expandCommandInput(projectPath: string | null, text: string): Promise<string> {
   const trimmed = text.trimStart()
   if (!trimmed.startsWith('/')) return text
   const match = trimmed.match(/^\/(\S+)\s*([\s\S]*)$/)

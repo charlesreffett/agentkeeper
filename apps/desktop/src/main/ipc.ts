@@ -7,6 +7,7 @@ import { watch as fsWatch } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
 import {
   IPC_CHANNELS,
+  isGeneralProject,
   type AddAgentParams,
   type AppSettings,
   type Attachment,
@@ -138,12 +139,15 @@ function secretKeyToKeytarKey(k: SecretKeyName) {
 
 export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Every session — including ones revived via resume/auto-resume paths that
-  // don't pass an mcpFactory — gets the agentkeeper MCP server.
-  setDefaultMcpFactoryResolver(({ projectPath, agentLocalId, isAgency }) =>
-    isAgency
+  // don't pass an mcpFactory — gets the agentkeeper MCP server. General chats
+  // skip it entirely: no project means no plan store, so the agent stays a
+  // clean Claude Code.
+  setDefaultMcpFactoryResolver(({ projectPath, agentLocalId, isAgency }) => {
+    if (isGeneralProject(projectPath)) return undefined
+    return isAgency
       ? () => createOrchestratorMcp(projectPath, agentLocalId)
-      : () => createProjectMcp(projectPath),
-  )
+      : () => createProjectMcp(projectPath)
+  })
 
   // Projects (registry)
   ipcMain.handle(IPC_CHANNELS.projectsAdd, async (_event, projectPath: string) => {
@@ -256,12 +260,12 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
 
   // Sessions — historical
-  ipcMain.handle(IPC_CHANNELS.sessionsList, (_event, projectPath: string) =>
+  ipcMain.handle(IPC_CHANNELS.sessionsList, (_event, projectPath: string | null) =>
     listSessions(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsRead,
-    (_event, projectPath: string, sessionId: string, harnessId?: string) => readSession(projectPath, sessionId, harnessId),
+    (_event, projectPath: string | null, sessionId: string, harnessId?: string) => readSession(projectPath, sessionId, harnessId),
   )
 
   // Sessions — live. Every handler normalizes its error to a plain message
@@ -297,7 +301,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         }
 
         const agentLocalId = await startSession(params, {
-          mcpFactory: () => createProjectMcp(params.projectPath),
+          ...(!isGeneralProject(params.projectPath)
+            ? { mcpFactory: () => createProjectMcp(params.projectPath) }
+            : {}),
           ...(Object.keys(additionalMcpServers).length > 0 ? { additionalMcpServers } : {}),
         })
         if (params.initialPrompt) {
@@ -430,7 +436,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   // Roles
-  ipcMain.handle(IPC_CHANNELS.rolesList, async (_event, projectPath: string) => {
+  ipcMain.handle(IPC_CHANNELS.rolesList, async (_event, projectPath: string | null) => {
     try {
       return await listRoles(projectPath)
     } catch (err) {
@@ -443,7 +449,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     async (
       _event,
       scope: RoleScope,
-      projectPath: string,
+      projectPath: string | null,
       role: RoleDraft,
     ) => {
       try {
@@ -456,7 +462,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.rolesRemove,
-    async (_event, scope: RoleScope, projectPath: string, id: string) => {
+    async (_event, scope: RoleScope, projectPath: string | null, id: string) => {
       try {
         return await deleteRole(scope, projectPath, id)
       } catch (err) {
@@ -480,7 +486,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Agencies
   ipcMain.handle(
     IPC_CHANNELS.agenciesList,
-    async (_event, projectPath: string) => {
+    async (_event, projectPath: string | null) => {
       try {
         return await listAgencies(projectPath)
       } catch (err) {
@@ -494,7 +500,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     async (
       _event,
       scope: AgencyScope,
-      projectPath: string,
+      projectPath: string | null,
       agency: AgencyDraft,
     ) => {
       try {
@@ -507,7 +513,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.agenciesRemove,
-    async (_event, scope: AgencyScope, projectPath: string, id: string) => {
+    async (_event, scope: AgencyScope, projectPath: string | null, id: string) => {
       try {
         return await deleteAgency(scope, projectPath, id)
       } catch (err) {
@@ -988,7 +994,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   ipcMain.handle(
     IPC_CHANNELS.sessionsListPersisted,
-    (_event, projectPath: string) => sessionRegistry.listSessions(projectPath),
+    (_event, projectPath: string | null) => sessionRegistry.listSessions(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsGetByLocalId,
@@ -1079,16 +1085,16 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeleteHistorical,
-    (_event, projectPath: string, sessionId: string) =>
+    (_event, projectPath: string | null, sessionId: string) =>
       deleteHistoricalSession(projectPath, sessionId),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeleteAllHistorical,
-    (_event, projectPath: string) => deleteAllHistoricalSessions(projectPath),
+    (_event, projectPath: string | null) => deleteAllHistoricalSessions(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsDeleteAllPersisted,
-    async (_event, projectPath: string) => {
+    async (_event, projectPath: string | null) => {
       await removeAllSessionsFromPlans(projectPath).catch(() => {})
       sessionRegistry.deleteAllForProject(projectPath)
     },
@@ -1099,7 +1105,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsListTrackedSdkIds,
-    (_event, projectPath: string) => sessionRegistry.listTrackedSdkIds(projectPath),
+    (_event, projectPath: string | null) => sessionRegistry.listTrackedSdkIds(projectPath),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsAddAgent,
@@ -1117,7 +1123,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
             worktreePath: session.worktreePath ?? undefined,
             ...params,
           },
-          { mcpFactory: () => createProjectMcp(session.projectPath) },
+          // General chats carry no agentkeeper MCP server.
+          isGeneralProject(session.projectPath)
+            ? {}
+            : { mcpFactory: () => createProjectMcp(session.projectPath) },
         )
       } catch (err) {
         console.error('[ipc] sessions:addAgent failed:', err)

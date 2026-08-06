@@ -1,7 +1,9 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import { getHarness } from './harness/index'
+import { isGeneralProject } from '../shared/ipc-contract'
 import type {
   ContentBlock,
   EventKind,
@@ -22,8 +24,11 @@ export function encodeCwdForHarness(cwd: string, harnessId?: string): string {
 
 // harnessId pins the JSONL layout to the harness that ran the session; omit to
 // fall back to the active harness (correct while a single harness exists).
-function projectDir(projectPath: string, harnessId?: string): string {
-  return path.join(claudeProjectsRoot(harnessId), encodeCwdForHarness(projectPath, harnessId))
+// General (no-project) sessions run with home as their cwd, so their JSONL
+// lives under the home-encoded directory.
+function projectDir(projectPath: string | null, harnessId?: string): string {
+  const cwd = isGeneralProject(projectPath) ? os.homedir() : projectPath
+  return path.join(claudeProjectsRoot(harnessId), encodeCwdForHarness(cwd, harnessId))
 }
 
 function snippet(s: string, maxLen = 200): string {
@@ -242,7 +247,7 @@ async function summarizeFile(fullPath: string): Promise<SessionSummary> {
 }
 
 export async function listSessions(
-  projectPath: string,
+  projectPath: string | null,
 ): Promise<SessionSummary[]> {
   const dir = projectDir(projectPath)
   let entries: string[]
@@ -263,7 +268,7 @@ export async function listSessions(
 }
 
 export async function deleteHistoricalSession(
-  projectPath: string,
+  projectPath: string | null,
   sessionId: string,
 ): Promise<void> {
   const filePath = path.join(projectDir(projectPath), `${sessionId}.jsonl`)
@@ -274,7 +279,7 @@ export async function deleteHistoricalSession(
   }
 }
 
-export async function deleteAllHistoricalSessions(projectPath: string): Promise<void> {
+export async function deleteAllHistoricalSessions(projectPath: string | null): Promise<void> {
   const dir = projectDir(projectPath)
   let entries: string[]
   try {
@@ -290,7 +295,7 @@ export async function deleteAllHistoricalSessions(projectPath: string): Promise<
 }
 
 export async function truncateSessionJsonl(
-  projectPath: string,
+  projectPath: string | null,
   sdkSessionId: string,
   fromUuid: string,
   fallbackUserText?: string | null,
@@ -348,7 +353,7 @@ export async function truncateSessionJsonl(
 }
 
 export async function restoreSessionJsonl(
-  projectPath: string,
+  projectPath: string | null,
   sdkSessionId: string,
   keptCount: number,
   linesToAppend: string[],
@@ -366,7 +371,7 @@ export async function restoreSessionJsonl(
 }
 
 export async function readSession(
-  projectPath: string,
+  projectPath: string | null,
   sessionId: string,
   harnessId?: string,
 ): Promise<SessionTranscript | null> {

@@ -2,14 +2,15 @@
 import { nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope } from '@/composables/usePageScope'
 import { useSessionStore } from '@/stores/sessions'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const router = useRouter()
-const { focusedProject } = useProjectsQuery()
+// Plans are project-bound — the modal creates in the planner's scoped project.
+const { scopePath, isProject } = usePageScope('planner')
 const sessionStore = useSessionStore()
 
 const dialog = ref<HTMLDialogElement | null>(null)
@@ -37,14 +38,14 @@ watch(
 )
 
 async function submit() {
-  if (!title.value.trim() || !focusedProject.value) return
+  if (!title.value.trim() || !isProject.value) return
   submitting.value = true
   submitError.value = null
   try {
     const ref = externalRef.value.trim() || `TASK-${Date.now().toString(36).toUpperCase().slice(-5)}`
     const planTitle = `${ref}: ${title.value.trim()}`
 
-    const plan = await window.agentkeeper.plans.create(focusedProject.value.path, {
+    const plan = await window.agentkeeper.plans.create(scopePath.value, {
       title: planTitle,
       externalRef: ref,
       workItemId: '',
@@ -88,7 +89,7 @@ Guidelines:
 - Keep externalRef "${ref}", title "${planTitle}", workItemId ""`
 
     await sessionStore.start({
-      projectPath: focusedProject.value.path,
+      projectPath: scopePath.value,
       initialPrompt: prompt,
     })
 

@@ -2,16 +2,17 @@
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import type { PRSummary, PRState, CheckState, ReviewDecision } from '@shared/github-types'
-import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { usePageScope } from '@/composables/usePageScope'
+import ScopeBar from '@/components/ScopeBar.vue'
 
 const router = useRouter()
-const { focusedProject } = useProjectsQuery()
+const { scope, setScope, options, pickAndAdd, label, color, currentProject } =
+  usePageScope('github', { defaultScope: 'all' })
 
 const allPRs = ref<PRSummary[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 const stateFilter = ref<PRState | 'all'>('open')
-const repoFilter = ref<string>('')
 const search = ref('')
 const repos = ref<string[]>([])
 
@@ -21,7 +22,8 @@ async function load() {
   try {
     const filters: Record<string, string> = {}
     if (stateFilter.value !== 'all') filters.state = stateFilter.value
-    if (repoFilter.value) filters.repo = repoFilter.value
+    const scopedRepo = currentProject.value?.repo
+    if (scopedRepo) filters.repo = scopedRepo
     allPRs.value = await window.agentkeeper.github.listPRs(filters)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
@@ -41,17 +43,15 @@ async function autoDetectRepos(projectPath: string) {
   } catch { /* silent */ }
 }
 
+// Re-load when the context scope changes: a scoped project filters PRs by its
+// repo, All spans every configured repo.
 watch(
-  () => focusedProject.value,
-  async (proj) => {
+  () => scope.value,
+  async () => {
     const cfg = await window.agentkeeper.github.getConfig()
     repos.value = cfg.repos ?? []
-    if (repos.value.length === 0 && proj?.path) {
-      await autoDetectRepos(proj.path)
-    }
-    // default to "All repos"; drop a stale selection no longer in the list
-    if (repoFilter.value && !repos.value.includes(repoFilter.value)) {
-      repoFilter.value = ''
+    if (repos.value.length === 0 && currentProject.value?.path) {
+      await autoDetectRepos(currentProject.value.path)
     }
     void load()
   },
@@ -114,14 +114,14 @@ function openSettingsModal() {
 <template>
   <div class="flex flex-col h-full">
     <div class="shrink-0 flex items-center gap-3 px-4 py-3 border-b border-border flex-wrap">
-      <select
-        v-model="repoFilter"
-        class="text-sm bg-background border border-input rounded px-2 py-1 text-foreground"
-        @change="load"
-      >
-        <option value="">All repos</option>
-        <option v-for="r in repos" :key="r" :value="r">{{ r }}</option>
-      </select>
+      <ScopeBar
+        :scope="scope"
+        :options="options"
+        :label="label"
+        :color="color"
+        @select="setScope"
+        @pick-and-add="pickAndAdd"
+      />
       <select
         v-model="stateFilter"
         class="text-sm bg-background border border-input rounded px-2 py-1 text-foreground"

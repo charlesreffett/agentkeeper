@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import path from 'node:path'
 import * as schema from './schema'
 import { migrateJsonPlansToDb } from './migrate-plans'
+import { migrateNullableProjectPath } from './migrate-nullable-project-path'
 
 export type AppDb = BetterSQLite3Database<typeof schema>
 
@@ -18,6 +19,7 @@ export function initDb(userDataPath: string): void {
   _sqlite = sqlite
   _db = drizzle(sqlite, { schema })
   migrate(_db, { migrationsFolder })
+  migrateNullableProjectPath(_db, sqlite)
   void migrateJsonPlansToDb(_db).catch((err) => {
     console.error('[db] JSON plans migration failed (non-fatal):', err)
   })

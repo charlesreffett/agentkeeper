@@ -3,7 +3,6 @@ import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
-import { useProjectStore } from '@/stores/project'
 import { projectColor } from '@/lib/projectColor'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
 
@@ -19,13 +18,12 @@ export interface UnifiedSession {
   status: LiveSessionStatus | 'inactive'
   source: UnifiedSessionSource
   isDraft: boolean
-  projectPath: string
+  /** null = no-project (general) session. */
+  projectPath: string | null
   projectName: string
   projectColor: string
   workItemKey: string | null
   workItemTitle: string | null
-  /** Dynamic session title when it differs from the work-item title. */
-  description: string | null
   initialPrompt: string
   lastActivityAt: number
   lastUserMessageAt: number | null
@@ -38,8 +36,7 @@ export interface UnifiedSession {
 export function useUnifiedSessions() {
   const router = useRouter()
   const sessionStore = useSessionStore()
-  const projectStore = useProjectStore()
-  const { projects, focusedProject, setFocused } = useProjectsQuery()
+  const { projects } = useProjectsQuery()
   const { persistedSessions, historicalSessions, isLoading, invalidateAll, invalidateForProject } =
     useSessionsListQuery(projects)
 
@@ -57,7 +54,8 @@ export function useUnifiedSessions() {
     { immediate: true },
   )
 
-  function pathToProjectName(projectPath: string): string {
+  function pathToProjectName(projectPath: string | null): string {
+    if (!projectPath) return ''
     const found = projects.value.find((p) => p.path === projectPath)
     if (found) return found.name
     return projectPath.split('/').pop() ?? projectPath
@@ -88,7 +86,6 @@ export function useUnifiedSessions() {
         projectColor: projectColor(projectName),
         workItemKey: s.workItemKey,
         workItemTitle: s.workItemTitle,
-        description: s.title && s.title !== s.workItemTitle ? s.title : null,
         initialPrompt: s.initialPrompt,
         lastActivityAt: s.lastActivityAt,
         lastUserMessageAt: s.lastUserMessageAt,
@@ -114,7 +111,6 @@ export function useUnifiedSessions() {
           projectColor: projectColor(projectName),
           workItemKey: s.workItemKey,
           workItemTitle: s.workItemTitle,
-          description: s.workItemTitle && s.title && s.title !== s.workItemTitle ? s.title : null,
           initialPrompt: s.initialPrompt,
           lastActivityAt: s.lastActivityAt,
           lastUserMessageAt: s.lastUserMessageAt,
@@ -140,7 +136,6 @@ export function useUnifiedSessions() {
           projectColor: projectColor(projectName),
           workItemKey: null,
           workItemTitle: null,
-          description: null,
           initialPrompt: s.firstUserMessage ?? '',
           lastActivityAt: s.lastActivityAt,
           lastUserMessageAt: null,
@@ -156,11 +151,9 @@ export function useUnifiedSessions() {
     )
   })
 
-  /** Open a session in the chat, focusing its project first. */
+  /** Open a session in the chat. The session carries its own project context —
+   *  no app-wide focus to set. */
   function open(entry: UnifiedSession): void {
-    if (entry.projectPath && entry.projectPath !== focusedProject.value?.path) {
-      void setFocused(entry.projectPath)
-    }
     switch (entry.source) {
       case 'live':
         void router.push(`/sessions/${entry.localId}`)
@@ -202,14 +195,13 @@ export function useUnifiedSessions() {
     }
   }
 
-  /** Create (or focus) a draft for the focused project and navigate to it. */
+  /** Create (or focus) a draft. Defaults to a no-project draft — context is
+   *  now a per-session choice made in the compose header, not inherited from
+   *  an app-wide focus. */
   async function createNewSession(): Promise<string | null> {
-    const target = focusedProject.value ?? projectStore.currentProject
-    if (!target) return null
     const settings = await window.agentkeeper.settings.get()
-    projectStore.setProject(target)
     const localId = sessionStore.createOrFocusDraft({
-      projectPath: target.path,
+      projectPath: null,
       defaultModel: settings.defaultModel,
       defaultEffort: settings.defaultEffort,
       defaultUseWorktree: settings.defaultUseWorktree,

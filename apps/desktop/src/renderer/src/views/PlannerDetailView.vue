@@ -29,6 +29,7 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { projectColor } from '@/lib/projectColor'
 import type { Plan, PlanStep, PlanStepStatus, Session } from '@shared/ipc-contract'
 import type { AgencyScope } from '@shared/ipc-contract'
 import {
@@ -41,15 +42,21 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const { focusedProject } = useProjectsQuery()
+const { projects } = useProjectsQuery()
 const sessionStore = useSessionStore()
-const projectPathRef = computed(() => focusedProject.value?.path ?? '')
-const { agencies } = useAgenciesQuery(projectPathRef)
 const { resolvedLabelFor } = useModelsQuery()
 
 const planId = computed(() => route.params.id as string)
 const plan = ref<Plan | null>(null)
 const planProjectPath = ref<string | null>(null)
+const agencyProjectPath = computed(() => planProjectPath.value ?? '')
+const { agencies } = useAgenciesQuery(agencyProjectPath)
+const planProjectName = computed(() => {
+  const p = projects.value.find((pr) => pr.path === planProjectPath.value)
+  if (p) return p.name
+  const path = planProjectPath.value
+  return path ? path.split('/').pop() ?? path : ''
+})
 const loading = ref(false)
 const generating = ref(false)
 const replanning = ref(false)
@@ -87,40 +94,52 @@ async function loadLastSession() {
   const ids = plan.value?.sessionIds
   if (!ids || ids.length === 0) { lastSession.value = null; return }
   const id = ids[ids.length - 1]!
-  const project = focusedProject.value
-  if (!project) { lastSession.value = null; return }
+  const path = planProjectPath.value
+  if (!path) { lastSession.value = null; return }
 
   const live = sessionStore.getSession(id)
   if (live) { lastSession.value = live as Session; return }
 
   try {
-    const all = await window.agentkeeper.sessions.listPersisted(project.path)
+    const all = await window.agentkeeper.sessions.listPersisted(path)
     lastSession.value = all.find(s => s.localId === id) ?? null
   } catch {
     lastSession.value = null
   }
 }
 
+// The route carries only the plan id; the plan's own project is discovered by
+// scanning registered projects (the previously-resolved path is tried first).
 async function loadPlan() {
-  const project = focusedProject.value
-  if (!project) return
-  planProjectPath.value = project.path
+  const id = planId.value
+  if (!id) return
   loading.value = true
   try {
-    const result = await window.agentkeeper.plans.get(project.path, planId.value)
-    if (result) {
-      plan.value = result
-      generating.value = false
-      void loadLastSession()
-    } else {
-      generating.value = true
+    const known = planProjectPath.value
+    const searchPaths = known
+      ? [known, ...projects.value.map((p) => p.path).filter((p) => p !== known)]
+      : projects.value.map((p) => p.path)
+    for (const path of searchPaths) {
+      const result = await window.agentkeeper.plans.get(path, id)
+      if (result) {
+        planProjectPath.value = path
+        plan.value = result
+        generating.value = false
+        void loadLastSession()
+        return
+      }
     }
+    generating.value = true
   } finally {
     loading.value = false
   }
 }
 
-watch([planId, () => focusedProject.value?.path], loadPlan, { immediate: true })
+watch(
+  [planId, () => projects.value.map((p) => p.path).join(',')],
+  loadPlan,
+  { immediate: true },
+)
 
 // Auto-expand a step when navigated to via ?step=N
 watch(
@@ -137,8 +156,8 @@ watch(
 
 // Reset orphaned running state after app restart
 watch(plan, (p) => {
-  if (p && p.status === 'running' && p.sessionIds.length === 0 && focusedProject.value) {
-    void window.agentkeeper.plans.update(focusedProject.value.path, planId.value, { status: 'planned' })
+  if (p && p.status === 'running' && p.sessionIds.length === 0 && planProjectPath.value) {
+    void window.agentkeeper.plans.update(planProjectPath.value, planId.value, { status: 'planned' })
       .then((updated) => { if (updated) { plan.value = updated; void loadLastSession() } })
   }
 }, { immediate: true })
@@ -146,7 +165,7 @@ watch(plan, (p) => {
 let unsubPlanUpdated: (() => void) | null = null
 
 onMounted(async () => {
-  const projectPath = planProjectPath.value ?? focusedProject.value?.path
+  const projectPath = planProjectPath.value
   if (projectPath && planId.value) {
     const fresh = await window.agentkeeper.plans.get(projectPath, planId.value)
     if (fresh) {
@@ -156,7 +175,7 @@ onMounted(async () => {
   }
 
   unsubPlanUpdated = window.agentkeeper.plans.onUpdated(async ({ projectPath: p, id: updatedId }) => {
-    const expectedPath = planProjectPath.value ?? focusedProject.value?.path
+    const expectedPath = planProjectPath.value
     if (!expectedPath || p !== expectedPath || updatedId !== planId.value) return
     const fresh = await window.agentkeeper.plans.get(p, updatedId)
     if (fresh) {
@@ -288,10 +307,10 @@ function toggleStep(index: number) {
 // ── Step mutation helpers ─────────────────────────────────────────────────────
 
 async function persistSteps(steps: PlanStep[]) {
-  if (!focusedProject.value) return
+  if (!planProjectPath.value) return
   // JSON round-trip strips Vue reactive Proxy wrappers — contextBridge cannot serialize Proxy objects
   const rawSteps = JSON.parse(JSON.stringify(steps)) as PlanStep[]
-  const updated = await window.agentkeeper.plans.update(focusedProject.value.path, planId.value, { steps: rawSteps })
+  const updated = await window.agentkeeper.plans.update(planProjectPath.value, planId.value, { steps: rawSteps })
   if (updated) {
     plan.value = updated
   } else {
@@ -396,9 +415,9 @@ function startPromptEdit() {
 
 async function commitPromptEdit() {
   editingPrompt.value = false
-  if (!focusedProject.value || !plan.value) return
+  if (!planProjectPath.value || !plan.value) return
   const updated = await window.agentkeeper.plans.update(
-    focusedProject.value.path,
+    planProjectPath.value,
     planId.value,
     { prompt: editingPromptValue.value.trim() || undefined },
   )
@@ -453,13 +472,13 @@ function openStartModal() {
 }
 
 async function confirmStart() {
-  if (!plan.value || !focusedProject.value) return
+  if (!plan.value || !planProjectPath.value) return
   showStartModal.value = false
   const chosenAgency = startModalAgencyId.value
     ? agencies.value.find(a => a.id === startModalAgencyId.value) ?? null
     : null
   // Persist the last-used agency choice
-  const saved = await window.agentkeeper.plans.update(focusedProject.value.path, planId.value, {
+  const saved = await window.agentkeeper.plans.update(planProjectPath.value, planId.value, {
     agencyId: chosenAgency?.id ?? null,
     agencyScope: chosenAgency?.scope ?? null,
   })
@@ -468,8 +487,8 @@ async function confirmStart() {
 }
 
 async function startAllSteps(agencyId: string | null, agencyScope: AgencyScope | null) {
-  if (!plan.value || !focusedProject.value) return
-  const project = focusedProject.value
+  if (!plan.value || !planProjectPath.value) return
+  const project = { path: planProjectPath.value }
   const cur = plan.value
   starting.value = true
   const { text: stepsText, hasGates } = buildStepsText(cur.steps)
@@ -527,9 +546,9 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
 }
 
 async function resetToPlanned() {
-  if (!plan.value || !focusedProject.value) return
+  if (!plan.value || !planProjectPath.value) return
   const updated = await window.agentkeeper.plans.update(
-    focusedProject.value.path,
+    planProjectPath.value,
     planId.value,
     { status: 'planned' },
   )
@@ -537,7 +556,7 @@ async function resetToPlanned() {
 }
 
 async function resumePlanSession() {
-  if (!plan.value || !focusedProject.value || !lastSessionId.value || !lastSession.value) return
+  if (!plan.value || !planProjectPath.value || !lastSessionId.value || !lastSession.value) return
   resuming.value = true
   try {
     sessionStore.openPersisted(lastSession.value as Session)
@@ -551,8 +570,8 @@ async function resumePlanSession() {
 }
 
 async function startNewPlanSession() {
-  if (!plan.value || !focusedProject.value) return
-  const project = focusedProject.value
+  if (!plan.value || !planProjectPath.value) return
+  const project = { path: planProjectPath.value }
   const cur = plan.value
 
   const incompleteSteps = cur.steps.filter(s => s.status !== 'complete' && s.status !== 'skipped')
@@ -595,8 +614,8 @@ Execute each step in sequence. Mark steps complete using the update_plan MCP too
 
 async function replan() {
   if (!plan.value) return
-  const project = focusedProject.value
-  if (!project) return
+  if (!planProjectPath.value) return
+  const project = { path: planProjectPath.value }
   replanError.value = null
   replanning.value = true
   generating.value = true
@@ -687,6 +706,13 @@ Guidelines:
               <ArrowLeft :size="15" />
             </button>
             <span class="text-xs text-muted-foreground font-mono">PLAN · {{ planRef }}</span>
+            <span
+              v-if="planProjectName"
+              class="flex items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              <span class="size-2 rounded-full shrink-0" :style="{ backgroundColor: projectColor(planProjectName) }" />
+              {{ planProjectName }}
+            </span>
           </div>
 
           <!-- Context-sensitive action buttons -->
