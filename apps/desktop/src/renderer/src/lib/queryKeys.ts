@@ -23,6 +23,7 @@ export const queryKeys = {
     pinnedBranches: (projectPath: string) => ['projects', 'pinnedBranches', projectPath] as const,
   },
   git: {
+    isRepo: (projectPath: string) => ['git', 'isRepo', projectPath] as const,
     branches: (projectPath: string) => ['git', 'branches', projectPath] as const,
   },
   sessions: {

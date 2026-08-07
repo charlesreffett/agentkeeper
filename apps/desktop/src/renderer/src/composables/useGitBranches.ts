@@ -10,10 +10,21 @@ export function useGitBranches(projectPath: MaybeRef<string | null | undefined>)
   const path = computed(() => unref(projectPath) ?? null)
   const enabled = computed(() => path.value !== null)
 
+  const isRepoQuery = useQuery({
+    queryKey: computed(() => queryKeys.git.isRepo(path.value ?? '')),
+    queryFn: () => window.agentkeeper.git.isRepo(path.value!),
+    enabled,
+    staleTime: 60_000,
+  })
+  // Gate every git query on repo detection so non-repo directories never fire
+  // git commands (they'd fail and surface as a phantom "detached" branch).
+  const isRepo = computed(() => path.value !== null && isRepoQuery.data.value === true)
+  const gitEnabled = computed(() => isRepo.value)
+
   const branchesQuery = useQuery({
     queryKey: computed(() => queryKeys.git.branches(path.value ?? '')),
     queryFn: () => window.agentkeeper.git.listBranches(path.value!),
-    enabled,
+    enabled: gitEnabled,
     // The .git/HEAD watcher only catches switches — branches created/deleted
     // externally need refetch on focus / popover open.
     refetchOnWindowFocus: true,
@@ -23,7 +34,7 @@ export function useGitBranches(projectPath: MaybeRef<string | null | undefined>)
   const pinnedQuery = useQuery({
     queryKey: computed(() => queryKeys.projects.pinnedBranches(path.value ?? '')),
     queryFn: () => window.agentkeeper.projects.getPinnedBranches(path.value!),
-    enabled,
+    enabled: gitEnabled,
   })
 
   function invalidate() {
@@ -107,6 +118,7 @@ export function useGitBranches(projectPath: MaybeRef<string | null | undefined>)
   }
 
   return {
+    isRepo,
     branches,
     pinnedBranches,
     currentBranch,

@@ -159,6 +159,15 @@ async function defaultBranchName(projectPath: string, localNames: Set<string>): 
   return null
 }
 
+export async function isGitRepo(projectPath: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync('git', ['-C', projectPath, 'rev-parse', '--is-inside-work-tree'])
+    return stdout.trim() === 'true'
+  } catch {
+    return false
+  }
+}
+
 export async function listBranches(projectPath: string): Promise<BranchInfo[]> {
   const SEP = '\x1f'
   const format = ['%(refname)', '%(HEAD)', '%(upstream:short)', '%(upstream:track)', '%(committerdate:iso8601)', '%(contents:subject)'].join(SEP)

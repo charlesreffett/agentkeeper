@@ -16,6 +16,7 @@ const layoutStore = useLayoutStore()
 const rightPanelStore = useRightPanelStore()
 
 const {
+  isRepo,
   branches,
   pinnedBranches,
   currentBranch,
@@ -160,7 +161,9 @@ async function onCreate(): Promise<void> {
 </script>
 
 <template>
-  <Popover v-model:open="open">
+  <!-- Hidden until the directory is confirmed to be a git repo — non-repo
+       projects get no branch affordances. -->
+  <Popover v-if="isRepo" v-model:open="open">
     <PopoverTrigger as-child>
       <Button
         variant="ghost"

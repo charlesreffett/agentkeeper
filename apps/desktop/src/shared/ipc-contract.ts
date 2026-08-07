@@ -1014,6 +1014,7 @@ export interface AgentKeeperApi {
     pull: (projectPath: string) => Promise<string>
     createBranch: (projectPath: string, branchName: string) => Promise<void>
     listBranches: (projectPath: string) => Promise<BranchInfo[]>
+    isRepo: (projectPath: string) => Promise<boolean>
     switchBranch: (projectPath: string, name: string, opts?: SwitchBranchOptions) => Promise<SwitchResult>
     switchBranchCreate: (projectPath: string, name: string, from?: string) => Promise<SwitchResult>
     suggestCommits: (projectPath: string) => Promise<CommitSuggestion>
@@ -1233,6 +1234,7 @@ export const IPC_CHANNELS = {
   gitPull: 'git:pull',
   gitCreateBranch: 'git:createBranch',
   gitListBranches: 'git:listBranches',
+  gitIsRepo: 'git:isRepo',
   gitSwitchBranch: 'git:switchBranch',
   gitSwitchBranchCreate: 'git:switchBranchCreate',
   gitSuggestCommits: 'git:suggestCommits',
