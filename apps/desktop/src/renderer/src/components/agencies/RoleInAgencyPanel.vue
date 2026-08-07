@@ -12,7 +12,7 @@
         <!-- Icon badge -->
         <div
           class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-          :style="{ backgroundColor: accentBg, color: accentFg }"
+          :style="{ backgroundColor: accentBgColor, color: accentFgColor }"
         >
           <component :is="iconComponent" class="w-5 h-5" />
         </div>
@@ -153,6 +153,7 @@ import {
   NumberFieldInput,
 } from '@/components/ui/number-field'
 import type { Agency, OnFailurePolicy, Role, RoleSlot } from '../../../../shared/ipc-contract'
+import { accentColor, accentBg } from '../graph/colors'
 
 const props = defineProps<{
   roleSlot: RoleSlot
@@ -185,18 +186,9 @@ const ICON_MAP: Record<string, ReturnType<typeof markRaw>> = {
   Brain:        markRaw(Brain),
 }
 
-const ACCENT_PALETTE: Record<string, { bg: string; fg: string }> = {
-  blue:   { bg: 'rgba(59,130,246,0.15)',  fg: '#3b82f6' },
-  orange: { bg: 'rgba(245,158,11,0.15)',  fg: '#f59e0b' },
-  purple: { bg: 'rgba(139,92,246,0.15)',  fg: '#8b5cf6' },
-  teal:   { bg: 'rgba(20,184,166,0.15)',  fg: '#14b8a6' },
-  green:  { bg: 'rgba(34,197,94,0.15)',   fg: '#22c55e' },
-  red:    { bg: 'rgba(239,68,68,0.15)',   fg: '#ef4444' },
-}
-
 const iconComponent = computed(() => ICON_MAP[props.role?.icon ?? ''] ?? Layers)
-const accentBg = computed(() => (ACCENT_PALETTE[props.role?.accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).bg)
-const accentFg = computed(() => (ACCENT_PALETTE[props.role?.accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).fg)
+const accentBgColor = computed(() => accentBg(props.role?.accent))
+const accentFgColor = computed(() => accentColor(props.role?.accent))
 
 // ─── Placement ───────────────────────────────────────────────────────────────
 

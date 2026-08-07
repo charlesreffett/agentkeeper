@@ -1,20 +1,34 @@
 <template>
   <div
-    class="relative rounded-lg border-2 bg-card shadow-md cursor-pointer select-none transition-all min-w-[160px]"
+    class="agency-node relative rounded-lg border shadow-md cursor-pointer select-none transition-[border-color,box-shadow,opacity] min-w-[160px]"
     :class="[
-      selected ? 'border-blue-500 shadow-blue-500/20' : 'border-border hover:border-foreground/40',
       data.anyToAny ? 'border-dashed' : '',
+      selected ? 'is-selected' : '',
+      data.dimmed ? 'is-dimmed' : '',
     ]"
+    :style="{ '--node-accent': accentHex }"
   >
-    <Handle id="top" type="source" :position="Position.Top" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
-    <Handle id="left" type="source" :position="Position.Left" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
-    <Handle id="bottom" type="source" :position="Position.Bottom" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
+    <Handle id="top" type="source" :position="Position.Top" :class="['!w-2 !h-2', { 'is-wired': wired.top, 'is-hovered': hovered.top }]" :style="handleStyle">
+      <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 1v10M1 6h10" />
+      </svg>
+    </Handle>
+    <Handle id="left" type="source" :position="Position.Left" :class="['!w-2 !h-2', { 'is-wired': wired.left, 'is-hovered': hovered.left }]" :style="handleStyle">
+      <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 1v10M1 6h10" />
+      </svg>
+    </Handle>
+    <Handle id="bottom" type="source" :position="Position.Bottom" :class="['!w-2 !h-2', { 'is-wired': wired.bottom, 'is-hovered': hovered.bottom }]" :style="handleStyle">
+      <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 1v10M1 6h10" />
+      </svg>
+    </Handle>
 
     <div class="flex items-center gap-2.5 px-3 py-2.5 pr-8">
       <!-- Colored icon avatar -->
       <div
         class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-        :style="{ backgroundColor: accentBg, color: accentFg }"
+        :style="{ backgroundColor: accentBgColor, color: accentHex }"
       >
         <component :is="iconComp" class="w-4 h-4" />
       </div>
@@ -57,7 +71,11 @@
       </svg>
     </button>
 
-    <Handle id="right" type="source" :position="Position.Right" class="!bg-background !border-2 !border-border !w-3 !h-3 hover:!border-primary hover:!bg-primary/10" />
+    <Handle id="right" type="source" :position="Position.Right" :class="['!w-2 !h-2', { 'is-wired': wired.right, 'is-hovered': hovered.right }]" :style="handleStyle">
+      <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 1v10M1 6h10" />
+      </svg>
+    </Handle>
   </div>
 </template>
 
@@ -68,15 +86,8 @@ import {
   Layers, Code2, GitBranch, FlaskConical, Eye,
   FileText, Activity, Shield, Zap, Brain,
 } from 'lucide-vue-next'
-
-const ACCENT_PALETTE: Record<string, { bg: string; fg: string }> = {
-  blue:   { bg: 'rgba(59,130,246,0.15)',  fg: '#3b82f6' },
-  orange: { bg: 'rgba(245,158,11,0.15)',  fg: '#f59e0b' },
-  purple: { bg: 'rgba(139,92,246,0.15)',  fg: '#8b5cf6' },
-  teal:   { bg: 'rgba(20,184,166,0.15)',  fg: '#14b8a6' },
-  green:  { bg: 'rgba(34,197,94,0.15)',   fg: '#22c55e' },
-  red:    { bg: 'rgba(239,68,68,0.15)',   fg: '#ef4444' },
-}
+import { accentColor, accentBg, accentSolid } from './colors'
+import { useLayoutStore } from '@/stores/layout'
 
 const ICON_MAP: Record<string, ReturnType<typeof markRaw>> = {
   Layers:       markRaw(Layers),
@@ -103,18 +114,116 @@ const props = defineProps<{
     multiplicityLabel: string
     isExpandable: boolean
     isExpanded: boolean
+    dimmed: boolean
+    handleEdges?: { top: string[]; right: string[]; bottom: string[]; left: string[] }
     onToggleExpand?: () => void
   }
   selected: boolean
 }>()
 
-const accentBg = computed(() =>
-  (ACCENT_PALETTE[props.data.accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).bg
-)
-const accentFg = computed(() =>
-  (ACCENT_PALETTE[props.data.accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).fg
-)
+const layoutStore = useLayoutStore()
+const accentHex = computed(() => accentColor(props.data.accent))
+const accentBgColor = computed(() => accentBg(props.data.accent))
+
+// The edge ids on each handle (resolved in FlowCanvas). A handle is wired when it
+// carries any edge — only wired handles get the bridge stub, so idle points don't
+// sprout a footing. A handle is hovered when one of its edges is the hovered edge,
+// mirroring the edge's hover styling on the bridge.
+const wired = computed(() => {
+  const he = props.data.handleEdges
+  return { top: !!he?.top.length, right: !!he?.right.length, bottom: !!he?.bottom.length, left: !!he?.left.length }
+})
+const hovered = computed(() => {
+  const he = props.data.handleEdges
+  const id = layoutStore.hoveredEdgeId
+  const on = (arr?: string[]) => !!id && !!arr?.includes(id)
+  return { top: on(he?.top), right: on(he?.right), bottom: on(he?.bottom), left: on(he?.left) }
+})
+const hoverColor = computed(() => (layoutStore.theme === 'dark' ? '#ffffff' : '#000000'))
+
+// The dot is a darker solid disc (the connection point). The bridge stub matches
+// the connection line's color (accent, the gradient endpoint) so line and stub
+// read as one; on hover it flips to the edge's theme hover color.
+const handleStyle = computed(() => ({
+  border: 'none',
+  '--dot-color': accentSolid(props.data.accent),
+  '--bridge-color': accentColor(props.data.accent),
+  '--bridge-hover-color': hoverColor.value,
+  backgroundColor: 'var(--dot-color)',
+}))
 const iconComp = computed(() =>
   ICON_MAP[props.data.icon ?? 'Layers'] ?? Layers
 )
 </script>
+
+<style scoped>
+.agency-node {
+  --node-accent: #3b82f6;
+  --node-fill: color-mix(in srgb, var(--node-accent) 7%, var(--background));
+  border-color: var(--node-accent);
+  background-color: var(--node-fill);
+}
+.agency-node:not(.is-selected):hover {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--node-accent) 45%, transparent);
+}
+.agency-node.is-selected {
+  border-color: var(--node-accent);
+  outline: 1px solid color-mix(in srgb, var(--node-accent) 50%, transparent);
+  outline-offset: 2px;
+}
+.agency-node.is-dimmed {
+  --node-fill: color-mix(in srgb, var(--node-accent) 4%, var(--background));
+  background-color: var(--node-fill);
+}
+.agency-node.is-dimmed > * {
+  opacity: 0.55;
+}
+.agency-node .vue-flow__handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 120ms ease;
+}
+.agency-node .vue-flow__handle.connectable {
+  cursor: default;
+}
+.agency-node .handle-plus {
+  color: #ffffff;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.agency-node .vue-flow__handle:hover .handle-plus {
+  opacity: 1;
+}
+/* Status-indicator standoff: a concentric ring around the dot in the theme
+   background color makes it read as inset/socketed into the node — the ring hides
+   the border evenly on all sides (light/dark aware, not tinted by the accent).
+   A concentric ring would clip the connection line, so a thin accent bridge
+   (::after, above the ring) reaches from the dot out through the ring to the
+   line — but only on wired handles, so idle points don't sprout a footing. */
+.agency-node .vue-flow__handle { box-shadow: 0 0 0 2px var(--background); }
+.agency-node .vue-flow__handle.is-wired::after {
+  content: '';
+  position: absolute;
+  background: var(--bridge-color);
+  pointer-events: none;
+}
+/* Cross-axis matches the line exactly (line 2px → stub 2px) so the bridge reads
+   as a continuation of the edge, not a wider footing. Hover mirrors the edge:
+   theme color + grows with it. */
+.agency-node .vue-flow__handle.is-wired.is-hovered::after { background: var(--bridge-hover-color); }
+.agency-node .vue-flow__handle-right.is-wired::after  { top: 50%; left: 100%;   width: 5px; height: 2px; transform: translateY(-50%); }
+.agency-node .vue-flow__handle-left.is-wired::after   { top: 50%; right: 100%;  width: 5px; height: 2px; transform: translateY(-50%); }
+.agency-node .vue-flow__handle-top.is-wired::after    { left: 50%; bottom: 100%; width: 2px; height: 5px; transform: translateX(-50%); }
+.agency-node .vue-flow__handle-bottom.is-wired::after { left: 50%; top: 100%;    width: 2px; height: 5px; transform: translateX(-50%); }
+.agency-node .vue-flow__handle-right.is-hovered::after,
+.agency-node .vue-flow__handle-left.is-hovered::after  { height: 2.5px; }
+.agency-node .vue-flow__handle-top.is-hovered::after,
+.agency-node .vue-flow__handle-bottom.is-hovered::after { width: 2.5px; }
+/* Keep Vue Flow's centering translate when scaling, otherwise the dot shifts inward. */
+.agency-node .vue-flow__handle-top:hover    { transform: translate(-50%, -50%) scale(1.5); }
+.agency-node .vue-flow__handle-bottom:hover { transform: translate(-50%, 50%) scale(1.5); }
+.agency-node .vue-flow__handle-left:hover   { transform: translate(-50%, -50%) scale(1.5); }
+.agency-node .vue-flow__handle-right:hover  { transform: translate(50%, -50%) scale(1.5); }
+</style>

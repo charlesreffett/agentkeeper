@@ -131,7 +131,7 @@
       >
         <div
           class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-          :style="{ backgroundColor: accentBg(role.accent), color: accentFg(role.accent) }"
+          :style="{ backgroundColor: accentBg(role.accent), color: accentColor(role.accent) }"
         >
           <component :is="iconComponent(role.icon)" class="w-4 h-4" />
         </div>
@@ -164,6 +164,7 @@ import {
 import type { Agency, Role } from '../../../../shared/ipc-contract'
 import { queryKeys } from '@/lib/queryKeys'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { ACCENT_HEX, ACCENT_NAMES, accentColor, accentBg } from '../graph/colors'
 
 const props = defineProps<{
   roles: Role[]
@@ -193,23 +194,7 @@ const ICONS = [
   { name: 'Brain',        label: 'Planner/AI',  component: markRaw(Brain) },
 ]
 
-const ACCENTS = [
-  { name: 'blue',   hex: '#3b82f6' },
-  { name: 'orange', hex: '#f59e0b' },
-  { name: 'purple', hex: '#8b5cf6' },
-  { name: 'teal',   hex: '#14b8a6' },
-  { name: 'green',  hex: '#22c55e' },
-  { name: 'red',    hex: '#ef4444' },
-]
-
-const ACCENT_PALETTE: Record<string, { bg: string; fg: string }> = {
-  blue:   { bg: 'rgba(59,130,246,0.15)',  fg: '#3b82f6' },
-  orange: { bg: 'rgba(245,158,11,0.15)',  fg: '#f59e0b' },
-  purple: { bg: 'rgba(139,92,246,0.15)',  fg: '#8b5cf6' },
-  teal:   { bg: 'rgba(20,184,166,0.15)',  fg: '#14b8a6' },
-  green:  { bg: 'rgba(34,197,94,0.15)',   fg: '#22c55e' },
-  red:    { bg: 'rgba(239,68,68,0.15)',   fg: '#ef4444' },
-}
+const ACCENTS = ACCENT_NAMES.map(name => ({ name, hex: ACCENT_HEX[name]! }))
 
 const ICON_MAP: Record<string, ReturnType<typeof markRaw>> = Object.fromEntries(
   ICONS.map(i => [i.name, i.component])
@@ -217,12 +202,6 @@ const ICON_MAP: Record<string, ReturnType<typeof markRaw>> = Object.fromEntries(
 
 const { models: MODELS } = useModelsQuery()
 
-function accentBg(accent: string | undefined) {
-  return (ACCENT_PALETTE[accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).bg
-}
-function accentFg(accent: string | undefined) {
-  return (ACCENT_PALETTE[accent ?? 'blue'] ?? ACCENT_PALETTE['blue']!).fg
-}
 function iconComponent(icon: string | undefined) {
   return ICON_MAP[icon ?? 'Layers'] ?? Layers
 }

@@ -7,6 +7,15 @@ export const useLayoutStore = defineStore('layout', () => {
     rightPanelOpen.value = !rightPanelOpen.value
   }
 
+  // Id of the agency-canvas edge currently hovered, so a connected node can
+  // sync its bridge stub (color + width) with the edge's hover styling. The
+  // bridge lives on the node (above the standoff ring) and can't otherwise
+  // observe the edge component's local hover state.
+  const hoveredEdgeId = ref<string | null>(null)
+  function setHoveredEdge(id: string | null) {
+    hoveredEdgeId.value = id
+  }
+
   const theme = ref<'light' | 'dark'>('dark')
 
   function _applyClass(t: 'light' | 'dark') {
@@ -29,5 +38,5 @@ export const useLayoutStore = defineStore('layout', () => {
     return setTheme(theme.value === 'dark' ? 'light' : 'dark')
   }
 
-  return { rightPanelOpen, toggleRightPanel, theme, initTheme, setTheme, toggleTheme }
+  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, initTheme, setTheme, toggleTheme }
 })

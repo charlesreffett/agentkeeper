@@ -3,6 +3,7 @@ import type { Ref } from 'vue'
 import { toast } from 'vue-sonner'
 import type { Agency, Role, RoleSlot } from '../../../../shared/ipc-contract'
 import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
+import { derivedAccent } from './colors'
 
 const instanceIdPattern = /^(.+)-(\d+)$/
 
@@ -131,6 +132,14 @@ export function useFlowGraph(
     return map
   })
 
+  // A role's accent when it declares one, otherwise a deterministic hue so
+  // every node in the agency is visually distinct.
+  function slotAccent(slot: RoleSlot, index: number): string {
+    const explicit = rolesById.value.get(slot.roleId)?.accent
+    if (explicit) return explicit
+    return derivedAccent(index)
+  }
+
   const nodes = computed<GraphNode[]>(() => {
     if (!agency.value) return []
     const anyToAny = effectiveFlows.value.length === 0
@@ -140,6 +149,7 @@ export function useFlowGraph(
     roles.forEach((slot, index) => {
       const isExpanded = expandedRoles.value.has(slot.roleId) && roleHasMultiplicity(slot)
       const expandable = roleHasMultiplicity(slot)
+      const accent = slotAccent(slot, index)
 
       if (isExpanded) {
         const count = instanceCount(slot)
@@ -157,7 +167,10 @@ export function useFlowGraph(
             isExpanded: false,
             parentRoleId: slot.roleId,
             position: nodePositions.value[instanceId] ?? instancePosition(roleBasePos, i, count),
-            meta: { slot },
+            meta: {
+              slot,
+              accent,
+            },
           })
         }
       } else {
@@ -175,7 +188,7 @@ export function useFlowGraph(
             slot,
             name: rolesById.value.get(slot.roleId)?.name ?? slot.roleId,
             icon: rolesById.value.get(slot.roleId)?.icon ?? 'Layers',
-            accent: rolesById.value.get(slot.roleId)?.accent ?? 'blue',
+            accent,
           },
         })
       }
