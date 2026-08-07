@@ -169,8 +169,11 @@ export function useUnifiedSessions() {
       case 'historical': {
         const hist = historicalSessions.value.find(({ summary: s }) => s.id === entry.localId)
         if (hist) {
-          sessionStore.openHistorical(hist.projectPath, hist.summary)
-          void router.push(`/sessions/${entry.localId}`)
+          // openHistorical keys the in-memory session under a fresh localId, not
+          // the JSONL summary id — navigate to the id it returns or the route
+          // won't match the store and we fall through to a blank draft.
+          const localId = sessionStore.openHistorical(hist.projectPath, hist.summary)
+          void router.push(`/sessions/${localId}`)
         }
         break
       }
