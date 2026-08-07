@@ -69,7 +69,7 @@ import {
 import { getActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index'
 import { detectGithubRepo, recentProjectsStore } from './store'
-import { commit, createBranch, detectRemoteSources, getBranch, getStatus, listBranches, pull, push, stageFiles, switchBranch, switchBranchCreate, unstageFiles } from './git'
+import { commit, createBranch, detectRemoteSources, getBranch, getStatus, isGitRepo, listBranches, pull, push, stageFiles, switchBranch, switchBranchCreate, unstageFiles } from './git'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp, setDefaultMcpFactoryResolver, editAndRerun, undoEditAndRerun } from './agent'
@@ -1236,6 +1236,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       console.error('[ipc] git:listBranches failed:', err)
       return []
     }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.gitIsRepo, (_event, projectPath: string) => {
+    return isGitRepo(projectPath)
   })
 
   // Enforced here (not only in the renderer) — the mobile companion and future

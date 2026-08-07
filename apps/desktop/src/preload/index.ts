@@ -440,6 +440,8 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.gitCreateBranch, projectPath, branchName) as Promise<void>,
     listBranches: (projectPath: string) =>
       invoke(IPC_CHANNELS.gitListBranches, projectPath) as Promise<BranchInfo[]>,
+    isRepo: (projectPath: string) =>
+      invoke(IPC_CHANNELS.gitIsRepo, projectPath) as Promise<boolean>,
     switchBranch: (projectPath: string, name: string, opts?: SwitchBranchOptions) =>
       invoke(IPC_CHANNELS.gitSwitchBranch, projectPath, name, opts) as Promise<SwitchResult>,
     switchBranchCreate: (projectPath: string, name: string, from?: string) =>
