@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
 import type { OpencodeClient } from '@opencode-ai/sdk/client'
-import type { HarnessAdapter, HarnessAuth, HarnessCLIOptions, HarnessEvent, HarnessSessionOptions } from '@agentkeeper/core'
+import type { HarnessAdapter, HarnessAuth, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { secrets, SECRET_KEYS } from '../secrets'
 
 const execFileAsync = promisify(execFile)
@@ -297,6 +297,48 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
         }
       }
     }
+  }
+
+  /**
+   * Authoritative model list — the running OpenCode server reports every
+   * provider it can reach (env/auth-configured), each with its concrete models.
+   * Spins the singleton server on first call; models.ts caches the result.
+   */
+  async getSupportedModels(): Promise<HarnessModelInfo[]> {
+    const { client } = await this.getOrCreateServer()
+    const resp = await client.config.providers()
+    const data = resp.data
+    if (!data) return []
+
+    // Per-provider default model ids, e.g. { anthropic: 'claude-sonnet-4-...' }.
+    const providerDefaults = (data.default ?? {}) as Record<string, string>
+
+    const models: HarnessModelInfo[] = []
+    for (const provider of data.providers) {
+      for (const model of Object.values(provider.models)) {
+        models.push({
+          value: `${provider.id}/${model.id}`,
+          label: `${provider.name} · ${model.name}`,
+          resolvedModel: `${provider.id}/${model.id}`,
+          supportsEffort: model.capabilities?.reasoning ?? false,
+        })
+      }
+    }
+
+    // One default: prefer the adapter's declared model, else the anthropic
+    // provider default, else the first model reported.
+    const anthropicDefault = providerDefaults['anthropic']
+      ? `anthropic/${providerDefaults['anthropic']}`
+      : undefined
+    const preferred =
+      models.find((m) => m.value === this.defaultModel)?.value ??
+      models.find((m) => m.value === anthropicDefault)?.value ??
+      models[0]?.value
+    for (const m of models) {
+      if (m.value === preferred) m.isDefault = true
+    }
+
+    return models
   }
 
   /** Shut down the singleton server. Called on app exit or adapter reset. */
