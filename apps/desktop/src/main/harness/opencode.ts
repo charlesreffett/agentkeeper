@@ -310,8 +310,8 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
    */
   async getSupportedModels(): Promise<HarnessModelInfo[]> {
     const { client } = await this.getOrCreateServer()
-    const resp = await client.config.providers()
-    const data = resp.data
+    const [provResp, cfgResp] = await Promise.all([client.config.providers(), client.config.get()])
+    const data = provResp.data
     if (!data) return []
 
     const concrete: HarnessModelInfo[] = []
@@ -327,11 +327,13 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       }
     }
 
-    const preferred = this.pickDefault(data, concrete)
+    // Opencode has no `default` model id — the TUI's selection comes from the
+    // user's config `model` (e.g. `opencode/big-pickle`). Honor that first.
+    const preferred = this.pickDefault(cfgResp.data?.model, data.default, concrete)
     this.preferredDefault = preferred ?? null
 
-    // Mirror the claude-code convention: a `default` alias entry that resolves
-    // to the concrete pick, so a session on `default` never reads "unavailable".
+    // Expose that pick as a `default` alias (like claude-code) so a session
+    // carrying `default` resolves to the harness's real default, not "unavailable".
     const models: HarnessModelInfo[] = []
     if (preferred) {
       models.push({ value: 'default', label: 'Default', resolvedModel: preferred, isDefault: true })
@@ -340,17 +342,19 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     return models
   }
 
-  /** Concrete default id: the adapter's declared model if reachable, else the
-   *  anthropic provider default, else the first reported model. */
+  /** Concrete default id, in priority order: opencode's own configured default
+   *  (config `model`, what the TUI runs), then the adapter's declared model if
+   *  reachable, then the anthropic provider default, then the first model. */
   private pickDefault(
-    data: { providers: Array<{ id: string; models: Record<string, unknown> }>; default?: Record<string, string> },
+    configModel: string | undefined,
+    providerDefaults: Record<string, string> | undefined,
     concrete: HarnessModelInfo[],
   ): string | undefined {
-    const providerDefaults = data.default ?? {}
-    const anthropicDefault = providerDefaults['anthropic']
+    const anthropicDefault = providerDefaults?.['anthropic']
       ? `anthropic/${providerDefaults['anthropic']}`
       : undefined
     return (
+      configModel ??
       concrete.find((m) => m.value === this.defaultModel)?.value ??
       concrete.find((m) => m.value === anthropicDefault)?.value ??
       concrete[0]?.value
