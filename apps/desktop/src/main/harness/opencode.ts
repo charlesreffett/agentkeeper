@@ -36,6 +36,11 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   private singleton: { url: string; client: OpencodeClient; close(): void } | null = null
   private starting: Promise<{ url: string; client: OpencodeClient; close(): void }> | null = null
 
+  /** Concrete model the `default` alias resolves to. Populated the first time
+   *  models are queried; anthropic may be unconfigured, so this reflects what
+   *  the server can actually reach. */
+  private preferredDefault: string | null = null
+
   /**
    * Get or create the shared OpenCode server. Only one process runs at a time
    * to avoid SQLite migration conflicts.
@@ -104,13 +109,12 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
       // Send the prompt asynchronously — the SSE stream will carry the
       // response events.
+      const modelId = await this.resolveModel(options.model)
       const promptResp = await client.session.promptAsync({
         path: { id: sessionId },
         body: {
           parts,
-          ...(options.model ? {
-            model: parseModelId(options.model),
-          } : {}),
+          ...(modelId ? { model: parseModelId(modelId) } : {}),
           ...(options.systemPrompt ? { system: options.systemPrompt } : {}),
         },
       })
@@ -310,35 +314,60 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     const data = resp.data
     if (!data) return []
 
-    // Per-provider default model ids, e.g. { anthropic: 'claude-sonnet-4-...' }.
-    const providerDefaults = (data.default ?? {}) as Record<string, string>
-
-    const models: HarnessModelInfo[] = []
+    const concrete: HarnessModelInfo[] = []
     for (const provider of data.providers) {
       for (const model of Object.values(provider.models)) {
-        models.push({
+        concrete.push({
           value: `${provider.id}/${model.id}`,
-          label: `${provider.name} · ${model.name}`,
+          label: model.name,
+          description: provider.name,
           resolvedModel: `${provider.id}/${model.id}`,
           supportsEffort: model.capabilities?.reasoning ?? false,
         })
       }
     }
 
-    // One default: prefer the adapter's declared model, else the anthropic
-    // provider default, else the first model reported.
+    const preferred = this.pickDefault(data, concrete)
+    this.preferredDefault = preferred ?? null
+
+    // Mirror the claude-code convention: a `default` alias entry that resolves
+    // to the concrete pick, so a session on `default` never reads "unavailable".
+    const models: HarnessModelInfo[] = []
+    if (preferred) {
+      models.push({ value: 'default', label: 'Default', resolvedModel: preferred, isDefault: true })
+    }
+    models.push(...concrete)
+    return models
+  }
+
+  /** Concrete default id: the adapter's declared model if reachable, else the
+   *  anthropic provider default, else the first reported model. */
+  private pickDefault(
+    data: { providers: Array<{ id: string; models: Record<string, unknown> }>; default?: Record<string, string> },
+    concrete: HarnessModelInfo[],
+  ): string | undefined {
+    const providerDefaults = data.default ?? {}
     const anthropicDefault = providerDefaults['anthropic']
       ? `anthropic/${providerDefaults['anthropic']}`
       : undefined
-    const preferred =
-      models.find((m) => m.value === this.defaultModel)?.value ??
-      models.find((m) => m.value === anthropicDefault)?.value ??
-      models[0]?.value
-    for (const m of models) {
-      if (m.value === preferred) m.isDefault = true
-    }
+    return (
+      concrete.find((m) => m.value === this.defaultModel)?.value ??
+      concrete.find((m) => m.value === anthropicDefault)?.value ??
+      concrete[0]?.value
+    )
+  }
 
-    return models
+  /** Turn a stored model value into a concrete providerID/modelID the server can
+   *  run: `default`/empty resolves to the reachable default (cached). */
+  private async resolveModel(model?: string): Promise<string | undefined> {
+    if (model && model !== 'default') return model
+    if (this.preferredDefault) return this.preferredDefault
+    try {
+      await this.getSupportedModels()
+    } catch {
+      return this.defaultModel
+    }
+    return this.preferredDefault ?? this.defaultModel
   }
 
   /** Shut down the singleton server. Called on app exit or adapter reset. */
