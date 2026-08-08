@@ -1515,6 +1515,7 @@ export const useSessionStore = defineStore('sessions', () => {
     agentLocalId: string,
     truncateFromUuid: string,
     newText: string,
+    attachments?: Attachment[],
   ): Promise<TranscriptEvent[]> {
     const sessionEntry = Object.values(sessions).find((s) =>
       s.agents.some((a) => a.localId === agentLocalId),
@@ -1527,8 +1528,34 @@ export const useSessionStore = defineStore('sessions', () => {
           .map((b) => b.text)
           .join('\n') || null
       : null
+    // Caller-provided attachments win (lets the editor drop or add images). When
+    // absent (regenerate), re-send the image blocks from the targeted message.
+    let resolvedAttachments = attachments
+    if (resolvedAttachments === undefined) {
+      resolvedAttachments = []
+      if (target) {
+        for (const b of target.content) {
+          if (b.type !== 'image') continue
+          const src = b.source as { type?: string; media_type?: string; data?: string } | null
+          if (src?.type === 'base64' && src.media_type && src.data) {
+            const ext = src.media_type.split('/')[1] ?? 'png'
+            resolvedAttachments.push({
+              name: `image-${resolvedAttachments.length + 1}.${ext}`,
+              mimeType: src.media_type,
+              content: src.data,
+            })
+          }
+        }
+      }
+    }
     const removed = truncateAgentEventsAt(sessionEntry.localId, agentLocalId, truncateFromUuid)
-    await window.agentkeeper.sessions.editAndRerun(agentLocalId, truncateFromUuid, newText, originalText)
+    await window.agentkeeper.sessions.editAndRerun(
+      agentLocalId,
+      truncateFromUuid,
+      newText,
+      originalText,
+      resolvedAttachments,
+    )
     return removed
   }
 

@@ -863,7 +863,7 @@ export interface AgentKeeperApi {
     addAgent: (sessionLocalId: string, params: AddAgentParams) => Promise<string>
     listTrackedSdkIds: (projectPath: string | null) => Promise<string[]>
     reconnectMcp: (agentLocalId: string) => Promise<void>
-    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null) => Promise<void>
+    editAndRerun: (agentLocalId: string, truncateFromUuid: string, newText: string, originalText?: string | null, attachments?: Attachment[]) => Promise<void>
     undoEditAndRerun: (agentLocalId: string) => Promise<void>
   }
   worktrees: {

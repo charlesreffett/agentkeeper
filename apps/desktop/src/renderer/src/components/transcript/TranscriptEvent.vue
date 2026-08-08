@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import type { ContentBlock, TranscriptEvent } from '@shared/ipc-contract'
+import type { Attachment, ContentBlock, TranscriptEvent } from '@shared/ipc-contract'
 import TextBlock from './TextBlock.vue'
 import ThinkingBlock from './ThinkingBlock.vue'
 import ToolUseBlock from './ToolUseBlock.vue'
 import ToolResultBlock from './ToolResultBlock.vue'
 import ImageBlock from './ImageBlock.vue'
 import UnknownBlock from './UnknownBlock.vue'
-import { CornerDownRight, Info, Pencil, RefreshCw } from 'lucide-vue-next'
+import { CornerDownRight, Info, Pencil, Plus, RefreshCw } from 'lucide-vue-next'
 import { formatTimestamp } from '@/lib/format'
-import { computed, ref } from 'vue'
+import { computed, ref, toRaw } from 'vue'
 import { type VerbosityState, DEFAULT_VERBOSITY_STATE, isBlockVisible } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 
@@ -27,7 +27,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'hover-rewrite': [uuid: string | null]
-  'edit-submit': [uuid: string, newText: string]
+  'edit-submit': [uuid: string, newText: string, attachments: Attachment[]]
   'regenerate': [uuid: string]
 }>()
 
@@ -122,23 +122,80 @@ function blockComponent(block: ContentBlock) {
 
 const editMode = ref(false)
 const editText = ref('')
+const editImages = ref<Attachment[]>([])
+
+function imageBlockToAttachment(block: ContentBlock & { type: 'image' }): Attachment | null {
+  const src = block.source as { type?: string; media_type?: string; data?: string } | null
+  if (src?.type !== 'base64' || !src.media_type || !src.data) return null
+  const ext = src.media_type.split('/')[1] ?? 'png'
+  return { name: `image-${editImages.value.length + 1}.${ext}`, mimeType: src.media_type, content: src.data }
+}
 
 function startEdit() {
   const textBlocks = props.event.content.filter(b => b.type === 'text')
   editText.value = textBlocks.map(b => (b as { type: 'text'; text: string }).text).join('\n')
+  const kept: Attachment[] = []
+  for (const b of props.event.content) {
+    if (b.type !== 'image') continue
+    const att = imageBlockToAttachment(b as ContentBlock & { type: 'image' })
+    if (att) kept.push(att)
+  }
+  editImages.value = kept
   editMode.value = true
 }
 
 function cancelEdit() {
   editMode.value = false
   editText.value = ''
+  editImages.value = []
 }
 
 function submitEdit() {
-  if (!editText.value.trim()) return
-  emit('edit-submit', props.event.uuid, editText.value.trim())
+  if (!editText.value.trim() && editImages.value.length === 0) return
+  emit('edit-submit', props.event.uuid, editText.value.trim(), editImages.value.map(toRaw))
   editMode.value = false
   editText.value = ''
+  editImages.value = []
+}
+
+function removeEditImage(index: number) {
+  editImages.value.splice(index, 1)
+}
+
+async function attachEditImages() {
+  const picked = await window.agentkeeper.dialog.openFiles()
+  editImages.value.push(...picked.filter((a) => a.mimeType.startsWith('image/')))
+}
+
+async function handleEditPaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+  const imageItems: DataTransferItem[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item && item.kind === 'file' && item.type.startsWith('image/')) {
+      imageItems.push(item)
+    }
+  }
+  if (imageItems.length === 0) return
+  event.preventDefault()
+  const promises = imageItems.map((item) => new Promise<void>((resolve) => {
+    const file = item.getAsFile()
+    if (!file) { resolve(); return }
+    const mimeType = file.type || 'image/png'
+    const ext = mimeType.split('/')[1] ?? 'png'
+    const name = `pasted-image-${Date.now()}.${ext}`
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const base64 = dataUrl.split(',')[1]
+      if (base64) editImages.value.push({ name, mimeType, content: base64 })
+      resolve()
+    }
+    reader.onerror = () => resolve()
+    reader.readAsDataURL(file)
+  }))
+  await Promise.all(promises)
 }
 
 function onEditKeydown(e: KeyboardEvent) {
@@ -281,19 +338,49 @@ function onEditKeydown(e: KeyboardEvent) {
 
       <!-- Edit mode textarea -->
       <div v-if="editMode" class="space-y-2">
+        <div v-if="editImages.length > 0" class="flex flex-wrap gap-2">
+          <div
+            v-for="(a, i) in editImages"
+            :key="i"
+            class="relative group cursor-pointer rounded-md overflow-hidden w-16 h-16 shrink-0 border border-border"
+            :title="a.name"
+          >
+            <img
+              :src="`data:${a.mimeType};base64,${a.content}`"
+              :alt="a.name"
+              class="w-full h-full object-cover"
+            />
+            <button
+              type="button"
+              class="absolute top-0.5 right-0.5 flex items-center justify-center w-5 h-5 rounded-full bg-black/60 text-white hover:bg-black/80 text-xs leading-none"
+              title="Remove image"
+              @click.stop="removeEditImage(i)"
+            >×</button>
+          </div>
+        </div>
         <textarea
           v-model="editText"
           class="w-full rounded-md border border-border bg-background text-sm text-foreground px-3 py-2 resize-none focus:outline-none focus:ring-1 focus:ring-ring min-h-[80px]"
           autofocus
           @keydown="onEditKeydown"
+          @paste="handleEditPaste"
         />
-        <div class="flex gap-2 justify-end">
+        <div class="flex gap-2 items-center justify-end">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-border hover:bg-muted text-muted-foreground mr-auto"
+            @click="attachEditImages"
+          >
+            <Plus class="size-3" />
+            Attach image
+          </button>
           <button
             class="text-xs px-3 py-1 rounded border border-border hover:bg-muted text-muted-foreground"
             @click="cancelEdit"
           >Cancel</button>
           <button
-            class="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90"
+            class="text-xs px-3 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
+            :disabled="!editText.trim() && editImages.length === 0"
             @click="submitEdit"
           >Send edit</button>
         </div>
