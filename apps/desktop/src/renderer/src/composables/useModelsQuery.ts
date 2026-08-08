@@ -65,12 +65,23 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
   const isEmpty = computed(() => !isLoading.value && models.value.length === 0)
   const defaultValue = computed(() => models.value.find((m) => m.isDefault)?.value ?? models.value[0]?.value ?? '')
 
+  /** The concrete model a stored value maps to within this harness. An id the
+   *  harness reports is kept as-is; an off-list alias (`default`, `''`, or a
+   *  value from another harness) resolves to this harness's `isDefault` model
+   *  when it has one — so the picker highlights a real row instead of a phantom
+   *  "unavailable" entry. Genuinely unknown ids (no default) pass through. */
+  function effectiveValueFor(selected?: string | null): string {
+    if (selected && models.value.some((o) => o.value === selected)) return selected
+    return defaultValue.value || selected || SESSION_DEFAULT_VALUE
+  }
+
   /** Options for a picker, guaranteeing the currently-selected value stays
    *  visible even if the harness no longer reports it (legacy stored model). */
   function optionsFor(selected?: string | null): ModelOption[] {
     const opts = models.value
-    if (selected && selected !== SESSION_DEFAULT_VALUE && !opts.some((o) => o.value === selected)) {
-      return [...opts, syntheticOption(selected)]
+    const eff = effectiveValueFor(selected)
+    if (eff && eff !== SESSION_DEFAULT_VALUE && !opts.some((o) => o.value === eff)) {
+      return [...opts, syntheticOption(eff)]
     }
     return opts
   }
@@ -86,10 +97,11 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
    *  live session never just reads "Default". Off-list ids are humanized. */
   function resolvedLabelFor(value?: string | null): string {
     const opts = models.value
-    const m = value ? opts.find((o) => o.value === value) : opts.find((o) => o.isDefault)
+    const eff = effectiveValueFor(value)
+    const m = eff ? opts.find((o) => o.value === eff) : opts.find((o) => o.isDefault)
     if (m?.resolvedModel) return prettyModelId(m.resolvedModel)
     if (m) return m.label
-    if (value) return prettyModelId(value)
+    if (eff) return prettyModelId(eff)
     return 'Default'
   }
 
@@ -101,5 +113,5 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
     return ROLE_EFFORT_VALUES
   }
 
-  return { models, error, isLoading, isEmpty, defaultValue, refresh, isRefreshing, optionsFor, optionsWithDefaultFor, effortLevelsFor, resolvedLabelFor }
+  return { models, error, isLoading, isEmpty, defaultValue, refresh, isRefreshing, optionsFor, optionsWithDefaultFor, effortLevelsFor, resolvedLabelFor, effectiveValueFor }
 }

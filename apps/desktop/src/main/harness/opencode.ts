@@ -328,23 +328,18 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     }
 
     // Opencode has no `default` model id — the TUI's selection comes from the
-    // user's config `model` (e.g. `opencode/big-pickle`). Honor that first.
+    // user's config `model` (e.g. `opencode/big-pickle`). Flag that concrete
+    // model as the default instead of inventing a synthetic row.
     const preferred = this.pickDefault(cfgResp.data?.model, data.default, concrete)
     this.preferredDefault = preferred ?? null
 
-    // Expose that pick as a `default` alias (like claude-code) so a session
-    // carrying `default` resolves to the harness's real default, not "unavailable".
-    const models: HarnessModelInfo[] = []
-    if (preferred) {
-      models.push({ value: 'default', label: 'Default', resolvedModel: preferred, isDefault: true })
-    }
-    models.push(...concrete)
-    return models
+    return concrete.map((m) => (m.value === preferred ? { ...m, isDefault: true } : m))
   }
 
-  /** Concrete default id, in priority order: opencode's own configured default
-   *  (config `model`, what the TUI runs), then the adapter's declared model if
-   *  reachable, then the anthropic provider default, then the first model. */
+  /** The concrete default model, resolved to a real enumerated id: opencode's
+   *  own configured default (config `model`, what the TUI runs) if present,
+   *  then the adapter's declared model, then the anthropic provider default,
+   *  then the first reported model. */
   private pickDefault(
     configModel: string | undefined,
     providerDefaults: Record<string, string> | undefined,
@@ -354,7 +349,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       ? `anthropic/${providerDefaults['anthropic']}`
       : undefined
     return (
-      configModel ??
+      concrete.find((m) => m.value === configModel)?.value ??
       concrete.find((m) => m.value === this.defaultModel)?.value ??
       concrete.find((m) => m.value === anthropicDefault)?.value ??
       concrete[0]?.value

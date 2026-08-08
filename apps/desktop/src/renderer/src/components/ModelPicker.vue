@@ -40,9 +40,13 @@ const showRail = computed(
     (harnesses.value?.length ?? 0) > 1,
 )
 
-const { optionsFor, resolvedLabelFor } = useModelsQuery(() => selectedHarnessId.value)
+const { optionsFor, resolvedLabelFor, effectiveValueFor } = useModelsQuery(() => selectedHarnessId.value)
 
 const options = computed(() => optionsFor(props.modelValue))
+
+// The concrete row the current selection maps to (an alias like `default`
+// resolves to the harness's real default) — drives the check mark.
+const effectiveSelected = computed(() => effectiveValueFor(props.modelValue))
 
 // Always names the concrete model+version (resolves `default`/aliases), so a
 // live session never just reads "Default".
@@ -153,7 +157,7 @@ function onEnter() {
             @click="select(m.value)"
           >
             <span class="mt-0.5 w-4 shrink-0">
-              <Check v-if="m.value === modelValue" class="h-4 w-4 text-primary" />
+              <Check v-if="m.value === effectiveSelected" class="h-4 w-4 text-primary" />
             </span>
             <span class="flex-1 min-w-0">
               <span class="block text-sm font-medium truncate">{{ m.label }}</span>
