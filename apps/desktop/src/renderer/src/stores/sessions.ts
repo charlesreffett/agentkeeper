@@ -1515,6 +1515,7 @@ export const useSessionStore = defineStore('sessions', () => {
     agentLocalId: string,
     truncateFromUuid: string,
     newText: string,
+    attachments?: Attachment[],
   ): Promise<TranscriptEvent[]> {
     const sessionEntry = Object.values(sessions).find((s) =>
       s.agents.some((a) => a.localId === agentLocalId),
@@ -1527,19 +1528,23 @@ export const useSessionStore = defineStore('sessions', () => {
           .map((b) => b.text)
           .join('\n') || null
       : null
-    // Re-send image blocks from the edited message so attachments survive the edit.
-    const attachments: Attachment[] = []
-    if (target) {
-      for (const b of target.content) {
-        if (b.type !== 'image') continue
-        const src = b.source as { type?: string; media_type?: string; data?: string } | null
-        if (src?.type === 'base64' && src.media_type && src.data) {
-          const ext = src.media_type.split('/')[1] ?? 'png'
-          attachments.push({
-            name: `image-${attachments.length + 1}.${ext}`,
-            mimeType: src.media_type,
-            content: src.data,
-          })
+    // Caller-provided attachments win (lets the editor drop or add images). When
+    // absent (regenerate), re-send the image blocks from the targeted message.
+    let resolvedAttachments = attachments
+    if (resolvedAttachments === undefined) {
+      resolvedAttachments = []
+      if (target) {
+        for (const b of target.content) {
+          if (b.type !== 'image') continue
+          const src = b.source as { type?: string; media_type?: string; data?: string } | null
+          if (src?.type === 'base64' && src.media_type && src.data) {
+            const ext = src.media_type.split('/')[1] ?? 'png'
+            resolvedAttachments.push({
+              name: `image-${resolvedAttachments.length + 1}.${ext}`,
+              mimeType: src.media_type,
+              content: src.data,
+            })
+          }
         }
       }
     }
@@ -1549,7 +1554,7 @@ export const useSessionStore = defineStore('sessions', () => {
       truncateFromUuid,
       newText,
       originalText,
-      attachments.length > 0 ? attachments : undefined,
+      resolvedAttachments,
     )
     return removed
   }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, provide, ref } from 'vue'
 import { VList, type VListHandle } from 'virtua/vue'
-import type { ContentBlock, TranscriptEvent } from '@shared/ipc-contract'
+import type { Attachment, ContentBlock, TranscriptEvent } from '@shared/ipc-contract'
 import TranscriptEventView from './TranscriptEvent.vue'
 import ImageLightbox from '@/components/ImageLightbox.vue'
 import {
@@ -24,7 +24,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'show-all': []
-  'edit-submit': [uuid: string, newText: string]
+  'edit-submit': [uuid: string, newText: string, attachments: Attachment[]]
   'regenerate': [uuid: string]
   'scroll': [offset: number]
 }>()
@@ -166,7 +166,7 @@ defineExpose({
             :is-doomed="doomedFromIndex >= 0 && index > doomedFromIndex"
             :can-rewrite="canRewrite"
             @hover-rewrite="hoverRewriteUuid = $event"
-            @edit-submit="(uuid, newText) => emit('edit-submit', uuid, newText)"
+            @edit-submit="(uuid, newText, attachments) => emit('edit-submit', uuid, newText, attachments)"
             @regenerate="(uuid) => emit('regenerate', uuid)"
           />
         </div>

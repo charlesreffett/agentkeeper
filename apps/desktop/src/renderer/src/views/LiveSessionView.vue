@@ -289,11 +289,11 @@ async function onStop() {
 
 // ─── Edit / regenerate / undo ────────────────────────────────────────────────
 
-async function onEditSubmit(uuid: string, newText: string) {
+async function onEditSubmit(uuid: string, newText: string, attachments: Attachment[]) {
   const agentLocalId = selectedAgentLocalId.value
   rewriteError.value = null
   try {
-    const removed = await store.editAndRerun(agentLocalId, uuid, newText)
+    const removed = await store.editAndRerun(agentLocalId, uuid, newText, attachments)
     if (undoBuf.value?.timerId) clearTimeout(undoBuf.value.timerId)
     undoBuf.value = {
       agentLocalId,
