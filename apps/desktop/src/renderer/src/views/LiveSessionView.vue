@@ -444,7 +444,12 @@ function removeFromList() {
 
 // ─── Model / effort / permission selectors ───────────────────────────────────
 
-const { effortLevelsFor, models: availableModels, defaultValue: defaultModel } = useModelsQuery()
+// Scope to the session's own harness — a draft on opencode must validate its
+// model against opencode's catalog, not the active harness's, or the reset
+// watcher below would clobber a valid cross-harness pick.
+const { effortLevelsFor, models: availableModels, defaultValue: defaultModel } = useModelsQuery(
+  () => session.value?.harnessId,
+)
 
 const PERM_MODE_LABELS: Record<PermissionMode, string> = {
   bypassPermissions: 'Bypass',
