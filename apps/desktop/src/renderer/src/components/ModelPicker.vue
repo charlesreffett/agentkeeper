@@ -40,16 +40,29 @@ const showRail = computed(
     (harnesses.value?.length ?? 0) > 1,
 )
 
-const { optionsFor, resolvedLabelFor, effectiveValueFor } = useModelsQuery(() => selectedHarnessId.value)
+// Browse scope: the rail's currently-viewed harness drives the model list.
+const { optionsFor } = useModelsQuery(() => selectedHarnessId.value)
+// Session scope: the session's own harness drives the trigger label and which
+// row is checked — browsing another harness must change neither.
+const { resolvedLabelFor, effectiveValueFor } = useModelsQuery(() => props.harnessId)
 
 const options = computed(() => optionsFor(props.modelValue))
 
-// The concrete row the current selection maps to (an alias like `default`
-// resolves to the harness's real default) — drives the check mark.
-const effectiveSelected = computed(() => effectiveValueFor(props.modelValue))
+// Default harness = first registered (the registry lists the default first),
+// so an unset harnessId normalizes to it on both sides of the comparison.
+const defaultHarnessId = computed(() => harnesses.value?.[0]?.id)
+const viewingSessionHarness = computed(
+  () => (selectedHarnessId.value ?? defaultHarnessId.value) === (props.harnessId ?? defaultHarnessId.value),
+)
 
-// Always names the concrete model+version (resolves `default`/aliases), so a
-// live session never just reads "Default".
+// Check a row only when viewing the session's own harness; browsing another
+// harness lists its models without preselecting one.
+const effectiveSelected = computed(() =>
+  viewingSessionHarness.value ? effectiveValueFor(props.modelValue) : null,
+)
+
+// Always names the concrete model+version (resolves `default`/aliases) in the
+// session's harness, so a live session never just reads "Default".
 const currentLabel = computed(() => resolvedLabelFor(props.modelValue))
 
 const filtered = computed(() => {

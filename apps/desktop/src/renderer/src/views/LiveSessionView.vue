@@ -132,6 +132,7 @@ async function changeContext(path: string): Promise<void> {
     defaultModel: settings.defaultModel,
     defaultEffort: settings.defaultEffort,
     defaultUseWorktree: settings.defaultUseWorktree,
+    defaultHarnessId: settings.harnessId,
   })
   void router.push(`/sessions/${localId}`)
 }
@@ -530,20 +531,27 @@ watch([availableModels, () => session.value?.model], () => {
 
 async function changeModel(model: string) {
   if (!session.value) return
-  if (isDraft.value) { session.value.model = model; return }
-  if (isAgencySession.value) {
+  if (isDraft.value) {
+    session.value.model = model
+  } else if (isAgencySession.value) {
     await window.agentkeeper.agencies.setFallbackModel(session.value.localId, model)
+    session.value.model = model
+    return // agency fallback is per-session; never the global default
   } else {
     await window.agentkeeper.sessions.setModel(session.value.localId, model)
+    session.value.model = model
   }
-  session.value.model = model
+  // Remember the pick as the default for future new sessions.
+  void window.agentkeeper.settings.set({ defaultModel: model })
 }
 
 // Harness is fixed once a session starts, so this only mutates the draft.
 // changeModel fires right after with a model from the new harness's catalog.
+// Persist as the active harness so future new sessions default to it.
 function changeHarness(id: string) {
   if (!session.value || !isDraft.value) return
   session.value.harnessId = id
+  void window.agentkeeper.harness.setActive(id)
 }
 
 async function changeEffort(val: string) {
