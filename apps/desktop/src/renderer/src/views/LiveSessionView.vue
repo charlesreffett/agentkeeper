@@ -539,6 +539,13 @@ async function changeModel(model: string) {
   session.value.model = model
 }
 
+// Harness is fixed once a session starts, so this only mutates the draft.
+// changeModel fires right after with a model from the new harness's catalog.
+function changeHarness(id: string) {
+  if (!session.value || !isDraft.value) return
+  session.value.harnessId = id
+}
+
 async function changeEffort(val: string) {
   if (!val || !session.value) return
   if (isDraft.value) { session.value.effort = val as RoleEffort; return }
@@ -856,6 +863,29 @@ const streamingEventUuid = computed((): string | undefined => {
         @stop="onStop"
       >
         <template #toolbar-left>
+          <div :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined">
+            <ModelPicker
+              :model-value="session.model ?? ''"
+              :harness-id="session.harnessId"
+              :harness-switchable="isDraft"
+              :disabled="!canEditParams"
+              align="start"
+              @update:model-value="changeModel"
+              @update:harness-id="changeHarness"
+            >
+              <template #trigger="{ label }">
+                <button
+                  type="button"
+                  :disabled="!canEditParams"
+                  class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
+                  :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
+                >
+                  <span class="truncate">{{ label }}</span>
+                  <ChevronDown class="h-3 w-3 shrink-0" />
+                </button>
+              </template>
+            </ModelPicker>
+          </div>
           <!-- Agency pill — draft only -->
           <div v-if="isDraft" class="flex items-center gap-0.5 shrink-0">
             <PillSelect
@@ -897,26 +927,6 @@ const streamingEventUuid = computed((): string | undefined => {
               trigger-class="max-w-[92px]"
               @update:model-value="changePermissionMode($event as PermissionMode)"
             />
-          </div>
-          <div :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined">
-            <ModelPicker
-              :model-value="session.model ?? ''"
-              :disabled="!canEditParams"
-              align="end"
-              @update:model-value="changeModel"
-            >
-              <template #trigger="{ label }">
-                <button
-                  type="button"
-                  :disabled="!canEditParams"
-                  class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
-                  :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
-                >
-                  <span class="truncate">{{ label }}</span>
-                  <ChevronDown class="h-3 w-3 shrink-0" />
-                </button>
-              </template>
-            </ModelPicker>
           </div>
         </template>
       </MessageInput>

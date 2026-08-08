@@ -1045,6 +1045,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ...(role?.systemPrompt ? { systemPromptAppend: role.systemPrompt } : {}),
       initialPrompt: trimmedPrompt,
       ...(draft.model ? { model: draft.model } : {}),
+      ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
       ...(draft.effort ? { effort: draft.effort } : {}),
       ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
       ...(role?.name ? { roleName: role.name } : {}),
