@@ -13,7 +13,6 @@
       :is-valid-connection="isValidConnection"
       :connect-on-click="false"
       :connection-mode="ConnectionMode.Loose"
-      :connection-line-component="FloatingConnectionLine"
       @connect="onConnect"
       @edge-update-start="onEdgeUpdateStart"
       @edge-update="onEdgeUpdate"
@@ -24,6 +23,9 @@
       @pane-click="onPaneClick"
       @node-drag-stop="onNodeDragStop"
     >
+      <template #connection-line="lineProps">
+        <FloatingConnectionLine v-bind="lineProps" />
+      </template>
       <Background :pattern-color="patternColor" :gap="20" />
       <Controls class="!bg-muted !border-border" />
       <Panel position="bottom-right">
@@ -41,7 +43,7 @@
 
 <script setup lang="ts">
 import { computed, markRaw } from 'vue'
-import { VueFlow, MarkerType, useVueFlow, ConnectionMode, Position, Panel } from '@vue-flow/core'
+import { VueFlow, useVueFlow, ConnectionMode, Position, Panel } from '@vue-flow/core'
 import { useLayoutStore } from '@/stores/layout'
 import type {
   Node as VFNode,
@@ -61,6 +63,8 @@ import '@vue-flow/controls/dist/style.css'
 import AgencyRoleNode from './AgencyRoleNode.vue'
 import AgencyInstanceNode from './AgencyInstanceNode.vue'
 import FloatingConnectionLine from './FloatingConnectionLine.vue'
+import GradientEdge from './GradientEdge.vue'
+import { accentColor } from './colors'
 import type { GraphNode, GraphEdge, GraphFlowMode, GraphConnectionRequest } from './types'
 
 const props = defineProps<{
@@ -107,18 +111,29 @@ const nodeTypes: Record<string, any> = {
   instance: markRaw(AgencyInstanceNode),
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const edgeTypes: Record<string, any> = {}
+const edgeTypes: Record<string, any> = {
+  gradient: markRaw(GradientEdge),
+}
 
 const defaultEdgeOptions = {
-  type: 'smoothstep',
+  type: 'gradient',
   updatable: true,
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#6b7280' },
-  style: { stroke: '#6b7280', strokeWidth: 2 },
   animated: false,
 }
 
 const vfNodes = computed<VFNode[]>(() =>
   props.nodes.map(n => {
+    // When a node is focused, dim every node that isn't focused and has no
+    // direct edge to/from the focused node — their connection points stay
+    // fully opaque so the focused node's neighbourhood remains legible.
+    const dimmed =
+      props.selectedNodeId !== null &&
+      n.id !== props.selectedNodeId &&
+      !props.edges.some(
+        e =>
+          (e.source === n.id && e.target === props.selectedNodeId) ||
+          (e.target === n.id && e.source === props.selectedNodeId),
+      )
     if (n.kind === 'instance') {
       return {
         id: n.id,
@@ -127,7 +142,10 @@ const vfNodes = computed<VFNode[]>(() =>
         selected: n.id === props.selectedNodeId,
         data: {
           label: n.label,
+          accent: (n.meta.accent as string | undefined) ?? 'blue',
           isEntryPoint: n.isEntryPoint,
+          dimmed,
+          handleEdges: handleEdgeMap.value.get(n.id) ?? NO_HANDLE_EDGES,
           // Pass collapse callback — collapses the parent role group
           onCollapse: n.parentRoleId
             ? () => emit('node-expand', n.parentRoleId!)
@@ -151,6 +169,8 @@ const vfNodes = computed<VFNode[]>(() =>
         multiplicityLabel: n.multiplicityLabel,
         isExpandable: n.isExpandable,
         isExpanded: n.isExpanded,
+        dimmed,
+        handleEdges: handleEdgeMap.value.get(n.id) ?? NO_HANDLE_EDGES,
         onToggleExpand: n.isExpandable
           ? () => emit('node-expand', n.id)
           : undefined,
@@ -201,10 +221,56 @@ function handleNeedsSnap(stored: string, bestHandle: string): boolean {
   }
 }
 
+// Each node's accent color, keyed by node id. Instance nodes inherit their
+// parent role's accent (set in useFlowGraph).
+const nodeColorMap = computed(() =>
+  new Map(props.nodes.map(n => [n.id, accentColor(n.meta.accent as string | undefined)]))
+)
+
+type HandleEdges = { top: string[]; right: string[]; bottom: string[]; left: string[] }
+const NO_HANDLE_EDGES: HandleEdges = { top: [], right: [], bottom: [], left: [] }
+
+// The edge ids attached to each node handle, resolved with the SAME snap logic
+// that places the edges below — so the node's bridge stub lands on exactly the
+// handle the line renders into, and can match a hovered edge by id. Computed
+// here rather than via Vue Flow's connectionLookup, whose in-place Map mutation
+// doesn't reliably retrigger the per-node useNodeConnections watch.
+const handleEdgeMap = computed(() => {
+  const map = new Map<string, HandleEdges>()
+  const slot = (id: string): HandleEdges => {
+    let w = map.get(id)
+    if (!w) { w = { top: [], right: [], bottom: [], left: [] }; map.set(id, w) }
+    return w
+  }
+  for (const e of props.edges) {
+    const srcPos = nodePosMap.value.get(e.source) ?? { x: 0, y: 0 }
+    const tgtPos = nodePosMap.value.get(e.target) ?? { x: 0, y: 0 }
+    const best = getBestHandles(srcPos, tgtPos)
+    const rawSrc = e.sourceHandle ?? best.sourceHandle
+    const sourceHandle = handleNeedsSnap(rawSrc, best.sourceHandle) ? best.sourceHandle : rawSrc
+    const rawTgt = e.targetHandle ?? best.targetHandle
+    const targetHandle = handleNeedsSnap(rawTgt, best.targetHandle) ? best.targetHandle : rawTgt
+    if (sourceHandle in slot(e.source)) slot(e.source)[sourceHandle as keyof HandleEdges].push(e.id)
+    if (targetHandle in slot(e.target)) slot(e.target)[targetHandle as keyof HandleEdges].push(e.id)
+  }
+  return map
+})
+
+// When a node is focused (selected), only its incident edges carry the
+// gradient colors; every other edge drops to grey. With no focus, all edges
+// show their gradient. The edge component paints solid white on hover.
+const EDGE_GREY = '#6b7280'
+
 const vfEdges = computed<VFEdge[]>(() => {
   const mapped = props.edges.map(e => {
     const isSelected = e.id === props.selectedEdgeId
-    const stroke = isSelected ? '#3b82f6' : '#6b7280'
+    const focused = props.selectedNodeId
+    const connectedToFocused = focused !== null && (e.source === focused || e.target === focused)
+    const showGradient = focused === null || connectedToFocused
+    const srcAccent = nodeColorMap.value.get(e.source) ?? EDGE_GREY
+    const tgtAccent = nodeColorMap.value.get(e.target) ?? EDGE_GREY
+    const sourceColor = showGradient ? srcAccent : EDGE_GREY
+    const targetColor = showGradient ? tgtAccent : EDGE_GREY
     const srcPos = nodePosMap.value.get(e.source) ?? { x: 0, y: 0 }
     const tgtPos = nodePosMap.value.get(e.target) ?? { x: 0, y: 0 }
     const best = getBestHandles(srcPos, tgtPos)
@@ -217,6 +283,7 @@ const vfEdges = computed<VFEdge[]>(() => {
 
     return {
       id: e.id,
+      type: 'gradient',
       source: e.source,
       target: e.target,
       sourceHandle,
@@ -224,8 +291,10 @@ const vfEdges = computed<VFEdge[]>(() => {
       sourcePosition,
       targetPosition,
       selected: isSelected,
-      markerEnd: { type: MarkerType.ArrowClosed, color: stroke },
-      style: { stroke, strokeWidth: 2 },
+      data: {
+        sourceColor,
+        targetColor,
+      },
     }
   })
 
