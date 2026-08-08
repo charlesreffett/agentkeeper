@@ -113,7 +113,7 @@ const linePath = computed(() => route.value.path)
 const sourceColor = computed(() => props.data?.sourceColor ?? '#6b7280')
 const targetColor = computed(() => props.data?.targetColor ?? '#6b7280')
 
-const strokeWidth = computed(() => (props.selected ? 3 : 2))
+const strokeWidth = 2
 
 // The remove button sits at the center of the routed line.
 const midX = computed(() => route.value.labelX)
