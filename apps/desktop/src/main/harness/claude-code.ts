@@ -3,7 +3,7 @@ import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { HarnessAdapter, HarnessAuth, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { resolveClaudeAuth } from '../secrets'
 
 const execFileAsync = promisify(execFile)
@@ -11,6 +11,53 @@ const execFileAsync = promisify(execFile)
 export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   readonly id = 'claude-code'
   readonly name = 'Claude Code'
+  readonly capabilities: HarnessCapabilities = {
+    mcpServers: true,
+    disallowedTools: true,
+    systemPromptAppend: true,
+    permissionModes: true,
+    effort: true,
+    commands: true,
+    skills: true,
+    agencies: true,
+  }
+
+  private childEnv(auth: Awaited<ReturnType<typeof resolveClaudeAuth>>, extra?: Record<string, string>): Record<string, string | undefined> {
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
+      ...(extra ?? {}),
+    }
+    if (auth.type === 'api-key' && auth.key) env['ANTHROPIC_API_KEY'] = auth.key
+    return env
+  }
+
+  async runPrompt(prompt: string, options: HarnessSessionOptions): Promise<string> {
+    const auth = await resolveClaudeAuth()
+    const q = query({
+      prompt,
+      options: {
+        cwd: options.cwd,
+        ...(options.model ? { model: options.model } : {}),
+        env: this.childEnv(auth, options.env),
+        permissionMode: 'bypassPermissions',
+        abortController: options.abortController,
+      },
+    })
+    let out = ''
+    try {
+      for await (const msg of q) {
+        const m = msg as { type?: string; subtype?: string; result?: string }
+        if (m.type === 'result') {
+          if (m.subtype === 'success') return m.result ?? out
+          throw new Error(`Prompt failed: ${m.subtype ?? 'error'}`)
+        }
+      }
+    } finally {
+      try { (q as { close?: () => void }).close?.() } catch { /* ignore */ }
+    }
+    return out
+  }
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
     const auth = await resolveClaudeAuth()

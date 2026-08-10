@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
 import type { OpencodeClient } from '@opencode-ai/sdk/client'
-import type { HarnessAdapter, HarnessAuth, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { secrets, SECRET_KEYS } from '../secrets'
 
 const execFileAsync = promisify(execFile)
@@ -31,6 +31,21 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   readonly id = 'opencode'
   readonly name = 'OpenCode'
   readonly defaultModel = 'anthropic/claude-sonnet-4-20250514'
+  /** OpenCode runs as a separate server process, so the builtin in-process
+   *  `agentkeeper` MCP object can't be handed to it — hence `mcpServers:false`,
+   *  and `agencies:false` (agency coordination needs that MCP + tool removal).
+   *  `disallowedTools` awaits an SDK audit (commit: opencode option wiring).
+   *  Commands/skills have no OpenCode surface yet (dir helpers return ''). */
+  readonly capabilities: HarnessCapabilities = {
+    mcpServers: false,
+    disallowedTools: false,
+    systemPromptAppend: true,
+    permissionModes: false,
+    effort: true,
+    commands: false,
+    skills: false,
+    agencies: false,
+  }
 
   /** Singleton server — lazily started, shared across all runSession calls. */
   private singleton: { url: string; client: OpencodeClient; close(): void } | null = null
@@ -141,6 +156,19 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       }
       throw error
     }
+  }
+
+  async runPrompt(prompt: string, options: HarnessSessionOptions): Promise<string> {
+    let text = ''
+    for await (const ev of this.runSession(prompt, options)) {
+      if (ev.type === 'assistant') {
+        const t = extractText((ev.message as { content?: unknown }).content)
+        if (t) text = t
+      } else if (ev.type === 'result') {
+        break
+      }
+    }
+    return text
   }
 
   /**
