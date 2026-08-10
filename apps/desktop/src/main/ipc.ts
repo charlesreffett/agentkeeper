@@ -35,6 +35,7 @@ import { sql, eq, desc } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
 import { getAllPricing, refreshFromLiteLLM } from './pricing'
 import { getAvailableModels, refreshAvailableModels, getDefaultModel } from './models'
+import { getCapabilities } from './capabilities'
 import {
   addComment as ghAddComment,
   createPR as ghCreatePR,
@@ -1497,6 +1498,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       name: a.name,
       available: await a.isAvailable(),
       defaultModel: await getDefaultModel(a.id),
+      capabilities: await getCapabilities(a.id),
     })))
   })
 
@@ -1507,6 +1509,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       name: active.name,
       available: await active.isAvailable(),
       defaultModel: await getDefaultModel(active.id),
+      capabilities: await getCapabilities(active.id),
     }
   })
 

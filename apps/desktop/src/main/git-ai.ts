@@ -1,6 +1,7 @@
 import { getHarness } from './harness/index'
 import { getDefaultModel } from './models'
 import { getDiff, getStatus } from './git'
+import { findHarnessForPath } from './session-registry'
 import type { CommitSuggestion, CommitGroup } from '../shared/ipc-contract'
 
 // ─── Prompt construction ─────────────────────────────────────────────────────
@@ -106,15 +107,8 @@ function parseResponse(text: string, allFiles: string[]): CommitSuggestion {
 // Pro/Max users (claude login, no keychain key): subprocess path via the agent
 // SDK — same binary the sessions use, picks up CLI credentials automatically.
 
-async function callClaude(prompt: string, cwd?: string): Promise<string> {
-  const stream = getHarness().runSession(prompt, { model: await getDefaultModel(), cwd: cwd ?? process.cwd() })
-  for await (const event of stream) {
-    if (event.type === 'result') {
-      if ((event as {subtype?:string}).subtype === 'success') return (event as {result?:string}).result ?? ''
-      throw new Error(`Analysis failed: ${((event as {errors?:unknown[]}).errors ?? []).join(', ')}`)
-    }
-  }
-  throw new Error('Analysis produced no result')
+async function callHarness(prompt: string, cwd: string, harnessId?: string): Promise<string> {
+  return getHarness(harnessId).runPrompt(prompt, { model: await getDefaultModel(harnessId), cwd })
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -138,6 +132,9 @@ export async function suggestCommits(projectPath: string): Promise<CommitSuggest
   const statusText = buildStatusText(status)
   const prompt = buildPrompt(statusText, diff, diffTruncated, projectPath)
 
-  const responseText = await callClaude(prompt, projectPath)
+  // Pin to the harness that produced the work in this path, not the global
+  // active default.
+  const harnessId = findHarnessForPath(projectPath)
+  const responseText = await callHarness(prompt, projectPath, harnessId)
   return parseResponse(responseText, allFiles)
 }

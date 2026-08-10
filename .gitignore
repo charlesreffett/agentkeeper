@@ -26,3 +26,6 @@ xcuserdata/
 
 # Plans are runtime-generated and must not be committed.
 .agentkeeper/plans/
+
+# Local reference fixtures (downloaded pages)
+/fixtures/

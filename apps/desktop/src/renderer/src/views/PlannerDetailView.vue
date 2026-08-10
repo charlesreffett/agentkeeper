@@ -29,6 +29,7 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
 import { projectColor } from '@/lib/projectColor'
 import type { Plan, PlanStep, PlanStepStatus, Session } from '@shared/ipc-contract'
 import type { AgencyScope } from '@shared/ipc-contract'
@@ -45,6 +46,9 @@ const router = useRouter()
 const { projects } = useProjectsQuery()
 const sessionStore = useSessionStore()
 const { resolvedLabelFor } = useModelsQuery()
+const { agenciesCapable } = useHarnessCapabilities()
+// Planner starts agencies on the active harness (no per-run harness picker).
+const agenciesUnsupported = computed(() => !agenciesCapable())
 
 const planId = computed(() => route.params.id as string)
 const plan = ref<Plan | null>(null)
@@ -1332,12 +1336,17 @@ Guidelines:
               Cancel
             </button>
             <button
-              class="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+              class="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              :disabled="agenciesUnsupported"
+              :title="agenciesUnsupported ? `The active harness can't run agencies — needs MCP coordination + tool restriction. Switch harness in Settings.` : undefined"
               @click="void confirmStart()"
             >
               Start
             </button>
           </div>
+          <p v-if="agenciesUnsupported" class="text-xs text-destructive text-right pt-1">
+            Active harness can't run agencies — switch harness in Settings.
+          </p>
         </div>
       </div>
     </template>

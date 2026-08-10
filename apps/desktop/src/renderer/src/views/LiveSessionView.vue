@@ -30,6 +30,7 @@ import {
   hiddenCount as computeHiddenCount,
 } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
 import type { Agency, Attachment, PermissionMode, RoleEffort, TranscriptEvent } from '@shared/ipc-contract'
 
 interface UndoBuf {
@@ -132,6 +133,7 @@ async function changeContext(path: string): Promise<void> {
     defaultModel: settings.defaultModel,
     defaultEffort: settings.defaultEffort,
     defaultUseWorktree: settings.defaultUseWorktree,
+    defaultHarnessId: settings.harnessId,
   })
   void router.push(`/sessions/${localId}`)
 }
@@ -443,7 +445,12 @@ function removeFromList() {
 
 // ─── Model / effort / permission selectors ───────────────────────────────────
 
-const { effortLevelsFor, models: availableModels, defaultValue: defaultModel } = useModelsQuery()
+// Scope to the session's own harness — a draft on opencode must validate its
+// model against opencode's catalog, not the active harness's, or the reset
+// watcher below would clobber a valid cross-harness pick.
+const { effortLevelsFor, models: availableModels, defaultValue: defaultModel } = useModelsQuery(
+  () => session.value?.harnessId,
+)
 
 const PERM_MODE_LABELS: Record<PermissionMode, string> = {
   bypassPermissions: 'Bypass',
@@ -473,6 +480,15 @@ const isAgencySession = computed(() => {
   if (isDraft.value) return !!draftCfg.value?.agencyKey
   return !!session.value?.agencyName
 })
+
+const { agenciesCapable } = useHarnessCapabilities()
+
+// A draft with an agency selected on a harness that can't run agencies (no MCP
+// coordination / tool removal) — block send and explain why. Backstopped in the
+// main process for non-UI entrypoints.
+const agenciesBlocked = computed(() =>
+  isDraft.value && isAgencySession.value && !agenciesCapable(session.value?.harnessId),
+)
 
 // ─── Draft config ──────────────────────────────────────────────────────────────
 
@@ -530,13 +546,27 @@ watch([availableModels, () => session.value?.model], () => {
 
 async function changeModel(model: string) {
   if (!session.value) return
-  if (isDraft.value) { session.value.model = model; return }
-  if (isAgencySession.value) {
+  if (isDraft.value) {
+    session.value.model = model
+  } else if (isAgencySession.value) {
     await window.agentkeeper.agencies.setFallbackModel(session.value.localId, model)
+    session.value.model = model
+    return // agency fallback is per-session; never the global default
   } else {
     await window.agentkeeper.sessions.setModel(session.value.localId, model)
+    session.value.model = model
   }
-  session.value.model = model
+  // Remember the pick as the default for future new sessions.
+  void window.agentkeeper.settings.set({ defaultModel: model })
+}
+
+// Harness is fixed once a session starts, so this only mutates the draft.
+// changeModel fires right after with a model from the new harness's catalog.
+// Persist as the active harness so future new sessions default to it.
+function changeHarness(id: string) {
+  if (!session.value || !isDraft.value) return
+  session.value.harnessId = id
+  void window.agentkeeper.harness.setActive(id)
 }
 
 async function changeEffort(val: string) {
@@ -832,7 +862,7 @@ const streamingEventUuid = computed((): string | undefined => {
       <!-- Message input -->
       <MessageInput
         ref="messageInputRef"
-        :disabled="(!isDraft && (isTerminal || session.status === 'starting')) || promoting"
+        :disabled="(!isDraft && (isTerminal || session.status === 'starting')) || promoting || agenciesBlocked"
         :is-running="!isDraft && session.status === 'running'"
         :enter-to-send="props.enterToSend"
         :send-modifier="props.sendModifier"
@@ -856,14 +886,44 @@ const streamingEventUuid = computed((): string | undefined => {
         @stop="onStop"
       >
         <template #toolbar-left>
+          <div :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined">
+            <ModelPicker
+              :model-value="session.model ?? ''"
+              :harness-id="session.harnessId"
+              :harness-switchable="isDraft"
+              :disabled="!canEditParams"
+              align="start"
+              @update:model-value="changeModel"
+              @update:harness-id="changeHarness"
+            >
+              <template #trigger="{ label }">
+                <button
+                  type="button"
+                  :disabled="!canEditParams"
+                  class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
+                  :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
+                >
+                  <span class="truncate">{{ label }}</span>
+                  <ChevronDown class="h-3 w-3 shrink-0" />
+                </button>
+              </template>
+            </ModelPicker>
+          </div>
           <!-- Agency pill — draft only -->
-          <div v-if="isDraft" class="flex items-center gap-0.5 shrink-0">
+          <div
+            v-if="isDraft"
+            class="flex items-center gap-0.5 shrink-0"
+            :title="agenciesBlocked ? `${session.harnessId} can't run agencies — needs MCP coordination + tool restriction. Switch harness or pick No agency.` : undefined"
+          >
             <PillSelect
               :model-value="draftCfg?.agencyKey ?? ''"
               :options="agencyOptions"
               @update:model-value="draftCfg && (draftCfg.agencyKey = $event)"
             />
           </div>
+          <span v-if="agenciesBlocked" class="text-[11px] text-destructive shrink-0">
+            agencies unsupported on {{ session.harnessId }}
+          </span>
           <!-- Worktree pill — draft only -->
           <div v-if="isDraft && !isNoProject" class="flex items-center gap-0.5 shrink-0">
             <button
@@ -897,26 +957,6 @@ const streamingEventUuid = computed((): string | undefined => {
               trigger-class="max-w-[92px]"
               @update:model-value="changePermissionMode($event as PermissionMode)"
             />
-          </div>
-          <div :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined">
-            <ModelPicker
-              :model-value="session.model ?? ''"
-              :disabled="!canEditParams"
-              align="end"
-              @update:model-value="changeModel"
-            >
-              <template #trigger="{ label }">
-                <button
-                  type="button"
-                  :disabled="!canEditParams"
-                  class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
-                  :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
-                >
-                  <span class="truncate">{{ label }}</span>
-                  <ChevronDown class="h-3 w-3 shrink-0" />
-                </button>
-              </template>
-            </ModelPicker>
           </div>
         </template>
       </MessageInput>

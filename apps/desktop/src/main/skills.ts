@@ -438,7 +438,7 @@ export async function generateSkillContent(prompt: string): Promise<string> {
   // Pro/Max plan path — harness CLI picks up `claude login` credentials
   const fullPrompt = `${SKILL_GENERATION_SYSTEM}\n\n${userContent}`
   try {
-    const stdout = await getHarness().runCLI(['-p', fullPrompt], { cwd: os.homedir(), timeout: 60000 })
+    const stdout = await getHarness().runPrompt(fullPrompt, { cwd: os.homedir() })
     return validateGeneratedSkill(stdout)
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: string }
@@ -457,6 +457,7 @@ export async function saveSkill(
   content: string,
 ): Promise<Skill> {
   const dir = getHarness().getSkillsDir(scope, projectPath)
+  if (!dir) throw new Error(`The '${getHarness().name}' harness has no skills directory.`)
   const skillDir = path.join(dir, id)
   const skillFile = path.join(skillDir, 'SKILL.md')
   await fs.mkdir(skillDir, { recursive: true })

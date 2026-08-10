@@ -839,6 +839,7 @@ export const useSessionStore = defineStore('sessions', () => {
     defaultModel: string
     defaultEffort: RoleEffort
     defaultUseWorktree: boolean
+    defaultHarnessId?: string
     defaultMcpServerIds?: string[]
   }): string {
     const existing = Object.values(sessions).find(
@@ -861,6 +862,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyPrompt: null,
       title: null,
       model: params.defaultModel,
+      harnessId: params.defaultHarnessId,
       effort: params.defaultEffort,
       permissionMode: 'bypassPermissions',
       status: 'idle',
@@ -1045,6 +1047,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ...(role?.systemPrompt ? { systemPromptAppend: role.systemPrompt } : {}),
       initialPrompt: trimmedPrompt,
       ...(draft.model ? { model: draft.model } : {}),
+      ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
       ...(draft.effort ? { effort: draft.effort } : {}),
       ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
       ...(role?.name ? { roleName: role.name } : {}),

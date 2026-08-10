@@ -91,6 +91,7 @@ async function focusDraftForCurrentProject() {
       defaultModel: settingsNow.defaultModel,
       defaultEffort: settingsNow.defaultEffort,
       defaultUseWorktree: settingsNow.defaultUseWorktree,
+      defaultHarnessId: settingsNow.harnessId,
     })
     void router.replace(`/sessions/${localId}`)
   } finally {

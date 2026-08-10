@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm'
 import { getDb } from './db/index'
 import { agencyHandoffs, agents, sessions } from './db/schema'
 import type { Agent, AgencyScope, LiveSessionStatus, PlanTodo, RoleEffort, Session } from '../shared/ipc-contract'
@@ -149,6 +149,19 @@ export function updateSession(localId: string, partial: Partial<Session>): void 
 export function getSession(localId: string): Session | null {
   const row = getDb().select().from(sessions).where(eq(sessions.localId, localId)).get()
   return row ? rowToSession(row) : null
+}
+
+/** Harness of the most-recent session whose worktree or project matches `path`.
+ *  Used to pin path-scoped side tasks (commit suggestion) to the harness that
+ *  produced the work, rather than the global active default. */
+export function findHarnessForPath(path: string): string | undefined {
+  const row = getDb()
+    .select({ harnessId: sessions.harnessId })
+    .from(sessions)
+    .where(or(eq(sessions.worktreePath, path), eq(sessions.projectPath, path)))
+    .orderBy(desc(sessions.lastActivityAt))
+    .get()
+  return row?.harnessId ?? undefined
 }
 
 export function listSessions(projectPath: string | null): Session[] {

@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { getHarness } from './harness/index'
+import { getCapabilities } from './capabilities'
 import type { HarnessEvent } from '@agentkeeper/core'
 import * as costLedger from './cost-ledger'
 import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
@@ -682,6 +683,20 @@ export async function startSession(
     ...(params.disallowedTools ?? []),
     ...(sessionLocalId !== agentLocalId ? ['Agent'] : []),
   ]
+
+  // Backstop for non-UI entrypoints (CLI socket, iOS, orchestrator). The
+  // renderer disables agency start on incapable harnesses, but a session can
+  // also be launched from those paths — fail loudly here rather than spawn an
+  // agency whose coordination (send_message) and Agent-tool removal silently
+  // no-op on a harness that can't honor MCP + disallowedTools.
+  if (isAgency) {
+    const caps = await getCapabilities(harnessId)
+    if (!caps.agencies) {
+      throw new Error(
+        `Harness '${harnessId}' can't run agencies — multi-agent coordination needs MCP and tool restriction, which this harness does not support.`,
+      )
+    }
+  }
 
   const stream = getHarness(harnessId).runSession('', {
     model: params.model,

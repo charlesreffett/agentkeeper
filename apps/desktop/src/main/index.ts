@@ -10,6 +10,8 @@ import * as fsp from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { warmAvailableModels } from './models'
+import { warmCapabilities } from './capabilities'
+import { initHarnessDefault, harnessRegistry } from './harness'
 import { syncMobileServer, teardownMobileServer } from './mobile-server'
 import { settingsStore } from './settings'
 import { pruneExpiredIfEnabled } from './session-registry'
@@ -132,6 +134,7 @@ app.on('before-quit', () => {
   stopAllWatchers()
   flushCostLedger()
   clearDevPluginRegistry()
+  for (const adapter of harnessRegistry.list()) void adapter.dispose?.()
   void teardownMobileServer()
 })
 
@@ -175,7 +178,9 @@ app.whenReady().then(async () => {
   setWorkItemRegistry(registry)
   await activatePlugins(registry)
   registerIpcHandlers(registry)
+  initHarnessDefault(settingsStore.get().harnessId)
   warmAvailableModels()
+  warmCapabilities()
   syncMobileServer(settingsStore.get())
   const win = createWindow()
   setWebContentsOnActiveHosts(win.webContents)

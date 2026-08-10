@@ -4,17 +4,23 @@ import { Check, ChevronDown, Search, CornerDownLeft } from 'lucide-vue-next'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useHarnessList } from '@/composables/useHarness'
+import { featureFlags } from '@/lib/featureFlags'
 
 const props = withDefaults(defineProps<{
   modelValue: string
   harnessId?: string
+  // Rail may switch the session's harness only before it starts.
+  harnessSwitchable?: boolean
   disabled?: boolean
   align?: 'start' | 'center' | 'end'
 }>(), {
   align: 'start',
 })
 
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: string]
+  'update:harnessId': [value: string]
+}>()
 
 const open = ref(false)
 const query = ref('')
@@ -25,14 +31,38 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const selectedHarnessId = ref<string | undefined>(props.harnessId)
 
 const { data: harnesses } = useHarnessList()
-const showRail = computed(() => (harnesses.value?.length ?? 0) > 1)
+// Unreleased: rail only appears when the flag is on, more than one harness
+// exists, and this session can still switch harness (drafts only).
+const showRail = computed(
+  () =>
+    featureFlags.harnessRail &&
+    props.harnessSwitchable === true &&
+    (harnesses.value?.length ?? 0) > 1,
+)
 
-const { optionsFor, resolvedLabelFor } = useModelsQuery(() => selectedHarnessId.value)
+// Browse scope: the rail's currently-viewed harness drives the model list.
+const { optionsFor } = useModelsQuery(() => selectedHarnessId.value)
+// Session scope: the session's own harness drives the trigger label and which
+// row is checked — browsing another harness must change neither.
+const { resolvedLabelFor, effectiveValueFor } = useModelsQuery(() => props.harnessId)
 
 const options = computed(() => optionsFor(props.modelValue))
 
-// Always names the concrete model+version (resolves `default`/aliases), so a
-// live session never just reads "Default".
+// Default harness = first registered (the registry lists the default first),
+// so an unset harnessId normalizes to it on both sides of the comparison.
+const defaultHarnessId = computed(() => harnesses.value?.[0]?.id)
+const viewingSessionHarness = computed(
+  () => (selectedHarnessId.value ?? defaultHarnessId.value) === (props.harnessId ?? defaultHarnessId.value),
+)
+
+// Check a row only when viewing the session's own harness; browsing another
+// harness lists its models without preselecting one.
+const effectiveSelected = computed(() =>
+  viewingSessionHarness.value ? effectiveValueFor(props.modelValue) : null,
+)
+
+// Always names the concrete model+version (resolves `default`/aliases) in the
+// session's harness, so a live session never just reads "Default".
 const currentLabel = computed(() => resolvedLabelFor(props.modelValue))
 
 const filtered = computed(() => {
@@ -65,6 +95,9 @@ watch(open, (isOpen) => {
 })
 
 function select(value: string) {
+  if (selectedHarnessId.value && selectedHarnessId.value !== props.harnessId) {
+    emit('update:harnessId', selectedHarnessId.value)
+  }
   emit('update:modelValue', value)
   open.value = false
 }
@@ -107,10 +140,10 @@ function onEnter() {
         />
       </div>
 
-      <div class="flex">
+      <div class="flex h-[380px] max-h-[calc(100dvh-14rem)]">
         <div
           v-if="showRail"
-          class="flex flex-col gap-1 border-r p-1.5"
+          class="flex h-full flex-col gap-1 overflow-y-auto border-r p-1.5"
         >
           <button
             v-for="h in harnesses"
@@ -128,7 +161,7 @@ function onEnter() {
           </button>
         </div>
 
-        <div class="flex-1 min-w-0 max-h-80 overflow-y-auto p-1">
+        <div class="flex-1 min-w-0 h-full overflow-y-auto p-1">
           <button
             v-for="m in filtered"
             :key="m.value"
@@ -137,7 +170,7 @@ function onEnter() {
             @click="select(m.value)"
           >
             <span class="mt-0.5 w-4 shrink-0">
-              <Check v-if="m.value === modelValue" class="h-4 w-4 text-primary" />
+              <Check v-if="m.value === effectiveSelected" class="h-4 w-4 text-primary" />
             </span>
             <span class="flex-1 min-w-0">
               <span class="block text-sm font-medium truncate">{{ m.label }}</span>

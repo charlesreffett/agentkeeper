@@ -144,6 +144,7 @@ export async function saveCommand(
   body: string,
 ): Promise<SlashCommand> {
   const dir = getHarness().getCommandsDir(scope, projectPath)
+  if (!dir) throw new Error(`The '${getHarness().name}' harness has no commands directory.`)
   await fs.mkdir(dir, { recursive: true })
   const filePath = path.join(dir, `${id}.md`)
   const content = body.trimEnd() + '\n'
@@ -211,7 +212,7 @@ export async function generateCommandContent(prompt: string): Promise<string> {
   // Pro/Max plan path — picks up `claude login` credentials
   const fullPrompt = `${COMMAND_GENERATION_SYSTEM}\n\n${userContent}`
   try {
-    const stdout = await getHarness().runCLI(['-p', fullPrompt], { cwd: os.homedir(), timeout: 60_000 })
+    const stdout = await getHarness().runPrompt(fullPrompt, { cwd: os.homedir() })
     return validateGeneratedCommand(stdout)
   } catch (err) {
     throw new Error(

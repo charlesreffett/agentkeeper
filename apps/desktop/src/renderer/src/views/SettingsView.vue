@@ -10,7 +10,6 @@ import { useLayoutStore } from '@/stores/layout'
 import { usePageScope } from '@/composables/usePageScope'
 import ScopeBar from '@/components/ScopeBar.vue'
 import { useSettingsQuery } from '@/composables/useSettingsQuery'
-import { useHarnessList, useActiveHarness, useSetActiveHarness } from '@/composables/useHarness'
 import { queryKeys } from '@/lib/queryKeys'
 import { pluginSettingsPanels } from '@/lib/pluginSettingsPanels'
 import { useModelsQuery } from '@/composables/useModelsQuery'
@@ -106,10 +105,6 @@ function captureModifier(e: KeyboardEvent) {
 }
 
 const { optionsFor: modelOptionsFor, effortLevelsFor, error: modelsError, isEmpty: noModels } = useModelsQuery()
-
-const { data: harnessList } = useHarnessList()
-const { data: activeHarness } = useActiveHarness()
-const { mutate: setActiveHarness } = useSetActiveHarness()
 
 // Danger-zone state
 const resetAppSettingsSel = ref(false)
@@ -531,30 +526,6 @@ async function onReset() {
                 </div>
               </div>
 
-            </div>
-          </section>
-
-          <!-- Agent harness -->
-          <section v-if="harnessList && harnessList.length > 1" class="space-y-3">
-            <h2 class="text-sm font-semibold">Agent Harness</h2>
-            <div class="rounded-lg border divide-y">
-              <div class="flex items-center gap-4 px-4 py-3">
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium">Active harness</p>
-                  <p class="text-xs text-muted-foreground mt-0.5">
-                    The CLI adapter used to run agent sessions.
-                  </p>
-                </div>
-                <select
-                  :value="activeHarness?.id"
-                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring"
-                  @change="(e) => setActiveHarness((e.target as HTMLSelectElement).value)"
-                >
-                  <option v-for="h in harnessList" :key="h.id" :value="h.id">
-                    {{ h.name }}{{ h.available ? '' : ' (not found)' }}
-                  </option>
-                </select>
-              </div>
             </div>
           </section>
 

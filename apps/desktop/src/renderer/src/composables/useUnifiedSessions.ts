@@ -208,6 +208,7 @@ export function useUnifiedSessions() {
       defaultModel: settings.defaultModel,
       defaultEffort: settings.defaultEffort,
       defaultUseWorktree: settings.defaultUseWorktree,
+      defaultHarnessId: settings.harnessId,
     })
     void router.push(`/sessions/${localId}`)
     return localId
