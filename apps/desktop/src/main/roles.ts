@@ -228,7 +228,7 @@ export async function generateRoleContent(prompt: string): Promise<RolesGenerate
 
   // Pro/Max path — harness CLI picks up `claude login` credentials
   try {
-    const stdout = await getHarness().runCLI(['-p', content], { cwd: os.homedir(), timeout: 60_000 })
+    const stdout = await getHarness().runPrompt(content, { cwd: os.homedir() })
     return parseRoleGenerationResponse(stdout)
   } catch (err) {
     const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; code?: string }

@@ -843,20 +843,15 @@ export function createOrchestratorMcp(
   })
 }
 
-async function generateTitle(prompt: string): Promise<string> {
+async function generateTitle(prompt: string, harnessId?: string): Promise<string> {
   const instruction = `Summarize the following task as a concise title of at most 8 words. Output only the title, no punctuation, no quotes.\n\n${prompt}`
-  const stream = getHarness().runSession(instruction, { model: await getDefaultModel(), cwd: process.cwd() })
-  for await (const event of stream) {
-    if (event.type === 'result' && (event as {subtype?:string}).subtype === 'success') {
-      return ((event as {result?:string}).result ?? '').trim()
-    }
-  }
-  return ''
+  const text = await getHarness(harnessId).runPrompt(instruction, { model: await getDefaultModel(harnessId), cwd: process.cwd() })
+  return text.trim()
 }
 
 export async function generateAndPersistSessionTitle(localId: string, prompt: string): Promise<void> {
   try {
-    const title = await generateTitle(prompt)
+    const title = await generateTitle(prompt, registry.getSession(localId)?.harnessId)
     if (title) {
       registry.updateSession(localId, { title })
       broadcastStatus({ sessionId: localId, title })
