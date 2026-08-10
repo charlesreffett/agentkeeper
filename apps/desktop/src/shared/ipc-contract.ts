@@ -4,6 +4,8 @@
 import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus }
 import type { PluginManifest } from '@agentkeeper/sdk'
+import type { HarnessCapabilities } from '@agentkeeper/core'
+export type { HarnessCapabilities }
 import type {
   CheckRun,
   CheckState,
@@ -626,6 +628,7 @@ export interface HarnessInfo {
   name: string
   available: boolean
   defaultModel: string
+  capabilities: HarnessCapabilities
 }
 
 // ─── Factory reset ──────────────────────────────────────────────────────────
