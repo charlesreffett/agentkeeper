@@ -188,10 +188,14 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     const parts: Array<{ type: 'text'; text: string }> = []
 
     if (options.messageQueue) {
-      // Drain the async queue — each message is a user turn.
+      // Take a single turn and stop. The queue stays open for the session's
+      // lifetime (streaming input for the Claude SDK), so iterating to
+      // completion would block forever — promptAsync sends one prompt per
+      // runSession, so we consume the first buffered message and return.
       for await (const msg of options.messageQueue) {
         const text = extractText(msg.message?.content)
         if (text) parts.push({ type: 'text', text })
+        break
       }
     } else if (prompt) {
       parts.push({ type: 'text', text: prompt })
@@ -215,10 +219,18 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     eventStream: Awaited<ReturnType<OpencodeClient['event']['subscribe']>>,
     sessionId: string,
   ): AsyncIterable<HarnessEvent> {
-    // Accumulate text deltas per message so we can emit complete assistant
-    // messages once a turn finishes.
-    const textAccumulator = new Map<string, string>()
-    const toolCalls = new Map<string, { id: string; name: string; input: unknown }>()
+    // OpenCode streams parts for BOTH the user and assistant messages, and part
+    // text is a full snapshot (not a delta). Track each message's role from
+    // message.updated (which reliably precedes its parts) so we only surface
+    // assistant output — otherwise the user's own prompt is echoed back as an
+    // assistant reply. Usage is stashed and emitted once, at session.idle;
+    // message.updated fires repeatedly and must not each emit a terminal result.
+    const roleByMessage = new Map<string, string>()
+    let usage: Record<string, unknown> = {}
+    let totalCostUsd = 0
+
+    const isAssistant = (messageID: string | undefined): boolean =>
+      !!messageID && roleByMessage.get(messageID) === 'assistant'
 
     for await (const event of eventStream.stream) {
       // Only process events for our session.
@@ -230,24 +242,41 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       const eventType = (event as Record<string, unknown>)['type'] as string
 
       switch (eventType) {
+        case 'message.updated': {
+          const info = props?.['info'] as Record<string, unknown> | undefined
+          const id = info?.['id'] as string | undefined
+          const role = info?.['role'] as string | undefined
+          if (id && role) roleByMessage.set(id, role)
+          if (role === 'assistant') {
+            const tokens = info!['tokens'] as Record<string, unknown> | undefined
+            const cache = tokens?.['cache'] as Record<string, unknown> | undefined
+            usage = {
+              input_tokens: (tokens?.['input'] as number) ?? 0,
+              output_tokens: (tokens?.['output'] as number) ?? 0,
+              cache_read_input_tokens: (cache?.['read'] as number) ?? 0,
+              cache_creation_input_tokens: (cache?.['write'] as number) ?? 0,
+            }
+            totalCostUsd = (info!['cost'] as number) ?? totalCostUsd
+          }
+          break
+        }
+
         case 'message.part.updated': {
           const part = props?.['part'] as Record<string, unknown> | undefined
           if (!part) break
           const partType = part['type'] as string
           const messageID = part['messageID'] as string
+          // Suppress the user's echoed prompt — only assistant parts.
+          if (!isAssistant(messageID)) break
 
           if (partType === 'text') {
-            // Accumulate text deltas.
-            const delta = (props?.['delta'] as string) ?? (part['text'] as string) ?? ''
-            const prev = textAccumulator.get(messageID) ?? ''
-            textAccumulator.set(messageID, prev + delta)
-
-            // Yield an assistant event with the accumulated text so far.
+            // part.text is the full accumulated snapshot for this part.
+            const text = (part['text'] as string) ?? ''
             yield {
               type: 'assistant',
               message: {
                 role: 'assistant',
-                content: [{ type: 'text', text: textAccumulator.get(messageID)! }],
+                content: [{ type: 'text', text }],
               },
             }
           } else if (partType === 'tool') {
@@ -256,12 +285,6 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
             const callID = part['callID'] as string
 
             if (toolState?.['status'] === 'pending' || toolState?.['status'] === 'running') {
-              // Tool call starting.
-              toolCalls.set(callID, {
-                id: callID,
-                name: toolName,
-                input: toolState?.['input'] ?? {},
-              })
               yield {
                 type: 'assistant',
                 message: {
@@ -275,7 +298,6 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
                 },
               }
             } else if (toolState?.['status'] === 'completed' || toolState?.['status'] === 'error') {
-              // Tool result.
               yield {
                 type: 'assistant',
                 message: {
@@ -293,34 +315,15 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
           break
         }
 
-        case 'message.updated': {
-          const info = props?.['info'] as Record<string, unknown> | undefined
-          if (info?.['role'] === 'assistant') {
-            // Assistant message completed — yield a result event with usage.
-            const tokens = info['tokens'] as Record<string, unknown> | undefined
-            const cache = tokens?.['cache'] as Record<string, unknown> | undefined
-            yield {
-              type: 'result',
-              subtype: info['error'] ? 'error' : 'success',
-              usage: {
-                input_tokens: (tokens?.['input'] as number) ?? 0,
-                output_tokens: (tokens?.['output'] as number) ?? 0,
-                cache_read_input_tokens: (cache?.['read'] as number) ?? 0,
-                cache_creation_input_tokens: (cache?.['write'] as number) ?? 0,
-              },
-              total_cost_usd: (info['cost'] as number) ?? 0,
-            }
-          }
-          break
-        }
-
         case 'session.idle': {
-          // Session is idle — final result signal.
+          // The real terminal signal — emit the single result with stashed usage.
           yield {
             type: 'result',
             subtype: 'success',
+            usage,
+            total_cost_usd: totalCostUsd,
           }
-          return // End the stream.
+          return
         }
 
         case 'session.error': {
