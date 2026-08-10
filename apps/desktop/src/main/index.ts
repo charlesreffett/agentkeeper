@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { warmAvailableModels } from './models'
 import { warmCapabilities } from './capabilities'
+import { initHarnessDefault } from './harness'
 import { syncMobileServer, teardownMobileServer } from './mobile-server'
 import { settingsStore } from './settings'
 import { pruneExpiredIfEnabled } from './session-registry'
@@ -176,6 +177,7 @@ app.whenReady().then(async () => {
   setWorkItemRegistry(registry)
   await activatePlugins(registry)
   registerIpcHandlers(registry)
+  initHarnessDefault(settingsStore.get().harnessId)
   warmAvailableModels()
   warmCapabilities()
   syncMobileServer(settingsStore.get())

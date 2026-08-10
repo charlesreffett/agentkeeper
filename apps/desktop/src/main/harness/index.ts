@@ -9,6 +9,13 @@ export const harnessRegistry = new HarnessRegistry()
 harnessRegistry.register(claudeCodeHarness, true)
 harnessRegistry.register(openCodeHarness)
 
+/** Re-apply the user's saved harness choice as the registry default at startup.
+ *  Guarded: an id whose adapter is no longer registered is ignored, so the
+ *  first-registered harness stays the fallback. */
+export function initHarnessDefault(id: string | undefined): void {
+  if (id && harnessRegistry.get(id)) harnessRegistry.setDefault(id)
+}
+
 export function getHarness(id?: string): HarnessAdapter {
   if (id) {
     const h = harnessRegistry.get(id)
