@@ -30,6 +30,7 @@ import {
   hiddenCount as computeHiddenCount,
 } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
 import type { Agency, Attachment, PermissionMode, RoleEffort, TranscriptEvent } from '@shared/ipc-contract'
 
 interface UndoBuf {
@@ -480,6 +481,15 @@ const isAgencySession = computed(() => {
   return !!session.value?.agencyName
 })
 
+const { agenciesCapable } = useHarnessCapabilities()
+
+// A draft with an agency selected on a harness that can't run agencies (no MCP
+// coordination / tool removal) — block send and explain why. Backstopped in the
+// main process for non-UI entrypoints.
+const agenciesBlocked = computed(() =>
+  isDraft.value && isAgencySession.value && !agenciesCapable(session.value?.harnessId),
+)
+
 // ─── Draft config ──────────────────────────────────────────────────────────────
 
 const draftAgencies = ref<Agency[]>([])
@@ -852,7 +862,7 @@ const streamingEventUuid = computed((): string | undefined => {
       <!-- Message input -->
       <MessageInput
         ref="messageInputRef"
-        :disabled="(!isDraft && (isTerminal || session.status === 'starting')) || promoting"
+        :disabled="(!isDraft && (isTerminal || session.status === 'starting')) || promoting || agenciesBlocked"
         :is-running="!isDraft && session.status === 'running'"
         :enter-to-send="props.enterToSend"
         :send-modifier="props.sendModifier"
@@ -900,13 +910,20 @@ const streamingEventUuid = computed((): string | undefined => {
             </ModelPicker>
           </div>
           <!-- Agency pill — draft only -->
-          <div v-if="isDraft" class="flex items-center gap-0.5 shrink-0">
+          <div
+            v-if="isDraft"
+            class="flex items-center gap-0.5 shrink-0"
+            :title="agenciesBlocked ? `${session.harnessId} can't run agencies — needs MCP coordination + tool restriction. Switch harness or pick No agency.` : undefined"
+          >
             <PillSelect
               :model-value="draftCfg?.agencyKey ?? ''"
               :options="agencyOptions"
               @update:model-value="draftCfg && (draftCfg.agencyKey = $event)"
             />
           </div>
+          <span v-if="agenciesBlocked" class="text-[11px] text-destructive shrink-0">
+            agencies unsupported on {{ session.harnessId }}
+          </span>
           <!-- Worktree pill — draft only -->
           <div v-if="isDraft && !isNoProject" class="flex items-center gap-0.5 shrink-0">
             <button

@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/sessions'
 import { useJiraActivityStore } from '@/stores/jiraActivity'
 import type { Agency, Role, RoleEffort, WorkItem } from '@shared/ipc-contract'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
 
 const props = defineProps<{
   open: boolean
@@ -47,6 +48,9 @@ const starting = ref(false)
 const startError = ref<string | null>(null)
 
 const { models: availableModels, optionsFor: modelOptionsFor, effortLevelsFor, defaultValue: defaultModel, error: modelsError, isEmpty: noModels } = useModelsQuery()
+const { agenciesCapable } = useHarnessCapabilities()
+// Agency mode has no per-session harness picker — it runs on the active harness.
+const agenciesUnsupported = computed(() => !agenciesCapable())
 // Seed to the harness default; also redirect a stale/unavailable seed value.
 watch([availableModels, defaultModel], () => {
   if (!availableModels.value.length) return
@@ -391,13 +395,16 @@ async function startAgency() {
         </div>
 
         <div v-if="startError" class="text-xs text-destructive">{{ startError }}</div>
+        <div v-if="agenciesUnsupported" class="text-xs text-destructive">
+          The active harness can't run agencies — needs MCP coordination + tool restriction. Switch harness in Settings.
+        </div>
 
         <div class="flex justify-end gap-2">
           <Button type="button" variant="ghost" size="sm" @click="emit('close')">Cancel</Button>
           <Button
             type="submit"
             size="sm"
-            :disabled="starting || !selectedProjectPath || !selectedAgencyId || !agencyPrompt.trim()"
+            :disabled="starting || !selectedProjectPath || !selectedAgencyId || !agencyPrompt.trim() || agenciesUnsupported"
           >
             {{ starting ? 'Starting…' : 'Start agency' }}
           </Button>
