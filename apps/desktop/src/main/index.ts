@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { warmAvailableModels } from './models'
 import { warmCapabilities } from './capabilities'
-import { initHarnessDefault } from './harness'
+import { initHarnessDefault, harnessRegistry } from './harness'
 import { syncMobileServer, teardownMobileServer } from './mobile-server'
 import { settingsStore } from './settings'
 import { pruneExpiredIfEnabled } from './session-registry'
@@ -134,6 +134,7 @@ app.on('before-quit', () => {
   stopAllWatchers()
   flushCostLedger()
   clearDevPluginRegistry()
+  for (const adapter of harnessRegistry.list()) void adapter.dispose?.()
   void teardownMobileServer()
 })
 

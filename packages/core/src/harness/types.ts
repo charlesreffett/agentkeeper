@@ -108,6 +108,9 @@ export interface HarnessAdapter {
   resolveAuth(): Promise<HarnessAuth>
   isAvailable(): Promise<boolean>
   encodeCwd(cwd: string): string
+  /** Release any long-lived resources (e.g. a spawned server) at app shutdown.
+   *  Optional — harnesses that hold nothing omit it. */
+  dispose?(): void | Promise<void>
 }
 
 export class HarnessRegistry {

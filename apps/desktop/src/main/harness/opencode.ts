@@ -38,10 +38,10 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
    *  Commands/skills have no OpenCode surface yet (dir helpers return ''). */
   readonly capabilities: HarnessCapabilities = {
     mcpServers: false,
-    disallowedTools: false,
+    disallowedTools: true,
     systemPromptAppend: true,
     permissionModes: false,
-    effort: true,
+    effort: false,
     commands: false,
     skills: false,
     agencies: false,
@@ -131,6 +131,11 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
           parts,
           ...(modelId ? { model: parseModelId(modelId) } : {}),
           ...(options.systemPrompt ? { system: options.systemPrompt } : {}),
+          // Tool removal — opencode takes an enable/disable map keyed by its own
+          // (harness-native) tool names.
+          ...(options.disallowedTools?.length
+            ? { tools: Object.fromEntries(options.disallowedTools.map((t) => [t, false])) }
+            : {}),
         },
       })
 
@@ -403,6 +408,10 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       this.singleton.close()
       this.singleton = null
     }
+  }
+
+  dispose(): void {
+    this.close()
   }
 
   // ─── Path helpers ────────────────────────────────────────────────────────
