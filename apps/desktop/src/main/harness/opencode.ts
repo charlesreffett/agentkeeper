@@ -35,15 +35,16 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
    *  `agentkeeper` MCP object can't be handed to it — hence `mcpServers:false`,
    *  and `agencies:false` (agency coordination needs that MCP + tool removal).
    *  `disallowedTools` awaits an SDK audit (commit: opencode option wiring).
-   *  Commands/skills have no OpenCode surface yet (dir helpers return ''). */
+   *  Commands/skills use opencode's markdown dirs — opencode discovers both its
+   *  native `.config/opencode` locations and the shared agent dirs. */
   readonly capabilities: HarnessCapabilities = {
     mcpServers: false,
     disallowedTools: true,
     systemPromptAppend: true,
     permissionModes: false,
     effort: false,
-    commands: false,
-    skills: false,
+    commands: true,
+    skills: true,
     agencies: false,
   }
 
@@ -423,12 +424,24 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     return path.join(os.homedir(), '.local', 'share', 'opencode', 'sessions')
   }
 
-  getCommandsDir(_scope: 'project' | 'global', _projectPath?: string): string {
-    return ''
+  getCommandsDir(scope: 'project' | 'global', projectPath?: string): string {
+    // Markdown command files opencode discovers: `.opencode/commands/*.md`
+    // (project) and `~/.config/opencode/commands/*.md` (global).
+    if (scope === 'project') {
+      return path.join(projectPath!, '.opencode', 'commands')
+    }
+    return path.join(os.homedir(), '.config', 'opencode', 'commands')
   }
 
-  getSkillsDir(_scope: 'project' | 'global', _projectPath?: string): string {
-    return ''
+  getSkillsDir(scope: 'project' | 'global', projectPath?: string): string {
+    // The agent-compatible dir (`npx skills -a opencode` installs here) is the
+    // canonical surface — opencode discovers `.agents/skills/<name>/SKILL.md`
+    // alongside its native `.opencode`/`.config/opencode` locations, and the
+    // skills manager stays consistent between install and list.
+    if (scope === 'project') {
+      return path.join(projectPath!, '.agents', 'skills')
+    }
+    return path.join(os.homedir(), '.agents', 'skills')
   }
 
   getPluginsDir(): string {
