@@ -120,7 +120,12 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
       // so an abort while blocked on the message queue exits cleanly.
       if (options.abortController) {
         options.abortController.signal.addEventListener('abort', () => {
-          void client.session.abort({ path: { id: sessionId } }).catch(() => {})
+          // Abort is instance-scoped in opencode too — route it to the
+          // session's directory or it cancels the wrong (server-cwd) instance.
+          void client.session.abort({
+            path: { id: sessionId },
+            headers: { 'x-opencode-directory': encodeURIComponent(options.cwd) },
+          }).catch(() => {})
         }, { once: true })
       }
 
@@ -139,7 +144,11 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
         if (abortController.signal.aborted) break
 
         // Subscribe *before* sending the prompt so we don't miss any events.
-        const eventStream = await client.event.subscribe()
+        // The directory is required to route the SSE stream to this session's
+        // opencode Instance — without it the subscription attaches to the
+        // server's cwd instance and no session events ever arrive (session.idle
+        // included), so the turn would hang waiting for a terminal signal.
+        const eventStream = await client.event.subscribe({ query: { directory: options.cwd } })
         const modelId = await this.resolveModel(options.model)
         const promptResp = await client.session.promptAsync({
           path: { id: sessionId },
