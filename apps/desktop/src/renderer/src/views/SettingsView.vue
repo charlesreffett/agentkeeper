@@ -13,6 +13,8 @@ import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { queryKeys } from '@/lib/queryKeys'
 import { pluginSettingsPanels } from '@/lib/pluginSettingsPanels'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { useHarnessList, useActiveHarness } from '@/composables/useHarness'
+import ModelPicker from '@/components/ModelPicker.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
@@ -104,7 +106,21 @@ function captureModifier(e: KeyboardEvent) {
   else if (e.key === 'Shift')   settings.value!.sendModifier = 'shift'
 }
 
-const { optionsFor: modelOptionsFor, effortLevelsFor, error: modelsError, isEmpty: noModels } = useModelsQuery()
+const { effortLevelsFor, error: modelsError, isEmpty: noModels } = useModelsQuery()
+
+// Which harness new sessions actually run on (persisted active harness, with
+// the IPC query as a fresher fallback). The auth + default-model sections
+// adapt their copy/controls to it.
+const { data: activeHarness } = useActiveHarness()
+const { data: harnesses } = useHarnessList()
+const activeHarnessId = computed(() => activeHarness.value?.id ?? settings.value?.harnessId)
+const activeHarnessName = computed(
+  () =>
+    activeHarness.value?.name ??
+    harnesses.value?.find((h) => h.id === settings.value?.harnessId)?.name ??
+    'agent harness',
+)
+const isOpenCodeHarness = computed(() => activeHarnessId.value === 'opencode')
 
 // Danger-zone state
 const resetAppSettingsSel = ref(false)
@@ -281,10 +297,21 @@ async function onReset() {
           <section class="space-y-3">
             <h2 class="text-sm font-semibold">Authentication</h2>
             <div class="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed space-y-1">
-              <p class="text-foreground font-medium">Claude Pro or Max plan</p>
+              <p class="text-foreground font-medium">
+                {{ activeHarnessName }} account
+              </p>
               <p class="text-muted-foreground">
-                Run <code class="font-mono bg-background px-1 rounded">claude login</code>
-                in a terminal once. The app shares those credentials — no API key needed here.
+                <template v-if="isOpenCodeHarness">
+                  Run
+                  <code class="font-mono bg-background px-1 rounded">opencode auth login</code>
+                  in a terminal once. The app connects to your OpenCode server, which
+                  uses those credentials — or add an Anthropic Console key below.
+                </template>
+                <template v-else>
+                  Run
+                  <code class="font-mono bg-background px-1 rounded">claude login</code>
+                  in a terminal once. The app shares those credentials — no API key needed here.
+                </template>
               </p>
             </div>
             <div class="space-y-2">
@@ -321,18 +348,15 @@ async function onReset() {
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium">Default model</p>
                   <p class="text-xs text-muted-foreground mt-0.5">
-                    Baseline model for new sessions; overridable per session.
+                    Baseline model for new sessions on {{ activeHarnessName }}; overridable per session.
                   </p>
                 </div>
-                <select
-                  v-model="settings.defaultModel"
+                <ModelPicker
+                  :model-value="settings.defaultModel"
                   :disabled="noModels"
-                  class="shrink-0 w-52 rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:border-ring disabled:opacity-50"
-                >
-                  <option v-for="m in modelOptionsFor(settings.defaultModel)" :key="m.value" :value="m.value">
-                    {{ m.label }}
-                  </option>
-                </select>
+                  align="end"
+                  @update:model-value="settings.defaultModel = $event"
+                />
                 <p v-if="modelsError" class="text-xs text-destructive">Harness unavailable.</p>
               </div>
 
