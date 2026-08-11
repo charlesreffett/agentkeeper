@@ -1,13 +1,25 @@
 import path from 'node:path'
 import os from 'node:os'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
-import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
+import type { ChildProcess } from 'node:child_process'
+import { createOpencodeClient } from '@opencode-ai/sdk'
 import type { OpencodeClient } from '@opencode-ai/sdk/client'
 import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { secrets, SECRET_KEYS } from '../secrets'
+import { resolveBin, type BinConfig } from './bin'
 
 const execFileAsync = promisify(execFile)
+
+/** Where the opencode server binary comes from — resolved per spawn so a
+ *  settings/env override applies on the next start without an app restart. */
+const OPENCODE_BIN: BinConfig = {
+  harnessId: 'opencode',
+  fallbackBins: ['opencode'],
+  envVar: 'OPENCODE_BIN',
+}
+
+const SERVER_START_TIMEOUT_MS = 15_000
 
 /**
  * OpenCode harness adapter — runs agent sessions via the OpenCode server
@@ -67,15 +79,16 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     if (this.starting) return this.starting
 
     this.starting = (async () => {
+      const bin = resolveBin(OPENCODE_BIN)
+      if (!bin) {
+        throw new Error(
+          "OpenCode binary not found — install `opencode`, set OPENCODE_BIN, or configure a bin path in settings.",
+        )
+      }
       const port = 4096 + Math.floor(Math.random() * 1000)
-      const result = await createOpencode({
-        hostname: '127.0.0.1',
-        port,
-        signal: abortController?.signal,
-        timeout: 15_000,
-      })
-      const client = createOpencodeClient({ baseUrl: result.server.url })
-      this.singleton = { url: result.server.url, client, close: result.server.close }
+      const server = await spawnServer(bin, '127.0.0.1', port, abortController?.signal)
+      const client = createOpencodeClient({ baseUrl: server.url })
+      this.singleton = { url: server.url, client, close: server.close }
       return this.singleton
     })()
 
@@ -446,7 +459,13 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   // ─── CLI ─────────────────────────────────────────────────────────────────
 
   async runCLI(args: string[], options?: HarnessCLIOptions): Promise<string> {
-    const { stdout } = await execFileAsync('opencode', args, {
+    const bin = resolveBin(OPENCODE_BIN)
+    if (!bin) {
+      throw new Error(
+        "OpenCode binary not found — install `opencode`, set OPENCODE_BIN, or configure a bin path in settings.",
+      )
+    }
+    const { stdout } = await execFileAsync(bin, args, {
       cwd: options?.cwd,
       env: options?.env ? { ...process.env, ...options.env } : process.env,
       timeout: options?.timeout,
@@ -465,8 +484,10 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   }
 
   async isAvailable(): Promise<boolean> {
+    const bin = resolveBin(OPENCODE_BIN)
+    if (!bin) return false
     try {
-      await execFileAsync('opencode', ['--version'])
+      await execFileAsync(bin, ['--version'])
       return true
     } catch {
       return false
@@ -475,6 +496,82 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Spawn `opencode serve` with an explicit binary and resolve its URL from
+ * stdout. Replicates the SDK's createOpencodeServer so a resolved bin path
+ * (settings override / *_BIN env) can be honored — the SDK hardcodes `opencode`
+ * from PATH. The signal aborts the wait; `close` kills the process tree.
+ */
+function spawnServer(
+  bin: string,
+  hostname: string,
+  port: number,
+  signal?: AbortSignal,
+): Promise<{ url: string; close(): void }> {
+  const proc: ChildProcess = spawn(bin, ['serve', `--hostname=${hostname}`, `--port=${port}`], {
+    env: { ...process.env, OPENCODE_CONFIG_CONTENT: '{}' },
+  })
+
+  const stop = (): void => {
+    if (proc.exitCode !== null || proc.signalCode !== null) return
+    proc.kill()
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false
+    const finish = (err: Error | null, url?: string): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(id)
+      signal?.removeEventListener('abort', onAbort)
+      proc.off('exit', onExit)
+      proc.off('error', onError)
+      if (err) reject(err)
+      else resolve({ url: url!, close: stop })
+    }
+
+    const id = setTimeout(() => {
+      stop()
+      finish(new Error(`Timeout waiting for OpenCode server to start after ${SERVER_START_TIMEOUT_MS}ms`))
+    }, SERVER_START_TIMEOUT_MS)
+
+    const onAbort = (): void => {
+      stop()
+      finish(signal?.reason instanceof Error ? signal.reason : new Error('Aborted'))
+    }
+    const onExit = (code: number): void => {
+      stop()
+      finish(new Error(`OpenCode server exited with code ${code}`))
+    }
+    const onError = (error: Error): void => {
+      stop()
+      finish(error)
+    }
+
+    signal?.addEventListener('abort', onAbort, { once: true })
+    proc.on('exit', onExit)
+    proc.on('error', onError)
+
+    let output = ''
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString()
+      const lines = output.split('\n')
+      for (const line of lines) {
+        if (line.startsWith('opencode server listening')) {
+          const match = line.match(/on\s+(https?:\/\/[^\s]+)/)
+          if (match) {
+            finish(null, match[1])
+            return
+          }
+        }
+      }
+    })
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      output += chunk.toString()
+    })
+  })
+}
 
 /** Extract plain text from a Claude-style content block array or string. */
 function extractText(content: unknown): string {

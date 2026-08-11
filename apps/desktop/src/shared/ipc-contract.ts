@@ -614,6 +614,9 @@ export interface AppSettings {
   mcpServers: McpServerEntry[]
   /** Active harness adapter id. Defaults to 'claude-code' when undefined. */
   harnessId?: string
+  /** Per-harness binary path overrides, keyed by harness id (e.g. claude-code
+   *  → /path/to/claude). Empty means PATH lookup with *_BIN env fallback. */
+  harnessBins?: Record<string, string>
   mobileServer?: { enabled: boolean; port: number; secretKey: string }
   /** Skip the dirty-tree warning when switching branches (changes are carried over, never lost). Default false. */
   gitSwitchWithoutSoftReject?: boolean
