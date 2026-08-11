@@ -1,5 +1,6 @@
 import { getHarness } from './harness'
 import type { ModelsListResult } from '../shared/ipc-contract'
+import { sanitizeCustomModel } from '@agentkeeper/core'
 
 // Cached per harness for the app session. The harness list is account/plan
 // dependent and costs a subprocess spin-up, so it is fetched eagerly at startup
@@ -50,7 +51,23 @@ export async function refreshAvailableModels(harnessId?: string): Promise<Models
  *  fallback when the list is unavailable, and itself resolves at run time. */
 export async function getDefaultModel(harnessId?: string): Promise<string> {
   const { models } = await getAvailableModels(harnessId)
-  return models.find((m) => m.isDefault)?.value ?? 'default'
+  const value = models.find((m) => m.isDefault)?.value
+  // Defensive: a cached value that fails the model guard falls back to the
+  // `default` alias, which adapters resolve to a reachable concrete model.
+  return value !== undefined && sanitizeCustomModel(value) !== null ? value : 'default'
+}
+
+/** Validate a free-text model id against the harness's cached live list when
+ *  one is available, otherwise against the pattern guard. Returns the model
+ *  when acceptable, null when not. */
+export async function validateCustomModel(harnessId: string | undefined, model: string): Promise<string | null> {
+  if (sanitizeCustomModel(model) === null) return null
+  const id = harnessIdFor(harnessId)
+  const cached = cache.get(id)
+  if (cached && !cached.error && cached.models.length > 0) {
+    return cached.models.some((m) => m.value === model) ? model : null
+  }
+  return model
 }
 
 /** Warm the default harness cache at startup so the first picker open is instant. */

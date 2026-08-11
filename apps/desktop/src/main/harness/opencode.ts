@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import { createOpencode, createOpencodeClient } from '@opencode-ai/sdk'
 import type { OpencodeClient } from '@opencode-ai/sdk/client'
 import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import { sanitizeCustomModel } from '@agentkeeper/core'
 import { secrets, SECRET_KEYS } from '../secrets'
 
 const execFileAsync = promisify(execFile)
@@ -393,9 +394,12 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   }
 
   /** Turn a stored model value into a concrete providerID/modelID the server can
-   *  run: `default`/empty resolves to the reachable default (cached). */
+   *  run: `default`/empty resolves to the reachable default (cached). Custom
+   *  (free-text) models are legitimate, but only when they pass the pattern
+   *  guard — anything off-pattern falls back to the default instead of reaching
+   *  promptAsync. */
   private async resolveModel(model?: string): Promise<string | undefined> {
-    if (model && model !== 'default') return model
+    if (model && model !== 'default') return sanitizeCustomModel(model) ?? undefined
     if (this.preferredDefault) return this.preferredDefault
     try {
       await this.getSupportedModels()
