@@ -145,7 +145,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
         projects: recentProjectsStore.list(),
         focusedProjectPath: recentProjectsStore.getFocused(),
         models: availableModels.models.map((m) => ({ value: m.value, label: m.label })),
-        defaultModel: settings.defaultModel,
+        defaultModel: settings.lastUsedModels?.[settings.harnessId ?? ''] ?? settings.defaultModel,
         defaultEffort: settings.defaultEffort,
         defaultUseWorktree: settings.defaultUseWorktree,
         efforts: ROLE_EFFORT_VALUES,

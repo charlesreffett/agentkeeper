@@ -617,6 +617,10 @@ export interface AppSettings {
   mobileServer?: { enabled: boolean; port: number; secretKey: string }
   /** Skip the dirty-tree warning when switching branches (changes are carried over, never lost). Default false. */
   gitSwitchWithoutSoftReject?: boolean
+  /** Last model the user picked, keyed by harness id. New drafts on a harness
+   *  start from this when present, before falling back to `defaultModel` — a
+   *  pick made while browsing another harness must not leak into it. */
+  lastUsedModels?: Record<string, string>
 }
 
 export type SecretKeyName = 'anthropicApiKey'

@@ -21,6 +21,7 @@ const DEFAULTS: AppSettings = {
   harnessId: 'claude-code',
   mobileServer: { enabled: false, port: 57372, secretKey: '' },
   gitSwitchWithoutSoftReject: false,
+  lastUsedModels: {},
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']
