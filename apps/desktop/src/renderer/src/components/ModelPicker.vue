@@ -150,7 +150,7 @@ function onEnter() {
             :key="h.id"
             type="button"
             :disabled="!h.available"
-            :title="h.name"
+            :title="h.available ? h.name : h.unavailableReason ?? `${h.name} — unavailable`"
             class="size-8 shrink-0 rounded-md border text-xs font-semibold uppercase transition-colors disabled:opacity-40"
             :class="selectedHarnessId === h.id
               ? 'border-primary bg-primary/10 text-primary'

@@ -627,8 +627,23 @@ export interface HarnessInfo {
   id: string
   name: string
   available: boolean
+  /** Human-readable reason when `available` is false — shown verbatim in the UI. */
+  unavailableReason?: string
   defaultModel: string
   capabilities: HarnessCapabilities
+}
+
+/** Per-harness auth status for the diagnostics surface. `ready` means a usable
+ *  credential is present; `detail` explains what's configured. */
+export interface HarnessAuthInfo {
+  id: string
+  /** 'api-key' (key stored), 'cli' (relies on `claude login`), or 'provider'
+   *  (open-code style auth store). */
+  type: string
+  ready: boolean
+  /** Authenticated provider ids (opencode) — empty otherwise. */
+  providers?: string[]
+  detail?: string
 }
 
 // ─── Factory reset ──────────────────────────────────────────────────────────
@@ -1074,6 +1089,8 @@ export interface AgentKeeperApi {
     list: () => Promise<HarnessInfo[]>
     getActive: () => Promise<HarnessInfo>
     setActive: (id: string) => Promise<void>
+    /** Auth/availability diagnostics for every registered harness. */
+    auth: () => Promise<HarnessAuthInfo[]>
   }
   mobile: {
     generateKey: () => Promise<string>
@@ -1277,6 +1294,7 @@ export const IPC_CHANNELS = {
   harnessListAdapters: 'harness:list',
   harnessGetActive: 'harness:getActive',
   harnessSetActive: 'harness:setActive',
+  harnessAuth: 'harness:auth',
   mobileGenerateKey: 'mobile:generateKey',
   mobileGetLocalIp: 'mobile:getLocalIp',
   performanceGetSummary: 'performance:getSummary',

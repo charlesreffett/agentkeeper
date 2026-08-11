@@ -4,6 +4,25 @@ export interface HarnessAuth {
   env?: Record<string, string>
 }
 
+/** Diagnostic result of whether a harness can run right now, with a reason the
+ *  UI can show verbatim instead of a bare "unavailable". */
+export interface HarnessAvailability {
+  available: boolean
+  /** Human-readable reason when not available (missing binary, --version
+   *  failure, …). Absent when available. */
+  reason?: string
+}
+
+/** Per-harness auth status for the diagnostics surface. `ready` means a usable
+ *  credential is present; `detail` explains what's configured. */
+export interface HarnessAuthDetail {
+  type: string
+  ready: boolean
+  /** Authenticated provider ids (e.g. opencode's auth store) — empty otherwise. */
+  providers?: string[]
+  detail?: string
+}
+
 export interface HarnessCLIOptions {
   cwd?: string
   env?: Record<string, string>
@@ -106,7 +125,11 @@ export interface HarnessAdapter {
   getSettingsPath(): string
   runCLI(args: string[], options?: HarnessCLIOptions): Promise<string>
   resolveAuth(): Promise<HarnessAuth>
-  isAvailable(): Promise<boolean>
+  probeAvailability(): Promise<HarnessAvailability>
+  /** Optional human-readable auth status for the diagnostics surface. Harnesses
+   *  that only distinguish api-key vs cli (claude-code) can omit it — callers
+   *  fall back to {@link resolveAuth}. */
+  probeAuthDetail?(): Promise<HarnessAuthDetail>
   encodeCwd(cwd: string): string
   /** Release any long-lived resources (e.g. a spawned server) at app shutdown.
    *  Optional — harnesses that hold nothing omit it. */

@@ -3,8 +3,9 @@ import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailability, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { resolveClaudeAuth } from '../secrets'
+import { isMissingBinary } from './diagnostics'
 
 const execFileAsync = promisify(execFile)
 
@@ -200,12 +201,29 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     return { type: 'cli' }
   }
 
-  async isAvailable(): Promise<boolean> {
+  async probeAuthDetail(): Promise<HarnessAuthDetail> {
+    const result = await resolveClaudeAuth()
+    if (result.type === 'api-key' && result.key) {
+      return { type: 'api-key', ready: true, detail: 'Anthropic API key stored in the keychain.' }
+    }
+    return { type: 'cli', ready: true, detail: 'Uses Claude Code login (Pro/Max) — run `claude login` if sessions fail.' }
+  }
+
+  async probeAvailability(): Promise<HarnessAvailability> {
     try {
       await execFileAsync('claude', ['--version'])
-      return true
-    } catch {
-      return false
+      return { available: true }
+    } catch (error) {
+      if (isMissingBinary(error)) {
+        return {
+          available: false,
+          reason: "`claude` not found on PATH — install Claude Code or set CLAUDE_BIN.",
+        }
+      }
+      return {
+        available: false,
+        reason: `\`claude --version\` failed: ${error instanceof Error ? error.message : String(error)}`,
+      }
     }
   }
 
