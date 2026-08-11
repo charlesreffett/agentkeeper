@@ -143,6 +143,7 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
         value: m.value,
         label: m.displayName,
         description: m.description,
+        provider: 'Anthropic',
         resolvedModel: m.resolvedModel,
         supportsEffort: m.supportsEffort,
         effortLevels: m.supportedEffortLevels,
