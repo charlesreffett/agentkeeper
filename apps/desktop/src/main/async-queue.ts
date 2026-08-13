@@ -52,7 +52,10 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
         return new Promise((resolve) => self.waiters.push(resolve))
       },
       return(): Promise<IteratorResult<T, undefined>> {
-        self.close()
+        // Ending one iteration (e.g. `for await ... break`) must not close the
+        // queue — it is a shared input stream, and the opencode adapter
+        // consumes it one message per turn across many for-await loops. Only
+        // an explicit close() (session terminate/interrupt) ends iteration.
         return Promise.resolve({ value: undefined, done: true })
       },
     }

@@ -13,7 +13,7 @@ const props = defineProps<{
 
 const store = useSessionStore()
 const { estimateBreakdown } = usePricingQuery()
-const { resolvedLabelFor } = useModelsQuery()
+const { resolvedLabelFor } = useModelsQuery(() => store.getSession(props.sessionId)?.harnessId)
 
 const tokenData = computed(() => store.sessionTokens[props.sessionId])
 const session = computed(() => store.getSession(props.sessionId))

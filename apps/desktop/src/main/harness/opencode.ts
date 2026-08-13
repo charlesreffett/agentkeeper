@@ -60,7 +60,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
    * Get or create the shared OpenCode server. Only one process runs at a time
    * to avoid SQLite migration conflicts.
    */
-  private async getOrCreateServer(abortController?: AbortController): Promise<{ url: string; client: OpencodeClient; close(): void }> {
+  private async getOrCreateServer(): Promise<{ url: string; client: OpencodeClient; close(): void }> {
     if (this.singleton) return this.singleton
 
     // If a start is already in-flight, wait for it.
@@ -68,10 +68,14 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
     this.starting = (async () => {
       const port = 4096 + Math.floor(Math.random() * 1000)
+      // No `signal` here: the SDK binds the server process to it (bindAbort →
+      // SIGTERM on abort). The server is a singleton shared across every
+      // session, so tying it to any one session's AbortController would kill
+      // it for all sessions when that session terminates. Startup is bounded
+      // by `timeout` instead.
       const result = await createOpencode({
         hostname: '127.0.0.1',
         port,
-        signal: abortController?.signal,
         timeout: 15_000,
       })
       const client = createOpencodeClient({ baseUrl: result.server.url })
@@ -88,7 +92,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
     const abortController = options.abortController ?? new AbortController()
-    const { client } = await this.getOrCreateServer(abortController)
+    const { client } = await this.getOrCreateServer()
 
     try {
       // Create a session — if resuming, link to the parent session.
@@ -115,44 +119,88 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
         session_id: sessionId,
       } satisfies HarnessEvent
 
-      // Build the message parts from the prompt or the message queue.
-      const parts = await this.buildParts(prompt, options)
-
-      // Subscribe to the SSE event stream *before* sending the prompt so we
-      // don't miss any events.
-      const eventStream = await client.event.subscribe()
-
-      // Send the prompt asynchronously — the SSE stream will carry the
-      // response events.
-      const modelId = await this.resolveModel(options.model)
-      const promptResp = await client.session.promptAsync({
-        path: { id: sessionId },
-        body: {
-          parts,
-          ...(modelId ? { model: parseModelId(modelId) } : {}),
-          ...(options.systemPrompt ? { system: options.systemPrompt } : {}),
-          // Tool removal — opencode takes an enable/disable map keyed by its own
-          // (harness-native) tool names.
-          ...(options.disallowedTools?.length
-            ? { tools: Object.fromEntries(options.disallowedTools.map((t) => [t, false])) }
-            : {}),
-        },
-      })
-
-      if (!promptResp.response.ok) {
-        throw new Error(`OpenCode prompt failed: ${promptResp.response.status}`)
-      }
-
-      // Wire abort: cancel the in-progress prompt when the caller aborts.
+      // Wire abort once for the session's lifetime: cancels whichever turn is
+      // in flight (a no-op between turns), and the turn loop checks the signal
+      // so an abort while blocked on the message queue exits cleanly.
       if (options.abortController) {
         options.abortController.signal.addEventListener('abort', () => {
-          void client.session.abort({ path: { id: sessionId } }).catch(() => {})
+          // Abort is instance-scoped in opencode too — route it to the
+          // session's directory or it cancels the wrong (server-cwd) instance.
+          void client.session.abort({
+            path: { id: sessionId },
+            headers: { 'x-opencode-directory': encodeURIComponent(options.cwd) },
+          }).catch(() => {})
         }, { once: true })
       }
 
-      // Stream events from the SSE feed, translating each one into
-      // HarnessEvents that the agent driver understands.
-      yield* this.consumeEventStream(eventStream, sessionId)
+      // Loop over queue turns on this one session — promptAsync retains the
+      // session's context across calls, so turn N+1 sees everything turn N
+      // produced. The first turn comes from `prompt` (runPrompt/resume) or the
+      // first queued message; later turns come only from the message queue.
+      // The SSE subscription is re-opened per turn: the server closes the
+      // stream at session.idle, so it can't be held across turns.
+      let firstTurn = true
+      while (!abortController.signal.aborted) {
+        const parts = firstTurn
+          ? await this.buildParts(prompt, options)
+          : await this.nextParts(options)
+        if (!parts.length) break
+        if (abortController.signal.aborted) break
+
+        // Subscribe *before* sending the prompt so we don't miss any events.
+        // The directory is required to route the SSE stream to this session's
+        // opencode Instance — without it the subscription attaches to the
+        // server's cwd instance and no session events ever arrive (session.idle
+        // included), so the turn would hang waiting for a terminal signal.
+        const eventStream = await client.event.subscribe({ query: { directory: options.cwd } })
+        const modelId = await this.resolveModel(options.model)
+        const promptResp = await client.session.promptAsync({
+          path: { id: sessionId },
+          // Opencode is instance-scoped by directory: without this the turn runs
+          // on the server-cwd instance and its events (session.idle included)
+          // emit on the wrong event bus, so the subscription hangs forever.
+          query: { directory: options.cwd },
+          body: {
+            parts,
+            ...(modelId ? { model: parseModelId(modelId) } : {}),
+            // System prompt + tool removal are per-prompt in OpenCode, so they
+            // must ride along on every turn, not just the first.
+            ...(options.systemPrompt ? { system: options.systemPrompt } : {}),
+            // Tool removal — opencode takes an enable/disable map keyed by its
+            // own (harness-native) tool names.
+            ...(options.disallowedTools?.length
+              ? { tools: Object.fromEntries(options.disallowedTools.map((t) => [t, false])) }
+              : {}),
+          },
+        })
+
+        if (!promptResp.response.ok) {
+          throw new Error(`OpenCode prompt failed: ${promptResp.response.status}`)
+        }
+        firstTurn = false
+
+        // Stream events until this turn's session.idle, translating each one
+        // into HarnessEvents that the agent driver understands.
+        let sawResult = false
+        let turnError: string | undefined
+        for await (const ev of this.consumeTurn(eventStream.stream, sessionId)) {
+          yield ev
+          if (ev.type === 'result') {
+            sawResult = true
+            if (ev.subtype === 'error') turnError = typeof ev.error === 'string' ? ev.error : undefined
+          }
+        }
+        // session.error is terminal for the OpenCode session — surface it to
+        // the driver as a stream error (status 'error' + onTerminalError)
+        // instead of letting the generator end on a success-looking turn.
+        if (turnError !== undefined) {
+          throw new Error(turnError || 'OpenCode session errored')
+        }
+        // A turn that ends without a result (stream died, no idle) is also
+        // terminal — don't loop back to wait for input that will never produce
+        // output.
+        if (!sawResult) break
+      }
     } catch (error) {
       // If the singleton server died, clear it so the next session spawns fresh.
       if (isConnectionError(error)) {
@@ -177,9 +225,9 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   }
 
   /**
-   * Convert the incoming prompt + messageQueue into OpenCode Part objects.
-   * When messageQueue is present the first message is the initial prompt and
-   * subsequent ones are follow-ups.
+   * Convert the first-turn input into OpenCode Part objects. When messageQueue
+   * is present the first message is the initial prompt; the queue stays open
+   * and later messages are consumed one per turn by {@link nextParts}.
    */
   private async buildParts(
     prompt: string,
@@ -188,10 +236,6 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     const parts: Array<{ type: 'text'; text: string }> = []
 
     if (options.messageQueue) {
-      // Take a single turn and stop. The queue stays open for the session's
-      // lifetime (streaming input for the Claude SDK), so iterating to
-      // completion would block forever — promptAsync sends one prompt per
-      // runSession, so we consume the first buffered message and return.
       for await (const msg of options.messageQueue) {
         const text = extractText(msg.message?.content)
         if (text) parts.push({ type: 'text', text })
@@ -205,34 +249,53 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   }
 
   /**
-   * Translate OpenCode SSE events into HarnessEvents. The mapping:
+   * Consume the next queued follow-up for a turn after the first. Blocks until
+   * a message arrives or the queue is closed (interrupt/terminate), which
+   * resolves to done — the caller then ends the loop. No queue means the
+   * session is single-turn (runPrompt path).
+   */
+  private async nextParts(
+    options: HarnessSessionOptions,
+  ): Promise<Array<{ type: 'text'; text: string }>> {
+    if (!options.messageQueue) return []
+    for await (const msg of options.messageQueue) {
+      const text = extractText(msg.message?.content)
+      if (text) return [{ type: 'text', text }]
+      return []
+    }
+    return []
+  }
+
+  /**
+   * Translate OpenCode SSE events into HarnessEvents for ONE turn. The mapping:
    *
    * OpenCode Event                    → HarnessEvent
    * ──────────────────────────────────────────────────────────
    * message.part.updated (text delta) → assistant (accumulated)
    * message.part.updated (tool)       → assistant (tool_use block)
    * message.updated (assistant msg)   → result (on completion)
-   * session.idle                      → result (subtype: 'success')
+   * session.idle                      → result (subtype: 'success') — turn end
    * session.error                     → result (subtype: 'error')
+   *
+   * `stream` is a fresh per-turn SSE generator; it terminates at session.idle.
    */
-  private async *consumeEventStream(
-    eventStream: Awaited<ReturnType<OpencodeClient['event']['subscribe']>>,
+  private async *consumeTurn(
+    eventStream: Awaited<ReturnType<OpencodeClient['event']['subscribe']>>['stream'],
     sessionId: string,
   ): AsyncIterable<HarnessEvent> {
     // OpenCode streams parts for BOTH the user and assistant messages, and part
-    // text is a full snapshot (not a delta). Track each message's role from
-    // message.updated (which reliably precedes its parts) so we only surface
-    // assistant output — otherwise the user's own prompt is echoed back as an
-    // assistant reply. Usage is stashed and emitted once, at session.idle;
-    // message.updated fires repeatedly and must not each emit a terminal result.
-    const roleByMessage = new Map<string, string>()
+    // text is a full snapshot (not a delta). Suppress the user's echoed prompt
+    // by tracking known USER message ids — user message.updated always precedes
+    // its parts (message creation + connect replay), but assistant
+    // message.updated can arrive AFTER its parts on later turns, so an unknown
+    // message id is treated as assistant output. Usage is stashed and emitted
+    // once, at session.idle; message.updated fires repeatedly and must not each
+    // emit a terminal result.
+    const userMessageIds = new Set<string>()
     let usage: Record<string, unknown> = {}
     let totalCostUsd = 0
 
-    const isAssistant = (messageID: string | undefined): boolean =>
-      !!messageID && roleByMessage.get(messageID) === 'assistant'
-
-    for await (const event of eventStream.stream) {
+    for await (const event of eventStream) {
       // Only process events for our session.
       const props = (event as Record<string, unknown>)['properties'] as Record<string, unknown> | undefined
       if (props && typeof props['sessionID'] === 'string' && props['sessionID'] !== sessionId) {
@@ -246,8 +309,8 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
           const info = props?.['info'] as Record<string, unknown> | undefined
           const id = info?.['id'] as string | undefined
           const role = info?.['role'] as string | undefined
-          if (id && role) roleByMessage.set(id, role)
-          if (role === 'assistant') {
+          if (id && role === 'user') userMessageIds.add(id)
+          if (id && role === 'assistant') {
             const tokens = info!['tokens'] as Record<string, unknown> | undefined
             const cache = tokens?.['cache'] as Record<string, unknown> | undefined
             usage = {
@@ -266,8 +329,9 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
           if (!part) break
           const partType = part['type'] as string
           const messageID = part['messageID'] as string
-          // Suppress the user's echoed prompt — only assistant parts.
-          if (!isAssistant(messageID)) break
+          // Suppress the user's echoed prompt — only assistant parts. Unknown
+          // ids are assistant (see above).
+          if (userMessageIds.has(messageID)) break
 
           if (partType === 'text') {
             // part.text is the full accumulated snapshot for this part.
@@ -419,8 +483,11 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
   // ─── Path helpers ────────────────────────────────────────────────────────
 
+  /** Root of opencode's per-session JSON tree. Reads go through
+   *  {@link readOpenCodeTranscript}, which resolves `message/<id>` and
+   *  `part/<id>` under this dir — not Claude's flat `<sessionId>.jsonl`. */
   getSessionsRoot(): string {
-    return path.join(os.homedir(), '.local', 'share', 'opencode', 'sessions')
+    return path.join(os.homedir(), '.local', 'share', 'opencode', 'storage')
   }
 
   getCommandsDir(_scope: 'project' | 'global', _projectPath?: string): string {
