@@ -60,7 +60,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
    * Get or create the shared OpenCode server. Only one process runs at a time
    * to avoid SQLite migration conflicts.
    */
-  private async getOrCreateServer(abortController?: AbortController): Promise<{ url: string; client: OpencodeClient; close(): void }> {
+  private async getOrCreateServer(): Promise<{ url: string; client: OpencodeClient; close(): void }> {
     if (this.singleton) return this.singleton
 
     // If a start is already in-flight, wait for it.
@@ -68,10 +68,14 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
     this.starting = (async () => {
       const port = 4096 + Math.floor(Math.random() * 1000)
+      // No `signal` here: the SDK binds the server process to it (bindAbort →
+      // SIGTERM on abort). The server is a singleton shared across every
+      // session, so tying it to any one session's AbortController would kill
+      // it for all sessions when that session terminates. Startup is bounded
+      // by `timeout` instead.
       const result = await createOpencode({
         hostname: '127.0.0.1',
         port,
-        signal: abortController?.signal,
         timeout: 15_000,
       })
       const client = createOpencodeClient({ baseUrl: result.server.url })
@@ -88,7 +92,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
     const abortController = options.abortController ?? new AbortController()
-    const { client } = await this.getOrCreateServer(abortController)
+    const { client } = await this.getOrCreateServer()
 
     try {
       // Create a session — if resuming, link to the parent session.
@@ -152,6 +156,10 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
         const modelId = await this.resolveModel(options.model)
         const promptResp = await client.session.promptAsync({
           path: { id: sessionId },
+          // Opencode is instance-scoped by directory: without this the turn runs
+          // on the server-cwd instance and its events (session.idle included)
+          // emit on the wrong event bus, so the subscription hangs forever.
+          query: { directory: options.cwd },
           body: {
             parts,
             ...(modelId ? { model: parseModelId(modelId) } : {}),
@@ -475,8 +483,11 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
   // ─── Path helpers ────────────────────────────────────────────────────────
 
+  /** Root of opencode's per-session JSON tree. Reads go through
+   *  {@link readOpenCodeTranscript}, which resolves `message/<id>` and
+   *  `part/<id>` under this dir — not Claude's flat `<sessionId>.jsonl`. */
   getSessionsRoot(): string {
-    return path.join(os.homedir(), '.local', 'share', 'opencode', 'sessions')
+    return path.join(os.homedir(), '.local', 'share', 'opencode', 'storage')
   }
 
   getCommandsDir(_scope: 'project' | 'global', _projectPath?: string): string {
