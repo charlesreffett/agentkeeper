@@ -13,6 +13,7 @@ import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { queryKeys } from '@/lib/queryKeys'
 import { pluginSettingsPanels } from '@/lib/pluginSettingsPanels'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { useHarnessList, useHarnessAuth } from '@/composables/useHarness'
 import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
@@ -105,6 +106,15 @@ function captureModifier(e: KeyboardEvent) {
 }
 
 const { optionsFor: modelOptionsFor, effortLevelsFor, error: modelsError, isEmpty: noModels } = useModelsQuery()
+
+// ─── Harness diagnostics ───────────────────────────────────────────────────────
+
+const { data: harnesses } = useHarnessList()
+const { data: harnessAuth } = useHarnessAuth()
+
+function authFor(id: string) {
+  return harnessAuth.value?.find((a) => a.id === id)
+}
 
 // Danger-zone state
 const resetAppSettingsSel = ref(false)
@@ -276,6 +286,32 @@ async function onReset() {
           Loading…
         </div>
         <div v-else class="p-6 space-y-6 max-w-2xl">
+
+          <!-- Harness status -->
+          <section v-if="harnesses && harnesses.length > 1" class="space-y-3">
+            <h2 class="text-sm font-semibold">Agent harnesses</h2>
+            <div class="rounded-lg border divide-y">
+              <div v-for="h in harnesses" :key="h.id" class="flex items-center gap-3 px-4 py-3">
+                <span
+                  class="size-2 shrink-0 rounded-full"
+                  :class="h.available ? 'bg-emerald-500' : 'bg-destructive'"
+                />
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">{{ h.name }}</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    <template v-if="h.available">
+                      <span class="text-emerald-600 dark:text-emerald-400">Ready</span>
+                      <span v-if="authFor(h.id)"> · {{ authFor(h.id)!.detail }}</span>
+                    </template>
+                    <template v-else>
+                      <span class="text-destructive">{{ h.unavailableReason ?? 'Unavailable' }}</span>
+                      <span v-if="authFor(h.id) && authFor(h.id)!.detail"> · {{ authFor(h.id)!.detail }}</span>
+                    </template>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
 
           <!-- Authentication -->
           <section class="space-y-3">

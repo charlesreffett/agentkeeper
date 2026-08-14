@@ -1,14 +1,16 @@
 import path from 'node:path'
 import os from 'node:os'
+import fs from 'node:fs'
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { ChildProcess } from 'node:child_process'
 import { createOpencodeClient } from '@opencode-ai/sdk'
 import type { OpencodeClient } from '@opencode-ai/sdk/client'
-import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailability, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { sanitizeCustomModel } from '@agentkeeper/core'
 import { secrets, SECRET_KEYS } from '../secrets'
 import { resolveBin, type BinConfig } from './bin'
+import { isMissingBinary } from './diagnostics'
 
 const execFileAsync = promisify(execFile)
 
@@ -554,14 +556,60 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     return { type: 'cli' }
   }
 
-  async isAvailable(): Promise<boolean> {
+  async probeAvailability(): Promise<HarnessAvailability> {
     const bin = resolveBin(OPENCODE_BIN)
-    if (!bin) return false
+    if (!bin) {
+      return {
+        available: false,
+        reason: "`opencode` not found on PATH — install opencode or set OPENCODE_BIN.",
+      }
+    }
     try {
       await execFileAsync(bin, ['--version'])
-      return true
+      return { available: true }
+    } catch (error) {
+      if (isMissingBinary(error)) {
+        return {
+          available: false,
+          reason: "`opencode` not found on PATH — install opencode or set OPENCODE_BIN.",
+        }
+      }
+      return {
+        available: false,
+        reason: `\`opencode --version\` failed: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+  }
+
+  /** OpenCode authenticates per provider through `opencode auth login` (stored
+   *  in its auth.json) or falls back to the app's stored Anthropic API key for
+   *  anthropic/* models. */
+  async probeAuthDetail(): Promise<HarnessAuthDetail> {
+    const authPath = path.join(os.homedir(), '.local', 'share', 'opencode', 'auth.json')
+    let providers: string[] = []
+    try {
+      const raw = JSON.parse(fs.readFileSync(authPath, 'utf8')) as Record<string, { type?: string } | undefined>
+      providers = Object.keys(raw).filter((k) => !!raw[k]?.type)
     } catch {
-      return false
+      // no auth store yet — providers stays empty
+    }
+    const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
+    const providerDetail = providers.length > 0
+      ? `Logged in: ${providers.join(', ')}.`
+      : 'No `opencode auth login` providers.'
+    if (providers.length > 0 || apiKey) {
+      return {
+        type: 'provider',
+        ready: true,
+        providers,
+        detail: `${providerDetail}${apiKey ? ' Sessions may also use the stored Anthropic API key.' : ''}`,
+      }
+    }
+    return {
+      type: 'provider',
+      ready: false,
+      providers: [],
+      detail: 'Not authenticated — run `opencode auth login` or add an Anthropic API key in Settings.',
     }
   }
 }

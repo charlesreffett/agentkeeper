@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
-import type { HarnessInfo } from '@shared/ipc-contract'
+import type { HarnessAuthInfo, HarnessInfo } from '@shared/ipc-contract'
 
 export function useHarnessList() {
   return useQuery({
@@ -24,5 +24,12 @@ export function useSetActiveHarness() {
       void qc.invalidateQueries({ queryKey: queryKeys.harness.list() })
       void qc.invalidateQueries({ queryKey: queryKeys.harness.active() })
     },
+  })
+}
+
+export function useHarnessAuth() {
+  return useQuery({
+    queryKey: queryKeys.harness.auth(),
+    queryFn: (): Promise<HarnessAuthInfo[]> => window.agentkeeper.harness.auth(),
   })
 }

@@ -48,6 +48,7 @@ export const queryKeys = {
   harness: {
     list: () => ['harness', 'list'] as const,
     active: () => ['harness', 'active'] as const,
+    auth: () => ['harness', 'auth'] as const,
   },
   performance: {
     summary: (projectPath: string | null, rangeDays: number) =>
