@@ -783,6 +783,8 @@ export interface AvailableModel {
   value: string
   label: string
   description?: string
+  /** Provider serving the model, e.g. `anthropic` — for badges/grouping. */
+  provider?: string
   /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`.
    *  Lets the UI always show the real model+version, not the alias label. */
   resolvedModel?: string

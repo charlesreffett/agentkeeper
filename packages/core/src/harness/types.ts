@@ -70,6 +70,9 @@ export interface HarnessModelInfo {
   value: string
   label: string
   description?: string
+  /** Provider that serves the model (`anthropic`, `openai`, …). Lets the UI
+   *  badge and group models by provider instead of parsing it out of `value`. */
+  provider?: string
   /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`. */
   resolvedModel?: string
   supportsEffort?: boolean
