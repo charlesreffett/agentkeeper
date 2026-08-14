@@ -25,7 +25,9 @@ const router = useRouter()
 
 const { isHealthy: githubHealthy } = usePluginHealth('github')
 const { isHealthy: jiraHealthy } = usePluginHealth('jira')
-const { resolvedLabelFor } = useModelsQuery()
+// Scope model-label resolution to the session's harness, or an opencode model
+// resolves against Claude's list and mislabels as the Claude default.
+const { resolvedLabelFor } = useModelsQuery(() => store.getSession(props.rootSessionId)?.harnessId)
 
 const rootSession = computed(() => store.getSession(props.rootSessionId))
 

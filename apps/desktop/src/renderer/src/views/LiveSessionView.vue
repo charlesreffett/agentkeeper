@@ -31,6 +31,7 @@ import {
 } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
+import { useHarnessList } from '@/composables/useHarness'
 import type { Agency, Attachment, PermissionMode, RoleEffort, TranscriptEvent } from '@shared/ipc-contract'
 
 interface UndoBuf {
@@ -57,6 +58,14 @@ const messageInputRef = ref<InstanceType<typeof MessageInput> | null>(null)
 
 // Root session — fixed to props.liveId. Used for header title, project name, agent list.
 const rootSession = computed(() => store.getSession(props.liveId))
+
+const { data: harnesses } = useHarnessList()
+// Assistant author label + model resolution follow the session's harness, so an
+// opencode session doesn't render as "Claude" or resolve to a Claude model.
+const sessionHarnessId = computed(() => rootSession.value?.harnessId ?? null)
+const assistantName = computed(
+  () => harnesses.value?.find((h) => h.id === sessionHarnessId.value)?.name ?? null,
+)
 
 // Selected agent — switches when user clicks a row in the agent tree.
 // For solo sessions agentLocalId === sessionLocalId, so getSession falls through correctly.
@@ -807,6 +816,8 @@ const streamingEventUuid = computed((): string | undefined => {
             ref="transcriptRef"
             :events="agentEvents"
             :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
+            :harness-id="sessionHarnessId"
+            :assistant-name="assistantName"
             :verbosity-state="verbosityState"
             :streaming-event-uuid="streamingEventUuid"
             :can-rewrite="!isDraft"

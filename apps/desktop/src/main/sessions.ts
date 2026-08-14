@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
 import { getHarness } from './harness/index'
+import { readOpenCodeTranscript } from './harness/opencode-transcript'
 import { isGeneralProject } from '../shared/ipc-contract'
 import type {
   ContentBlock,
@@ -375,6 +376,11 @@ export async function readSession(
   sessionId: string,
   harnessId?: string,
 ): Promise<SessionTranscript | null> {
+  // OpenCode doesn't use Claude's `<sessionId>.jsonl` layout — it persists a
+  // per-message JSON tree, so read it through its own reader.
+  if (harnessId === 'opencode') {
+    return readOpenCodeTranscript(projectPath, sessionId)
+  }
   const filePath = path.join(projectDir(projectPath, harnessId), `${sessionId}.jsonl`)
   let stat: fs.Stats
   try {

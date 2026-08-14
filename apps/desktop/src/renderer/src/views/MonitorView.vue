@@ -3,16 +3,15 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSessionStore } from '@/stores/sessions'
 import ScopeBar from '@/components/ScopeBar.vue'
+import ModelLabel from '@/components/ModelLabel.vue'
 import type { LiveSession } from '@/stores/sessions'
 import { formatRelativeTime } from '@/lib/format'
 import { getPlanProgress } from '@/composables/usePlanProgress'
 import type { PlanProgress } from '@/composables/usePlanProgress'
-import { useModelsQuery } from '@/composables/useModelsQuery'
 import { usePageScope } from '@/composables/usePageScope'
 
 const router = useRouter()
 const store = useSessionStore()
-const { resolvedLabelFor } = useModelsQuery()
 
 const { scope, scopePath, options, label, color, setScope, pickAndAdd, isAll } =
   usePageScope('monitor')
@@ -157,7 +156,7 @@ async function openSession(s: LiveSession) {
                   v-if="s.model"
                   class="text-muted-foreground font-mono"
                 >
-                  · {{ resolvedLabelFor(s.model) }}
+                  · <ModelLabel :model="s.model" :harness-id="s.harnessId" />
                 </span>
                 <span class="ml-auto text-muted-foreground tabular-nums">
                   {{ formatRelativeTime(s.lastActivityAt) }}

@@ -18,6 +18,8 @@ const props = defineProps<{
   events: TranscriptEvent[]
   verbosityState?: VerbosityState
   roleName?: string | null
+  harnessId?: string | null
+  assistantName?: string | null
   streamingEventUuid?: string
   canRewrite?: boolean
 }>()
@@ -162,6 +164,8 @@ defineExpose({
             :event="item.event"
             :verbosity-state="state"
             :agent-name="roleName ?? undefined"
+            :harness-id="harnessId"
+            :assistant-name="assistantName"
             :streaming="item.event.uuid === streamingEventUuid"
             :is-doomed="doomedFromIndex >= 0 && index > doomedFromIndex"
             :can-rewrite="canRewrite"

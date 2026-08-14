@@ -19,6 +19,7 @@ const DEFAULTS: AppSettings = {
   notificationSound: 'chime',
   mcpServers: [],
   harnessId: 'claude-code',
+  harnessBins: {},
   mobileServer: { enabled: false, port: 57372, secretKey: '' },
   gitSwitchWithoutSoftReject: false,
 }
