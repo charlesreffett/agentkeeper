@@ -4,6 +4,7 @@ import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useSessionsListQuery } from '@/composables/useSessionsListQuery'
 import { projectColor } from '@/lib/projectColor'
+import { defaultModelFor } from '@/composables/useModelMemory'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
 
 export type UnifiedSessionSource = 'live' | 'persisted' | 'historical'
@@ -205,7 +206,7 @@ export function useUnifiedSessions() {
     const settings = await window.agentkeeper.settings.get()
     const localId = sessionStore.createOrFocusDraft({
       projectPath: null,
-      defaultModel: settings.defaultModel,
+      defaultModel: defaultModelFor(settings, settings.harnessId),
       defaultEffort: settings.defaultEffort,
       defaultUseWorktree: settings.defaultUseWorktree,
       defaultHarnessId: settings.harnessId,

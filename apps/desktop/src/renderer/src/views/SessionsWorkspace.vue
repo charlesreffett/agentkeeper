@@ -7,6 +7,7 @@ import SessionsSidebar from '@/components/session/SessionsSidebar.vue'
 import SessionsWelcome from '@/views/SessionsWelcome.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { useUnifiedSessions } from '@/composables/useUnifiedSessions'
+import { defaultModelFor } from '@/composables/useModelMemory'
 import { type AppSettings } from '@shared/ipc-contract'
 
 const route = useRoute()
@@ -88,7 +89,7 @@ async function focusDraftForCurrentProject() {
     const settingsNow = await window.agentkeeper.settings.get()
     const localId = sessionStore.createOrFocusDraft({
       projectPath: null,
-      defaultModel: settingsNow.defaultModel,
+      defaultModel: defaultModelFor(settingsNow, settingsNow.harnessId),
       defaultEffort: settingsNow.defaultEffort,
       defaultUseWorktree: settingsNow.defaultUseWorktree,
       defaultHarnessId: settingsNow.harnessId,

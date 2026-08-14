@@ -30,6 +30,7 @@ import {
   hiddenCount as computeHiddenCount,
 } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { defaultModelFor, rememberModel } from '@/composables/useModelMemory'
 import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
 import { useHarnessList } from '@/composables/useHarness'
 import type { Agency, Attachment, PermissionMode, RoleEffort, TranscriptEvent } from '@shared/ipc-contract'
@@ -139,7 +140,7 @@ async function changeContext(path: string): Promise<void> {
   const settings = await window.agentkeeper.settings.get()
   const localId = store.createOrFocusDraft({
     projectPath: path,
-    defaultModel: settings.defaultModel,
+    defaultModel: defaultModelFor(settings, settings.harnessId),
     defaultEffort: settings.defaultEffort,
     defaultUseWorktree: settings.defaultUseWorktree,
     defaultHarnessId: settings.harnessId,
@@ -565,8 +566,10 @@ async function changeModel(model: string) {
     await window.agentkeeper.sessions.setModel(session.value.localId, model)
     session.value.model = model
   }
-  // Remember the pick as the default for future new sessions.
-  void window.agentkeeper.settings.set({ defaultModel: model })
+  // Remember the pick per harness so future new drafts on this harness start
+  // here — but never touch the global default, which would leak a model picked
+  // on one harness into every other harness's next draft.
+  void rememberModel(model, session.value.harnessId)
 }
 
 // Harness is fixed once a session starts, so this only mutates the draft.
