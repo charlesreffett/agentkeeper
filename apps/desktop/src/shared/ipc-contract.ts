@@ -614,9 +614,16 @@ export interface AppSettings {
   mcpServers: McpServerEntry[]
   /** Active harness adapter id. Defaults to 'claude-code' when undefined. */
   harnessId?: string
+  /** Per-harness binary path overrides, keyed by harness id (e.g. claude-code
+   *  → /path/to/claude). Empty means PATH lookup with *_BIN env fallback. */
+  harnessBins?: Record<string, string>
   mobileServer?: { enabled: boolean; port: number; secretKey: string }
   /** Skip the dirty-tree warning when switching branches (changes are carried over, never lost). Default false. */
   gitSwitchWithoutSoftReject?: boolean
+  /** Last model the user picked, keyed by harness id. New drafts on a harness
+   *  start from this when present, before falling back to `defaultModel` — a
+   *  pick made while browsing another harness must not leak into it. */
+  lastUsedModels?: Record<string, string>
 }
 
 export type SecretKeyName = 'anthropicApiKey'
@@ -627,8 +634,23 @@ export interface HarnessInfo {
   id: string
   name: string
   available: boolean
+  /** Human-readable reason when `available` is false — shown verbatim in the UI. */
+  unavailableReason?: string
   defaultModel: string
   capabilities: HarnessCapabilities
+}
+
+/** Per-harness auth status for the diagnostics surface. `ready` means a usable
+ *  credential is present; `detail` explains what's configured. */
+export interface HarnessAuthInfo {
+  id: string
+  /** 'api-key' (key stored), 'cli' (relies on `claude login`), or 'provider'
+   *  (open-code style auth store). */
+  type: string
+  ready: boolean
+  /** Authenticated provider ids (opencode) — empty otherwise. */
+  providers?: string[]
+  detail?: string
 }
 
 // ─── Factory reset ──────────────────────────────────────────────────────────
@@ -765,6 +787,8 @@ export interface AvailableModel {
   value: string
   label: string
   description?: string
+  /** Provider serving the model, e.g. `anthropic` — for badges/grouping. */
+  provider?: string
   /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`.
    *  Lets the UI always show the real model+version, not the alias label. */
   resolvedModel?: string
@@ -1074,6 +1098,8 @@ export interface AgentKeeperApi {
     list: () => Promise<HarnessInfo[]>
     getActive: () => Promise<HarnessInfo>
     setActive: (id: string) => Promise<void>
+    /** Auth/availability diagnostics for every registered harness. */
+    auth: () => Promise<HarnessAuthInfo[]>
   }
   mobile: {
     generateKey: () => Promise<string>
@@ -1277,6 +1303,7 @@ export const IPC_CHANNELS = {
   harnessListAdapters: 'harness:list',
   harnessGetActive: 'harness:getActive',
   harnessSetActive: 'harness:setActive',
+  harnessAuth: 'harness:auth',
   mobileGenerateKey: 'mobile:generateKey',
   mobileGetLocalIp: 'mobile:getLocalIp',
   performanceGetSummary: 'performance:getSummary',

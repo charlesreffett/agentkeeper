@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { Check, ChevronDown, Search, CornerDownLeft } from 'lucide-vue-next'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { useModelsQuery } from '@/composables/useModelsQuery'
+import { useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
 import { useHarnessList } from '@/composables/useHarness'
 import { featureFlags } from '@/lib/featureFlags'
 
@@ -72,8 +72,22 @@ const filtered = computed(() => {
     (m) =>
       m.value.toLowerCase().includes(q) ||
       m.label.toLowerCase().includes(q) ||
+      m.provider?.toLowerCase().includes(q) ||
       (m.description?.toLowerCase().includes(q) ?? false),
   )
+})
+
+// Rows grouped by provider (first-appearance order) so the catalog is scannable
+// when a harness serves many providers.
+const grouped = computed(() => {
+  const byProvider = new Map<string, ModelOption[]>()
+  for (const m of filtered.value) {
+    const key = m.provider || 'Other'
+    const list = byProvider.get(key)
+    if (list) list.push(m)
+    else byProvider.set(key, [m])
+  }
+  return Array.from(byProvider.entries()).map(([provider, items]) => ({ provider, items }))
 })
 
 // The search box doubles as free-text entry: any id the harness accepts (a
@@ -150,7 +164,7 @@ function onEnter() {
             :key="h.id"
             type="button"
             :disabled="!h.available"
-            :title="h.name"
+            :title="h.available ? h.name : h.unavailableReason ?? `${h.name} — unavailable`"
             class="size-8 shrink-0 rounded-md border text-xs font-semibold uppercase transition-colors disabled:opacity-40"
             :class="selectedHarnessId === h.id
               ? 'border-primary bg-primary/10 text-primary'
@@ -162,23 +176,39 @@ function onEnter() {
         </div>
 
         <div class="flex-1 min-w-0 h-full overflow-y-auto p-1">
-          <button
-            v-for="m in filtered"
-            :key="m.value"
-            type="button"
-            class="group flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent"
-            @click="select(m.value)"
-          >
-            <span class="mt-0.5 w-4 shrink-0">
-              <Check v-if="m.value === effectiveSelected" class="h-4 w-4 text-primary" />
-            </span>
-            <span class="flex-1 min-w-0">
-              <span class="block text-sm font-medium truncate">{{ m.label }}</span>
-              <span v-if="m.description" class="block text-xs text-muted-foreground truncate">
-                {{ m.description }}
+          <template v-for="group in grouped" :key="group.provider">
+            <div
+              class="sticky top-0 z-10 bg-background/95 backdrop-blur px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            >
+              {{ group.provider }}
+            </div>
+            <button
+              v-for="m in group.items"
+              :key="m.value"
+              type="button"
+              :title="m.value"
+              class="group flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent"
+              @click="select(m.value)"
+            >
+              <span class="mt-0.5 w-4 shrink-0">
+                <Check v-if="m.value === effectiveSelected" class="h-4 w-4 text-primary" />
               </span>
-            </span>
-          </button>
+              <span class="flex-1 min-w-0">
+                <span class="flex items-center gap-1.5">
+                  <span class="block text-sm font-medium truncate">{{ m.label }}</span>
+                  <span
+                    v-if="m.provider"
+                    class="shrink-0 rounded border border-border px-1 py-px text-[10px] leading-none text-muted-foreground"
+                  >
+                    {{ m.provider }}
+                  </span>
+                </span>
+                <span v-if="m.description" class="block text-xs text-muted-foreground truncate">
+                  {{ m.description }}
+                </span>
+              </span>
+            </button>
+          </template>
 
           <button
             v-if="rawCandidate"

@@ -1,12 +1,44 @@
 import path from 'node:path'
 import os from 'node:os'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailability, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import { sanitizeCustomModel } from '@agentkeeper/core'
 import { resolveClaudeAuth } from '../secrets'
+import { resolveBin, type BinConfig } from './bin'
+import { isMissingBinary } from './diagnostics'
 
 const execFileAsync = promisify(execFile)
+
+/** Where the claude binary comes from — resolved per spawn so a settings/env
+ *  override applies on the next call without an app restart. */
+const CLAUDE_BIN: BinConfig = {
+  harnessId: 'claude-code',
+  fallbackBins: ['claude'],
+  envVar: 'CLAUDE_BIN',
+}
+
+/** SDK seam for the session subprocess — the SDK hardcodes the `claude` command
+ *  from PATH, so a resolved bin (settings override / CLAUDE_BIN) has to be
+ *  injected through spawnClaudeCodeProcess. Falls back to the SDK's own
+ *  `options.command` when nothing resolves. */
+const spawnClaudeCodeProcess: NonNullable<NonNullable<Parameters<typeof query>[0]['options']>['spawnClaudeCodeProcess']> = ((options: {
+  command: string
+  args: string[]
+  cwd?: string
+  env: Record<string, string | undefined>
+  signal: AbortSignal
+}) => {
+  const bin = resolveBin(CLAUDE_BIN) ?? options.command
+  // spawn() types stdin/stdout as nullable; stdio defaults to 'pipe' so the
+  // streams are always present, satisfying the SDK's SpawnedProcess.
+  return spawn(bin, options.args, {
+    cwd: options.cwd,
+    env: options.env,
+    signal: options.signal,
+  }) as unknown as ReturnType<NonNullable<NonNullable<Parameters<typeof query>[0]['options']>['spawnClaudeCodeProcess']>>
+})
 
 export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   readonly id = 'claude-code'
@@ -32,16 +64,25 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     return env
   }
 
+  /** Model ids are free text until they hit this boundary — sanitize so an
+   *  off-pattern value falls back to the SDK default rather than reaching argv. */
+  private sanitizedModel(model?: string): string | undefined {
+    if (!model) return undefined
+    return sanitizeCustomModel(model) ?? undefined
+  }
+
   async runPrompt(prompt: string, options: HarnessSessionOptions): Promise<string> {
     const auth = await resolveClaudeAuth()
+    const model = this.sanitizedModel(options.model)
     const q = query({
       prompt,
       options: {
         cwd: options.cwd,
-        ...(options.model ? { model: options.model } : {}),
+        ...(model ? { model } : {}),
         env: this.childEnv(auth, options.env),
         permissionMode: 'bypassPermissions',
         abortController: options.abortController,
+        spawnClaudeCodeProcess,
       },
     })
     let out = ''
@@ -70,9 +111,10 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
       childEnv['ANTHROPIC_API_KEY'] = auth.key
     }
 
+    const model = this.sanitizedModel(options.model)
     const sdkOptions: Parameters<typeof query>[0]['options'] = {
       cwd: options.cwd,
-      ...(options.model ? { model: options.model } : {}),
+      ...(model ? { model } : {}),
       ...(options.effort ? { effort: options.effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
       ...(options.resume ? { resume: options.resume } : {}),
       abortController: options.abortController,
@@ -80,6 +122,7 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
       permissionMode: (options.permissionMode ?? 'bypassPermissions') as 'bypassPermissions',
       settingSources: (options.settingSources ?? ['user', 'project']) as ['user', 'project'],
       includePartialMessages: options.includePartialMessages ?? true,
+      spawnClaudeCodeProcess,
     }
 
     if (options.systemPrompt || options.preset) {
@@ -143,6 +186,7 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
         value: m.value,
         label: m.displayName,
         description: m.description,
+        provider: 'Anthropic',
         resolvedModel: m.resolvedModel,
         supportsEffort: m.supportsEffort,
         effortLevels: m.supportedEffortLevels,
@@ -184,7 +228,13 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   }
 
   async runCLI(args: string[], options?: HarnessCLIOptions): Promise<string> {
-    const { stdout } = await execFileAsync('claude', args, {
+    const bin = resolveBin(CLAUDE_BIN)
+    if (!bin) {
+      throw new Error(
+        "Claude binary not found — install Claude Code, set CLAUDE_BIN, or configure a bin path in settings.",
+      )
+    }
+    const { stdout } = await execFileAsync(bin, args, {
       cwd: options?.cwd,
       env: options?.env ? { ...process.env, ...options.env } : process.env,
       timeout: options?.timeout,
@@ -200,12 +250,36 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     return { type: 'cli' }
   }
 
-  async isAvailable(): Promise<boolean> {
+  async probeAuthDetail(): Promise<HarnessAuthDetail> {
+    const result = await resolveClaudeAuth()
+    if (result.type === 'api-key' && result.key) {
+      return { type: 'api-key', ready: true, detail: 'Anthropic API key stored in the keychain.' }
+    }
+    return { type: 'cli', ready: true, detail: 'Uses Claude Code login (Pro/Max) — run `claude login` if sessions fail.' }
+  }
+
+  async probeAvailability(): Promise<HarnessAvailability> {
+    const bin = resolveBin(CLAUDE_BIN)
+    if (!bin) {
+      return {
+        available: false,
+        reason: "`claude` not found on PATH — install Claude Code or set CLAUDE_BIN.",
+      }
+    }
     try {
-      await execFileAsync('claude', ['--version'])
-      return true
-    } catch {
-      return false
+      await execFileAsync(bin, ['--version'])
+      return { available: true }
+    } catch (error) {
+      if (isMissingBinary(error)) {
+        return {
+          available: false,
+          reason: "`claude` not found on PATH — install Claude Code or set CLAUDE_BIN.",
+        }
+      }
+      return {
+        available: false,
+        reason: `\`claude --version\` failed: ${error instanceof Error ? error.message : String(error)}`,
+      }
     }
   }
 

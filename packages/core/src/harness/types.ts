@@ -4,6 +4,37 @@ export interface HarnessAuth {
   env?: Record<string, string>
 }
 
+/** Free-text model ids reach the harness boundary from many places (user-typed
+ *  custom models, role files, agency plans, CLI socket, iOS). Sanitize before
+ *  any spawn/argv construction: allow only safe characters and cap the length
+ *  so a hostile or malformed value can't smuggle shell metacharacters into a
+ *  subprocess. Returns null when off-pattern; callers fall back to the harness
+ *  default instead of forwarding it. */
+export function sanitizeCustomModel(model: string): string | null {
+  if (model.length > 200) return null
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/.test(model)) return null
+  return model
+}
+
+/** Diagnostic result of whether a harness can run right now, with a reason the
+ *  UI can show verbatim instead of a bare "unavailable". */
+export interface HarnessAvailability {
+  available: boolean
+  /** Human-readable reason when not available (missing binary, --version
+   *  failure, …). Absent when available. */
+  reason?: string
+}
+
+/** Per-harness auth status for the diagnostics surface. `ready` means a usable
+ *  credential is present; `detail` explains what's configured. */
+export interface HarnessAuthDetail {
+  type: string
+  ready: boolean
+  /** Authenticated provider ids (e.g. opencode's auth store) — empty otherwise. */
+  providers?: string[]
+  detail?: string
+}
+
 export interface HarnessCLIOptions {
   cwd?: string
   env?: Record<string, string>
@@ -39,6 +70,9 @@ export interface HarnessModelInfo {
   value: string
   label: string
   description?: string
+  /** Provider that serves the model (`anthropic`, `openai`, …). Lets the UI
+   *  badge and group models by provider instead of parsing it out of `value`. */
+  provider?: string
   /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`. */
   resolvedModel?: string
   supportsEffort?: boolean
@@ -106,7 +140,11 @@ export interface HarnessAdapter {
   getSettingsPath(): string
   runCLI(args: string[], options?: HarnessCLIOptions): Promise<string>
   resolveAuth(): Promise<HarnessAuth>
-  isAvailable(): Promise<boolean>
+  probeAvailability(): Promise<HarnessAvailability>
+  /** Optional human-readable auth status for the diagnostics surface. Harnesses
+   *  that only distinguish api-key vs cli (claude-code) can omit it — callers
+   *  fall back to {@link resolveAuth}. */
+  probeAuthDetail?(): Promise<HarnessAuthDetail>
   encodeCwd(cwd: string): string
   /** Release any long-lived resources (e.g. a spawned server) at app shutdown.
    *  Optional — harnesses that hold nothing omit it. */

@@ -10,6 +10,7 @@ import {
   type Attachment,
   type ClaudeAuthType,
   type HarnessInfo,
+  type HarnessAuthInfo,
   type CreatePRParams,
   type DayTotal,
   type ProjectDayTotal,
@@ -532,6 +533,7 @@ const api: AgentKeeperApi = {
     list: () => invoke(IPC_CHANNELS.harnessListAdapters) as Promise<HarnessInfo[]>,
     getActive: () => invoke(IPC_CHANNELS.harnessGetActive) as Promise<HarnessInfo>,
     setActive: (id: string) => invoke(IPC_CHANNELS.harnessSetActive, id) as Promise<void>,
+    auth: () => invoke(IPC_CHANNELS.harnessAuth) as Promise<HarnessAuthInfo[]>,
   },
   mobile: {
     generateKey: () => invoke(IPC_CHANNELS.mobileGenerateKey) as Promise<string>,

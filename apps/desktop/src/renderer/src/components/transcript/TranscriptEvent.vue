@@ -12,13 +12,16 @@ import { computed, ref, toRaw } from 'vue'
 import { type VerbosityState, DEFAULT_VERBOSITY_STATE, isBlockVisible } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 
-const { resolvedLabelFor } = useModelsQuery()
-
 const props = defineProps<{
   event: TranscriptEvent
   verbosityState?: VerbosityState
   /** Display name for the agent that produced this event. Used for sub-agent progress events. */
   agentName?: string | null
+  /** Harness the session runs on — scopes model-label resolution to the right
+   *  provider so an opencode model isn't resolved against Claude's list. */
+  harnessId?: string | null
+  /** Assistant author label (harness name). Falls back to 'Claude'. */
+  assistantName?: string | null
   /** True while this event's text is still streaming — passed to Comark for auto-close mode. */
   streaming?: boolean
   isDoomed?: boolean
@@ -30,6 +33,8 @@ const emit = defineEmits<{
   'edit-submit': [uuid: string, newText: string, attachments: Attachment[]]
   'regenerate': [uuid: string]
 }>()
+
+const { resolvedLabelFor } = useModelsQuery(() => props.harnessId ?? undefined)
 
 const state = computed(() => props.verbosityState ?? DEFAULT_VERBOSITY_STATE)
 
@@ -62,8 +67,12 @@ const displayName = computed(() => {
   if (isToolResultOnly.value) return ''
   if (isUser.value) return 'you'
   if (isSubAgent.value) return props.agentName ?? 'agent'
-  return props.agentName ?? 'Claude'
+  return props.agentName ?? props.assistantName ?? 'Claude'
 })
+
+const avatarLetter = computed(() =>
+  isUser.value ? 'Y' : (displayName.value.charAt(0).toUpperCase() || 'C'),
+)
 
 type BlockGroup =
   | { kind: 'single'; key: number; block: ContentBlock }
@@ -291,7 +300,7 @@ function onEditKeydown(e: KeyboardEvent) {
       class="mt-0.5 size-7 rounded-full shrink-0 flex items-center justify-center text-[11px] font-bold text-white select-none"
       :class="isUser ? 'bg-blue-500' : 'bg-orange-400'"
     >
-      {{ isUser ? 'Y' : 'C' }}
+      {{ avatarLetter }}
     </div>
 
     <!-- Content column -->

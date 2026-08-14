@@ -16,6 +16,7 @@ import {
   type DayTotal,
   type ProjectDayTotal,
   type HarnessInfo,
+  type HarnessAuthInfo,
   type MergeMethod,
   type PRFilters,
   type PluginSource,
@@ -1493,21 +1494,27 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   // Harness
   ipcMain.handle(IPC_CHANNELS.harnessListAdapters, async (): Promise<HarnessInfo[]> => {
     const adapters = harnessRegistry.list()
-    return Promise.all(adapters.map(async (a) => ({
-      id: a.id,
-      name: a.name,
-      available: await a.isAvailable(),
-      defaultModel: await getDefaultModel(a.id),
-      capabilities: await getCapabilities(a.id),
-    })))
+    return Promise.all(adapters.map(async (a) => {
+      const avail = await a.probeAvailability()
+      return {
+        id: a.id,
+        name: a.name,
+        available: avail.available,
+        unavailableReason: avail.reason,
+        defaultModel: await getDefaultModel(a.id),
+        capabilities: await getCapabilities(a.id),
+      }
+    }))
   })
 
   ipcMain.handle(IPC_CHANNELS.harnessGetActive, async (): Promise<HarnessInfo> => {
     const active = getHarness()
+    const avail = await active.probeAvailability()
     return {
       id: active.id,
       name: active.name,
-      available: await active.isAvailable(),
+      available: avail.available,
+      unavailableReason: avail.reason,
       defaultModel: await getDefaultModel(active.id),
       capabilities: await getCapabilities(active.id),
     }
@@ -1516,6 +1523,20 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   ipcMain.handle(IPC_CHANNELS.harnessSetActive, async (_e, id: string): Promise<void> => {
     harnessRegistry.setDefault(id)
     settingsStore.set({ harnessId: id })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessAuth, async (): Promise<HarnessAuthInfo[]> => {
+    const adapters = harnessRegistry.list()
+    return Promise.all(adapters.map(async (a) => {
+      if (a.probeAuthDetail) {
+        return { id: a.id, ...(await a.probeAuthDetail()) }
+      }
+      const auth = await a.resolveAuth()
+      if (auth.type === 'api-key' && auth.key) {
+        return { id: a.id, type: 'api-key', ready: true, detail: 'API key configured.' }
+      }
+      return { id: a.id, type: 'cli', ready: true, detail: 'Relies on the binary’s own login.' }
+    }))
   })
 
   registerTerminalHandlers()
