@@ -4,6 +4,18 @@ export interface HarnessAuth {
   env?: Record<string, string>
 }
 
+/** Free-text model ids reach the harness boundary from many places (user-typed
+ *  custom models, role files, agency plans, CLI socket, iOS). Sanitize before
+ *  any spawn/argv construction: allow only safe characters and cap the length
+ *  so a hostile or malformed value can't smuggle shell metacharacters into a
+ *  subprocess. Returns null when off-pattern; callers fall back to the harness
+ *  default instead of forwarding it. */
+export function sanitizeCustomModel(model: string): string | null {
+  if (model.length > 200) return null
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/.test(model)) return null
+  return model
+}
+
 export interface HarnessCLIOptions {
   cwd?: string
   env?: Record<string, string>

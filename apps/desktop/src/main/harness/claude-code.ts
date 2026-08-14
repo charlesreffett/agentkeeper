@@ -4,6 +4,7 @@ import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { HarnessAdapter, HarnessAuth, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import { sanitizeCustomModel } from '@agentkeeper/core'
 import { resolveClaudeAuth } from '../secrets'
 import { resolveBin, type BinConfig } from './bin'
 
@@ -62,13 +63,21 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     return env
   }
 
+  /** Model ids are free text until they hit this boundary — sanitize so an
+   *  off-pattern value falls back to the SDK default rather than reaching argv. */
+  private sanitizedModel(model?: string): string | undefined {
+    if (!model) return undefined
+    return sanitizeCustomModel(model) ?? undefined
+  }
+
   async runPrompt(prompt: string, options: HarnessSessionOptions): Promise<string> {
     const auth = await resolveClaudeAuth()
+    const model = this.sanitizedModel(options.model)
     const q = query({
       prompt,
       options: {
         cwd: options.cwd,
-        ...(options.model ? { model: options.model } : {}),
+        ...(model ? { model } : {}),
         env: this.childEnv(auth, options.env),
         permissionMode: 'bypassPermissions',
         abortController: options.abortController,
@@ -101,9 +110,10 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
       childEnv['ANTHROPIC_API_KEY'] = auth.key
     }
 
+    const model = this.sanitizedModel(options.model)
     const sdkOptions: Parameters<typeof query>[0]['options'] = {
       cwd: options.cwd,
-      ...(options.model ? { model: options.model } : {}),
+      ...(model ? { model } : {}),
       ...(options.effort ? { effort: options.effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
       ...(options.resume ? { resume: options.resume } : {}),
       abortController: options.abortController,
