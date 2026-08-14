@@ -55,8 +55,11 @@ function parseSkillMeta(body: string): { name: string; description: string } {
   }
 }
 
-/** Enumerate skills contributed by installed Claude Code plugins. */
+/** Enumerate skills contributed by installed Claude Code plugins. Plugins are
+ *  a Claude Code concept (`~/.claude/plugins`) — a non-claude harness can't run
+ *  them, so they're only surfaced when Claude Code is the active harness. */
 async function listPluginCommands(): Promise<SlashCommand[]> {
+  if (getHarness().id !== 'claude-code') return []
   const installedPath = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json')
   let installed: { version: number; plugins: Record<string, Array<{ installPath: string }>> }
   try {
