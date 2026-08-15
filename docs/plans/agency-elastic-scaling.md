@@ -4,9 +4,11 @@ Status: not started. Branch: `feat/agency-elastic-scaling` off `main` (`f41b7ee`
 Investigated: 2026-08-14
 Prerequisite shipped: PR #47 (per-instance restart params, routing log).
 
-Intended behaviour, in the user's words: a role declares a floor and a ceiling
-and the orchestrator "spins up additional instances as needed and spins them
-down after they complete their tasks" — pods scaling under pressure.
+Design: **grow-and-flush**. A role keeps `min` warm instances, grows to `max`
+under pressure, and reclaims elastic instances on task completion. Before
+suspending, an instance flushes its reasoning into durable artifacts — code
+comments, commit bodies, plan docs — rather than into orchestrator memory.
+Context is externalized, not preserved.
 
 Everything below is from reading `apps/desktop/src/main/orchestrator.ts` at
 `f41b7ee`. Defects marked **[unverified]** are derived from the code but have
@@ -14,10 +16,73 @@ not been reproduced live; confirm each with the routing log before fixing it.
 The previous round of work on this file produced two confidently-wrong
 diagnoses from static reading alone, so the log is the arbiter, not the code.
 
+## Why elastic at all
+
+Worth stating, because the case is narrower than the pod analogy suggests.
+
+An idle agent costs almost nothing here — no tokens flow while it waits. A warm
+idle instance costs one spawn turn, a `claude` subprocess in RAM, and a tile in
+the monitor grid. So `min: 3, max: 6` versus a flat `count: 6` differs by three
+subprocesses and three short spawn turns. That is not the justification.
+
+The real benefit is **behavioural**. The preamble tells each agent
+`Current agency members: …`. With a flat count of 6 the planner sees six
+developers, and models tend to fill available parallelism — you get six-way
+splits of work that wanted three. With `min: 3` the visible pool is three, so
+the typical run stays narrow and only widens under genuine pressure. Elastic
+makes `max` a **safety ceiling rather than a target**.
+
+Secondary: when burst width is unknown, a flat count forces pre-committing to
+the worst case — wasteful when you needed two, still queueing when you needed
+nine.
+
+## Why reclaim is safe: externalize, don't preserve
+
+The obvious objection to reclaim is that an instance holds reasoning no other
+agent has — what it tried, what it rejected, why. Three options were considered:
+
+1. **Resume the original session.** Lossless: `interruptSession` (:384) stops the
+   process but `sdkSessionId` persists, and `injectAndWait` (:427-440) resumes
+   via `resumeSdkSessionId`, restoring the full transcript.
+2. **Inject a handoff summary** into a fresh instance. What the code does today.
+3. **Nothing** — a fresh agent reads the code and forms its own view.
+
+**Chosen: 3, with a flush step.** Reasons, in order of weight:
+
+- **Stale context is worse than none.** A revived agent's model of the tree may
+  be hours out of date — other agents have edited those files since. It will act
+  confidently on a world that no longer exists. A fresh agent reading current
+  `HEAD` is simply correct.
+- **A transcript is a bad medium for durable reasoning.** It is invisible,
+  unversioned, unreviewable, and reachable only by whoever holds the right
+  instance id. Code comments, commit bodies, and plan docs are versioned,
+  reviewable, and readable by any agent — including a human.
+- **Resume is unbounded in cost.** It re-sends the whole transcript, and gets
+  more expensive the longer the session ran. Re-reading is bounded by the size
+  of the relevant code, and parallelizes.
+- **Relevance inference is intractable.** Option 2 requires deciding *when* old
+  context matters to new work. Option 1 avoids that by making the caller name
+  the instance, but then needs reply attribution, per-instance queueing, and a
+  durable work-thread identity separate from the pool slot — a large subsystem
+  whose payoff is reclaiming near-free resources.
+
+So the rule is:
+
+> Reclaim is safe exactly when the agent has externalized its reasoning.
+
+This also repairs the pod analogy. Agents look stateful and therefore unlike
+pods — but statelessness is *achieved*, not inherent. Pods scale cleanly because
+their state lives in a database. Flush-on-reclaim is the same move: put the
+state in the repo and the instance becomes genuinely interchangeable.
+
+**Retain transcripts anyway**, for human forensics — reading persisted
+transcripts is how the identity bug behind #47 was found. Retained for
+debugging, not wired into routing.
+
 ## Current state
 
-Scale-up works. Scale-down does not exist, and the code that looks like
-scale-down leaves the role permanently pinned at its ceiling.
+Scale-up works. Reclaim does not exist, and the code that resembles it leaves
+the role permanently pinned at its ceiling.
 
 | config | initial spawn | can grow? |
 |---|---|---|
@@ -34,8 +99,8 @@ Scale-up path, all synchronous through the claim (fixed in #47):
 starts the session.
 
 Teardown path: `deliverToInstance`'s `finally` (:406) sends overflow instances
-to `requestHandoffAndSuspend` (:327), which collects a handoff summary, records
-it in `handoffsByRole`, and calls `interruptSession`.
+to `requestHandoffAndSuspend` (:327), which collects a summary, records it in
+`handoffsByRole`, and calls `interruptSession`.
 
 ## Defects
 
@@ -49,103 +114,78 @@ Consequences:
 
 - `reserveOverflowSlot`'s ceiling check (:218) counts suspended instances, so
   once a role touches `max` it can never spawn again for the life of the
-  agency. Second wave of pressure queues instead of scaling.
-- `idleInstance` (:145) only filters on `busySessions`, so a *suspended*
-  instance reads as idle and will be selected for new work. It is then revived
-  by `injectAndWait`'s resume path (:427) — which is why this never surfaced as
-  a lost message. Effectively the system is scale-up-then-reuse, not
-  scale-down.
+  agency. A second wave of pressure queues instead of scaling.
+- `idleInstance` (:145) filters only on `busySessions`, so a *suspended*
+  instance reads as idle and gets selected for new work. It is then silently
+  revived by `injectAndWait`'s resume path (:427) — which is why this never
+  surfaced as a lost message, and which under grow-and-flush is exactly the
+  stale-context revival we do not want.
 
-The revival is arguably desirable; the permanent ceiling is not. Both stem from
-one missing concept: pool membership is currently implicit.
-
-### 2. Instance is marked idle before the handoff completes **[unverified]**
+### 2. Instance is marked idle before the flush completes **[unverified]**
 
 `deliverToInstance` (:404-408) deletes from `busySessions` and *then* awaits
-`requestHandoffAndSuspend`. During the handoff turn — which is a full model
-round-trip (:338-341) — the instance reads as idle and can be handed a fresh
-message. Two conversations then interleave on one session, the failure mode
-`busySessions` exists to prevent (cf. the direct-addressing guard at :540).
+`requestHandoffAndSuspend`. During that turn — a full model round-trip
+(:338-341) — the instance reads as idle and can be handed a fresh message. Two
+conversations then interleave on one session, the failure mode `busySessions`
+exists to prevent (cf. the direct-addressing guard at :540).
 
 Widens with fan-out: five instances finishing at staggered times means five
-handoff windows.
+windows.
 
-### 3. Queued work stalls behind overflow completion **[unverified]**
+### 3. Queued work stalls behind reclaim **[unverified]**
 
 `drainPendingForRole` is called only on the non-overflow branch (:409). When an
-overflow instance finishes and suspends, the role's pending queue is not
-drained — even though that instance just became available. Queued messages wait
-for a *base* instance to finish instead, or time out after
-`SEND_MESSAGE_TIMEOUT_MS` (15 min) with a NOT-delivered error.
+elastic instance finishes and suspends, the role's pending queue is not drained
+— even though capacity just freed up. Queued messages wait for a base instance
+to finish, or time out after `SEND_MESSAGE_TIMEOUT_MS` (15 min) with a
+NOT-delivered error.
 
 ### 4. Instance indices are positional, not stable
 
 `reserveOverflowSlot` computes `nextIndex = existing.length + 1` (:220). Correct
-only while the array never shrinks. Fixing defect 1 by splicing would make
-indices collide: remove `developer-3`, spawn again, and the new instance is also
-`developer-3` — while `handoffsByRole` (:378) still holds the *old* one's
-summary under `instanceIndex: 3`, and any peer holding the id addresses the
-wrong agent.
+only while the array never shrinks. Reclaiming instances makes indices collide:
+free `developer-3`, spawn again, and the new instance is also `developer-3` —
+while any peer holding the id addresses the wrong agent.
 
-Any fix to defect 1 must land with a monotonic per-role counter, not after it.
+Must land *with* the reclaim fix, not after it.
 
 ### 5. `min` is only a starting count
 
-Nothing reads `slot.min` after the initial spawn (:1083 is the sole use). There
-is no floor enforcement — if a base instance dies under `onFailure: 'continue'`
-the role silently runs below `min` forever.
+Nothing reads `slot.min` after the initial spawn (:1083 is the sole use). No
+floor enforcement — if a base instance dies under `onFailure: 'continue'`, the
+role silently runs below `min` forever.
 
-### 6. Reclaimed instances hold context nobody can address
+### 6. Handoff summaries are unbounded and broadcast
 
-The sharpest design problem, and the reason phase 4 is not just a timer.
-
-An instance that worked on something holds the reasoning behind its decisions —
-what it tried, what it rejected, why. Suspension does not destroy that:
-`interruptSession` (:384) stops the process, but `sdkSessionId` persists in the
-registry and `injectAndWait` (:427-440) resumes with `resumeSdkSessionId`,
-restoring the full transcript. Context is dormant and losslessly recoverable.
-
-What is missing is a way to *address* it.
-
-- Role-addressed sends are load-balanced by construction (`idleInstance`, :145).
-  They cannot express "the instance that decided X" — any idle peer will do, and
-  a freshly spawned one is equally eligible.
-- Direct instance-id addressing is the only route back, but the caller must know
-  the id, and nothing tells it: `injectAndWait` returns the peer's reply text
-  with no attribution (:498), so the planner cannot learn who did what.
-- Even a caller that knew the id would be rejected if that instance is mid-task
-  (:540) — the failure lands under exactly the load that caused scaling.
-
-So the handoff summary is doing work it is badly suited for: it is a lossy,
-model-written compression standing in for a transcript that still exists and
-could simply be resumed.
-
-Secondary: `handoffsByRole` is unbounded and broadcast. Every summary is
-injected into every subsequently spawned instance of that role (:250-257), so
-after N suspensions each cold spawn carries N summaries of work it will never
-touch — context bloat that grows with churn.
+`handoffsByRole` accumulates for the life of the agency, and every summary is
+injected into every subsequently spawned instance of that role (:250-257). After
+N reclaims each cold spawn carries N summaries of work it will never touch.
+Under grow-and-flush this subsystem is deleted rather than fixed.
 
 ### 7. Preamble advertises the ceiling as the population
 
 `totalInstances: slot.max ?? nextIndex` (:268) and :1112, so every agent is told
-"instance 3 of 5" even when two instances exist. Harmless to routing, but the
-preamble also lists `Current agency members` (:692 in the previous revision),
-which goes stale the moment anything scales.
+"instance 3 of 5" even when two instances exist. The preamble also lists
+`Current agency members`, which goes stale the moment anything scales — and
+which is the mechanism the whole elastic design leans on (see "Why elastic at
+all").
 
 ## Plan
 
-Each phase is its own branch off `main`, in order. Phase 1 is a hard
-prerequisite for 3-5; phase 4 must land before phase 5 turns reclaim on.
+Three phases, each its own branch off `main`. Phase 1 is a hard prerequisite
+for 2 and 3.
 
-### Phase 1 — explicit instance lifecycle + stable indices
+### Phase 1 — lifecycle, stable indices, flush-on-reclaim
 
 Branch: `feat/agency-instance-lifecycle`
 
-Replace `isOverflow: boolean` (:50) with an explicit state, and add a monotonic
+The core of the design. Addresses defects 1, 2, 4, and 6.
+
+Replace `isOverflow: boolean` (:50) with explicit state, and add a monotonic
 counter so ids are never reused:
 
 ```ts
-type InstanceState = 'active' | 'suspending' | 'suspended'
+type InstanceState = 'active' | 'flushing' | 'retired'
 
 interface AgentInstance {
   localId: string
@@ -163,108 +203,91 @@ interface RuntimeAgency {
 }
 ```
 
-- `idleInstance` selects only `state === 'active'` and not in `busySessions`.
-- `reserveOverflowSlot`'s ceiling counts only non-`suspended` instances, which
-  releases the ceiling without splicing the array — suspended entries stay for
-  their handoff history and for revival by id.
+- `idleInstance` selects only `state === 'active'`. A retired instance is never
+  routed to, which also closes the accidental-revival path in defect 1.
+- `reserveOverflowSlot`'s ceiling counts only non-`retired` instances, releasing
+  the ceiling without splicing the array.
 - `instanceIndex` comes from `nextIndexByRole`, not `existing.length`.
+- `deliverToInstance` sets `flushing` **before** releasing `busySessions`, and
+  releases only after the flush resolves (defect 2).
 
-Addresses defects 1 and 4. Keeps `injectAndWait`'s revival path working: a
-message addressed to a suspended instance still resumes it, and should flip it
-back to `active`.
+Rewrite `requestHandoffAndSuspend` as `flushAndRetire`. Same position in the
+lifecycle, same one model turn, but the output goes to the repo instead of to
+orchestrator memory:
 
-### Phase 2 — close the handoff window
+> Before suspending: make sure anything a future developer needs is in the
+> artifacts, not in your head. Non-obvious decisions and rejected alternatives
+> belong in code comments or the commit body. Reply DONE when the tree reflects
+> your reasoning.
 
-Branch: `fix/agency-handoff-window`
+Retire the handoff subsystem (defect 6). It spans more than the orchestrator, so
+stage it rather than ripping it out:
 
-In `deliverToInstance` (:404), set `state = 'suspending'` *before* releasing
-`busySessions`, and only release after `requestHandoffAndSuspend` resolves.
-With phase 1's `idleInstance` filter, a suspending instance is unselectable
-regardless of its busy flag.
+| site | action |
+|---|---|
+| `handoffLines` injection at :250-257, :1102, :1309 | delete — this is the behaviour being removed |
+| `runtime.handoffsByRole` (:87, :375-376, :1068, :1284) | delete |
+| `registry.addHandoff` / `getHandoffsByRole` (`session-registry.ts:292`, `:307`) | keep the readers, drop the writer |
+| `agency_handoffs` table (`db/schema.ts:41`) | leave in place, stop writing |
 
-Addresses defect 2. Verify with a fan-out where tasks finish at staggered times
-(vary the sleep per probe) — the log should never route to an instance whose
-handoff is in flight.
+Note :1270 — agency *resume* rehydrates `handoffsByRole` from the DB, so an
+agency resumed after this change would inject summaries written before it.
+Dropping the read at :1309 is what actually stops that, not dropping the write.
 
-### Phase 3 — drain on every release
+Leaving the table inert avoids a migration and keeps historical summaries
+readable for forensics. Revisit only if it turns out nothing reads it.
+
+Keep `sdkSessionId` and the on-disk transcript — forensics only, not routing.
+
+### Phase 2 — drain on every release
 
 Branch: `fix/agency-queue-drain`
 
-Call `drainPendingForRole` on both branches of :406, after the handoff settles.
-Then reconsider the drain itself: it currently shifts one entry and routes it to
-an idle instance (:387-394), but under `min`/`max` a queued entry should be
-able to *trigger a spawn* rather than wait. Make the drain reuse the same
-resolution path as `routeMessage` — idle → reserve → queue — rather than
-duplicating a narrower version of it.
+Call the drain on both branches of :406, after the flush settles. Then widen the
+drain itself: it currently shifts one entry and routes it to an idle instance
+(:387-394), but under `min`/`max` a queued entry should be able to *trigger a
+spawn* rather than wait. Make it reuse `routeMessage`'s resolution path — idle →
+reserve → queue — rather than duplicating a narrower version.
 
 Addresses defect 3.
 
-### Phase 4 — context continuity
-
-Branch: `feat/agency-instance-affinity`
-
-Must land before reclaim becomes aggressive, or scaling actively destroys
-working context (defect 6). Ordered cheapest-first; 4a alone may be enough.
-
-**4a. Attribute replies.** Prefix each reply with the responding instance id, in
-`injectAndWait` (:498) and in the `send_messages` aggregation. The planner then
-*knows* `developer-4` made the caching decision and can address the follow-up
-there. No orchestrator state, no new concepts, and it makes the existing
-direct-addressing path usable for the first time. This is the highest
-value-per-line change in the whole plan.
-
-**4b. Queue direct sends instead of rejecting.** Replace the busy-instance
-rejection (:540) with a per-instance queue mirroring `pendingByRole`. "Go back
-to the one who knows" currently fails precisely under load; this fixes that.
-Keep the cycle check (:534) — a queued direct send can still deadlock.
-
-**4c. Prefer revival over cold spawn.** When a role needs capacity and a
-suspended instance exists below the ceiling, resume it rather than spawning
-fresh. Cheaper than a cold start and preserves continuity by default. Only
-correct once the pool distinguishes `suspended` from `active` (phase 1).
-
-**4d. Scope the handoff broadcast.** Cap `handoffsByRole` injection, or attach
-summaries to the specific successor rather than every future spawn. With 4a-4c
-in place, handoffs become the fallback for genuinely cold agents rather than the
-primary continuity mechanism — which is the role they can actually fulfil.
-
-Open question, decide with a live run: should an instance holding unique context
-be *preferentially retained* over one that has none, when choosing what to
-reclaim? That inverts the usual LRU intuition and needs a definition of
-"unique context" the orchestrator can compute — likely "has non-empty handoff
-history" as a first approximation.
-
-### Phase 5 — reclaim policy
-
-Branch: `feat/agency-reclaim-policy`
-
-Only now is "spin down" safe. Decide and document:
-
-- **Which instances are reclaimable** — `elastic === true`, i.e. index above
-  `min`. Base instances never suspend.
-- **When** — immediately on task completion (current behaviour, cheapest,
-  thrashes under bursty load) versus after an idle grace period (needs a timer
-  per instance and a cancel path). Recommend an idle grace period here rather
-  than immediate: with 4c, a retained instance is reused with its context
-  intact, so keeping it warm briefly is strictly better than suspend-then-revive.
-- **Floor enforcement** — on any transition, if active instances for a role fall
-  below `min`, spawn back up to `min`. Covers defect 5 and agent death.
-
-### Phase 6 — preamble accuracy and observability
+### Phase 3 — floor enforcement and observability
 
 Branch: `feat/agency-scaling-observability`
 
+- On any lifecycle transition, if active instances for a role fall below `min`,
+  spawn back up to `min`. Covers defect 5 and agent death (defect 5).
 - `totalInstances` should describe the live population, with the ceiling stated
-  separately if it is useful to the agent at all (defect 7).
-- Extend the routing log with lifecycle transitions — spawn, suspend, revive,
+  separately if useful to the agent at all (defect 7).
+- Regenerate `Current agency members` on scale events, or drop it. The elastic
+  design depends on this list steering planner behaviour, so a stale list
+  undermines the main benefit.
+- Extend the routing log with lifecycle transitions — spawn, flush, retire,
   floor-restore — so scaling is legible in the same stream as routing.
-- Re-examine `Current agency members` in the preamble: under elastic scaling it
-  is stale by construction. Either drop it or regenerate it on revival.
+
+## Rejected alternatives
+
+Recorded so they are not relitigated.
+
+- **Flat `count: max`.** Simpler and always warm, but the planner fills the
+  parallelism it can see, so a flat count becomes a target rather than a
+  ceiling. See "Why elastic at all".
+- **Grow-only, never reclaim.** Avoids every reclaim hazard, but the pool
+  ratchets to `max` and stays there, converging on flat-`count` in behaviour.
+  Reasonable fallback if flush-on-reclaim proves unreliable in practice.
+- **Resume-on-address** (reply attribution + per-instance queues + durable
+  work-thread ids, so a caller can route follow-up work back to the instance
+  that did it). Genuinely lossless, and it dodges relevance inference by making
+  the caller name the target. Rejected as a large subsystem whose payoff is
+  reclaiming near-free resources, and whose lossless context is often *stale*
+  context. Revisit only if flush proves insufficient.
+- **Relevance matching** — orchestrator infers which prior context suits new
+  work. Rejected outright: the orchestrator has no basis for the judgement.
 
 ## Test protocol
 
-Config under test — note `count` must be **removed**, not merely supplemented,
-or it wins at :1081:
+Config under test. `count` must be **removed**, not merely supplemented, or it
+wins at :1081:
 
 ```yaml
   - id: developer
@@ -291,11 +314,19 @@ route ... -> developer-5 (overflow, spawning) | ...
 All five claims resolve synchronously before any task completes, so spawn
 pressure lands regardless of task duration.
 
-The decisive second test, which the current code fails: run the same prompt
-**twice** in one agency session. Wave 2 should scale up again. Today it queues,
-because the ceiling never releases (defect 1).
+Three checks the current code fails:
 
-Cross-check instance identity against the persisted transcripts rather than the
+1. **Second wave.** Run the same prompt twice in one agency session. Wave 2
+   should scale up again; today it queues, because the ceiling never releases
+   (defect 1).
+2. **Retired instances are not routed to.** After wave 1 reclaims, no `route`
+   line should name a retired instance.
+3. **Flush actually externalizes.** After a reclaim, the tree should contain the
+   reasoning — comments or commit body — not just the code. This is the
+   assumption the whole design rests on; if models flush poorly, fall back to
+   grow-only.
+
+Cross-check instance identity against persisted transcripts rather than the
 planner's report — the planner's attribution has been wrong twice:
 
 ```sh
