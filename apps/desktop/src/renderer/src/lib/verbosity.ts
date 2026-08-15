@@ -116,6 +116,7 @@ export function toolDisplayName(name: string): string {
     Agent: 'Running agent',
     NotebookEdit: 'Editing notebook',
     mcp__agentkeeper__send_message: 'Messaging agent',
+    mcp__agentkeeper__send_messages: 'Messaging agents in parallel',
     Skill: 'Invoking skill',
   }
   return MAP[name] ?? name
