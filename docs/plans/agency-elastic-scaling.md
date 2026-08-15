@@ -95,7 +95,37 @@ Nothing reads `slot.min` after the initial spawn (:1083 is the sole use). There
 is no floor enforcement — if a base instance dies under `onFailure: 'continue'`
 the role silently runs below `min` forever.
 
-### 6. Preamble advertises the ceiling as the population
+### 6. Reclaimed instances hold context nobody can address
+
+The sharpest design problem, and the reason phase 4 is not just a timer.
+
+An instance that worked on something holds the reasoning behind its decisions —
+what it tried, what it rejected, why. Suspension does not destroy that:
+`interruptSession` (:384) stops the process, but `sdkSessionId` persists in the
+registry and `injectAndWait` (:427-440) resumes with `resumeSdkSessionId`,
+restoring the full transcript. Context is dormant and losslessly recoverable.
+
+What is missing is a way to *address* it.
+
+- Role-addressed sends are load-balanced by construction (`idleInstance`, :145).
+  They cannot express "the instance that decided X" — any idle peer will do, and
+  a freshly spawned one is equally eligible.
+- Direct instance-id addressing is the only route back, but the caller must know
+  the id, and nothing tells it: `injectAndWait` returns the peer's reply text
+  with no attribution (:498), so the planner cannot learn who did what.
+- Even a caller that knew the id would be rejected if that instance is mid-task
+  (:540) — the failure lands under exactly the load that caused scaling.
+
+So the handoff summary is doing work it is badly suited for: it is a lossy,
+model-written compression standing in for a transcript that still exists and
+could simply be resumed.
+
+Secondary: `handoffsByRole` is unbounded and broadcast. Every summary is
+injected into every subsequently spawned instance of that role (:250-257), so
+after N suspensions each cold spawn carries N summaries of work it will never
+touch — context bloat that grows with churn.
+
+### 7. Preamble advertises the ceiling as the population
 
 `totalInstances: slot.max ?? nextIndex` (:268) and :1112, so every agent is told
 "instance 3 of 5" even when two instances exist. Harmless to routing, but the
@@ -104,8 +134,8 @@ which goes stale the moment anything scales.
 
 ## Plan
 
-Each phase is its own branch off `main`, in order — 1 and 2 are prerequisites
-for the rest.
+Each phase is its own branch off `main`, in order. Phase 1 is a hard
+prerequisite for 3-5; phase 4 must land before phase 5 turns reclaim on.
 
 ### Phase 1 — explicit instance lifecycle + stable indices
 
@@ -169,28 +199,63 @@ duplicating a narrower version of it.
 
 Addresses defect 3.
 
-### Phase 4 — reclaim policy
+### Phase 4 — context continuity
+
+Branch: `feat/agency-instance-affinity`
+
+Must land before reclaim becomes aggressive, or scaling actively destroys
+working context (defect 6). Ordered cheapest-first; 4a alone may be enough.
+
+**4a. Attribute replies.** Prefix each reply with the responding instance id, in
+`injectAndWait` (:498) and in the `send_messages` aggregation. The planner then
+*knows* `developer-4` made the caching decision and can address the follow-up
+there. No orchestrator state, no new concepts, and it makes the existing
+direct-addressing path usable for the first time. This is the highest
+value-per-line change in the whole plan.
+
+**4b. Queue direct sends instead of rejecting.** Replace the busy-instance
+rejection (:540) with a per-instance queue mirroring `pendingByRole`. "Go back
+to the one who knows" currently fails precisely under load; this fixes that.
+Keep the cycle check (:534) — a queued direct send can still deadlock.
+
+**4c. Prefer revival over cold spawn.** When a role needs capacity and a
+suspended instance exists below the ceiling, resume it rather than spawning
+fresh. Cheaper than a cold start and preserves continuity by default. Only
+correct once the pool distinguishes `suspended` from `active` (phase 1).
+
+**4d. Scope the handoff broadcast.** Cap `handoffsByRole` injection, or attach
+summaries to the specific successor rather than every future spawn. With 4a-4c
+in place, handoffs become the fallback for genuinely cold agents rather than the
+primary continuity mechanism — which is the role they can actually fulfil.
+
+Open question, decide with a live run: should an instance holding unique context
+be *preferentially retained* over one that has none, when choosing what to
+reclaim? That inverts the usual LRU intuition and needs a definition of
+"unique context" the orchestrator can compute — likely "has non-empty handoff
+history" as a first approximation.
+
+### Phase 5 — reclaim policy
 
 Branch: `feat/agency-reclaim-policy`
 
-Only now is "spin down" meaningful. Decide and document:
+Only now is "spin down" safe. Decide and document:
 
 - **Which instances are reclaimable** — `elastic === true`, i.e. index above
   `min`. Base instances never suspend.
 - **When** — immediately on task completion (current behaviour, cheapest,
   thrashes under bursty load) versus after an idle grace period (needs a timer
-  per instance and a cancel path). Recommend starting with immediate, since the
-  handoff summary already makes suspension non-lossy, and adding a grace period
-  only if the log shows spawn/suspend churn within a single fan-out.
+  per instance and a cancel path). Recommend an idle grace period here rather
+  than immediate: with 4c, a retained instance is reused with its context
+  intact, so keeping it warm briefly is strictly better than suspend-then-revive.
 - **Floor enforcement** — on any transition, if active instances for a role fall
   below `min`, spawn back up to `min`. Covers defect 5 and agent death.
 
-### Phase 5 — preamble accuracy and observability
+### Phase 6 — preamble accuracy and observability
 
 Branch: `feat/agency-scaling-observability`
 
 - `totalInstances` should describe the live population, with the ceiling stated
-  separately if it is useful to the agent at all (defect 6).
+  separately if it is useful to the agent at all (defect 7).
 - Extend the routing log with lifecycle transitions — spawn, suspend, revive,
   floor-restore — so scaling is legible in the same stream as routing.
 - Re-examine `Current agency members` in the preamble: under elastic scaling it
