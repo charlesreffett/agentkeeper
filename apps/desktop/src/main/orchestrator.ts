@@ -36,6 +36,12 @@ interface AgencyRoleRestartParams {
   effort: string | undefined
 }
 
+/** Model/effort are role-wide; the preamble is not, so it lives per instance. */
+interface RoleRestartBase {
+  model: string | undefined
+  effort: string | undefined
+}
+
 interface AgentInstance {
   localId: string
   roleId: string
@@ -82,7 +88,11 @@ interface RuntimeAgency {
   /** Config snapshot keyed by roleId */
   roleSlots: Map<string, RoleSlot>
   allowedFlows: Set<string>
-  restartParamsByRole: Map<string, AgencyRoleRestartParams>
+  /** localId → restart params. Keyed per instance because the context preamble
+   *  carries the instance's own id; a role-keyed map collapses every instance
+   *  onto whichever one was registered last. */
+  restartParamsByInstance: Map<string, AgencyRoleRestartParams>
+  restartBaseByRole: Map<string, RoleRestartBase>
   /** Retry attempt counts per roleId for onFailure:'retry' slots */
   retryCountByRole: Map<string, number>
 }
@@ -234,7 +244,7 @@ async function launchOverflow(
 ): Promise<AgentInstance> {
   const { roleId, instanceId, localId, instanceIndex: nextIndex } = inst
   const role = rolesById.get(roleId)!
-  const restart = runtime.restartParamsByRole.get(roleId)!
+  const restart = runtime.restartBaseByRole.get(roleId)!
   const slot = runtime.roleSlots.get(roleId)!
 
   const priorHandoffs = runtime.handoffsByRole.get(roleId) ?? []
@@ -265,6 +275,7 @@ async function launchOverflow(
   })
 
   const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
+  runtime.restartParamsByInstance.set(localId, { ...restart, systemPromptAppend })
 
   try {
     await startSession(
@@ -413,7 +424,7 @@ async function injectAndWait(
     if (!persistedAgent?.sdkSessionId) {
       return `Error: instance "${inst.instanceId}" has no resolvable session — it may not have initialised yet. Retry in a moment.`
     }
-    const restart = runtime.restartParamsByRole.get(inst.roleId)
+    const restart = runtime.restartParamsByInstance.get(toSessionId)
     if (!restart) {
       return `Error: instance "${inst.instanceId}" has no restart context in this agency.`
     }
@@ -950,7 +961,7 @@ function handleAgentFailure(
 
     runtime.retryCountByRole.set(roleId, attempt + 1)
     const backoffMs = Math.pow(2, attempt) * 1000
-    const restart = runtime.restartParamsByRole.get(roleId)
+    const restart = runtime.restartParamsByInstance.get(localId)
     const inst = runtime.sessionToInstance.get(localId)
     const persisted = registry.getAgent(localId)
     if (!restart || !inst || !persisted) return
@@ -1057,7 +1068,8 @@ export async function startAgency(
     handoffsByRole: new Map(),
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
-    restartParamsByRole: new Map(),
+    restartParamsByInstance: new Map(),
+    restartBaseByRole: new Map(),
     retryCountByRole: new Map(),
   }
   instances.set(instanceId, runtime)
@@ -1162,8 +1174,8 @@ export async function startAgency(
         },
       )
 
-      // Store per-instance restart params (the preamble varies per instance)
-      runtime.restartParamsByRole.set(slot.roleId, {
+      runtime.restartBaseByRole.set(slot.roleId, restartBase)
+      runtime.restartParamsByInstance.set(localId, {
         ...restartBase,
         systemPromptAppend,
       })
@@ -1272,7 +1284,8 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     handoffsByRole,
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
-    restartParamsByRole: new Map(),
+    restartParamsByInstance: new Map(),
+    restartBaseByRole: new Map(),
     retryCountByRole: new Map(),
   }
   instances.set(instanceId, runtime)
@@ -1352,7 +1365,11 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         { mcpFactory: () => createOrchestratorMcp(projectPath, localId) },
       )
 
-      runtime.restartParamsByRole.set(slot.roleId, {
+      runtime.restartBaseByRole.set(slot.roleId, {
+        model: resolvedModel,
+        effort: role.effort ?? undefined,
+      })
+      runtime.restartParamsByInstance.set(localId, {
         systemPromptAppend,
         model: resolvedModel,
         effort: role.effort ?? undefined,
