@@ -1,7 +1,12 @@
 import { app, BrowserWindow, shell, Menu } from 'electron'
-// DEV ONLY: enable CDP for agent-browser testing
+// DEV ONLY: enable CDP for agent-browser testing. Overridable so a second
+// instance (live-verification driver) can run alongside a dev instance instead
+// of failing to bind 9223.
 if (process.env['NODE_ENV'] !== 'production') {
-  app.commandLine.appendSwitch('remote-debugging-port', '9223')
+  app.commandLine.appendSwitch(
+    'remote-debugging-port',
+    process.env['AGENTKEEPER_DEBUG_PORT'] ?? '9223',
+  )
 }
 app.name = 'AgentKeeper'
 import path from 'node:path'
