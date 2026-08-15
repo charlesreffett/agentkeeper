@@ -11,10 +11,41 @@ comments, commit bodies, plan docs — rather than into orchestrator memory.
 Context is externalized, not preserved.
 
 Everything below is from reading `apps/desktop/src/main/orchestrator.ts` at
-`f41b7ee`. Defects marked **[unverified]** are derived from the code but have
-not been reproduced live; confirm each with the routing log before fixing it.
-The previous round of work on this file produced two confidently-wrong
-diagnoses from static reading alone, so the log is the arbiter, not the code.
+`f41b7ee`. The previous round of work on this file produced two
+confidently-wrong diagnoses from static reading alone, so defects were
+confirmed against a live run rather than accepted from the code.
+
+## Live verification, 2026-08-14
+
+Driven headlessly per the `live-verify-driver` pattern: built app launched via
+Playwright `_electron` with an isolated `--user-data-dir` seeded from a copy of
+the real DB, against a `min: 2, max: 5` agency, with a seven-item independent
+work prompt. Temporary lifecycle instrumentation logged each transition.
+
+Observed fan-out — scale-up works exactly as designed:
+
+```
+send_messages batch of 7
+route -> developer-1 (idle)               | pool: dev-1:idle dev-2:idle
+route -> developer-2 (idle)               | pool: dev-1:busy dev-2:idle
+reserve(developer) granted — pool 2 -> 3, max=5
+route -> developer-3 (overflow, spawning)
+reserve(developer) granted — pool 3 -> 4, max=5
+route -> developer-4 (overflow, spawning)
+reserve(developer) granted — pool 4 -> 5, max=5
+route -> developer-5 (overflow, spawning)
+reserve(developer) REFUSED — pool=5 max=5
+route -> queued (depth 1)
+reserve(developer) REFUSED — pool=5 max=5
+route -> queued (depth 2)
+```
+
+**Caveat, stated up front:** the test agents hit an account session limit
+(`You've hit your session limit`) and returned errors instead of performing the
+audits, so every task completed in ~4s. The three findings below are all
+*ordering* properties of `deliverToInstance`'s `finally` block, independent of
+what the task did — but the run did not exercise realistic task durations, and
+the second-wave ceiling test was not performed. Re-run for that.
 
 ## Why elastic at all
 
@@ -110,6 +141,20 @@ to `requestHandoffAndSuspend` (:327), which collects a summary, records it in
 the instance out of `runtime.instancesByRole`. The only splice in the file
 (:313) is `launchOverflow`'s rollback on spawn failure.
 
+Live run — all three elastic instances remained pool members after suspending:
+
+```
+03:15:15.260  developer-3 handoff END (suspended, still in pool: true)
+03:15:16.447  developer-5 handoff END (suspended, still in pool: true)
+03:15:17.205  developer-4 handoff END (suspended, still in pool: true)
+```
+
+**Observed:** suspended instances stay in `instancesByRole`. **Inferred, not yet
+observed:** that this blocks a second wave. The `reserve REFUSED` lines in that
+run fired while all five instances were genuinely busy, not suspended — so they
+are not evidence for the ceiling defect. Confirming it needs a second fan-out
+*after* suspension completes; the session limit cut the run short before that.
+
 Consequences:
 
 - `reserveOverflowSlot`'s ceiling check (:218) counts suspended instances, so
@@ -121,7 +166,7 @@ Consequences:
   surfaced as a lost message, and which under grow-and-flush is exactly the
   stale-context revival we do not want.
 
-### 2. Instance is marked idle before the flush completes **[unverified]**
+### 2. Instance is marked idle before the flush completes **[CONFIRMED]**
 
 `deliverToInstance` (:404-408) deletes from `busySessions` and *then* awaits
 `requestHandoffAndSuspend`. During that turn — a full model round-trip
@@ -129,16 +174,50 @@ Consequences:
 conversations then interleave on one session, the failure mode `busySessions`
 exists to prevent (cf. the direct-addressing guard at :540).
 
-Widens with fan-out: five instances finishing at staggered times means five
-windows.
+Live run — a 945ms window in which developer-3 was both suspending *and* the
+first instance `idleInstance` would return, with two entries sitting in the
+queue:
 
-### 3. Queued work stalls behind reclaim **[unverified]**
+```
+03:15:14.315  developer-3 task done -> busySessions RELEASED (overflow=true), queue depth=2
+03:15:14.315  developer-3 handoff START — instance now reads as: SELECTABLE/IDLE
+03:15:14.429  drain(developer) delivering queued entry to developer-1   <- 114ms INTO the window
+03:15:15.260  developer-3 handoff END
+```
+
+The drain at `.429` ran *inside* developer-3's handoff and called
+`idleInstance`. It happened to pick developer-1, which had been released 114ms
+earlier and sorts first in the pool array — pure ordering luck. Had developer-1
+still been busy, that queued entry would have been injected into a session
+mid-handoff.
+
+Worse in practice than in this run: the handoff turn here was ~1s because the
+agent erred out immediately. A real flush is a full model turn, widening the
+window proportionally. Also widens with fan-out — five staggered completions
+mean five windows.
+
+### 3. Queued work stalls behind reclaim **[CONFIRMED]**
 
 `drainPendingForRole` is called only on the non-overflow branch (:409). When an
 elastic instance finishes and suspends, the role's pending queue is not drained
 — even though capacity just freed up. Queued messages wait for a base instance
 to finish, or time out after `SEND_MESSAGE_TIMEOUT_MS` (15 min) with a
 NOT-delivered error.
+
+Live run — all three elastic completions skipped the drain while the queue was
+non-empty; only the two base instances drained it:
+
+```
+03:15:14.315  developer-3 done (overflow=true),  queue depth=2 — drain NOT called
+03:15:14.429  developer-1 done (overflow=false), queue depth=2 — drain -> developer-1, 2->1
+03:15:15.219  developer-2 done (overflow=false), queue depth=1 — drain -> developer-2, 1->0
+03:15:15.522  developer-5 done (overflow=true),  queue depth=0 — drain NOT called
+03:15:16.260  developer-4 done (overflow=true),  queue depth=0 — drain NOT called
+```
+
+The queue drained here only because base instances happened to finish while
+work was still queued. Had the two queued entries been waiting solely on
+elastic completions, they would have sat until the 15-minute timeout.
 
 ### 4. Instance indices are positional, not stable
 
