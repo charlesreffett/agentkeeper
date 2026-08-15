@@ -1,7 +1,8 @@
 # Agency Elastic Scaling (min/max)
 
-Status: not started. Branch: `feat/agency-elastic-scaling` off `main` (`f41b7ee`).
-Investigated: 2026-08-14
+Status: Phase 1 shipped (`feat/agency-instance-lifecycle`, `7982058`). Phase 2
+shipped (`fix/agency-queue-drain`, off the Phase 1 branch). Phase 3 not
+started. Investigated: 2026-08-14
 Prerequisite shipped: PR #47 (per-instance restart params, routing log).
 
 Design: **grow-and-flush**. A role keeps `min` warm instances, grows to `max`
@@ -343,6 +344,25 @@ spawn* rather than wait. Make it reuse `routeMessage`'s resolution path — idle
 reserve → queue — rather than duplicating a narrower version.
 
 Addresses defect 3.
+
+**Shipped 2026-08-15.** The first half was already satisfied by Phase 1's
+`deliverToInstance`: the drain fires unconditionally after the flush resolves,
+covering both the elastic and base branches. The second half lands in
+`orchestrator.ts` by extracting the role-addressed resolution out of
+`routeMessage`:
+
+- `resolveRoleTarget` — synchronous idle → reserve decision (with an
+  `exceptLocalId` used by the drain so a queued message is never delivered back
+  to the sender it is blocking on).
+- `deliverViaTarget` — spawns the session first when the claim was a
+  reservation, then delivers. Both `routeMessage`'s role path and
+  `drainPendingForRole` now route through it.
+- `PendingMessage` carries `fromSessionId` so the drain can exclude the sender
+  and log the dispatch against the original sender.
+
+The drain now unshifts an entry it could not dispatch (ceiling still occupied)
+rather than dropping it. Typecheck and build pass. Live verification per the
+Test protocol below is still pending.
 
 ### Phase 3 — floor enforcement and observability
 

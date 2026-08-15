@@ -72,6 +72,9 @@ function timeoutLabel(): string {
 }
 
 interface PendingMessage {
+  /** Sender's local id — the drain must never deliver a queued message back to
+   *  the instance that is blocked waiting on this very queue. */
+  fromSessionId: string
   content: string
   resolve: (r: string) => void
   reject: (e: Error) => void
@@ -168,9 +171,20 @@ function removeWait(from: string, to: string): void {
   if (set.size === 0) waitingFor.delete(from)
 }
 
-function idleInstance(runtime: RuntimeAgency, roleId: string): AgentInstance | null {
+function idleInstance(
+  runtime: RuntimeAgency,
+  roleId: string,
+  exceptLocalId?: string,
+): AgentInstance | null {
   const list = runtime.instancesByRole.get(roleId) ?? []
-  return list.find((i) => i.state === 'active' && !runtime.busySessions.has(i.localId)) ?? null
+  return (
+    list.find(
+      (i) =>
+        i.localId !== exceptLocalId &&
+        i.state === 'active' &&
+        !runtime.busySessions.has(i.localId),
+    ) ?? null
+  )
 }
 
 /** Instances occupying a slot against the role ceiling. Retired ones stay in
@@ -391,13 +405,60 @@ async function flushAndRetire(runtime: RuntimeAgency, inst: AgentInstance): Prom
   logLifecycle(runtime, inst, `retired (role now ${liveCount(runtime, inst.roleId)} live)`)
 }
 
+/** Role-addressed resolution: an idle instance wins, else a freshly reserved
+ *  overflow slot. The idle check and the reservation run in one synchronous
+ *  stretch, so a batch of concurrent senders can't each read the pre-claim
+ *  count and collectively overshoot the ceiling. Null when the role is at its
+ *  ceiling — the caller must queue. */
+function resolveRoleTarget(
+  runtime: RuntimeAgency,
+  roleId: string,
+  exceptLocalId?: string,
+): AgentInstance | null {
+  const idle = idleInstance(runtime, roleId, exceptLocalId)
+  if (idle) return idle
+  return reserveOverflowSlot(runtime, roleId)
+}
+
+/** Deliver content to an already-claimed target, spawning its session first
+ *  when the claim was a reservation (elastic). Shared by routeMessage and the
+ *  pending-queue drain so both go through the same idle → reserve → spawn path. */
+async function deliverViaTarget(
+  runtime: RuntimeAgency,
+  target: AgentInstance,
+  content: string,
+): Promise<string> {
+  if (target.elastic) {
+    const allInstanceIds = buildAllInstanceIds(runtime).filter((id) => id !== target.instanceId)
+    const rolesById = await buildRolesById(runtime)
+    await launchOverflow(runtime, target, rolesById, allInstanceIds)
+  }
+  return deliverToInstance(runtime, target, content)
+}
+
+/** Dispatch the oldest queued message for a role. Woken on every release, so a
+ *  queued entry must be able to spawn an overflow instance rather than wait for
+ *  a base instance — otherwise a burst at the ceiling drains only when the
+ *  floor happens to finish. */
 function drainPendingForRole(runtime: RuntimeAgency, roleId: string): void {
   const queue = runtime.pendingByRole.get(roleId)
   if (!queue || queue.length === 0) return
-  const idle = idleInstance(runtime, roleId)
-  if (!idle) return
   const next = queue.shift()!
-  void deliverToInstance(runtime, idle, next.content).then(next.resolve).catch(next.reject)
+  const target = resolveRoleTarget(runtime, roleId, next.fromSessionId)
+  if (!target) {
+    // Ceiling still occupied — put the entry back; its own timeout owns failure.
+    queue.unshift(next)
+    return
+  }
+  const senderId =
+    runtime.sessionToInstance.get(next.fromSessionId)?.instanceId ?? next.fromSessionId
+  logRouting(
+    runtime,
+    senderId,
+    roleId,
+    `-> ${target.instanceId} (drain, ${target.elastic ? 'overflow spawning' : 'idle'})`,
+  )
+  void deliverViaTarget(runtime, target, next.content).then(next.resolve).catch(next.reject)
 }
 
 async function deliverToInstance(
@@ -598,36 +659,25 @@ async function routeMessage(
   }
 
   const findOrSpawnAndDeliver = async (): Promise<string> => {
-    const idle = idleInstance(runtime, toRole)
-    if (idle) {
-      if (idle.localId === fromSessionId) {
+    const target = resolveRoleTarget(runtime, toRole)
+    if (target) {
+      if (target.localId === fromSessionId) {
         return 'Error: cannot send_message to yourself.'
       }
-      if (wouldCycle(fromSessionId, idle.localId)) {
+      if (wouldCycle(fromSessionId, target.localId)) {
         return `Error: "${toRole}" is already waiting on your reply (directly or transitively). Calling send_message now would deadlock. Respond with plain text instead.`
       }
-      logRouting(runtime, fromInst.instanceId, toRole, `-> ${idle.instanceId} (idle)`)
-      addWait(fromSessionId, idle.localId)
+      logRouting(
+        runtime,
+        fromInst.instanceId,
+        toRole,
+        `-> ${target.instanceId} (${target.elastic ? 'overflow, spawning' : 'idle'})`,
+      )
+      addWait(fromSessionId, target.localId)
       try {
-        return await deliverToInstance(runtime, idle, wrapMessage(fromInst.instanceId, content))
+        return await deliverViaTarget(runtime, target, wrapMessage(fromInst.instanceId, content))
       } finally {
-        removeWait(fromSessionId, idle.localId)
-      }
-    }
-
-    // No idle instance — claim an overflow slot before any await, so a batch of
-    // concurrent senders can't all read the same pre-claim instance count.
-    const reserved = reserveOverflowSlot(runtime, toRole)
-    if (reserved) {
-      logRouting(runtime, fromInst.instanceId, toRole, `-> ${reserved.instanceId} (overflow, spawning)`)
-      const allInstanceIds = buildAllInstanceIds(runtime).filter((id) => id !== reserved.instanceId)
-      const rolesById = await buildRolesById(runtime)
-      const newInst = await launchOverflow(runtime, reserved, rolesById, allInstanceIds)
-      addWait(fromSessionId, newInst.localId)
-      try {
-        return await deliverToInstance(runtime, newInst, wrapMessage(fromInst.instanceId, content))
-      } finally {
-        removeWait(fromSessionId, newInst.localId)
+        removeWait(fromSessionId, target.localId)
       }
     }
 
@@ -644,7 +694,12 @@ async function routeMessage(
     // injectAndWait's own timeout takes over.
     return new Promise<string>((resolve, reject) => {
       if (!runtime.pendingByRole.has(toRole)) runtime.pendingByRole.set(toRole, [])
-      const entry: PendingMessage = { content: wrapMessage(fromInst.instanceId, content), resolve, reject }
+      const entry: PendingMessage = {
+        fromSessionId,
+        content: wrapMessage(fromInst.instanceId, content),
+        resolve,
+        reject,
+      }
       runtime.pendingByRole.get(toRole)!.push(entry)
       setTimeout(() => {
         const queue = runtime.pendingByRole.get(toRole)
