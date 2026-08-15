@@ -27,7 +27,7 @@ import {
   interruptSession,
 } from './agent'
 import * as registry from './session-registry'
-import type { Agent, HandoffRecord } from './session-registry'
+import type { Agent } from './session-registry'
 import { createPlan, updatePlan, getPlanByRef } from './plans'
 
 interface AgencyRoleRestartParams {
@@ -42,12 +42,20 @@ interface RoleRestartBase {
   effort: string | undefined
 }
 
+/** `flushing` is not routable: the instance has finished its task but is still
+ *  mid-turn writing its reasoning out, and injecting there would interleave two
+ *  conversations on one session. `retired` is suspended — it stays in the pool
+ *  for its id, but frees its slot against the role ceiling. */
+type InstanceState = 'active' | 'flushing' | 'retired'
+
 interface AgentInstance {
   localId: string
   roleId: string
   instanceIndex: number
   instanceId: string
-  isOverflow: boolean
+  /** Spawned above the role's floor — eligible for reclaim. */
+  elastic: boolean
+  state: InstanceState
 }
 
 /** Backstop so an orchestrator bug degrades to an error string instead of a
@@ -75,16 +83,17 @@ interface RuntimeAgency {
   projectPath: string | null
   worktreePath: string | null
   branch: string | null
-  /** roleId → all spawned instances for this role */
+  /** roleId → all spawned instances for this role, including retired ones */
   instancesByRole: Map<string, AgentInstance[]>
+  /** roleId → highest instance index ever issued. Never decremented, so a
+   *  reclaimed slot's id is never handed to a different agent. */
+  nextIndexByRole: Map<string, number>
   /** localId → instance */
   sessionToInstance: Map<string, AgentInstance>
   /** Sessions currently handling a send_message delivery */
   busySessions: Set<string>
   /** Messages waiting for an idle slot by roleId */
   pendingByRole: Map<string, PendingMessage[]>
-  /** Completed-overflow handoff summaries by roleId */
-  handoffsByRole: Map<string, HandoffRecord[]>
   /** Config snapshot keyed by roleId */
   roleSlots: Map<string, RoleSlot>
   allowedFlows: Set<string>
@@ -144,16 +153,31 @@ function removeWait(from: string, to: string): void {
 
 function idleInstance(runtime: RuntimeAgency, roleId: string): AgentInstance | null {
   const list = runtime.instancesByRole.get(roleId) ?? []
-  return list.find((i) => !runtime.busySessions.has(i.localId)) ?? null
+  return list.find((i) => i.state === 'active' && !runtime.busySessions.has(i.localId)) ?? null
+}
+
+/** Instances occupying a slot against the role ceiling. Retired ones stay in
+ *  the pool for their ids and history but no longer count. */
+function liveCount(runtime: RuntimeAgency, roleId: string): number {
+  return (runtime.instancesByRole.get(roleId) ?? []).filter((i) => i.state !== 'retired').length
+}
+
+function logLifecycle(runtime: RuntimeAgency, inst: AgentInstance, event: string): void {
+  const pool = (runtime.instancesByRole.get(inst.roleId) ?? [])
+    .map((i) => `${i.instanceId}:${i.state}`)
+    .join(' ')
+  console.log(`[orchestrator] lifecycle ${inst.instanceId} ${event} | pool: ${pool}`)
 }
 
 /** Routing decisions are otherwise invisible — a peer's self-reported instance id
  *  is the only signal, and it has proven unreliable when diagnosing fan-out. */
 function logRouting(runtime: RuntimeAgency, from: string, to: string, outcome: string): void {
   const roleId = instanceIdPattern.exec(to)?.[1] ?? to
-  const pool = (runtime.instancesByRole.get(roleId) ?? []).map(
-    (i) => `${i.instanceId}${runtime.busySessions.has(i.localId) ? ':busy' : ':idle'}`,
-  )
+  const pool = (runtime.instancesByRole.get(roleId) ?? []).map((i) => {
+    const status =
+      i.state !== 'active' ? i.state : runtime.busySessions.has(i.localId) ? 'busy' : 'idle'
+    return `${i.instanceId}:${status}`
+  })
   console.log(`[orchestrator] route ${from} -> "${to}" ${outcome} | pool: ${pool.join(' ') || '(none)'}`)
 }
 
@@ -214,16 +238,17 @@ function computeAllowedPeerIds(
  *  overshoots max. Returns null when the role is already at its ceiling. */
 function reserveOverflowSlot(runtime: RuntimeAgency, roleId: string): AgentInstance | null {
   const slot = runtime.roleSlots.get(roleId)
-  const existing = runtime.instancesByRole.get(roleId) ?? []
-  if (slot?.max === undefined || existing.length >= slot.max) return null
+  if (slot?.max === undefined || liveCount(runtime, roleId) >= slot.max) return null
 
-  const nextIndex = existing.length + 1
+  const nextIndex = (runtime.nextIndexByRole.get(roleId) ?? 0) + 1
+  runtime.nextIndexByRole.set(roleId, nextIndex)
   const inst: AgentInstance = {
     localId: randomUUID(),
     roleId,
     instanceIndex: nextIndex,
     instanceId: `${roleId}-${nextIndex}`,
-    isOverflow: true,
+    elastic: true,
+    state: 'active',
   }
 
   // busySessions keeps idleInstance from routing here until startSession
@@ -247,16 +272,6 @@ async function launchOverflow(
   const restart = runtime.restartBaseByRole.get(roleId)!
   const slot = runtime.roleSlots.get(roleId)!
 
-  const priorHandoffs = runtime.handoffsByRole.get(roleId) ?? []
-  const handoffLines =
-    priorHandoffs.length > 0
-      ? [
-          '',
-          `Prior work by previous ${role.name} agents:`,
-          ...priorHandoffs.map((h) => `[Instance ${h.instanceIndex}]: ${h.summary}`),
-        ].join('\n')
-      : ''
-
   const allRoleIds = [...runtime.roleSlots.keys()]
   const allowedPeerIds = computeAllowedPeerIds(
     instanceId, roleId, allInstanceIds, allRoleIds, runtime.allowedFlows,
@@ -270,7 +285,6 @@ async function launchOverflow(
     agencyName: runtime.agencyName,
     allInstanceIds,
     isEntry: false,
-    handoffLines,
     allowedPeerIds,
   })
 
@@ -324,64 +338,39 @@ async function launchOverflow(
   return inst
 }
 
-async function requestHandoffAndSuspend(
-  runtime: RuntimeAgency,
-  inst: AgentInstance,
-): Promise<void> {
-  const handoffPrompt = [
-    'You have completed your task. Before suspending, produce a concise handoff summary:',
-    'what you built or changed, key decisions and the reasoning behind them, files modified,',
-    'any caveats or unresolved issues a developer continuing this work should know.',
-    'Be complete enough that another developer can pick this up cold.',
+/** Spend one turn getting the instance to externalize its reasoning, then
+ *  suspend it. Reasoning goes to the repo rather than to orchestrator memory:
+ *  a summary held in RAM is invisible, unversioned, and reachable only by
+ *  whoever holds the right instance id, whereas comments and commit bodies are
+ *  readable by any later agent — or a human — and stay accurate as the tree
+ *  moves on. Nothing about this instance's context survives in the
+ *  orchestrator, by design. */
+async function flushAndRetire(runtime: RuntimeAgency, inst: AgentInstance): Promise<void> {
+  const flushPrompt = [
+    'You have completed your task and are about to be suspended.',
+    'Before you are: make sure anything a future developer needs is in the artifacts, not in your head.',
+    'Non-obvious decisions, rejected alternatives, and caveats belong in code comments or the commit body —',
+    'somewhere the next agent will find them by reading the tree, since your session context will not be available.',
+    'Do not write a summary back to me; put it where it will be read. Reply DONE when the tree reflects your reasoning.',
   ].join(' ')
 
-  let summary = ''
   try {
-    const target = getActiveSession(inst.localId)
-    if (target) {
-      const beforeCount = target.events.length
-      await sendInput(inst.localId, handoffPrompt)
+    if (getActiveSession(inst.localId)) {
+      await sendInput(inst.localId, flushPrompt)
       await waitForNextIdle(inst.localId)
-      const newEvents = target.events.slice(beforeCount)
-      const parts: string[] = []
-      for (const msg of newEvents) {
-        const m = msg as unknown as { type?: string; message?: { content?: unknown } }
-        if (m.type !== 'assistant') continue
-        const inner = m.message?.content
-        if (!Array.isArray(inner)) continue
-        for (const block of inner) {
-          if (
-            block &&
-            typeof block === 'object' &&
-            (block as Record<string, unknown>)['type'] === 'text' &&
-            typeof (block as Record<string, unknown>)['text'] === 'string'
-          ) {
-            parts.push((block as Record<string, unknown>)['text'] as string)
-          }
-        }
-      }
-      summary = parts.join('\n\n').trim()
     }
   } catch {
-    summary = '(handoff summary unavailable)'
+    // A failed flush loses reasoning but must not strand the slot.
   }
-
-  const record: HandoffRecord = {
-    instanceIndex: inst.instanceIndex,
-    summary: summary || '(no summary provided)',
-    timestamp: Date.now(),
-  }
-
-  if (!runtime.handoffsByRole.has(inst.roleId)) runtime.handoffsByRole.set(inst.roleId, [])
-  runtime.handoffsByRole.get(inst.roleId)!.push(record)
-
-  registry.addHandoff(runtime.instanceId, inst.roleId, inst.instanceIndex, record.summary)
 
   try {
     await interruptSession(inst.localId)
   } catch {
     // already gone
   }
+
+  inst.state = 'retired'
+  logLifecycle(runtime, inst, `retired (role now ${liveCount(runtime, inst.roleId)} live)`)
 }
 
 function drainPendingForRole(runtime: RuntimeAgency, roleId: string): void {
@@ -402,12 +391,17 @@ async function deliverToInstance(
   try {
     return await injectAndWait(runtime, inst, content)
   } finally {
-    runtime.busySessions.delete(inst.localId)
-    if (inst.isOverflow) {
-      await requestHandoffAndSuspend(runtime, inst)
+    if (inst.elastic) {
+      // Mark unroutable BEFORE releasing the busy flag. Releasing first left a
+      // window the length of a model turn in which the instance read as idle
+      // while mid-flush, and a concurrent drain could inject into it.
+      inst.state = 'flushing'
+      runtime.busySessions.delete(inst.localId)
+      await flushAndRetire(runtime, inst)
     } else {
-      drainPendingForRole(runtime, inst.roleId)
+      runtime.busySessions.delete(inst.localId)
     }
+    drainPendingForRole(runtime, inst.roleId)
   }
 }
 
@@ -550,8 +544,15 @@ async function routeMessage(
 
     // Injecting into a mid-turn instance would interleave two conversations and
     // race both callers' reply capture on the same idle transition.
-    if (runtime.busySessions.has(targetInst.localId)) {
+    if (runtime.busySessions.has(targetInst.localId) || targetInst.state === 'flushing') {
       return `Error: instance "${to}" is currently handling another message. Retry shortly, or send to role "${targetRoleId}" to reach any idle instance.`
+    }
+
+    // injectAndWait would happily resume a retired session, but its view of the
+    // tree is however old the suspension is — and its reasoning was flushed to
+    // the repo precisely so a fresh agent can pick the work up by reading.
+    if (targetInst.state === 'retired') {
+      return `Error: instance "${to}" has been reclaimed and is no longer available. Its work is recorded in the repository — send to role "${targetRoleId}" and the agent will pick it up from there.`
     }
 
     logRouting(runtime, fromInst.instanceId, to, `-> ${targetInst.instanceId} (direct)`)
@@ -683,13 +684,12 @@ function buildContextPreamble(opts: {
   agencyName: string
   allInstanceIds: string[]
   isEntry: boolean
-  handoffLines: string
   /** null = any-to-any; [] = no outbound peers permitted */
   allowedPeerIds: string[] | null
 }): string {
   const {
     roleName, roleId, instanceIndex, totalInstances, instanceId,
-    agencyName, allInstanceIds, isEntry, handoffLines, allowedPeerIds,
+    agencyName, allInstanceIds, isEntry, allowedPeerIds,
   } = opts
   const instanceNote = totalInstances > 1 ? `, instance ${instanceIndex} of ${totalInstances}` : ''
   const peerRestrictionLines: string[] =
@@ -733,7 +733,6 @@ function buildContextPreamble(opts: {
     isEntry
       ? `You are an entry point — you receive the initial task from the user.`
       : `You will receive tasks from peer agents via send_message. Stand by until addressed.`,
-    handoffLines,
   ].join('\n')
 }
 
@@ -1062,10 +1061,10 @@ export async function startAgency(
     worktreePath,
     branch,
     instancesByRole: new Map(),
+    nextIndexByRole: new Map(),
     sessionToInstance: new Map(),
     busySessions: new Set(),
     pendingByRole: new Map(),
-    handoffsByRole: new Map(),
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
     restartParamsByInstance: new Map(),
@@ -1099,16 +1098,6 @@ export async function startAgency(
   for (const { slot, count } of spawnCounts) {
     const role = rolesById.get(slot.roleId)!
     const isEntry = agency.entryPoints.includes(slot.roleId)
-    const priorHandoffs = runtime.handoffsByRole.get(slot.roleId) ?? []
-    const handoffLines =
-      priorHandoffs.length > 0
-        ? [
-            '',
-            `Prior work by previous ${role.name} agents:`,
-            ...priorHandoffs.map((h) => `[Instance ${h.instanceIndex}]: ${h.summary}`),
-          ].join('\n')
-        : ''
-
     const totalInstances = slot.max ?? count
 
     const resolvedModel = role.model ?? params.model
@@ -1134,7 +1123,6 @@ export async function startAgency(
         agencyName: agency.name,
         allInstanceIds,
         isEntry,
-        handoffLines,
         allowedPeerIds,
       })
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
@@ -1185,10 +1173,12 @@ export async function startAgency(
         roleId: slot.roleId,
         instanceIndex: idx,
         instanceId: instId,
-        isOverflow: false,
+        elastic: false,
+        state: 'active',
       }
 
       if (!runtime.instancesByRole.has(slot.roleId)) runtime.instancesByRole.set(slot.roleId, [])
+      runtime.nextIndexByRole.set(slot.roleId, Math.max(runtime.nextIndexByRole.get(slot.roleId) ?? 0, idx))
       runtime.instancesByRole.get(slot.roleId)!.push(inst)
       runtime.sessionToInstance.set(localId, inst)
       sessionToRuntimeId.set(localId, instanceId)
@@ -1267,7 +1257,6 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       .map((a) => [a.sdkSessionId, a.localId]),
   )
 
-  const handoffsByRole = registry.getHandoffsByRole(instanceId)
 
   const runtime: RuntimeAgency = {
     instanceId,
@@ -1278,10 +1267,10 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     worktreePath,
     branch,
     instancesByRole: new Map(),
+    nextIndexByRole: new Map(),
     sessionToInstance: new Map(),
     busySessions: new Set(),
     pendingByRole: new Map(),
-    handoffsByRole,
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
     restartParamsByInstance: new Map(),
@@ -1306,16 +1295,6 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     if (!role) continue
 
     const isEntry = agency.entryPoints.includes(slot.roleId)
-    const priorHandoffs = handoffsByRole.get(slot.roleId) ?? []
-    const handoffLines =
-      priorHandoffs.length > 0
-        ? [
-            '',
-            `Prior work by previous ${role.name} agents:`,
-            ...priorHandoffs.map((h) => `[Instance ${h.instanceIndex}]: ${h.summary}`),
-          ].join('\n')
-        : ''
-
     const entries = roleSessionMap[slot.roleId] ?? []
     const totalInstances = slot.max ?? (slot.count ?? 1)
 
@@ -1335,7 +1314,6 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         agencyName: agency.name,
         allInstanceIds,
         isEntry,
-        handoffLines,
         allowedPeerIds,
       })
 
@@ -1380,10 +1358,15 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         roleId: slot.roleId,
         instanceIndex: entry.instanceIndex,
         instanceId: instId,
-        isOverflow: false,
+        elastic: false,
+        state: 'active',
       }
 
       if (!runtime.instancesByRole.has(slot.roleId)) runtime.instancesByRole.set(slot.roleId, [])
+      runtime.nextIndexByRole.set(
+        slot.roleId,
+        Math.max(runtime.nextIndexByRole.get(slot.roleId) ?? 0, entry.instanceIndex),
+      )
       runtime.instancesByRole.get(slot.roleId)!.push(inst)
       runtime.sessionToInstance.set(localId, inst)
       sessionToRuntimeId.set(localId, instanceId)
@@ -1432,7 +1415,7 @@ export function listAgencyInstances(): AgencyInstance[] {
       instanceIndex: inst.instanceIndex,
       roleName: inst.roleId,
       isEntryPoint: false,
-      isOverflow: inst.isOverflow,
+      isOverflow: inst.elastic,
     })),
   }))
 }
