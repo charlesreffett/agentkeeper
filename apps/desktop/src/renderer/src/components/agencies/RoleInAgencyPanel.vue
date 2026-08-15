@@ -62,7 +62,23 @@
           Instances
           <span class="normal-case tracking-normal font-normal text-muted-foreground/60">parallel copies</span>
         </div>
+
+        <div class="flex rounded-lg border border-border overflow-hidden text-sm">
+          <button
+            v-for="opt in SIZING_OPTS"
+            :key="opt.value"
+            class="flex-1 px-2 py-2 transition-colors font-medium"
+            :class="sizingMode === opt.value
+              ? 'bg-secondary text-foreground'
+              : 'bg-card text-muted-foreground hover:bg-muted'"
+            @click="setMode(opt.value)"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+
         <NumberField
+          v-if="sizingMode === 'fixed'"
           :model-value="fixedCount"
           :min="1"
           :max="99"
@@ -75,6 +91,43 @@
             <NumberFieldIncrement />
           </NumberFieldContent>
         </NumberField>
+
+        <div v-else class="flex items-end gap-3">
+          <div class="space-y-1.5">
+            <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Min</div>
+            <NumberField
+              :model-value="minCount"
+              :min="1"
+              :max="99"
+              class="w-fit"
+              @update:model-value="val => setRange(val ?? 1, maxCount)"
+            >
+              <NumberFieldContent class="w-24">
+                <NumberFieldDecrement />
+                <NumberFieldInput class="text-center font-semibold" />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+          <div class="space-y-1.5">
+            <div class="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Max</div>
+            <NumberField
+              :model-value="maxCount"
+              :min="minCount"
+              :max="99"
+              class="w-fit"
+              @update:model-value="val => setRange(minCount, val ?? minCount)"
+            >
+              <NumberFieldContent class="w-24">
+                <NumberFieldDecrement />
+                <NumberFieldInput class="text-center font-semibold" />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+        </div>
+
+        <p class="text-[11px] text-muted-foreground">{{ sizingDescription }}</p>
       </section>
 
       <!-- RUN POLICY -->
@@ -197,18 +250,53 @@ const openMessaging = computed(() => props.roleSlot.openMessaging ?? false)
 
 // ─── Instance count ──────────────────────────────────────────────────────────
 
+type SizingMode = 'fixed' | 'dynamic'
+
+const SIZING_OPTS: { value: SizingMode; label: string }[] = [
+  { value: 'fixed',   label: 'Fixed' },
+  { value: 'dynamic', label: 'Elastic' },
+]
+
 const fixedCount = ref(1)
+const minCount = ref(1)
+const maxCount = ref(2)
+const sizingMode = ref<SizingMode>('fixed')
 
 function syncFromSlot() {
-  fixedCount.value = props.roleSlot.count ?? props.roleSlot.min ?? 1
+  const slot = props.roleSlot
+  const elastic = slot.count === undefined && (slot.min !== undefined || slot.max !== undefined)
+  sizingMode.value = elastic ? 'dynamic' : 'fixed'
+  fixedCount.value = slot.count ?? 1
+  minCount.value = slot.min ?? 1
+  maxCount.value = Math.max(slot.max ?? (slot.min ?? 1) + 1, slot.min ?? 1)
 }
 watch(() => props.roleSlot.roleId, syncFromSlot, { immediate: true })
-watch(() => props.roleSlot.count, syncFromSlot)
+watch(() => [props.roleSlot.count, props.roleSlot.min, props.roleSlot.max], syncFromSlot)
 
 function setCount(val: number) {
-  fixedCount.value = val
-  emit('update-count', 'fixed', { count: Math.max(1, val) })
+  fixedCount.value = Math.max(1, val)
+  emit('update-count', 'fixed', { count: fixedCount.value })
 }
+
+function setRange(min: number, max: number) {
+  minCount.value = Math.max(1, min)
+  // A max below min would let the ceiling sit under the warm floor — clamp up.
+  maxCount.value = Math.max(minCount.value, max)
+  emit('update-count', 'dynamic', { min: minCount.value, max: maxCount.value })
+}
+
+function setMode(mode: SizingMode) {
+  if (mode === sizingMode.value) return
+  sizingMode.value = mode
+  if (mode === 'fixed') setCount(fixedCount.value)
+  else setRange(minCount.value, maxCount.value)
+}
+
+const sizingDescription = computed(() =>
+  sizingMode.value === 'fixed'
+    ? 'Every instance starts with the session and stays for its whole life.'
+    : `Keeps ${minCount.value} warm, grows to ${maxCount.value} under load. Overflow instances flush their work and retire when idle.`,
+)
 
 // ─── Run policy ──────────────────────────────────────────────────────────────
 

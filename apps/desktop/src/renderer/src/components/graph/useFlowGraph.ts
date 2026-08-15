@@ -470,11 +470,15 @@ export function useFlowGraph(
     if (!agency.value) return
     const newRoles = agency.value.roles.map(slot => {
       if (slot.roleId !== roleId) return slot
+      // Drop the other sizing mode's keys, keep every policy field on the slot —
+      // resizing a role must not silently reset openMessaging/onFailure/pauseForReview.
+      const { count: _count, min: _min, max: _max, ...rest } = slot
       if (mode === 'fixed') {
         const count = opts.count ?? 1
-        return count <= 1 ? { roleId } : { roleId, count }
+        return count <= 1 ? rest : { ...rest, count }
       }
-      return { roleId, min: opts.min ?? 1, max: opts.max ?? 2 }
+      const min = Math.max(1, opts.min ?? 1)
+      return { ...rest, min, max: Math.max(min, opts.max ?? min + 1) }
     })
     const draft = { ...agency.value, roles: newRoles }
     await saveAgency(draft)
