@@ -1,17 +1,24 @@
+import Database from 'better-sqlite3'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { ContentBlock, SessionTranscript, TranscriptEvent } from '../../shared/ipc-contract'
 
 /**
- * OpenCode persists a session as a tree of JSON files under its storage dir,
- * NOT as Claude's single `<sessionId>.jsonl`. This reads that layout back into
- * the same `TranscriptEvent[]` the renderer already displays, so reloading an
- * opencode session shows its history instead of a blank pane.
+ * OpenCode does NOT use Claude's single `<sessionId>.jsonl`. It has two
+ * historical persistence layouts, and this reads both back into the same
+ * `TranscriptEvent[]` the renderer displays, so reloading an opencode session
+ * shows its history instead of a blank pane.
  *
- * Layout (opencode 1.1.x):
+ * 1.18.x — SQLite at `~/.local/share/opencode/opencode.db`, tables `message`
+ * and `part`, each row carrying the same JSON payload in a `data` column that
+ * older builds wrote to disk as a file.
+ *
+ * 1.1.x — a tree of JSON files:
  *   storage/message/<sessionID>/<messageID>.json   — one message (role + meta)
  *   storage/part/<messageID>/<partID>.json         — that message's parts
+ *
+ * The DB wins when present; the file tree is the fallback for older installs.
  *
  * Part types mirror the live SSE `message.part.updated` shapes the adapter
  * already maps in `consumeTurn`, so the block mapping here is the disk twin of
@@ -20,6 +27,10 @@ import type { ContentBlock, SessionTranscript, TranscriptEvent } from '../../sha
 
 function storageRoot(): string {
   return path.join(os.homedir(), '.local', 'share', 'opencode', 'storage')
+}
+
+function dbPath(): string {
+  return path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db')
 }
 
 interface OpenCodeMessage {
@@ -93,10 +104,63 @@ function partsToBlocks(parts: Array<Record<string, unknown>>): ContentBlock[] {
   return blocks
 }
 
-export async function readOpenCodeTranscript(
-  projectPath: string | null,
-  sessionId: string,
-): Promise<SessionTranscript | null> {
+/** Messages plus a per-message part lookup, already sorted, from either store. */
+interface RawSession {
+  messages: Array<{ id: string; data: OpenCodeMessage }>
+  partsOf: (messageId: string) => Array<Record<string, unknown>>
+  source: string
+}
+
+function readFromSqlite(sessionId: string): RawSession | null {
+  if (!fs.existsSync(dbPath())) return null
+  let db: Database.Database
+  try {
+    db = new Database(dbPath(), { readonly: true, fileMustExist: true })
+  } catch {
+    return null
+  }
+  try {
+    const messageRows = db
+      .prepare('SELECT id, data FROM message WHERE session_id = ? ORDER BY time_created ASC, id ASC')
+      .all(sessionId) as Array<{ id: string; data: string }>
+    if (!messageRows.length) return null
+
+    const partRows = db
+      .prepare('SELECT message_id, data FROM part WHERE session_id = ? ORDER BY id ASC')
+      .all(sessionId) as Array<{ message_id: string; data: string }>
+
+    const parts = new Map<string, Array<Record<string, unknown>>>()
+    for (const row of partRows) {
+      let data: Record<string, unknown>
+      try {
+        data = JSON.parse(row.data) as Record<string, unknown>
+      } catch {
+        continue
+      }
+      const list = parts.get(row.message_id)
+      if (list) list.push(data)
+      else parts.set(row.message_id, [data])
+    }
+
+    const messages: Array<{ id: string; data: OpenCodeMessage }> = []
+    for (const row of messageRows) {
+      try {
+        messages.push({ id: row.id, data: JSON.parse(row.data) as OpenCodeMessage })
+      } catch {
+        // Skip a corrupt row rather than fail the whole transcript.
+      }
+    }
+    if (!messages.length) return null
+
+    return { messages, partsOf: (id) => parts.get(id) ?? [], source: dbPath() }
+  } catch {
+    return null
+  } finally {
+    db.close()
+  }
+}
+
+async function readFromFileTree(sessionId: string): Promise<RawSession | null> {
   const messageDir = path.join(storageRoot(), 'message', sessionId)
   const messages = await readJsonDir<OpenCodeMessage>(messageDir)
   if (!messages.length) return null
@@ -106,18 +170,36 @@ export async function readOpenCodeTranscript(
     (a, b) => (a.data.time?.created ?? 0) - (b.data.time?.created ?? 0) || a.id.localeCompare(b.id),
   )
 
+  const parts = new Map<string, Array<Record<string, unknown>>>()
+  for (const { id: messageId } of messages) {
+    const read = await readJsonDir<Record<string, unknown>>(
+      path.join(storageRoot(), 'part', messageId),
+    )
+    read.sort((a, b) => a.id.localeCompare(b.id))
+    parts.set(
+      messageId,
+      read.map((p) => p.data),
+    )
+  }
+
+  return { messages, partsOf: (id) => parts.get(id) ?? [], source: messageDir }
+}
+
+export async function readOpenCodeTranscript(
+  projectPath: string | null,
+  sessionId: string,
+): Promise<SessionTranscript | null> {
+  const raw = readFromSqlite(sessionId) ?? (await readFromFileTree(sessionId))
+  if (!raw) return null
+
   const events: TranscriptEvent[] = []
   let lastActivityAt = 0
 
-  for (const { id: messageId, data: msg } of messages) {
+  for (const { id: messageId, data: msg } of raw.messages) {
     const role = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
     if (!role) continue
 
-    const partDir = path.join(storageRoot(), 'part', messageId)
-    const parts = await readJsonDir<Record<string, unknown>>(partDir)
-    parts.sort((a, b) => a.id.localeCompare(b.id))
-
-    const content = partsToBlocks(parts.map((p) => p.data))
+    const content = partsToBlocks(raw.partsOf(messageId))
     if (!content.length) continue
 
     const created = msg.time?.created ?? 0
@@ -143,7 +225,7 @@ export async function readOpenCodeTranscript(
 
   return {
     id: sessionId,
-    path: messageDir,
+    path: raw.source,
     projectPath,
     gitBranch: null,
     versions: [],
