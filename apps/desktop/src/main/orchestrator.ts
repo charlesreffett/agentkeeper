@@ -36,6 +36,12 @@ interface AgencyRoleRestartParams {
   effort: string | undefined
 }
 
+/** Model/effort are role-wide; the preamble is not, so it lives per instance. */
+interface RoleRestartBase {
+  model: string | undefined
+  effort: string | undefined
+}
+
 interface AgentInstance {
   localId: string
   roleId: string
@@ -82,7 +88,11 @@ interface RuntimeAgency {
   /** Config snapshot keyed by roleId */
   roleSlots: Map<string, RoleSlot>
   allowedFlows: Set<string>
-  restartParamsByRole: Map<string, AgencyRoleRestartParams>
+  /** localId → restart params. Keyed per instance because the context preamble
+   *  carries the instance's own id; a role-keyed map collapses every instance
+   *  onto whichever one was registered last. */
+  restartParamsByInstance: Map<string, AgencyRoleRestartParams>
+  restartBaseByRole: Map<string, RoleRestartBase>
   /** Retry attempt counts per roleId for onFailure:'retry' slots */
   retryCountByRole: Map<string, number>
 }
@@ -137,6 +147,16 @@ function idleInstance(runtime: RuntimeAgency, roleId: string): AgentInstance | n
   return list.find((i) => !runtime.busySessions.has(i.localId)) ?? null
 }
 
+/** Routing decisions are otherwise invisible — a peer's self-reported instance id
+ *  is the only signal, and it has proven unreliable when diagnosing fan-out. */
+function logRouting(runtime: RuntimeAgency, from: string, to: string, outcome: string): void {
+  const roleId = instanceIdPattern.exec(to)?.[1] ?? to
+  const pool = (runtime.instancesByRole.get(roleId) ?? []).map(
+    (i) => `${i.instanceId}${runtime.busySessions.has(i.localId) ? ':busy' : ':idle'}`,
+  )
+  console.log(`[orchestrator] route ${from} -> "${to}" ${outcome} | pool: ${pool.join(' ') || '(none)'}`)
+}
+
 const instanceIdPattern = /^(.+)-(\d+)$/
 
 /** Check whether a flow from fromInstance/fromRole → toTarget is permitted.
@@ -188,18 +208,43 @@ function computeAllowedPeerIds(
   return permitted
 }
 
-async function spawnOverflow(
+/** Claim an overflow slot without awaiting. The ceiling check and the mutation
+ *  that makes the claim visible must happen in one synchronous run, or a batch
+ *  of concurrent senders each reads the pre-claim count and collectively
+ *  overshoots max. Returns null when the role is already at its ceiling. */
+function reserveOverflowSlot(runtime: RuntimeAgency, roleId: string): AgentInstance | null {
+  const slot = runtime.roleSlots.get(roleId)
+  const existing = runtime.instancesByRole.get(roleId) ?? []
+  if (slot?.max === undefined || existing.length >= slot.max) return null
+
+  const nextIndex = existing.length + 1
+  const inst: AgentInstance = {
+    localId: randomUUID(),
+    roleId,
+    instanceIndex: nextIndex,
+    instanceId: `${roleId}-${nextIndex}`,
+    isOverflow: true,
+  }
+
+  // busySessions keeps idleInstance from routing here until startSession
+  // completes; deliverToInstance re-adds it and manages the lifecycle from there.
+  if (!runtime.instancesByRole.has(roleId)) runtime.instancesByRole.set(roleId, [])
+  runtime.instancesByRole.get(roleId)!.push(inst)
+  runtime.sessionToInstance.set(inst.localId, inst)
+  sessionToRuntimeId.set(inst.localId, runtime.instanceId)
+  runtime.busySessions.add(inst.localId)
+  return inst
+}
+
+async function launchOverflow(
   runtime: RuntimeAgency,
-  roleId: string,
+  inst: AgentInstance,
   rolesById: Map<string, { name: string; model: string | null; effort: string | null; systemPrompt: string }>,
   allInstanceIds: string[],
 ): Promise<AgentInstance> {
-  const existing = runtime.instancesByRole.get(roleId) ?? []
-  const nextIndex = existing.length + 1
-  const instanceId = `${roleId}-${nextIndex}`
-  const localId = randomUUID()
+  const { roleId, instanceId, localId, instanceIndex: nextIndex } = inst
   const role = rolesById.get(roleId)!
-  const restart = runtime.restartParamsByRole.get(roleId)!
+  const restart = runtime.restartBaseByRole.get(roleId)!
   const slot = runtime.roleSlots.get(roleId)!
 
   const priorHandoffs = runtime.handoffsByRole.get(roleId) ?? []
@@ -230,24 +275,7 @@ async function spawnOverflow(
   })
 
   const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
-
-  const inst: AgentInstance = {
-    localId,
-    roleId,
-    instanceIndex: nextIndex,
-    instanceId,
-    isOverflow: true,
-  }
-
-  // Reserve the slot synchronously before the first await so concurrent
-  // spawnOverflow calls compute distinct nextIndex values and never exceed max.
-  // busySessions keeps idleInstance from routing to this slot until startSession
-  // completes; deliverToInstance re-adds it and manages the lifecycle from there.
-  if (!runtime.instancesByRole.has(roleId)) runtime.instancesByRole.set(roleId, [])
-  runtime.instancesByRole.get(roleId)!.push(inst)
-  runtime.sessionToInstance.set(localId, inst)
-  sessionToRuntimeId.set(localId, runtime.instanceId)
-  runtime.busySessions.add(localId)
+  runtime.restartParamsByInstance.set(localId, { ...restart, systemPromptAppend })
 
   try {
     await startSession(
@@ -396,7 +424,7 @@ async function injectAndWait(
     if (!persistedAgent?.sdkSessionId) {
       return `Error: instance "${inst.instanceId}" has no resolvable session — it may not have initialised yet. Retry in a moment.`
     }
-    const restart = runtime.restartParamsByRole.get(inst.roleId)
+    const restart = runtime.restartParamsByInstance.get(toSessionId)
     if (!restart) {
       return `Error: instance "${inst.instanceId}" has no restart context in this agency.`
     }
@@ -526,6 +554,7 @@ async function routeMessage(
       return `Error: instance "${to}" is currently handling another message. Retry shortly, or send to role "${targetRoleId}" to reach any idle instance.`
     }
 
+    logRouting(runtime, fromInst.instanceId, to, `-> ${targetInst.instanceId} (direct)`)
     addWait(fromSessionId, targetInst.localId)
     setAgentStatus(fromSessionId, 'blocked')
     try {
@@ -557,6 +586,7 @@ async function routeMessage(
       if (wouldCycle(fromSessionId, idle.localId)) {
         return `Error: "${toRole}" is already waiting on your reply (directly or transitively). Calling send_message now would deadlock. Respond with plain text instead.`
       }
+      logRouting(runtime, fromInst.instanceId, toRole, `-> ${idle.instanceId} (idle)`)
       addWait(fromSessionId, idle.localId)
       try {
         return await deliverToInstance(runtime, idle, wrapMessage(fromInst.instanceId, content))
@@ -565,14 +595,14 @@ async function routeMessage(
       }
     }
 
-    // No idle instance — check if we can spawn overflow
-    const slot = runtime.roleSlots.get(toRole)
-    const currentCount = (runtime.instancesByRole.get(toRole) ?? []).length
-    if (slot?.max !== undefined && currentCount < slot.max) {
-      // Collect all current instance ids to rebuild the peer list
-      const allInstanceIds = buildAllInstanceIds(runtime)
+    // No idle instance — claim an overflow slot before any await, so a batch of
+    // concurrent senders can't all read the same pre-claim instance count.
+    const reserved = reserveOverflowSlot(runtime, toRole)
+    if (reserved) {
+      logRouting(runtime, fromInst.instanceId, toRole, `-> ${reserved.instanceId} (overflow, spawning)`)
+      const allInstanceIds = buildAllInstanceIds(runtime).filter((id) => id !== reserved.instanceId)
       const rolesById = await buildRolesById(runtime)
-      const newInst = await spawnOverflow(runtime, toRole, rolesById, allInstanceIds)
+      const newInst = await launchOverflow(runtime, reserved, rolesById, allInstanceIds)
       addWait(fromSessionId, newInst.localId)
       try {
         return await deliverToInstance(runtime, newInst, wrapMessage(fromInst.instanceId, content))
@@ -580,6 +610,13 @@ async function routeMessage(
         removeWait(fromSessionId, newInst.localId)
       }
     }
+
+    logRouting(
+      runtime,
+      fromInst.instanceId,
+      toRole,
+      `-> queued (depth ${(runtime.pendingByRole.get(toRole)?.length ?? 0) + 1}, no idle instance and role at ceiling)`,
+    )
 
     // Enqueue — block until a slot opens, or time out so a stuck role can't
     // hold the caller forever. Entry identity decides who owns the resolution:
@@ -856,6 +893,9 @@ export function createOrchestratorMcp(
         .describe('Batch of messages dispatched concurrently.'),
     },
     async ({ messages }) => {
+      console.log(
+        `[orchestrator] send_messages batch of ${messages.length}: ${messages.map((m) => m.to).join(', ')}`,
+      )
       const replies = await Promise.all(
         messages.map(async (m, i) => {
           try {
@@ -921,7 +961,7 @@ function handleAgentFailure(
 
     runtime.retryCountByRole.set(roleId, attempt + 1)
     const backoffMs = Math.pow(2, attempt) * 1000
-    const restart = runtime.restartParamsByRole.get(roleId)
+    const restart = runtime.restartParamsByInstance.get(localId)
     const inst = runtime.sessionToInstance.get(localId)
     const persisted = registry.getAgent(localId)
     if (!restart || !inst || !persisted) return
@@ -1028,7 +1068,8 @@ export async function startAgency(
     handoffsByRole: new Map(),
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
-    restartParamsByRole: new Map(),
+    restartParamsByInstance: new Map(),
+    restartBaseByRole: new Map(),
     retryCountByRole: new Map(),
   }
   instances.set(instanceId, runtime)
@@ -1133,8 +1174,8 @@ export async function startAgency(
         },
       )
 
-      // Store per-instance restart params (the preamble varies per instance)
-      runtime.restartParamsByRole.set(slot.roleId, {
+      runtime.restartBaseByRole.set(slot.roleId, restartBase)
+      runtime.restartParamsByInstance.set(localId, {
         ...restartBase,
         systemPromptAppend,
       })
@@ -1243,7 +1284,8 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     handoffsByRole,
     roleSlots: new Map(agency.roles.map((s) => [s.roleId, s])),
     allowedFlows: new Set(agency.flows.map(([from, to]) => `${from}->${to}`)),
-    restartParamsByRole: new Map(),
+    restartParamsByInstance: new Map(),
+    restartBaseByRole: new Map(),
     retryCountByRole: new Map(),
   }
   instances.set(instanceId, runtime)
@@ -1323,7 +1365,11 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         { mcpFactory: () => createOrchestratorMcp(projectPath, localId) },
       )
 
-      runtime.restartParamsByRole.set(slot.roleId, {
+      runtime.restartBaseByRole.set(slot.roleId, {
+        model: resolvedModel,
+        effort: role.effort ?? undefined,
+      })
+      runtime.restartParamsByInstance.set(localId, {
         systemPromptAppend,
         model: resolvedModel,
         effort: role.effort ?? undefined,
