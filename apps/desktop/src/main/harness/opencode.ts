@@ -504,9 +504,10 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
 
   // ─── Path helpers ────────────────────────────────────────────────────────
 
-  /** Root of opencode's per-session JSON tree. Reads go through
-   *  {@link readOpenCodeTranscript}, which resolves `message/<id>` and
-   *  `part/<id>` under this dir — not Claude's flat `<sessionId>.jsonl`. */
+  /** Root of opencode's legacy per-session JSON tree. Transcript reads go
+   *  through {@link readOpenCodeTranscript}, which prefers the 1.18.x SQLite
+   *  store and only falls back to `message/<id>` + `part/<id>` under this dir —
+   *  either way, not Claude's flat `<sessionId>.jsonl`. */
   getSessionsRoot(): string {
     return path.join(os.homedir(), '.local', 'share', 'opencode', 'storage')
   }
