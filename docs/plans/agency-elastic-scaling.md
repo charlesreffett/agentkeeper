@@ -230,12 +230,26 @@ stage it rather than ripping it out:
 | `registry.addHandoff` / `getHandoffsByRole` (`session-registry.ts:292`, `:307`) | keep the readers, drop the writer |
 | `agency_handoffs` table (`db/schema.ts:41`) | leave in place, stop writing |
 
-Note :1270 — agency *resume* rehydrates `handoffsByRole` from the DB, so an
-agency resumed after this change would inject summaries written before it.
-Dropping the read at :1309 is what actually stops that, not dropping the write.
+**Do not confuse the two rehydrations at this site.** Agency resume rebuilds the
+whole `RuntimeAgency` — instances, `roleSlots`, `sdkToLocalId`, restart params,
+reattached sessions. That stays, and phase 1 extends it to restore the new
+`state` and `elastic` fields. Only the *handoff-summary* rehydration
+(`registry.getHandoffsByRole` at :1270, consumed at :1309) is removed; it is the
+same broadcast as :250-257, sourced from the DB rather than memory.
 
-Leaving the table inert avoids a migration and keeps historical summaries
-readable for forensics. Revisit only if it turns out nothing reads it.
+Dropping the read at :1309 is what stops the behaviour. Dropping the write alone
+does not — a resumed agency would keep injecting summaries written before the
+change.
+
+Nothing is lost by removing it. Summaries are written only at flush time
+(`requestHandoffAndSuspend` is the sole writer), so an instance that crashed
+mid-task never produced one either; and a cleanly completed instance has
+externalized to the repo, which survives a restart better than a DB row.
+
+One real behaviour change, not a no-op: agencies resumed after this ships stop
+receiving summaries written by the *old* code. That is intended — those describe
+work whose reasoning is not in the tree, since it predates flushing — but it
+does change what an in-flight agency sees across the upgrade.
 
 Keep `sdkSessionId` and the on-disk transcript — forensics only, not routing.
 
