@@ -247,6 +247,7 @@ async function createAndAdd() {
       id,
       name,
       description: form.value.description.trim(),
+      harnessId: null,
       model: form.value.model || null,
       effort: null,
       systemPrompt: '',

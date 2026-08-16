@@ -13,6 +13,7 @@ import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import ScopeBar from '@/components/ScopeBar.vue'
+import ModelPicker from '@/components/ModelPicker.vue'
 import { Plus } from 'lucide-vue-next'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
@@ -62,6 +63,7 @@ const form = ref<RoleDraft & { scope: RoleScope }>({
   id: '',
   name: '',
   description: '',
+  harnessId: null,
   model: null,
   effort: 'medium',
   systemPrompt: '',
@@ -101,7 +103,7 @@ async function generate() {
   }
 }
 
-const { optionsWithDefaultFor: modelOptionsWithDefaultFor, effortLevelsFor, error: modelsError } = useModelsQuery()
+const { effortLevelsFor } = useModelsQuery(() => form.value.harnessId ?? undefined)
 
 
 function beginNew() {
@@ -111,6 +113,7 @@ function beginNew() {
     id: '',
     name: '',
     description: '',
+    harnessId: null,
     model: null,
     effort: 'medium',
     systemPrompt: '',
@@ -127,6 +130,7 @@ function beginEdit(role: Role) {
     id: role.id,
     name: role.name,
     description: role.description,
+    harnessId: role.harnessId,
     model: role.model,
     effort: role.effort,
     systemPrompt: role.systemPrompt,
@@ -175,6 +179,7 @@ async function save() {
       id: form.value.id.trim(),
       name: form.value.name.trim(),
       description: form.value.description.trim(),
+      harnessId: form.value.harnessId,
       model: form.value.model || null,
       effort: form.value.effort || null,
       systemPrompt: form.value.systemPrompt.trim(),
@@ -310,19 +315,19 @@ watch(
             </div>
 
             <div class="grid grid-cols-2 gap-3">
-              <div class="space-y-1.5">
+              <div class="min-w-0 space-y-1.5">
                 <label class="text-xs font-medium">Default model</label>
-                <select
-                  v-model="form.model"
-                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring"
-                >
-                  <option v-for="m in modelOptionsWithDefaultFor(form.model)" :key="m.value" :value="m.value || null">
-                    {{ m.label }}
-                  </option>
-                </select>
-                <p v-if="modelsError" class="text-xs text-destructive">Harness unavailable.</p>
+                <div class="min-w-0 w-full">
+                  <ModelPicker
+                    :model-value="form.model ?? ''"
+                    :harness-id="form.harnessId ?? undefined"
+                    harness-switchable
+                    @update:model-value="form.model = $event || null"
+                    @update:harness-id="form.harnessId = $event"
+                  />
+                </div>
               </div>
-              <div class="space-y-1.5">
+              <div class="min-w-0 space-y-1.5">
                 <label class="text-xs font-medium">Effort</label>
                 <select
                   v-model="form.effort"

@@ -437,6 +437,7 @@ export interface Role {
   path: string
   name: string
   description: string
+  harnessId: string | null
   model: string | null
   effort: RoleEffort | null
   systemPrompt: string

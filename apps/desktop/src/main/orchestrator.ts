@@ -32,12 +32,14 @@ import { createPlan, updatePlan, getPlanByRef } from './plans'
 
 interface AgencyRoleRestartParams {
   systemPromptAppend: string
+  harnessId: string
   model: string | undefined
   effort: string | undefined
 }
 
-/** Model/effort are role-wide; the preamble is not, so it lives per instance. */
+/** Harness/model/effort are role-wide; the preamble is not, so it lives per instance. */
 interface RoleRestartBase {
+  harnessId: string
   model: string | undefined
   effort: string | undefined
 }
@@ -279,7 +281,7 @@ function reserveOverflowSlot(runtime: RuntimeAgency, roleId: string): AgentInsta
 async function launchOverflow(
   runtime: RuntimeAgency,
   inst: AgentInstance,
-  rolesById: Map<string, { name: string; model: string | null; effort: string | null; systemPrompt: string }>,
+  rolesById: Map<string, { name: string; harnessId: string | null; model: string | null; effort: string | null; systemPrompt: string }>,
   allInstanceIds: string[],
 ): Promise<AgentInstance> {
   const { roleId, instanceId, localId, instanceIndex: nextIndex } = inst
@@ -317,7 +319,7 @@ async function launchOverflow(
         initialPrompt: `Agency "${runtime.agencyName}" overflow agent initialized. Await messages from peers.`,
         systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
-        harnessId: runtime.harnessId,
+        harnessId: restart.harnessId,
         ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
         agencyId: runtime.agencyId,
         agencyScope: runtime.agencyScope,
@@ -449,7 +451,7 @@ async function injectAndWait(
         resumeSdkSessionId: persistedAgent.sdkSessionId,
         systemPromptAppend: restart.systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
-        harnessId: runtime.harnessId,
+        harnessId: restart.harnessId,
         ...(restart.effort
           ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort }
           : {}),
@@ -687,7 +689,7 @@ function buildAllInstanceIds(runtime: RuntimeAgency): string[] {
 
 async function buildRolesById(
   runtime: RuntimeAgency,
-): Promise<Map<string, { name: string; model: string | null; effort: string | null; systemPrompt: string }>> {
+): Promise<Map<string, { name: string; harnessId: string | null; model: string | null; effort: string | null; systemPrompt: string }>> {
   const allRoles = await listRoles(runtime.projectPath)
   return new Map(allRoles.map((r) => [r.id, r]))
 }
@@ -993,7 +995,7 @@ function handleAgentFailure(
           initialPrompt: persisted.initialPrompt,
           systemPromptAppend: restart.systemPromptAppend,
           ...(restart.model ? { model: restart.model } : {}),
-          harnessId: runtime.harnessId,
+          harnessId: restart.harnessId,
           ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
           agencyId: runtime.agencyId,
           agencyScope: runtime.agencyScope,
@@ -1121,10 +1123,16 @@ export async function startAgency(
     const isEntry = agency.entryPoints.includes(slot.roleId)
     const totalInstances = slot.max ?? count
 
-    const resolvedModel = resolveAgencyRoleModel(harnessId, role.model, params.model)
+    const roleHarnessId = role.harnessId ?? harnessId
+    const resolvedModel = resolveAgencyRoleModel(
+      roleHarnessId,
+      role.model,
+      role.harnessId ? undefined : params.model,
+    )
 
     const restartBase: AgencyRoleRestartParams = {
       systemPromptAppend: '', // will be filled per-instance below
+      harnessId: roleHarnessId,
       model: resolvedModel ?? undefined,
       effort: role.effort ?? undefined,
     }
@@ -1165,7 +1173,7 @@ export async function startAgency(
             ? { initialAttachments: params.initialAttachments }
             : {}),
           ...(resolvedModel ? { model: resolvedModel } : {}),
-          harnessId,
+          harnessId: roleHarnessId,
           ...(role.effort ? { effort: role.effort } : {}),
           systemPromptAppend,
           agencyId: agency.id,
@@ -1342,7 +1350,12 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       })
 
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
-      const resolvedModel = resolveAgencyRoleModel(harnessId, role.model, sessionModel)
+      const roleHarnessId = role.harnessId ?? harnessId
+      const resolvedModel = resolveAgencyRoleModel(
+        roleHarnessId,
+        role.model,
+        role.harnessId ? undefined : sessionModel,
+      )
 
       await startSession(
         {
@@ -1354,7 +1367,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
           initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
           systemPromptAppend,
           ...(resolvedModel ? { model: resolvedModel } : {}),
-          harnessId,
+          harnessId: roleHarnessId,
           ...(role.effort ? { effort: role.effort } : {}),
           agencyId: agency.id,
           agencyScope: agency.scope,
@@ -1369,11 +1382,13 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       )
 
       runtime.restartBaseByRole.set(slot.roleId, {
+        harnessId: roleHarnessId,
         model: resolvedModel,
         effort: role.effort ?? undefined,
       })
       runtime.restartParamsByInstance.set(localId, {
         systemPromptAppend,
+        harnessId: roleHarnessId,
         model: resolvedModel,
         effort: role.effort ?? undefined,
       })

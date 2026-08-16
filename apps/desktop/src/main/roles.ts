@@ -66,6 +66,8 @@ function parseRoleFile(
     typeof parsed['description'] === 'string' ? parsed['description'] : ''
   const model =
     typeof parsed['model'] === 'string' ? (parsed['model'] as string) : null
+  const harnessId =
+    typeof parsed['harnessId'] === 'string' ? (parsed['harnessId'] as string) : null
   const effort: RoleEffort | null =
     typeof parsed['effort'] === 'string' &&
     (ROLE_EFFORT_VALUES as string[]).includes(parsed['effort'] as string)
@@ -79,6 +81,7 @@ function parseRoleFile(
     path: meta.path,
     name,
     description,
+    harnessId,
     model,
     effort,
     systemPrompt: body.trimEnd(),
@@ -92,6 +95,7 @@ function serializeRole(role: Omit<Role, 'scope' | 'path'>): string {
     name: role.name,
     description: role.description,
   }
+  if (role.harnessId) fm['harnessId'] = role.harnessId
   if (role.model) fm['model'] = role.model
   if (role.effort) fm['effort'] = role.effort
   if (role.icon) fm['icon'] = role.icon
