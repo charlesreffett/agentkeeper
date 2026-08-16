@@ -1,8 +1,9 @@
 # Agency Elastic Scaling (min/max)
 
 Status: Phase 1 shipped (`feat/agency-instance-lifecycle`, `7982058`). Phase 2
-shipped (`fix/agency-queue-drain`, off the Phase 1 branch). Phase 3 not
-started. Investigated: 2026-08-14
+shipped (`fix/agency-queue-drain`, off the Phase 1 branch). Phase 3 implemented
+on `feat/agency-elastic-instances-ui`; live verification pending. Investigated:
+2026-08-14
 Prerequisite shipped: PR #47 (per-instance restart params, routing log).
 
 Design: **grow-and-flush**. A role keeps `min` warm instances, grows to `max`
@@ -366,7 +367,7 @@ Test protocol below is still pending.
 
 ### Phase 3 — floor enforcement and observability
 
-Branch: `feat/agency-scaling-observability`
+Branch: `feat/agency-elastic-instances-ui`
 
 - On any lifecycle transition, if active instances for a role fall below `min`,
   spawn back up to `min`. Covers defect 5 and agent death (defect 5).
@@ -377,6 +378,16 @@ Branch: `feat/agency-scaling-observability`
   undermines the main benefit.
 - Extend the routing log with lifecycle transitions — spawn, flush, retire,
   floor-restore — so scaling is legible in the same stream as routing.
+
+**Implemented 2026-08-16.** Sizing now resolves through one `slotBounds`
+function, reservations synchronously claim a ceiling slot before any spawn
+await, and failures/retirements restore the configured floor. Routing logs,
+tool-result capacity footers, and Monitor badges all use the same live capacity
+snapshot (`live/ceiling`, busy, idle, queued). The fixed startup member list is
+explicitly labelled as a launch-time snapshot so accumulated elastic instance
+ids cannot be mistaken for simultaneous capacity. A bounded pending queue
+returns an actionable refusal once it is full. Full live verification remains
+to be run with an account that can sustain the test protocol below.
 
 ## Rejected alternatives
 

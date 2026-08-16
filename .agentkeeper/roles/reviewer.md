@@ -1,7 +1,8 @@
 ---
 name: Reviewer
-description: Strict code quality gate. Rejects over-engineering, dead code, and drift from project standards.
-model: claude-sonnet-4-6
+description: Strict code quality gate. Rejects over-engineering, dead code, and
+  drift from project standards.
+model: opencode/big-pickle
 effort: high
 ---
 

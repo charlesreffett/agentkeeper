@@ -473,6 +473,24 @@ export interface RoleSlot {
   pauseForReview?: boolean
 }
 
+/** Live scaling state for one role of a running agency. `live` counts instances
+ *  holding a slot against `ceiling`; retired ones keep their ids but are
+ *  excluded. Sizing config alone cannot express this — an elastic role's ids
+ *  accumulate across a run while its live population stays under the ceiling. */
+export interface AgencyRoleCapacity {
+  roleId: string
+  live: number
+  floor: number
+  ceiling: number
+  busy: number
+  idle: number
+  queued: number
+}
+
+export interface AgencyScalingUpdate extends AgencyRoleCapacity {
+  agencyInstanceId: string
+}
+
 export interface Agency {
   id: string
   scope: AgencyScope
@@ -933,6 +951,7 @@ export interface AgentKeeperApi {
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
     resume: (instanceId: string) => Promise<AgencyInstance>
     setFallbackModel: (instanceId: string, model: string) => Promise<void>
+    onScaling: (callback: (update: AgencyScalingUpdate) => void) => () => void
   }
   skills: {
     list: (projectPath: string) => Promise<Skill[]>
@@ -1265,6 +1284,7 @@ export const IPC_CHANNELS = {
   sessionsUndoEditAndRerun: 'sessions:undoEditAndRerun',
   agenciesResume: 'agencies:resume',
   agenciesSetFallbackModel: 'agencies:setFallbackModel',
+  agencyScaling: 'agencies:scaling',
   dialogOpenFiles: 'dialog:openFiles',
   gitGetBranch: 'git:getBranch',
   gitGetStatus: 'git:getStatus',

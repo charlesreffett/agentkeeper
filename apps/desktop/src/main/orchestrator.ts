@@ -7,6 +7,7 @@ import { z } from 'zod'
 import type {
   AgencyInstance,
   AgencyInstanceSession,
+  AgencyRoleCapacity,
   AgencyScope,
   OnFailurePolicy,
   RoleEffort,
@@ -18,6 +19,7 @@ import { listAgencies } from './agencies'
 import { listRoles } from './roles'
 import { createWorktree } from './worktrees'
 import {
+  broadcastAgencyScaling,
   broadcastStatus,
   getActiveSession,
   sendInput,
@@ -110,6 +112,10 @@ interface RuntimeAgency {
   restartBaseByRole: Map<string, RoleRestartBase>
   /** Retry attempt counts per roleId for onFailure:'retry' slots */
   retryCountByRole: Map<string, number>
+  /** Roles with a floor restore in flight. Spawning is async, so without this
+   *  a burst of retirements each observes the same pre-spawn deficit and
+   *  collectively overshoots the floor. */
+  restoringFloor: Set<string>
 }
 
 const instances = new Map<string, RuntimeAgency>()
@@ -193,11 +199,50 @@ function liveCount(runtime: RuntimeAgency, roleId: string): number {
   return (runtime.instancesByRole.get(roleId) ?? []).filter((i) => i.state !== 'retired').length
 }
 
+/** Sizing resolved in one place. start, resume, the ceiling check, and the
+ *  preamble each derived floor/ceiling separately before, and disagreed: start
+ *  used `max ?? count` while resume used `max ?? count ?? 1`, so a min-only slot
+ *  seeded a different population on resume than it did on start. */
+function slotBounds(slot: RoleSlot | undefined): { floor: number; ceiling: number } {
+  if (!slot) return { floor: 1, ceiling: 1 }
+  if (slot.count !== undefined) return { floor: slot.count, ceiling: slot.count }
+  const floor = slot.min ?? 1
+  return { floor, ceiling: Math.max(floor, slot.max ?? floor) }
+}
+
+/** Live scaling state for a role. The single source for the routing log, the
+ *  renderer badge, and the capacity footer handed back to a calling agent — a
+ *  divergence between those three is what made the last fan-out run
+ *  unfalsifiable. */
+function roleCapacity(runtime: RuntimeAgency, roleId: string): AgencyRoleCapacity {
+  const list = runtime.instancesByRole.get(roleId) ?? []
+  const { floor, ceiling } = slotBounds(runtime.roleSlots.get(roleId))
+  const active = list.filter((i) => i.state === 'active')
+  const busy = active.filter((i) => runtime.busySessions.has(i.localId)).length
+  return {
+    roleId,
+    live: list.filter((i) => i.state !== 'retired').length,
+    floor,
+    ceiling,
+    busy,
+    idle: active.length - busy,
+    queued: runtime.pendingByRole.get(roleId)?.length ?? 0,
+  }
+}
+
+function emitCapacity(runtime: RuntimeAgency, roleId: string): void {
+  broadcastAgencyScaling({
+    agencyInstanceId: runtime.instanceId,
+    ...roleCapacity(runtime, roleId),
+  })
+}
+
 function logLifecycle(runtime: RuntimeAgency, inst: AgentInstance, event: string): void {
   const pool = (runtime.instancesByRole.get(inst.roleId) ?? [])
     .map((i) => `${i.instanceId}:${i.state}`)
     .join(' ')
   console.log(`[orchestrator] lifecycle ${inst.instanceId} ${event} | pool: ${pool}`)
+  emitCapacity(runtime, inst.roleId)
 }
 
 /** Routing decisions are otherwise invisible — a peer's self-reported instance id
@@ -209,7 +254,12 @@ function logRouting(runtime: RuntimeAgency, from: string, to: string, outcome: s
       i.state !== 'active' ? i.state : runtime.busySessions.has(i.localId) ? 'busy' : 'idle'
     return `${i.instanceId}:${status}`
   })
-  console.log(`[orchestrator] route ${from} -> "${to}" ${outcome} | pool: ${pool.join(' ') || '(none)'}`)
+  const cap = roleCapacity(runtime, roleId)
+  console.log(
+    `[orchestrator] route ${from} -> "${to}" ${outcome} | pool: ${pool.join(' ') || '(none)'}` +
+      ` | live ${cap.live}/${cap.ceiling} busy ${cap.busy} queued ${cap.queued}`,
+  )
+  emitCapacity(runtime, roleId)
 }
 
 const instanceIdPattern = /^(.+)-(\d+)$/
@@ -267,9 +317,13 @@ function computeAllowedPeerIds(
  *  that makes the claim visible must happen in one synchronous run, or a batch
  *  of concurrent senders each reads the pre-claim count and collectively
  *  overshoots max. Returns null when the role is already at its ceiling. */
-function reserveOverflowSlot(runtime: RuntimeAgency, roleId: string): AgentInstance | null {
-  const slot = runtime.roleSlots.get(roleId)
-  if (slot?.max === undefined || liveCount(runtime, roleId) >= slot.max) return null
+function reserveSlot(
+  runtime: RuntimeAgency,
+  roleId: string,
+  opts: { elastic: boolean } = { elastic: true },
+): AgentInstance | null {
+  const { ceiling } = slotBounds(runtime.roleSlots.get(roleId))
+  if (liveCount(runtime, roleId) >= ceiling) return null
 
   const nextIndex = (runtime.nextIndexByRole.get(roleId) ?? 0) + 1
   runtime.nextIndexByRole.set(roleId, nextIndex)
@@ -278,7 +332,7 @@ function reserveOverflowSlot(runtime: RuntimeAgency, roleId: string): AgentInsta
     roleId,
     instanceIndex: nextIndex,
     instanceId: `${roleId}-${nextIndex}`,
-    elastic: true,
+    elastic: opts.elastic,
     state: 'active',
   }
 
@@ -301,7 +355,7 @@ async function launchOverflow(
   const { roleId, instanceId, localId, instanceIndex: nextIndex } = inst
   const role = rolesById.get(roleId)!
   const restart = runtime.restartBaseByRole.get(roleId)!
-  const slot = runtime.roleSlots.get(roleId)!
+  const bounds = slotBounds(runtime.roleSlots.get(roleId))
 
   const allRoleIds = [...runtime.roleSlots.keys()]
   const allowedPeerIds = computeAllowedPeerIds(
@@ -311,7 +365,8 @@ async function launchOverflow(
     roleName: role.name,
     roleId,
     instanceIndex: nextIndex,
-    totalInstances: slot.max ?? nextIndex,
+    floor: bounds.floor,
+    ceiling: bounds.ceiling,
     instanceId,
     agencyName: runtime.agencyName,
     allInstanceIds,
@@ -330,7 +385,9 @@ async function launchOverflow(
         sessionLocalId: runtime.instanceId,
         projectPath: runtime.projectPath,
         ...(runtime.worktreePath ? { worktreePath: runtime.worktreePath } : {}),
-        initialPrompt: `Agency "${runtime.agencyName}" overflow agent initialized. Await messages from peers.`,
+        initialPrompt: inst.elastic
+          ? `Agency "${runtime.agencyName}" overflow agent initialized. Await messages from peers.`
+          : `Agency "${runtime.agencyName}" is restoring this role to its floor. Await messages from peers.`,
         systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
         harnessId: restart.harnessId,
@@ -405,6 +462,41 @@ async function flushAndRetire(runtime: RuntimeAgency, inst: AgentInstance): Prom
   logLifecycle(runtime, inst, `retired (role now ${liveCount(runtime, inst.roleId)} live)`)
 }
 
+/** Bring a role back up to its floor after an instance retires or dies. Without
+ *  this, `min` is only a starting count: a base instance lost under
+ *  onFailure:'continue' leaves the role permanently short, and the shortfall is
+ *  invisible because a dead session simply stops appearing as idle.
+ *
+ *  Restored instances are non-elastic — they occupy floor slots, so reclaiming
+ *  them after one task would immediately re-trigger this and spin. */
+function ensureFloor(runtime: RuntimeAgency, roleId: string): void {
+  const { floor } = slotBounds(runtime.roleSlots.get(roleId))
+  if (runtime.restoringFloor.has(roleId)) return
+
+  const deficit = floor - liveCount(runtime, roleId)
+  if (deficit <= 0) return
+
+  runtime.restoringFloor.add(roleId)
+  void (async () => {
+    try {
+      for (let i = 0; i < deficit; i++) {
+        const inst = reserveSlot(runtime, roleId, { elastic: false })
+        if (!inst) break
+        const allInstanceIds = buildAllInstanceIds(runtime).filter((id) => id !== inst.instanceId)
+        const rolesById = await buildRolesById(runtime)
+        await launchOverflow(runtime, inst, rolesById, allInstanceIds)
+        logLifecycle(runtime, inst, `floor-restored (role now ${liveCount(runtime, roleId)} live)`)
+      }
+    } catch (err) {
+      console.error(`[orchestrator] floor restore failed for role "${roleId}":`, err)
+    } finally {
+      runtime.restoringFloor.delete(roleId)
+      // A restored instance is idle capacity — anything queued should take it.
+      drainPendingForRole(runtime, roleId)
+    }
+  })()
+}
+
 /** Role-addressed resolution: an idle instance wins, else a freshly reserved
  *  overflow slot. The idle check and the reservation run in one synchronous
  *  stretch, so a batch of concurrent senders can't each read the pre-claim
@@ -417,7 +509,7 @@ function resolveRoleTarget(
 ): AgentInstance | null {
   const idle = idleInstance(runtime, roleId, exceptLocalId)
   if (idle) return idle
-  return reserveOverflowSlot(runtime, roleId)
+  return reserveSlot(runtime, roleId)
 }
 
 /** Deliver content to an already-claimed target, spawning its session first
@@ -480,7 +572,11 @@ async function deliverToInstance(
     } else {
       runtime.busySessions.delete(inst.localId)
     }
+    // Drain first: a queued message can take the freed slot directly, whereas a
+    // floor restore has to spawn. Restoring first would hold the slot through a
+    // cold start while work sits in the queue.
     drainPendingForRole(runtime, inst.roleId)
+    ensureFloor(runtime, inst.roleId)
   }
 }
 
@@ -681,11 +777,27 @@ async function routeMessage(
       }
     }
 
+    const cap = roleCapacity(runtime, toRole)
+
+    // Backpressure. Queueing is the right answer for a burst that merely
+    // outruns the ceiling, but past a full ceiling's worth of waiting work the
+    // caller is dispatching into a role that cannot absorb it, and a silent
+    // 15-minute block teaches it nothing. Refuse with the numbers so it can
+    // decide — await outstanding replies, or split the work differently.
+    if (cap.queued >= cap.ceiling) {
+      logRouting(runtime, fromInst.instanceId, toRole, `-> REFUSED (queue full, depth ${cap.queued})`)
+      return (
+        `Error: role "${toRole}" is at capacity — ${cap.live}/${cap.ceiling} instances live, ` +
+        `${cap.busy} busy, ${cap.queued} messages already queued. This message was NOT delivered. ` +
+        `The role cannot grow past ${cap.ceiling}; wait for outstanding replies before sending more.`
+      )
+    }
+
     logRouting(
       runtime,
       fromInst.instanceId,
       toRole,
-      `-> queued (depth ${(runtime.pendingByRole.get(toRole)?.length ?? 0) + 1}, no idle instance and role at ceiling)`,
+      `-> queued (depth ${cap.queued + 1}, no idle instance and role at ceiling)`,
     )
 
     // Enqueue — block until a slot opens, or time out so a stuck role can't
@@ -722,6 +834,22 @@ async function routeMessage(
   }
 }
 
+/** Live scaling state appended to every reply. The preamble can only state the
+ *  role's fixed bounds, so this is the sender's one channel for what the pool is
+ *  actually doing — without it a caller cannot tell a queued burst from a
+ *  parallel one, which is exactly the ambiguity that made fan-out look broken. */
+function capacityFooter(sessionId: string, to: string): string {
+  const runtime = runtimeOfSession(sessionId)
+  if (!runtime) return ''
+  const roleId = instanceIdPattern.exec(to)?.[1] ?? to
+  if (!runtime.instancesByRole.has(roleId)) return ''
+  const cap = roleCapacity(runtime, roleId)
+  return (
+    `\n\n[capacity] ${roleId}: ${cap.live}/${cap.ceiling} live (floor ${cap.floor}), ` +
+    `${cap.busy} busy, ${cap.idle} idle, ${cap.queued} queued`
+  )
+}
+
 function wrapMessage(fromInstanceId: string, content: string): string {
   return [
     `[message from peer "${fromInstanceId}"]`,
@@ -753,7 +881,8 @@ function buildContextPreamble(opts: {
   roleName: string
   roleId: string
   instanceIndex: number
-  totalInstances: number
+  floor: number
+  ceiling: number
   instanceId: string
   agencyName: string
   allInstanceIds: string[]
@@ -762,10 +891,19 @@ function buildContextPreamble(opts: {
   allowedPeerIds: string[] | null
 }): string {
   const {
-    roleName, roleId, instanceIndex, totalInstances, instanceId,
+    roleName, roleId, instanceIndex, floor, ceiling, instanceId,
     agencyName, allInstanceIds, isEntry, allowedPeerIds,
   } = opts
-  const instanceNote = totalInstances > 1 ? `, instance ${instanceIndex} of ${totalInstances}` : ''
+  // The preamble is baked into the system prompt at spawn time and cannot be
+  // rewritten as the pool scales, so it states the role's fixed bounds rather
+  // than a live population that would be stale by the first retirement. Live
+  // numbers reach the agent through the capacity footer on send_message.
+  const instanceNote =
+    ceiling > 1
+      ? floor === ceiling
+        ? `, instance ${instanceIndex} of ${ceiling}`
+        : `, instance ${instanceIndex}; role "${roleId}" keeps ${floor} warm and may grow to ${ceiling}`
+      : ''
   const peerRestrictionLines: string[] =
     allowedPeerIds === null
       ? []
@@ -774,14 +912,20 @@ function buildContextPreamble(opts: {
         : ['', `Flow-restricted: you have no permitted outbound peers — do not call send_message.`]
   return [
     `You are the "${roleName}" (role: "${roleId}"${instanceNote}, id: "${instanceId}") in agency "${agencyName}".`,
-    `Current agency members: ${allInstanceIds.join(', ')}.`,
+    `Agency members at launch: ${allInstanceIds.join(', ')}. Elastic roles spawn and retire`,
+    `instances as load changes, so this list ages — address a role id, not an instance id,`,
+    `unless you specifically need the agent that handled an earlier message.`,
     ``,
     `Addressing peers via the AgentKeeper send_message tools (Claude Code names the singular tool mcp__agentkeeper__send_message):`,
     `- By instance id (e.g. "developer-2"): direct delivery to that specific instance.`,
     `- By role id (e.g. "developer"): load-balanced delivery — routes to an idle instance of`,
     `  that role, or spawns a NEW overflow instance if all are busy. Use role-id addressing`,
     `  whenever you want to fan out work in parallel or delegate to a peer of the same role.`,
-    `  Overflow instances are temporary: they suspend after completing one task.`,
+    `  Overflow instances are temporary: they suspend after completing one task, and the next`,
+    `  overflow gets a fresh id — so seeing many ids over a run does NOT mean many ran at once.`,
+    `  A role never exceeds its ceiling; messages beyond it queue until a slot frees.`,
+    `- Every reply carries a [capacity] line — live/ceiling instances, how many are busy, and`,
+    `  the queue depth for that role. Use it to size your next batch instead of guessing.`,
     ...peerRestrictionLines,
     ``,
     `Communication protocol:`,
@@ -945,7 +1089,7 @@ export function createOrchestratorMcp(
     async ({ to, content }) => {
       try {
         const reply = await routeMessage(sessionId, to, content)
-        return { content: [{ type: 'text', text: reply }] }
+        return { content: [{ type: 'text', text: reply + capacityFooter(sessionId, to) }] }
       } catch (err) {
         return { content: [{ type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` }] }
       }
@@ -979,7 +1123,16 @@ export function createOrchestratorMcp(
           }
         }),
       )
-      return { content: [{ type: 'text', text: replies.join('\n\n---\n\n') }] }
+      // One footer per distinct target rather than per reply — the batch
+      // resolves together, so N copies of the same post-batch snapshot is noise.
+      const footers = [...new Set(messages.map((m) => m.to))]
+        .map((to) => capacityFooter(sessionId, to).trim())
+        .filter(Boolean)
+      return {
+        content: [
+          { type: 'text', text: replies.join('\n\n---\n\n') + (footers.length ? `\n\n${footers.join('\n')}` : '') },
+        ],
+      }
     },
   )
   return createSdkMcpServer({
@@ -1069,7 +1222,16 @@ function handleAgentFailure(
     return
   }
 
-  // 'continue': peer agents keep running; the failed agent is already marked 'error'
+  // 'continue': peer agents keep running, but the dead instance must leave the
+  // pool. Left 'active' it still reads as idle to idleInstance — routing there
+  // resurrects a failed session — and it holds a slot against the ceiling.
+  const inst = runtime.sessionToInstance.get(localId)
+  if (inst && inst.state !== 'retired') {
+    inst.state = 'retired'
+    logLifecycle(runtime, inst, `retired (failed, role now ${liveCount(runtime, roleId)} live)`)
+  }
+  drainPendingForRole(runtime, roleId)
+  ensureFloor(runtime, roleId)
 }
 
 export async function startAgency(
@@ -1148,20 +1310,16 @@ export async function startAgency(
     restartParamsByInstance: new Map(),
     restartBaseByRole: new Map(),
     retryCountByRole: new Map(),
+    restoringFloor: new Set(),
   }
   instances.set(instanceId, runtime)
 
   // First pass: determine how many permanent instances each role gets, so we can
   // build the complete peer-id list for the system prompt preamble.
-  const spawnCounts: Array<{ slot: RoleSlot; count: number }> = agency.roles.map((slot) => {
-    const count =
-      slot.count !== undefined
-        ? slot.count
-        : slot.min !== undefined
-          ? slot.min
-          : 1
-    return { slot, count }
-  })
+  const spawnCounts: Array<{ slot: RoleSlot; count: number }> = agency.roles.map((slot) => ({
+    slot,
+    count: slotBounds(slot).floor,
+  }))
 
   const allRoleIds = agency.roles.map(s => s.roleId)
   const allInstanceIds: string[] = []
@@ -1176,7 +1334,7 @@ export async function startAgency(
   for (const { slot, count } of spawnCounts) {
     const role = rolesById.get(slot.roleId)!
     const isEntry = agency.entryPoints.includes(slot.roleId)
-    const totalInstances = slot.max ?? count
+    const bounds = slotBounds(slot)
 
     const roleHarnessId = role.harnessId ?? harnessId
     const resolvedModel = resolveAgencyRoleModel(
@@ -1202,7 +1360,8 @@ export async function startAgency(
         roleName: role.name,
         roleId: slot.roleId,
         instanceIndex: idx,
-        totalInstances,
+        floor: bounds.floor,
+        ceiling: bounds.ceiling,
         instanceId: instId,
         agencyName: agency.name,
         allInstanceIds,
@@ -1282,6 +1441,8 @@ export async function startAgency(
   }
 
   void generateAndPersistSessionTitle(instanceId, params.initialPrompt)
+
+  for (const roleId of runtime.roleSlots.keys()) emitCapacity(runtime, roleId)
 
   return {
     instanceId,
@@ -1363,6 +1524,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     restartParamsByInstance: new Map(),
     restartBaseByRole: new Map(),
     retryCountByRole: new Map(),
+    restoringFloor: new Set(),
   }
   instances.set(instanceId, runtime)
 
@@ -1383,7 +1545,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
 
     const isEntry = agency.entryPoints.includes(slot.roleId)
     const entries = roleSessionMap[slot.roleId] ?? []
-    const totalInstances = slot.max ?? (slot.count ?? 1)
+    const bounds = slotBounds(slot)
 
     for (const entry of entries) {
       const localId = sdkToLocalId.get(entry.sdkSessionId) ?? randomUUID()
@@ -1396,7 +1558,8 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         roleName: role.name,
         roleId: slot.roleId,
         instanceIndex: entry.instanceIndex,
-        totalInstances,
+        floor: bounds.floor,
+        ceiling: bounds.ceiling,
         instanceId: instId,
         agencyName: agency.name,
         allInstanceIds,
@@ -1478,6 +1641,8 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       })
     }
   }
+
+  for (const roleId of runtime.roleSlots.keys()) emitCapacity(runtime, roleId)
 
   return {
     instanceId,

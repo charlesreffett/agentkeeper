@@ -4,6 +4,7 @@ import {
   type AddAgentParams,
   type Agent,
   type AgencyDraft,
+  type AgencyScalingUpdate,
   type GitDiffStatFile,
   type AgencyScope,
   type AppSettings,
@@ -248,6 +249,7 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.agenciesResume, instanceId) as Promise<never>,
     setFallbackModel: (instanceId: string, model: string) =>
       invoke(IPC_CHANNELS.agenciesSetFallbackModel, instanceId, model) as Promise<void>,
+    onScaling: (cb) => onChannel<AgencyScalingUpdate>(IPC_CHANNELS.agencyScaling, cb),
   },
   skills: {
     list: (projectPath: string) =>
