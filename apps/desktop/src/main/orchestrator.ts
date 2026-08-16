@@ -83,6 +83,7 @@ interface RuntimeAgency {
   projectPath: string | null
   worktreePath: string | null
   branch: string | null
+  harnessId: string
   /** roleId → all spawned instances for this role, including retired ones */
   instancesByRole: Map<string, AgentInstance[]>
   /** roleId → highest instance index ever issued. Never decremented, so a
@@ -107,6 +108,20 @@ interface RuntimeAgency {
 }
 
 const instances = new Map<string, RuntimeAgency>()
+
+/** Role model preferences predate multi-harness support and are generally
+ * Claude model ids. Keep honoring them for Claude Code; on other harnesses the
+ * explicitly selected session model is authoritative unless the role model is
+ * already in that harness's provider/model namespace. */
+function resolveAgencyRoleModel(
+  harnessId: string,
+  roleModel: string | null,
+  sessionModel: string | undefined,
+): string | undefined {
+  if (harnessId === 'claude-code') return roleModel ?? sessionModel
+  if (roleModel?.includes('/')) return roleModel
+  return sessionModel
+}
 /** localId → instanceId — global index so createOrchestratorMcp can look up without inst ref */
 const sessionToRuntimeId = new Map<string, string>()
 
@@ -302,6 +317,7 @@ async function launchOverflow(
         initialPrompt: `Agency "${runtime.agencyName}" overflow agent initialized. Await messages from peers.`,
         systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
+        harnessId: runtime.harnessId,
         ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
         agencyId: runtime.agencyId,
         agencyScope: runtime.agencyScope,
@@ -433,6 +449,7 @@ async function injectAndWait(
         resumeSdkSessionId: persistedAgent.sdkSessionId,
         systemPromptAppend: restart.systemPromptAppend,
         ...(restart.model ? { model: restart.model } : {}),
+        harnessId: runtime.harnessId,
         ...(restart.effort
           ? { effort: restart.effort as import('../shared/ipc-contract').RoleEffort }
           : {}),
@@ -702,7 +719,7 @@ function buildContextPreamble(opts: {
     `You are the "${roleName}" (role: "${roleId}"${instanceNote}, id: "${instanceId}") in agency "${agencyName}".`,
     `Current agency members: ${allInstanceIds.join(', ')}.`,
     ``,
-    `Addressing peers via mcp__agentkeeper__send_message:`,
+    `Addressing peers via the AgentKeeper send_message tools (Claude Code names the singular tool mcp__agentkeeper__send_message):`,
     `- By instance id (e.g. "developer-2"): direct delivery to that specific instance.`,
     `- By role id (e.g. "developer"): load-balanced delivery — routes to an idle instance of`,
     `  that role, or spawns a NEW overflow instance if all are busy. Use role-id addressing`,
@@ -976,6 +993,7 @@ function handleAgentFailure(
           initialPrompt: persisted.initialPrompt,
           systemPromptAppend: restart.systemPromptAppend,
           ...(restart.model ? { model: restart.model } : {}),
+          harnessId: runtime.harnessId,
           ...(restart.effort ? { effort: restart.effort as RoleEffort } : {}),
           agencyId: runtime.agencyId,
           agencyScope: runtime.agencyScope,
@@ -1027,6 +1045,7 @@ export async function startAgency(
   }
 
   const instanceId = randomUUID()
+  const harnessId = params.harnessId ?? getHarness().id
 
   // Register the single session row that represents this agency run.
   const sessionNow = Date.now()
@@ -1038,6 +1057,7 @@ export async function startAgency(
     model: params.model ?? null,
     effort: null,
     permissionMode: 'bypassPermissions',
+    harnessId,
     initialPrompt: params.initialPrompt ?? '',
     agencyName: agency.name,
     agencyId: agency.id,
@@ -1060,6 +1080,7 @@ export async function startAgency(
     projectPath: params.projectPath,
     worktreePath,
     branch,
+    harnessId,
     instancesByRole: new Map(),
     nextIndexByRole: new Map(),
     sessionToInstance: new Map(),
@@ -1100,7 +1121,7 @@ export async function startAgency(
     const isEntry = agency.entryPoints.includes(slot.roleId)
     const totalInstances = slot.max ?? count
 
-    const resolvedModel = role.model ?? params.model
+    const resolvedModel = resolveAgencyRoleModel(harnessId, role.model, params.model)
 
     const restartBase: AgencyRoleRestartParams = {
       systemPromptAppend: '', // will be filled per-instance below
@@ -1144,6 +1165,7 @@ export async function startAgency(
             ? { initialAttachments: params.initialAttachments }
             : {}),
           ...(resolvedModel ? { model: resolvedModel } : {}),
+          harnessId,
           ...(role.effort ? { effort: role.effort } : {}),
           systemPromptAppend,
           agencyId: agency.id,
@@ -1232,6 +1254,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
   // Session-level model recorded at spawn — the fallback for roles that set no
   // model of their own, matching `role.model ?? params.model` in startAgency().
   const sessionModel = session.model ?? undefined
+  const harnessId = session.harnessId ?? getHarness().id
 
   const allAgencies = await listAgencies(projectPath)
   const agency = allAgencies.find((a) => a.id === agencyId && a.scope === agencyScope)
@@ -1266,6 +1289,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
     projectPath,
     worktreePath,
     branch,
+    harnessId,
     instancesByRole: new Map(),
     nextIndexByRole: new Map(),
     sessionToInstance: new Map(),
@@ -1318,7 +1342,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
       })
 
       const systemPromptAppend = `${contextPreamble}\n\n${role.systemPrompt}`
-      const resolvedModel = role.model ?? sessionModel
+      const resolvedModel = resolveAgencyRoleModel(harnessId, role.model, sessionModel)
 
       await startSession(
         {
@@ -1330,6 +1354,7 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
           initialPrompt: `Agency "${agency.name}" resumed. Await messages from peers.`,
           systemPromptAppend,
           ...(resolvedModel ? { model: resolvedModel } : {}),
+          harnessId,
           ...(role.effort ? { effort: role.effort } : {}),
           agencyId: agency.id,
           agencyScope: agency.scope,

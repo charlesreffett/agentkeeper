@@ -496,6 +496,8 @@ export interface StartAgencyParams {
   useWorktree: boolean
   branch?: string
   model?: string
+  /** Harness adapter used by every member of this agency. */
+  harnessId?: string
   workItemKey?: string | null
   workItemTitle?: string | null
 }
