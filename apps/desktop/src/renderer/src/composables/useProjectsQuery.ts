@@ -49,6 +49,11 @@ export function useProjectsQuery() {
     onSuccess: invalidateAll,
   })
 
+  const { mutateAsync: reorder } = useMutation({
+    mutationFn: (paths: string[]) => window.agentkeeper.projects.reorder(paths),
+    onSuccess: invalidateAll,
+  })
+
   const { mutateAsync: create, isPending: isCreating } = useMutation({
     mutationFn: (params: import('@shared/ipc-contract').CreateProjectParams) =>
       window.agentkeeper.projects.create(params),
@@ -68,6 +73,7 @@ export function useProjectsQuery() {
     remove,
     setFocused,
     rename,
+    reorder,
     create,
     isCreating,
     pickAndAdd,

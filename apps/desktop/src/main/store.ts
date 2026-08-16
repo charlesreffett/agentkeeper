@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { desc, eq } from 'drizzle-orm'
+import { asc, desc, eq, max } from 'drizzle-orm'
 import type { RecentProject } from '../shared/ipc-contract'
 import { detectRemoteSources } from './git'
 import { getDb } from './db/index'
@@ -18,18 +18,21 @@ export const recentProjectsStore = {
     return getDb()
       .select()
       .from(projects)
-      .orderBy(desc(projects.lastOpenedAt))
+      .orderBy(asc(projects.sortOrder))
       .limit(MAX_RECENT)
       .all()
       .map((r) => ({ path: r.path, name: r.name, repo: r.repo ?? null, lastOpenedAt: r.lastOpenedAt }))
   },
   add(project: RecentProject) {
     const db = getDb()
+    const existing = db.select({ path: projects.path }).from(projects).where(eq(projects.path, project.path)).get()
+    const nextSortOrder = (db.select({ value: max(projects.sortOrder) }).from(projects).get()?.value ?? -1) + 1
     db.insert(projects).values({
       path: project.path,
       name: project.name,
       repo: project.repo ?? null,
       lastOpenedAt: project.lastOpenedAt,
+      sortOrder: existing ? undefined : nextSortOrder,
     }).onConflictDoUpdate({
       target: projects.path,
       set: { name: project.name, repo: project.repo ?? null, lastOpenedAt: project.lastOpenedAt },
@@ -53,6 +56,19 @@ export const recentProjectsStore = {
       db.delete(appState).where(eq(appState.key, 'focusedProjectPath')).run()
     }
   },
+  reorder(orderedPaths: string[]) {
+    const db = getDb()
+    const allPaths = db.select({ path: projects.path }).from(projects).orderBy(asc(projects.sortOrder)).all().map((p) => p.path)
+    const knownPaths = new Set(allPaths)
+    const requested = [...new Set(orderedPaths)].filter((path) => knownPaths.has(path))
+    const requestedSet = new Set(requested)
+    const order = [...requested, ...allPaths.filter((path) => !requestedSet.has(path))]
+    db.transaction((tx) => {
+      order.forEach((path, index) => {
+        tx.update(projects).set({ sortOrder: index }).where(eq(projects.path, path)).run()
+      })
+    })
+  },
   rename(oldPath: string, newName: string, renameDir: boolean): RecentProject {
     const db = getDb()
     const row = db.select().from(projects).where(eq(projects.path, oldPath)).get()
@@ -68,6 +84,7 @@ export const recentProjectsStore = {
       name: newName,
       repo: row.repo ?? null,
       lastOpenedAt: row.lastOpenedAt,
+      sortOrder: row.sortOrder,
     }).onConflictDoUpdate({
       target: projects.path,
       set: { name: newName, repo: row.repo ?? null, lastOpenedAt: row.lastOpenedAt },
