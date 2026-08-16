@@ -68,6 +68,7 @@ export const projects = sqliteTable('projects', {
   name: text('name').notNull(),
   repo: text('repo'),
   lastOpenedAt: integer('last_opened_at').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
 })
 
 export const appState = sqliteTable('app_state', {

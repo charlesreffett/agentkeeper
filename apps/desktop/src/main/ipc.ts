@@ -173,6 +173,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     recentProjectsStore.remove(projectPath)
   })
   ipcMain.handle(IPC_CHANNELS.projectsList, () => recentProjectsStore.list())
+  ipcMain.handle(IPC_CHANNELS.projectsReorder, (_event, paths: string[]) => {
+    recentProjectsStore.reorder(paths)
+  })
   ipcMain.handle(IPC_CHANNELS.projectsGetFocused, () => {
     const focusedPath = recentProjectsStore.getFocused()
     if (!focusedPath) return null

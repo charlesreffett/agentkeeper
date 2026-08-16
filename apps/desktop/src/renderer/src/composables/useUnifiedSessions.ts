@@ -202,10 +202,10 @@ export function useUnifiedSessions() {
   /** Create (or focus) a draft. Defaults to a no-project draft — context is
    *  now a per-session choice made in the compose header, not inherited from
    *  an app-wide focus. */
-  async function createNewSession(): Promise<string | null> {
+  async function createNewSession(projectPath: string | null = null): Promise<string | null> {
     const settings = await window.agentkeeper.settings.get()
     const localId = sessionStore.createOrFocusDraft({
-      projectPath: null,
+      projectPath,
       defaultModel: defaultModelFor(settings, settings.harnessId),
       defaultEffort: settings.defaultEffort,
       defaultUseWorktree: settings.defaultUseWorktree,
