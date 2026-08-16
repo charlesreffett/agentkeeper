@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Folder, FolderOpen, MessageCircle, MoreHoriz
 import { TreeItem, TreeRoot } from 'reka-ui'
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
+import { StatusDot, type StatusDotVariants } from '@/components/ui/status-dot'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import ProjectManagerDialog from '@/components/ProjectManagerDialog.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -83,16 +84,16 @@ function treeChildren(node: TreeNode): TreeNode[] | undefined {
   return node.type === 'session' ? undefined : node.children
 }
 
-function statusDotClass(status: LiveSessionStatus | 'inactive'): string {
+function statusDotVariant(status: LiveSessionStatus | 'inactive'): StatusDotVariants['variant'] {
   switch (status) {
     case 'running':
-    case 'starting': return 'bg-emerald-500 animate-pulse'
+    case 'starting': return 'running'
     case 'idle':
-    case 'inactive': return 'bg-muted-foreground'
-    case 'suspended': return 'bg-amber-500'
-    case 'blocked': return 'bg-blue-500'
-    case 'error': return 'bg-destructive'
-    default: return 'bg-muted-foreground'
+    case 'inactive': return 'idle'
+    case 'suspended': return 'suspended'
+    case 'blocked': return 'blocked'
+    case 'error': return 'error'
+    default: return 'idle'
   }
 }
 
@@ -194,7 +195,7 @@ async function handleNew(projectPath: string | null = null) {
               style="padding-left: 28px"
               @click="open(item.value.session)"
             >
-              <span class="size-1.5 shrink-0 rounded-full" :class="statusDotClass(item.value.session.status)" />
+              <StatusDot :variant="statusDotVariant(item.value.session.status)" />
               <span class="min-w-0 flex-1 truncate text-[12px]">{{ item.value.session.title }}</span>
               <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60">{{ formatRelativeTime(item.value.session.lastActivityAt) }}</span>
             </button>
@@ -211,7 +212,7 @@ async function handleNew(projectPath: string | null = null) {
           :class="session.localId === activeId ? 'bg-accent text-accent-foreground' : 'text-foreground/90 hover:bg-accent hover:text-accent-foreground'"
           @click="open(session)"
         >
-          <span class="size-1.5 shrink-0 rounded-full" :class="statusDotClass(session.status)" />
+          <StatusDot :variant="statusDotVariant(session.status)" />
           <span class="min-w-0 flex-1 truncate text-[12px]">{{ session.title }}</span>
           <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60">{{ formatRelativeTime(session.lastActivityAt) }}</span>
         </button>
