@@ -462,6 +462,9 @@ export type OnFailurePolicy = 'block' | 'continue' | 'retry'
 
 export interface RoleSlot {
   roleId: string
+  // count and min/max are mutually exclusive sizing modes (see parseAgency in
+  // main/agencies.ts): count wins when both are given in the role file — min/max
+  // are only parsed when count is absent.
   count?: number   // static — always this many (undefined = 1)
   min?: number     // dynamic floor
   max?: number     // dynamic ceiling

@@ -180,7 +180,7 @@ export function useFlowGraph(
           kind: 'role',
           isEntryPoint: agency.value!.entryPoints.includes(slot.roleId),
           anyToAny,
-          multiplicityLabel: buildMultiplicityLabel(slot),
+          multiplicityLabel: formatInstanceBadge(slot),
           isExpandable: expandable,
           isExpanded: false,
           position: nodePositions.value[slot.roleId] ?? defaultPosition(index, roles.length),
@@ -527,7 +527,7 @@ export function useFlowGraph(
   }
 }
 
-function buildMultiplicityLabel(slot: RoleSlot): string {
+export function formatInstanceBadge(slot: RoleSlot): string {
   if (slot.count !== undefined) return `×${slot.count}`
   if (slot.min !== undefined && slot.max !== undefined) return `${slot.min}–${slot.max}`
   return ''
