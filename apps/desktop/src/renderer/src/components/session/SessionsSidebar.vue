@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, type Directive } from 'vue'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, MessageCircle, MoreHorizontal, Pencil, Plus, Settings } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, MessageCircle, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-vue-next'
 import { TreeItem, TreeRoot } from 'reka-ui'
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { draggable, dropTargetForElements, monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
@@ -11,6 +11,16 @@ import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { StatusDot, type StatusDotVariants } from '@/components/ui/status-dot'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import ProjectManagerDialog from '@/components/ProjectManagerDialog.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
@@ -41,8 +51,10 @@ function readExpandedProjects(): string[] | null {
 
 const router = useRouter()
 const { projects, reorder } = useProjectsQuery()
-const { unifiedSessions, open, createNewSession } = useUnifiedSessions()
+const { unifiedSessions, open, remove, createNewSession } = useUnifiedSessions()
 const manageProjectsOpen = ref(false)
+const sessionToDelete = ref<UnifiedSession | null>(null)
+const isDeletingSession = ref(false)
 const restoredExpandedProjects = readExpandedProjects()
 const expandedProjects = ref<string[]>(restoredExpandedProjects ?? [])
 let projectExpansionHydrated = false
@@ -149,6 +161,19 @@ function statusDotVariant(status: LiveSessionStatus | 'inactive'): StatusDotVari
 async function handleNew(projectPath: string | null = null) {
   const localId = await createNewSession(projectPath)
   if (!localId) void router.push('/')
+}
+
+async function confirmDeleteSession() {
+  const session = sessionToDelete.value
+  if (!session || isDeletingSession.value) return
+  isDeletingSession.value = true
+  try {
+    await remove(session)
+    if (session.localId === props.activeId) void router.push('/')
+    sessionToDelete.value = null
+  } finally {
+    isDeletingSession.value = false
+  }
 }
 
 function createProjectDragPreview(source: HTMLElement, container: HTMLElement) {
@@ -412,17 +437,29 @@ function handleProjectDragEnd() {
               </div>
             </div>
 
-            <button
+            <div
               v-else-if="item.value.type === 'session'"
-              class="flex w-full items-center gap-2 rounded-md py-[5px] pr-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-              :class="item.value.session.localId === activeId ? 'bg-accent text-accent-foreground' : 'text-foreground/90 hover:bg-accent hover:text-accent-foreground'"
-              style="padding-left: 28px"
-              @click="open(item.value.session)"
+              class="group relative"
             >
-              <StatusDot :variant="statusDotVariant(item.value.session.status)" />
-              <span class="min-w-0 flex-1 truncate text-sm">{{ item.value.session.title }}</span>
-              <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60">{{ formatRelativeTime(item.value.session.lastActivityAt) }}</span>
-            </button>
+              <button
+                class="flex w-full items-center gap-2 rounded-md py-[5px] pr-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+                :class="item.value.session.localId === activeId ? 'bg-accent text-accent-foreground' : 'text-foreground/90 hover:bg-accent hover:text-accent-foreground'"
+                style="padding-left: 28px"
+                @click="open(item.value.session)"
+              >
+                <StatusDot :variant="statusDotVariant(item.value.session.status)" />
+                <span class="min-w-0 flex-1 truncate text-sm">{{ item.value.session.title }}</span>
+                <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60 group-hover:invisible group-focus-within:invisible">{{ formatRelativeTime(item.value.session.lastActivityAt) }}</span>
+              </button>
+              <button
+                class="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-background/80 hover:text-destructive group-hover:flex group-focus-within:flex"
+                :aria-label="`Delete ${item.value.session.title}`"
+                :title="`Delete ${item.value.session.title}`"
+                @click.stop="sessionToDelete = item.value.session"
+              >
+                <Trash2 class="size-3.5" />
+              </button>
+            </div>
 
             <div
               v-else
@@ -447,17 +484,29 @@ function handleProjectDragEnd() {
 
       <section v-if="recentSessions.length" class="mt-4">
         <h2 class="px-1.5 pb-1.5 text-[11px] font-medium text-muted-foreground">Recents</h2>
-        <button
+        <div
           v-for="session in recentSessions"
           :key="session.localId"
-          class="flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
-          :class="session.localId === activeId ? 'bg-accent text-accent-foreground' : 'text-foreground/90 hover:bg-accent hover:text-accent-foreground'"
-          @click="open(session)"
+          class="group relative"
         >
-          <StatusDot :variant="statusDotVariant(session.status)" />
-          <span class="min-w-0 flex-1 truncate text-sm">{{ session.title }}</span>
-          <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60">{{ formatRelativeTime(session.lastActivityAt) }}</span>
-        </button>
+          <button
+            class="flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+            :class="session.localId === activeId ? 'bg-accent text-accent-foreground' : 'text-foreground/90 hover:bg-accent hover:text-accent-foreground'"
+            @click="open(session)"
+          >
+            <StatusDot :variant="statusDotVariant(session.status)" />
+            <span class="min-w-0 flex-1 truncate text-sm">{{ session.title }}</span>
+            <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60 group-hover:invisible group-focus-within:invisible">{{ formatRelativeTime(session.lastActivityAt) }}</span>
+          </button>
+          <button
+            class="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-background/80 hover:text-destructive group-hover:flex group-focus-within:flex"
+            :aria-label="`Delete ${session.title}`"
+            :title="`Delete ${session.title}`"
+            @click.stop="sessionToDelete = session"
+          >
+            <Trash2 class="size-3.5" />
+          </button>
+        </div>
       </section>
 
       <div v-if="projectNodes.length === 0 && recentSessions.length === 0" class="px-3 py-4 text-center text-[12px] text-muted-foreground/50">No sessions</div>
@@ -465,4 +514,21 @@ function handleProjectDragEnd() {
   </div>
 
   <ProjectManagerDialog v-model:open="manageProjectsOpen" />
+
+  <AlertDialog :open="sessionToDelete !== null" @update:open="(open) => { if (!open && !isDeletingSession) sessionToDelete = null }">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Delete session?</AlertDialogTitle>
+        <AlertDialogDescription>
+          This will permanently delete “{{ sessionToDelete?.title }}”. This action cannot be undone.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel :disabled="isDeletingSession">Cancel</AlertDialogCancel>
+        <AlertDialogAction :disabled="isDeletingSession" @click="confirmDeleteSession">
+          {{ isDeletingSession ? 'Deleting…' : 'Delete' }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>
