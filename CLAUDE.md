@@ -130,12 +130,16 @@ Plugins activate in the main process (Node.js) and cannot contribute Vue compone
 ## Commit format
 
 ```
-<scope>: <short imperative subject>
+<type>: <short imperative subject>
 
 <body: what changed and why. Call out deferred work or known gaps.>
 
 Co-Authored-By: <the authoring model> <noreply@anthropic.com>
 ```
+
+Use a conventional Git-flow prefix for `<type>`, such as `feat`, `fix`, or `chore`.
+Use the same type prefix with a slash for branch names, for example
+`feat/session-sidebar-project-tree`.
 
 Every commit gets a `Co-Authored-By` trailer naming the model that wrote it
 (e.g. `Claude Fable 5 <noreply@anthropic.com>`).
