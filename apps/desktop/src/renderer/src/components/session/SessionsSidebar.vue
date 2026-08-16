@@ -26,11 +26,26 @@ type ProjectNode = { type: 'project'; key: string; path: string; name: string; r
 type SectionNode = { type: 'section'; key: string; name: string; children: ProjectNode[] }
 type TreeNode = SectionNode | ProjectNode | SessionNode | EmptyNode
 
+const EXPANDED_PROJECTS_STORAGE_KEY = 'agentkeeper:sessions-sidebar:expanded-projects'
+
+function readExpandedProjects(): string[] | null {
+  try {
+    const stored = localStorage.getItem(EXPANDED_PROJECTS_STORAGE_KEY)
+    if (stored === null) return null
+    const parsed = JSON.parse(stored) as unknown
+    return Array.isArray(parsed) ? parsed.filter((key): key is string => typeof key === 'string') : null
+  } catch {
+    return null
+  }
+}
+
 const router = useRouter()
 const { projects, reorder } = useProjectsQuery()
 const { unifiedSessions, open, createNewSession } = useUnifiedSessions()
 const manageProjectsOpen = ref(false)
-const expandedProjects = ref<string[]>([])
+const restoredExpandedProjects = readExpandedProjects()
+const expandedProjects = ref<string[]>(restoredExpandedProjects ?? [])
+let projectExpansionHydrated = false
 const draggedProjectPath = ref<string | null>(null)
 const dropTarget = ref<{ path: string; position: 'before' | 'after' } | null>(null)
 let stopProjectMonitor: (() => void) | null = null
@@ -87,10 +102,26 @@ const lastRegisteredProject = computed(() =>
 )
 
 watch(projectNodes, (nodes, previous) => {
+  if (!projectExpansionHydrated) {
+    if (nodes.length === 0) return
+    if (restoredExpandedProjects === null) {
+      expandedProjects.value = ['section:projects', ...nodes.map((node) => node.key)]
+    }
+    projectExpansionHydrated = true
+    return
+  }
   const previousKeys = new Set(previous?.map((node) => node.key) ?? [])
   const added = nodes.filter((node) => !previousKeys.has(node.key)).map((node) => node.key)
   if (added.length) expandedProjects.value = [...new Set(['section:projects', ...expandedProjects.value, ...added])]
 }, { immediate: true })
+
+watch(expandedProjects, (keys) => {
+  try {
+    localStorage.setItem(EXPANDED_PROJECTS_STORAGE_KEY, JSON.stringify(keys))
+  } catch {
+    // Expansion persistence is optional when storage is unavailable.
+  }
+})
 
 const recentSessions = computed(() => sortedSessions.value.filter((session) => !session.projectPath))
 
