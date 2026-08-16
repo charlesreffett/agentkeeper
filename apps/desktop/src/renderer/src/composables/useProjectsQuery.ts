@@ -49,6 +49,12 @@ export function useProjectsQuery() {
     onSuccess: invalidateAll,
   })
 
+  const { mutateAsync: update, isPending: isUpdating } = useMutation({
+    mutationFn: ({ oldPath, name, sourcePath }: { oldPath: string; name: string; sourcePath: string }) =>
+      window.agentkeeper.projects.update(oldPath, name, sourcePath),
+    onSuccess: invalidateAll,
+  })
+
   const { mutateAsync: reorder } = useMutation({
     mutationFn: (paths: string[]) => window.agentkeeper.projects.reorder(paths),
     onSuccess: invalidateAll,
@@ -73,6 +79,8 @@ export function useProjectsQuery() {
     remove,
     setFocused,
     rename,
+    update,
+    isUpdating,
     reorder,
     create,
     isCreating,

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, type Directive } from 'vue'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, MessageCircle, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-vue-next'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from 'lucide-vue-next'
 import { TreeItem, TreeRoot } from 'reka-ui'
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { draggable, dropTargetForElements, monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
@@ -10,7 +10,7 @@ import { attachInstruction, extractInstruction } from '@atlaskit/pragmatic-drag-
 import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { StatusDot, type StatusDotVariants } from '@/components/ui/status-dot'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,11 +21,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
-import ProjectManagerDialog from '@/components/ProjectManagerDialog.vue'
+import EditProjectDialog from '@/components/project/EditProjectDialog.vue'
+import ProjectHoverPopover from '@/components/project/ProjectHoverPopover.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
 import { formatRelativeTime } from '@/lib/format'
-import type { LiveSessionStatus } from '@shared/ipc-contract'
+import type { LiveSessionStatus, RecentProject } from '@shared/ipc-contract'
 
 const props = defineProps<{ collapsed: boolean; activeId: string }>()
 defineEmits<{ collapse: []; expand: [] }>()
@@ -50,10 +51,13 @@ function readExpandedProjects(): string[] | null {
 }
 
 const router = useRouter()
-const { projects, reorder } = useProjectsQuery()
+const { projects, reorder, remove: removeProject } = useProjectsQuery()
 const { unifiedSessions, open, remove, createNewSession } = useUnifiedSessions()
-const manageProjectsOpen = ref(false)
 const sessionToDelete = ref<UnifiedSession | null>(null)
+const projectToEdit = ref<RecentProject | null>(null)
+const projectToRemove = ref<RecentProject | null>(null)
+const actionMenuPath = ref<string | null>(null)
+const isRemovingProject = ref(false)
 const isDeletingSession = ref(false)
 const restoredExpandedProjects = readExpandedProjects()
 const expandedProjects = ref<string[]>(restoredExpandedProjects ?? [])
@@ -174,6 +178,38 @@ async function confirmDeleteSession() {
   } finally {
     isDeletingSession.value = false
   }
+}
+
+function registeredProject(path: string): RecentProject | null {
+  return projects.value.find((project) => project.path === path) ?? null
+}
+
+function editProject(path: string) {
+  projectToEdit.value = registeredProject(path)
+}
+
+function askToRemoveProject(path: string) {
+  projectToRemove.value = registeredProject(path)
+}
+
+async function confirmRemoveProject() {
+  const project = projectToRemove.value
+  if (!project || isRemovingProject.value) return
+  isRemovingProject.value = true
+  try {
+    await removeProject(project.path)
+    projectToRemove.value = null
+  } finally {
+    isRemovingProject.value = false
+  }
+}
+
+function revealProject(path: string) {
+  void window.agentkeeper.projects.reveal(path)
+}
+
+function setActionMenuOpen(open: boolean, node: TreeNode) {
+  actionMenuPath.value = open && node.type === 'project' ? node.path : null
 }
 
 function createProjectDragPreview(source: HTMLElement, container: HTMLElement) {
@@ -383,6 +419,7 @@ function handleProjectDragEnd() {
 
             <div
               v-else-if="item.value.type === 'project'"
+              data-project-row
               class="group relative flex h-[30px] items-center gap-1 rounded-md px-1.5 text-sm text-foreground hover:bg-accent"
               :class="[
                 item.value.registered ? 'cursor-grab active:cursor-grabbing' : '',
@@ -399,30 +436,39 @@ function handleProjectDragEnd() {
                 <component :is="isExpanded ? FolderOpen : Folder" class="size-3.5 shrink-0 text-muted-foreground" />
                 <span data-project-drag-label class="min-w-0 flex-1 truncate font-normal">{{ item.value.name }}</span>
               </div>
-              <div class="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100" @click.stop>
-                <DropdownMenu>
+              <div
+                class="flex shrink-0 items-center transition-opacity"
+                :class="actionMenuPath === item.value.path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                @click.stop
+              >
+                <ProjectHoverPopover
+                  v-if="item.value.registered && registeredProject(item.value.path)"
+                  :project="registeredProject(item.value.path)!"
+                  :session-count="item.value.children.length"
+                  :disabled="actionMenuPath === item.value.path"
+                  @edit="editProject(item.value.path)"
+                />
+                <DropdownMenu
+                  v-if="item.value.registered"
+                  @update:open="(open) => setActionMenuOpen(open, item.value)"
+                >
                   <DropdownMenuTrigger as-child>
                     <button class="flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-background/80 hover:text-foreground" :aria-label="`Actions for ${item.value.name}`">
                       <MoreHorizontal class="size-3.5" />
                     </button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" class="w-64">
-                    <div class="px-2 py-1.5">
-                      <div class="flex items-center gap-2 text-sm font-medium">
-                        <Folder class="size-4 text-muted-foreground" />
-                        <span class="truncate">{{ item.value.name }}</span>
-                      </div>
-                      <div class="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                        <MessageCircle class="size-3.5" />
-                        {{ item.value.children.length }} session{{ item.value.children.length === 1 ? '' : 's' }}
-                      </div>
-                    </div>
-                    <DropdownMenuSeparator />
-                    <div class="px-2 py-1.5 text-xs text-muted-foreground font-mono break-all">{{ item.value.path }}</div>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem @click="manageProjectsOpen = true">
+                  <DropdownMenuContent side="bottom" align="start" :side-offset="4" class="w-56">
+                    <DropdownMenuItem @click="revealProject(item.value.path)">
+                      <FolderOpen class="mr-2 size-4" />
+                      Reveal in Finder
+                    </DropdownMenuItem>
+                    <DropdownMenuItem @click="editProject(item.value.path)">
                       <Settings class="mr-2 size-4" />
                       Edit project
+                    </DropdownMenuItem>
+                    <DropdownMenuItem class="text-destructive focus:text-destructive" @click="askToRemoveProject(item.value.path)">
+                      <Trash2 class="mr-2 size-4" />
+                      Remove local project
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -513,7 +559,29 @@ function handleProjectDragEnd() {
     </div>
   </div>
 
-  <ProjectManagerDialog v-model:open="manageProjectsOpen" />
+  <EditProjectDialog
+    :open="projectToEdit !== null"
+    :project="projectToEdit"
+    @update:open="(open) => { if (!open) projectToEdit = null }"
+    @saved="projectToEdit = null"
+  />
+
+  <AlertDialog :open="projectToRemove !== null" @update:open="(open) => { if (!open && !isRemovingProject) projectToRemove = null }">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Remove local project?</AlertDialogTitle>
+        <AlertDialogDescription>
+          “{{ projectToRemove?.name }}” will be removed from AgentKeeper. Files in the source folder will not be changed.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel :disabled="isRemovingProject">Cancel</AlertDialogCancel>
+        <AlertDialogAction :disabled="isRemovingProject" @click="confirmRemoveProject">
+          {{ isRemovingProject ? 'Removing…' : 'Remove project' }}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 
   <AlertDialog :open="sessionToDelete !== null" @update:open="(open) => { if (!open && !isDeletingSession) sessionToDelete = null }">
     <AlertDialogContent>
