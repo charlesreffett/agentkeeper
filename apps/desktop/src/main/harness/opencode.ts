@@ -11,6 +11,7 @@ import { sanitizeCustomModel } from '@agentkeeper/core'
 import { secrets, SECRET_KEYS } from '../secrets'
 import { resolveBin, type BinConfig } from './bin'
 import { isMissingBinary } from './diagnostics'
+import { bridgeSdkMcpServer } from './mcp-http-bridge'
 
 const execFileAsync = promisify(execFile)
 
@@ -46,26 +47,28 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   readonly id = 'opencode'
   readonly name = 'OpenCode'
   readonly defaultModel = 'anthropic/claude-sonnet-4-20250514'
-  /** OpenCode runs as a separate server process, so the builtin in-process
-   *  `agentkeeper` MCP object can't be handed to it — hence `mcpServers:false`,
-   *  and `agencies:false` (agency coordination needs that MCP + tool removal).
-   *  `disallowedTools` awaits an SDK audit (commit: opencode option wiring).
+  /** OpenCode runs as a separate server process. In-process SDK MCP servers
+   *  are exposed to it through a private loopback Streamable HTTP bridge.
    *  Commands/skills use opencode's markdown dirs — opencode discovers both its
    *  native `.config/opencode` locations and the shared agent dirs. */
   readonly capabilities: HarnessCapabilities = {
-    mcpServers: false,
+    mcpServers: true,
     disallowedTools: true,
     systemPromptAppend: true,
     permissionModes: false,
     effort: false,
     commands: true,
     skills: true,
-    agencies: false,
+    agencies: true,
   }
 
   /** Singleton server — lazily started, shared across all runSession calls. */
   private singleton: { url: string; client: OpencodeClient; close(): void } | null = null
   private starting: Promise<{ url: string; client: OpencodeClient; close(): void }> | null = null
+  /** OpenCode MCP configuration is directory-scoped, but tool visibility is
+   * prompt-scoped. Track each live session's bridge tools so a member can hide
+   * its peers' identity-bound send_message closures. */
+  private agencyMcpTools = new Map<string, Map<string, string[]>>()
 
   /** Concrete model the `default` alias resolves to. Populated the first time
    *  models are queried; anthropic may be unconfigured, so this reflects what
@@ -110,6 +113,9 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
     const abortController = options.abortController ?? new AbortController()
     const { client } = await this.getOrCreateServer()
+    const mcpBridges: Array<{ close(): Promise<void> }> = []
+    let ownMcpToolIds: string[] = []
+    let mcpRegistration: { cwd: string; sessionId: string } | null = null
 
     try {
       // Create a session — if resuming, link to the parent session.
@@ -127,6 +133,57 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
         throw new Error(`Failed to create OpenCode session: ${JSON.stringify(sessionResp.error)}`)
       }
       const sessionId = sessionResp.data.id
+
+      // MCP configuration is directory-scoped in OpenCode while AgentKeeper's
+      // agency MCP server is agent-scoped. Give each session a unique server
+      // name, then hide every peer session's AgentKeeper tools per prompt.
+      if (options.mcpServers) {
+        for (const [baseName, config] of Object.entries(options.mcpServers)) {
+          if ((config as { type?: string })?.type === 'sdk') {
+            const bridge = await bridgeSdkMcpServer(config)
+            mcpBridges.push(bridge)
+            const name = `${baseName}_${sessionId.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+            const added = await client.mcp.add({
+              query: { directory: options.cwd },
+              body: { name, config: { type: 'remote', url: bridge.url, oauth: false } },
+            })
+            assertOpenCodeMcpConnected(name, added.data)
+            ownMcpToolIds.push(...bridge.toolNames.map((toolName) =>
+              `${sanitizeOpenCodeToolName(name)}_${sanitizeOpenCodeToolName(toolName)}`,
+            ))
+          } else {
+            const external = config as {
+              type?: 'stdio' | 'http' | 'sse'
+              command?: string
+              args?: string[]
+              env?: Record<string, string>
+              url?: string
+              headers?: Record<string, string>
+            }
+            const mapped = external.command
+              ? { type: 'local' as const, command: [external.command, ...(external.args ?? [])], environment: external.env }
+              : external.url
+                ? { type: 'remote' as const, url: external.url, headers: external.headers, oauth: false as const }
+                : null
+            if (mapped) {
+              const added = await client.mcp.add({
+                query: { directory: options.cwd },
+                body: { name: baseName, config: mapped },
+              })
+              assertOpenCodeMcpConnected(baseName, added.data)
+            }
+          }
+        }
+      }
+      if (ownMcpToolIds.length) {
+        let directoryTools = this.agencyMcpTools.get(options.cwd)
+        if (!directoryTools) {
+          directoryTools = new Map()
+          this.agencyMcpTools.set(options.cwd, directoryTools)
+        }
+        directoryTools.set(sessionId, ownMcpToolIds)
+        mcpRegistration = { cwd: options.cwd, sessionId }
+      }
 
       // Yield the system/init event so the agent driver can capture the
       // session id for resume support.
@@ -182,12 +239,17 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
             ...(modelId ? { model: parseModelId(modelId) } : {}),
             // System prompt + tool removal are per-prompt in OpenCode, so they
             // must ride along on every turn, not just the first.
-            ...(options.systemPrompt ? { system: options.systemPrompt } : {}),
+            ...((options.systemPrompt || ownMcpToolIds.length) ? {
+              system: [
+                options.systemPrompt,
+                ownMcpToolIds.length
+                  ? `AgentKeeper coordination tools for this agent are: ${ownMcpToolIds.join(', ')}. Use these exact tool names when instructions refer to send_message or send_messages.`
+                  : '',
+              ].filter(Boolean).join('\n\n'),
+            } : {}),
             // Tool removal — opencode takes an enable/disable map keyed by its
             // own (harness-native) tool names.
-            ...(options.disallowedTools?.length
-              ? { tools: Object.fromEntries(options.disallowedTools.map((t) => [t, false])) }
-              : {}),
+            ...this.toolRestrictions(options.cwd, options.disallowedTools ?? [], ownMcpToolIds),
           },
         })
 
@@ -225,7 +287,39 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
         this.singleton = null
       }
       throw error
+    } finally {
+      if (mcpRegistration) {
+        const sessions = this.agencyMcpTools.get(mcpRegistration.cwd)
+        sessions?.delete(mcpRegistration.sessionId)
+        if (sessions?.size === 0) this.agencyMcpTools.delete(mcpRegistration.cwd)
+      }
+      await Promise.all(mcpBridges.map((bridge) => bridge.close()))
     }
+  }
+
+  private toolRestrictions(
+    cwd: string,
+    disallowedTools: string[],
+    ownMcpToolIds: string[],
+  ): { tools?: Record<string, boolean> } {
+    const disabled = new Set(disallowedTools)
+    // Claude Code's subagent tool is `Agent`; OpenCode calls the equivalent
+    // native tool `task`. Agency members must not create an unmanaged layer of
+    // subagents in either harness.
+    if (disabled.has('Agent')) disabled.add('task')
+
+    // MCP registrations are directory-scoped, so every agency member can see
+    // the other members' uniquely named bridges. Disable those foreign tool
+    // ids on this prompt; only this member's closure-backed server stays usable.
+    if (ownMcpToolIds.length) {
+      const own = new Set(ownMcpToolIds)
+      for (const ids of this.agencyMcpTools.get(cwd)?.values() ?? []) {
+        for (const id of ids) {
+          if (!own.has(id)) disabled.add(id)
+        }
+      }
+    }
+    return disabled.size ? { tools: Object.fromEntries([...disabled].map((id) => [id, false])) } : {}
   }
 
   async runPrompt(prompt: string, options: HarnessSessionOptions): Promise<string> {
@@ -733,6 +827,22 @@ function parseModelId(model: string): { providerID: string; modelID: string } {
     providerID: model.slice(0, slash),
     modelID: model.slice(slash + 1),
   }
+}
+
+/** Matches OpenCode's MCP catalog sanitization when it builds
+ * `<server>_<tool>` ids. */
+function sanitizeOpenCodeToolName(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '_')
+}
+
+function assertOpenCodeMcpConnected(
+  name: string,
+  statuses: Record<string, { status: string; error?: string }> | undefined,
+): void {
+  const status = statuses?.[name]
+  if (status?.status === 'connected') return
+  const detail = status?.error ? `: ${status.error}` : ''
+  throw new Error(`Failed to connect OpenCode MCP server '${name}'${detail}`)
 }
 
 /** Compact capability line for a model, derived from the server-reported limit

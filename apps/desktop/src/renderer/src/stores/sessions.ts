@@ -956,6 +956,7 @@ export const useSessionStore = defineStore('sessions', () => {
         useWorktree: cfg.useWorktree && !isGeneralProject(projectPath),
         ...(cfg.useWorktree && cfg.branch.trim() && !isGeneralProject(projectPath) ? { branch: cfg.branch.trim() } : {}),
         ...(draft.model ? { model: draft.model } : {}),
+        ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
       })
       delete sessions[localId]
       for (const s of instance.sessions) {
@@ -971,7 +972,9 @@ export const useSessionStore = defineStore('sessions', () => {
           agencyName: instance.agencyName,
           initialPrompt: s.isEntryPoint ? trimmedPrompt : '(awaiting peers)',
           agencyPrompt: trimmedPrompt,
-          model: role?.model ?? draft.model,
+          model: draft.harnessId === 'claude-code'
+            ? role?.model ?? draft.model
+            : (role?.model?.includes('/') ? role.model : draft.model),
           isEntryPoint: s.isEntryPoint,
         })
       }
