@@ -3,7 +3,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { Check, ChevronDown, Search, CornerDownLeft } from 'lucide-vue-next'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
-import { useHarnessList } from '@/composables/useHarness'
+import { useActiveHarness, useHarnessList } from '@/composables/useHarness'
 import { featureFlags } from '@/lib/featureFlags'
 
 const props = withDefaults(defineProps<{
@@ -31,6 +31,7 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const selectedHarnessId = ref<string | undefined>(props.harnessId)
 
 const { data: harnesses } = useHarnessList()
+const { data: activeHarness } = useActiveHarness()
 // Unreleased: rail only appears when the flag is on, more than one harness
 // exists, and this session can still switch harness (drafts only).
 const showRail = computed(
@@ -48,9 +49,9 @@ const { resolvedLabelFor, effectiveValueFor } = useModelsQuery(() => props.harne
 
 const options = computed(() => optionsFor(props.modelValue))
 
-// Default harness = first registered (the registry lists the default first),
-// so an unset harnessId normalizes to it on both sides of the comparison.
-const defaultHarnessId = computed(() => harnesses.value?.[0]?.id)
+// An unset harness means the registry's active harness, which can differ from
+// the first registered adapter after the user changes their default.
+const defaultHarnessId = computed(() => activeHarness.value?.id ?? harnesses.value?.[0]?.id)
 const viewingSessionHarness = computed(
   () => (selectedHarnessId.value ?? defaultHarnessId.value) === (props.harnessId ?? defaultHarnessId.value),
 )
@@ -103,15 +104,16 @@ const rawCandidate = computed(() => {
 watch(open, (isOpen) => {
   if (isOpen) {
     query.value = ''
-    selectedHarnessId.value = props.harnessId
+    selectedHarnessId.value = props.harnessId ?? defaultHarnessId.value
     void nextTick(() => searchInput.value?.focus())
   }
 })
 
 function select(value: string) {
-  if (selectedHarnessId.value && selectedHarnessId.value !== props.harnessId) {
-    emit('update:harnessId', selectedHarnessId.value)
-  }
+  // Emit the harness for every model pick so callers persist an atomic
+  // harness/model pair, including when the previous harness was implicit.
+  const harnessId = selectedHarnessId.value ?? props.harnessId ?? defaultHarnessId.value
+  if (harnessId) emit('update:harnessId', harnessId)
   emit('update:modelValue', value)
   open.value = false
 }
@@ -129,7 +131,7 @@ function onEnter() {
         <button
           type="button"
           :disabled="disabled"
-          class="inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent transition-colors focus:outline-none focus:border-ring disabled:opacity-50 disabled:cursor-not-allowed"
+          class="inline-flex w-full min-w-0 max-w-full items-center gap-1.5 rounded-md border border-input bg-background px-3 py-2 text-sm hover:bg-accent transition-colors focus:outline-none focus:border-ring disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <span class="truncate">{{ currentLabel }}</span>
           <ChevronDown class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
