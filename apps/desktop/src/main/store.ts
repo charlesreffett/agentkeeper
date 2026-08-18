@@ -98,6 +98,33 @@ export const recentProjectsStore = {
 
     return { path: newPath, name: newName, repo: row.repo ?? null, lastOpenedAt: row.lastOpenedAt }
   },
+  update(oldPath: string, project: RecentProject): RecentProject {
+    const db = getDb()
+    const row = db.select().from(projects).where(eq(projects.path, oldPath)).get()
+    if (!row) throw new Error(`Project not found: ${oldPath}`)
+    if (project.path !== oldPath) {
+      const existing = db.select({ path: projects.path }).from(projects).where(eq(projects.path, project.path)).get()
+      if (existing) throw new Error('That source folder is already used by another project')
+    }
+
+    db.transaction((tx) => {
+      tx.delete(projects).where(eq(projects.path, oldPath)).run()
+      tx.insert(projects).values({
+        path: project.path,
+        name: project.name,
+        repo: project.repo ?? null,
+        lastOpenedAt: row.lastOpenedAt,
+        sortOrder: row.sortOrder,
+      }).run()
+
+      const focused = tx.select({ value: appState.value }).from(appState).where(eq(appState.key, 'focusedProjectPath')).get()
+      if (focused?.value === oldPath) {
+        tx.update(appState).set({ value: project.path }).where(eq(appState.key, 'focusedProjectPath')).run()
+      }
+    })
+
+    return { ...project, lastOpenedAt: row.lastOpenedAt }
+  },
   getPinnedBranches(targetPath: string): string[] {
     const key = `pinnedBranches:${targetPath}`
     const row = getDb().select({ value: appState.value }).from(appState).where(eq(appState.key, key)).get()

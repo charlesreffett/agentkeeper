@@ -845,6 +845,8 @@ export interface AgentKeeperApi {
     add: (path: string) => Promise<RecentProject>
     remove: (path: string) => Promise<void>
     rename: (oldPath: string, newName: string, renameDir: boolean) => Promise<RecentProject>
+    update: (oldPath: string, name: string, sourcePath: string) => Promise<RecentProject>
+    reveal: (path: string) => Promise<void>
     reorder: (paths: string[]) => Promise<void>
     list: () => Promise<RecentProject[]>
     getFocused: () => Promise<RecentProject | null>
@@ -1151,6 +1153,8 @@ export const IPC_CHANNELS = {
   projectsPickFolder: 'projects:pickFolder',
   projectsCreate: 'projects:create',
   projectsRename: 'projects:rename',
+  projectsUpdate: 'projects:update',
+  projectsReveal: 'projects:reveal',
   projectsReorder: 'projects:reorder',
   projectsGetPinnedBranches: 'projects:getPinnedBranches',
   projectsSetPinnedBranches: 'projects:setPinnedBranches',

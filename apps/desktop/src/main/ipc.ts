@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Notification } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell } from 'electron'
 import type { EventMap } from '@agentkeeper/sdk'
 import path from 'node:path'
 import os from 'node:os'
@@ -197,6 +197,27 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       console.error('[ipc] projects:rename failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
+  })
+  ipcMain.handle(IPC_CHANNELS.projectsUpdate, async (_event, oldPath: string, name: string, sourcePath: string) => {
+    try {
+      const trimmedName = name.trim()
+      if (!trimmedName) throw new Error('Project name is required')
+      const stats = await fs.stat(sourcePath)
+      if (!stats.isDirectory()) throw new Error('Source folder must be a directory')
+      const repo = await detectGithubRepo(sourcePath)
+      return recentProjectsStore.update(oldPath, {
+        path: sourcePath,
+        name: trimmedName,
+        repo,
+        lastOpenedAt: Date.now(),
+      })
+    } catch (err) {
+      console.error('[ipc] projects:update failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+  ipcMain.handle(IPC_CHANNELS.projectsReveal, (_event, projectPath: string) => {
+    shell.showItemInFolder(projectPath)
   })
   ipcMain.handle(IPC_CHANNELS.projectsPickFolder, async () => {
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]

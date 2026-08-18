@@ -135,6 +135,10 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.projectsRemove, projectPath) as Promise<void>,
     rename: (oldPath: string, newName: string, renameDir: boolean) =>
       invoke(IPC_CHANNELS.projectsRename, oldPath, newName, renameDir) as Promise<never>,
+    update: (oldPath: string, name: string, sourcePath: string) =>
+      invoke(IPC_CHANNELS.projectsUpdate, oldPath, name, sourcePath) as Promise<RecentProject>,
+    reveal: (projectPath: string) =>
+      invoke(IPC_CHANNELS.projectsReveal, projectPath) as Promise<void>,
     reorder: (paths: string[]) =>
       invoke(IPC_CHANNELS.projectsReorder, paths) as Promise<void>,
     list: () => invoke(IPC_CHANNELS.projectsList) as Promise<never>,
