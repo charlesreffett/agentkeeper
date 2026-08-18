@@ -22,7 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import EditProjectDialog from '@/components/project/EditProjectDialog.vue'
-import ProjectHoverPopover from '@/components/project/ProjectHoverPopover.vue'
+import ProjectHoverTooltip from '@/components/project/ProjectHoverTooltip.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
 import { formatRelativeTime } from '@/lib/format'
@@ -417,16 +417,22 @@ function handleProjectDragEnd() {
               <span>{{ item.value.name }}</span>
             </div>
 
-            <div
+            <ProjectHoverTooltip
               v-else-if="item.value.type === 'project'"
-              data-project-row
-              class="group relative flex h-[30px] items-center gap-1 rounded-md px-1.5 text-sm text-foreground hover:bg-accent"
-              :class="[
-                item.value.registered ? 'cursor-grab active:cursor-grabbing' : '',
-                draggedProjectPath === item.value.path ? 'opacity-40' : '',
-              ]"
-              v-project-dnd="{ project: item.value, isExpanded }"
+              :project="item.value"
+              :session-count="item.value.children.length"
+              :disabled="actionMenuPath === item.value.path"
             >
+              <template #trigger>
+                <div
+                  data-project-row
+                  class="group relative flex h-[30px] items-center gap-1 rounded-md px-1.5 text-sm text-foreground hover:bg-accent"
+                  :class="[
+                    item.value.registered ? 'cursor-grab active:cursor-grabbing' : '',
+                    draggedProjectPath === item.value.path ? 'opacity-40' : '',
+                  ]"
+                  v-project-dnd="{ project: item.value, isExpanded }"
+                >
               <span
                 v-if="dropTarget?.path === item.value.path"
                 class="pointer-events-none absolute left-1 right-1 h-0.5 rounded-full bg-primary"
@@ -441,13 +447,6 @@ function handleProjectDragEnd() {
                 :class="actionMenuPath === item.value.path ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
                 @click.stop
               >
-                <ProjectHoverPopover
-                  v-if="item.value.registered && registeredProject(item.value.path)"
-                  :project="registeredProject(item.value.path)!"
-                  :session-count="item.value.children.length"
-                  :disabled="actionMenuPath === item.value.path"
-                  @edit="editProject(item.value.path)"
-                />
                 <DropdownMenu
                   v-if="item.value.registered"
                   @update:open="(open) => setActionMenuOpen(open, item.value)"
@@ -480,8 +479,10 @@ function handleProjectDragEnd() {
                 >
                   <Pencil class="size-3.5" />
                 </button>
-              </div>
-            </div>
+                  </div>
+                </div>
+              </template>
+            </ProjectHoverTooltip>
 
             <div
               v-else-if="item.value.type === 'session'"
