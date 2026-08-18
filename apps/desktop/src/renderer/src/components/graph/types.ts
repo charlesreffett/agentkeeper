@@ -1,4 +1,4 @@
-export type NodeKind = 'role' | 'instance'
+export type NodeKind = 'role' | 'instance' | 'elastic-group'
 
 export interface GraphNode {
   id: string
@@ -13,6 +13,10 @@ export interface GraphNode {
   isExpanded: boolean
   /** Set on instance nodes; the roleId they belong to */
   parentRoleId?: string
+  /** Configured elastic capacity that has not been provisioned as a warm instance. */
+  isElasticCapacity?: boolean
+  /** Visual-only dimensions for a non-interactive elastic-capacity group. */
+  dimensions?: { width: number; height: number }
   position: { x: number; y: number }
   meta: Record<string, unknown>
 }

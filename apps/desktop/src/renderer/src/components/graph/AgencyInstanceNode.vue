@@ -1,20 +1,20 @@
 <template>
   <div
     class="instance-node relative rounded-md border border-dashed px-3 py-2 shadow-sm min-w-[110px] cursor-pointer select-none transition-[border-color,box-shadow,opacity]"
-    :class="[selected ? 'is-selected' : '', data.dimmed ? 'is-dimmed' : '']"
+    :class="[selected ? 'is-selected' : '', data.dimmed ? 'is-dimmed' : '', data.isElasticCapacity ? 'is-elastic-capacity' : '']"
     :style="{ '--node-accent': accentHex }"
   >
-    <Handle id="top" type="source" :position="Position.Top" :class="['!w-2 !h-2', { 'is-wired': wired.top, 'is-hovered': hovered.top }]" :style="handleStyle">
+    <Handle v-if="!data.isElasticCapacity" id="top" type="source" :position="Position.Top" :class="['!w-2 !h-2', { 'is-wired': wired.top, 'is-hovered': hovered.top }]" :style="handleStyle">
       <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <path d="M6 1v10M1 6h10" />
       </svg>
     </Handle>
-    <Handle id="left" type="source" :position="Position.Left" :class="['!w-2 !h-2', { 'is-wired': wired.left, 'is-hovered': hovered.left }]" :style="handleStyle">
+    <Handle v-if="!data.isElasticCapacity" id="left" type="source" :position="Position.Left" :class="['!w-2 !h-2', { 'is-wired': wired.left, 'is-hovered': hovered.left }]" :style="handleStyle">
       <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <path d="M6 1v10M1 6h10" />
       </svg>
     </Handle>
-    <Handle id="bottom" type="source" :position="Position.Bottom" :class="['!w-2 !h-2', { 'is-wired': wired.bottom, 'is-hovered': hovered.bottom }]" :style="handleStyle">
+    <Handle v-if="!data.isElasticCapacity" id="bottom" type="source" :position="Position.Bottom" :class="['!w-2 !h-2', { 'is-wired': wired.bottom, 'is-hovered': hovered.bottom }]" :style="handleStyle">
       <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <path d="M6 1v10M1 6h10" />
       </svg>
@@ -45,7 +45,7 @@
       </svg>
     </button>
 
-    <Handle id="right" type="source" :position="Position.Right" :class="['!w-2 !h-2', { 'is-wired': wired.right, 'is-hovered': hovered.right }]" :style="handleStyle">
+    <Handle v-if="!data.isElasticCapacity" id="right" type="source" :position="Position.Right" :class="['!w-2 !h-2', { 'is-wired': wired.right, 'is-hovered': hovered.right }]" :style="handleStyle">
       <svg class="handle-plus" viewBox="0 0 12 12" width="5" height="5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
         <path d="M6 1v10M1 6h10" />
       </svg>
@@ -64,6 +64,7 @@ const props = defineProps<{
     label: string
     accent?: string
     isEntryPoint: boolean
+    isElasticCapacity: boolean
     dimmed: boolean
     handleEdges?: { top: string[]; right: string[]; bottom: string[]; left: string[] }
     onCollapse?: () => void
@@ -122,6 +123,16 @@ const handleStyle = computed(() => ({
 }
 .instance-node.is-dimmed > * {
   opacity: 0.55;
+}
+.instance-node.is-elastic-capacity {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--node-accent) 35%, transparent);
+  background-color: color-mix(in srgb, var(--node-accent) 2%, var(--background));
+  box-shadow: none;
+}
+.instance-node.is-elastic-capacity:not(.is-selected):hover {
+  border-color: color-mix(in srgb, var(--node-accent) 55%, transparent);
+  box-shadow: none;
 }
 .instance-node .vue-flow__handle {
   display: flex;

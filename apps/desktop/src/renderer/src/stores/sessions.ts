@@ -4,6 +4,7 @@ import { toast } from 'vue-sonner'
 import router from '../router'
 import type {
   Agency,
+  AgencyRoleCapacity,
   Agent,
   Attachment,
   LiveSessionStatus,
@@ -277,6 +278,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   // reactive() dict so sub-property mutations trigger updates
   const sessions = reactive<Record<string, LiveSession>>({})
+  const agencyCapacities = reactive<Record<string, Record<string, AgencyRoleCapacity>>>({})
   const currentLiveId = ref<string | null>(null)
 
   // Buffer for status/event payloads that arrive before the session is
@@ -1470,6 +1472,21 @@ export const useSessionStore = defineStore('sessions', () => {
     }
   })
 
+  const unsubAgencyScaling = window.agentkeeper.agencies.onScaling((update) => {
+    const byRole = agencyCapacities[update.agencyInstanceId] ??
+      (agencyCapacities[update.agencyInstanceId] = {})
+    byRole[update.roleId] = {
+      roleId: update.roleId,
+      live: update.live,
+      floor: update.floor,
+      ceiling: update.ceiling,
+      busy: update.busy,
+      idle: update.idle,
+      queued: update.queued,
+    }
+  })
+  onScopeDispose(unsubAgencyScaling)
+
   // Sessions created by another client (mobile, agency orchestrator) aren't in
   // the store yet. Pull the row and track it so it appears app-wide.
   const unsubCreated = window.agentkeeper.sessions.onCreated((localId) => {
@@ -1602,6 +1619,7 @@ export const useSessionStore = defineStore('sessions', () => {
 
   return {
     sessions,
+    agencyCapacities,
     sessionTokens,
     agentTokens,
     sessionTurns,

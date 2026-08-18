@@ -69,7 +69,16 @@ function modelOf(msg: OpenCodeMessage): string | null {
   return provider && model ? `${provider}/${model}` : null
 }
 
-function partsToBlocks(parts: Array<Record<string, unknown>>): ContentBlock[] {
+// Types we intentionally skip — no displayable content but not unexpected.
+const KNOWN_SILENT_PART_TYPES = new Set(['step-start', 'step-finish', 'snapshot', 'file', 'agent'])
+
+// unknownTypes is caller-owned (one Set per readOpenCodeTranscript call, not
+// module-level) so a later read's warning isn't suppressed by an earlier
+// read having already seen the same type.
+function partsToBlocks(
+  parts: Array<Record<string, unknown>>,
+  unknownTypes: Set<string>,
+): ContentBlock[] {
   const blocks: ContentBlock[] = []
   for (const part of parts) {
     const type = part['type'] as string
@@ -97,9 +106,9 @@ function partsToBlocks(parts: Array<Record<string, unknown>>): ContentBlock[] {
           is_error: status === 'error',
         })
       }
+    } else if (!KNOWN_SILENT_PART_TYPES.has(type)) {
+      unknownTypes.add(type)
     }
-    // step-start / step-finish / snapshot / file / agent parts carry no
-    // displayable content — skip.
   }
   return blocks
 }
@@ -194,12 +203,13 @@ export async function readOpenCodeTranscript(
 
   const events: TranscriptEvent[] = []
   let lastActivityAt = 0
+  const unknownPartTypes = new Set<string>()
 
   for (const { id: messageId, data: msg } of raw.messages) {
     const role = msg.role === 'user' || msg.role === 'assistant' ? msg.role : null
     if (!role) continue
 
-    const content = partsToBlocks(raw.partsOf(messageId))
+    const content = partsToBlocks(raw.partsOf(messageId), unknownPartTypes)
     if (!content.length) continue
 
     const created = msg.time?.created ?? 0
@@ -219,6 +229,14 @@ export async function readOpenCodeTranscript(
       parentToolUseId: null,
       systemSubtype: null,
     })
+  }
+
+  // Deliberately after the loop, once per read — warning per-part would spam
+  // the log for a transcript with many parts of the same unrecognized type.
+  if (unknownPartTypes.size > 0) {
+    console.warn(
+      `[opencode-transcript] unrecognized part types skipped: ${[...unknownPartTypes].join(', ')}`,
+    )
   }
 
   if (!events.length) return null

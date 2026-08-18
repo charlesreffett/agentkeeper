@@ -9,10 +9,11 @@ import type { HarnessEvent } from '@agentkeeper/core'
 import * as costLedger from './cost-ledger'
 import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
 import { calculateCost, calculateCostBreakdown } from './pricing'
-import { isGeneralProject } from '../shared/ipc-contract'
+import { isGeneralProject, IPC_CHANNELS } from '../shared/ipc-contract'
 import type {
   Agent,
   AgencyScope,
+  AgencyScalingUpdate,
   Attachment,
   LiveSessionEvent,
   LiveSessionStats,
@@ -200,6 +201,13 @@ export function broadcastStatus(update: LiveSessionStatusUpdate): void {
     if (!wc.isDestroyed()) wc.send('session:status', payload)
   }
   mobileSessionsNotifier?.()
+}
+
+export function broadcastAgencyScaling(update: AgencyScalingUpdate): void {
+  const payload = toPlain(update)
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) wc.send(IPC_CHANNELS.agencyScaling, payload)
+  }
 }
 
 function broadcastStats(stats: LiveSessionStats): void {

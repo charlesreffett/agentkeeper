@@ -12,7 +12,11 @@ function getBaseRoleId(id: string): string {
   return m ? m[1]! : id
 }
 
-function instanceCount(slot: RoleSlot): number {
+function renderedInstanceCount(slot: RoleSlot): number {
+  return slot.count ?? slot.max ?? slot.min ?? 1
+}
+
+function warmInstanceCount(slot: RoleSlot): number {
   return slot.count ?? slot.min ?? 1
 }
 
@@ -152,10 +156,51 @@ export function useFlowGraph(
       const accent = slotAccent(slot, index)
 
       if (isExpanded) {
-        const count = instanceCount(slot)
+        const count = renderedInstanceCount(slot)
+        const warmCount = warmInstanceCount(slot)
         const roleBasePos = nodePositions.value[slot.roleId] ?? defaultPosition(index, roles.length)
+        const capacityCount = count - warmCount
+        let elasticGroupOffset = { x: 0, y: 0 }
+        let defaultElasticGroupPosition = { x: 0, y: 0 }
+        if (capacityCount > 0) {
+          const rightmostWarmPosition = instancePosition(roleBasePos, warmCount, warmCount)
+          const groupHeight = (capacityCount - 1) * 56 + 116
+          const groupId = `${slot.roleId}::elastic-capacity`
+          defaultElasticGroupPosition = {
+            x: rightmostWarmPosition.x + 170,
+            y: roleBasePos.y - (groupHeight - 72) / 2,
+          }
+          const groupPosition = nodePositions.value[groupId] ?? defaultElasticGroupPosition
+          elasticGroupOffset = {
+            x: groupPosition.x - defaultElasticGroupPosition.x,
+            y: groupPosition.y - defaultElasticGroupPosition.y,
+          }
+          result.push({
+            id: groupId,
+            label: 'Elastic · on demand',
+            kind: 'elastic-group',
+            isEntryPoint: false,
+            anyToAny: false,
+            multiplicityLabel: '',
+            isExpandable: false,
+            isExpanded: false,
+            position: groupPosition,
+            dimensions: {
+              width: 150,
+              height: groupHeight,
+            },
+            meta: { accent },
+          })
+        }
         for (let i = 1; i <= count; i++) {
           const instanceId = `${slot.roleId}-${i}`
+          const isElasticCapacity = i > warmCount
+          const defaultInstancePosition = isElasticCapacity
+            ? {
+                x: defaultElasticGroupPosition.x + 20,
+                y: defaultElasticGroupPosition.y + 38 + (i - warmCount - 1) * 56,
+              }
+            : instancePosition(roleBasePos, i, warmCount)
           result.push({
             id: instanceId,
             label: instanceId,
@@ -166,7 +211,16 @@ export function useFlowGraph(
             isExpandable: false,
             isExpanded: false,
             parentRoleId: slot.roleId,
-            position: nodePositions.value[instanceId] ?? instancePosition(roleBasePos, i, count),
+            isElasticCapacity,
+            // Capacity placeholders belong to the draggable group, so their
+            // absolute graph positions follow the group rather than stale
+            // per-instance layout entries from an earlier fixed configuration.
+            position: isElasticCapacity
+              ? {
+                  x: defaultInstancePosition.x + elasticGroupOffset.x,
+                  y: defaultInstancePosition.y + elasticGroupOffset.y,
+                }
+              : nodePositions.value[instanceId] ?? defaultInstancePosition,
             meta: {
               slot,
               accent,
@@ -180,7 +234,7 @@ export function useFlowGraph(
           kind: 'role',
           isEntryPoint: agency.value!.entryPoints.includes(slot.roleId),
           anyToAny,
-          multiplicityLabel: buildMultiplicityLabel(slot),
+          multiplicityLabel: formatInstanceBadge(slot),
           isExpandable: expandable,
           isExpanded: false,
           position: nodePositions.value[slot.roleId] ?? defaultPosition(index, roles.length),
@@ -206,7 +260,10 @@ export function useFlowGraph(
     // fan out to all its visible instance nodes instead. If an instance id's
     // role is collapsed, collapse it back to the role node id.
     function resolveEndpoint(id: string): string[] {
-      if (activeIds.has(id)) return [id]
+      if (activeIds.has(id)) {
+        const node = nodes.value.find(n => n.id === id)
+        return node?.isElasticCapacity ? [] : [id]
+      }
       const m = instanceIdPattern.exec(id)
       if (m) {
         // Instance id but role not expanded — collapse to role node
@@ -214,7 +271,9 @@ export function useFlowGraph(
         return activeIds.has(roleId) ? [roleId] : []
       }
       // Role id but role is expanded — fan out to all its instance nodes
-      const instances = nodes.value.filter(n => n.parentRoleId === id).map(n => n.id)
+      const instances = nodes.value
+        .filter(n => n.parentRoleId === id && !n.isElasticCapacity)
+        .map(n => n.id)
       return instances.length > 0 ? instances : []
     }
 
@@ -470,11 +529,15 @@ export function useFlowGraph(
     if (!agency.value) return
     const newRoles = agency.value.roles.map(slot => {
       if (slot.roleId !== roleId) return slot
+      // Drop the other sizing mode's keys, keep every policy field on the slot —
+      // resizing a role must not silently reset openMessaging/onFailure/pauseForReview.
+      const { count: _count, min: _min, max: _max, ...rest } = slot
       if (mode === 'fixed') {
         const count = opts.count ?? 1
-        return count <= 1 ? { roleId } : { roleId, count }
+        return count <= 1 ? rest : { ...rest, count }
       }
-      return { roleId, min: opts.min ?? 1, max: opts.max ?? 2 }
+      const min = Math.max(1, opts.min ?? 1)
+      return { ...rest, min, max: Math.max(min, opts.max ?? min + 1) }
     })
     const draft = { ...agency.value, roles: newRoles }
     await saveAgency(draft)
@@ -523,7 +586,7 @@ export function useFlowGraph(
   }
 }
 
-function buildMultiplicityLabel(slot: RoleSlot): string {
+export function formatInstanceBadge(slot: RoleSlot): string {
   if (slot.count !== undefined) return `×${slot.count}`
   if (slot.min !== undefined && slot.max !== undefined) return `${slot.min}–${slot.max}`
   return ''

@@ -57,7 +57,7 @@ function parseAgencyFile(
             slot.count = Math.max(1, Math.floor(obj['count']))
           } else if (typeof obj['min'] === 'number' || typeof obj['max'] === 'number') {
             slot.min = typeof obj['min'] === 'number' ? Math.max(1, Math.floor(obj['min'])) : 1
-            slot.max = typeof obj['max'] === 'number' ? Math.floor(obj['max']) : (slot.min ?? 1) + 1
+            slot.max = typeof obj['max'] === 'number' ? Math.max(slot.min, Math.floor(obj['max'])) : (slot.min ?? 1) + 1
           }
           if (obj['openMessaging'] === true) slot.openMessaging = true
           const onFailureValues: OnFailurePolicy[] = ['block', 'continue', 'retry']

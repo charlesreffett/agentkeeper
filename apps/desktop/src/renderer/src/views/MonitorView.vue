@@ -92,6 +92,11 @@ function titleFor(s: LiveSession) {
   return firstLine.length > 120 ? firstLine.slice(0, 119) + '…' : firstLine
 }
 
+function capacitiesFor(s: LiveSession) {
+  return Object.values(store.agencyCapacities[s.localId] ?? {})
+    .sort((a, b) => a.roleId.localeCompare(b.roleId))
+}
+
 const subtitle = computed(() => {
   const count = store.liveList.length
   return `${count} active session${count === 1 ? '' : 's'}`
@@ -204,6 +209,22 @@ async function openSession(s: LiveSession) {
                   class="text-muted-foreground font-mono"
                 >
                   ⎇ {{ s.branch }}
+                </span>
+              </div>
+
+              <div
+                v-if="capacitiesFor(s).length"
+                class="flex flex-wrap gap-1 text-[10px] tabular-nums"
+              >
+                <span
+                  v-for="capacity in capacitiesFor(s)"
+                  :key="capacity.roleId"
+                  class="rounded border border-border bg-muted/40 px-1.5 py-0.5 text-muted-foreground"
+                  :title="`${capacity.roleId}: floor ${capacity.floor}, ${capacity.idle} idle, ${capacity.queued} queued`"
+                >
+                  {{ capacity.roleId }} {{ capacity.live }}/{{ capacity.ceiling }} live
+                  · {{ capacity.busy }} busy
+                  <template v-if="capacity.queued"> · {{ capacity.queued }} queued</template>
                 </span>
               </div>
 

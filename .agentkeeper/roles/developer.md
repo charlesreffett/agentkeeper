@@ -2,7 +2,7 @@
 name: Developer
 description: Implements planned work — writes code, runs typecheck and build,
   commits changes
-model: claude-sonnet-4-6
+model: opencode/big-pickle
 effort: high
 ---
 
