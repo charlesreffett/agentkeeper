@@ -62,6 +62,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
 import AgencyRoleNode from './AgencyRoleNode.vue'
 import AgencyInstanceNode from './AgencyInstanceNode.vue'
+import ElasticCapacityGroupNode from './ElasticCapacityGroupNode.vue'
 import FloatingConnectionLine from './FloatingConnectionLine.vue'
 import GradientEdge from './GradientEdge.vue'
 import { accentColor } from './colors'
@@ -109,6 +110,7 @@ let edgeUpdateSuccessful = false
 const nodeTypes: Record<string, any> = {
   role: markRaw(AgencyRoleNode),
   instance: markRaw(AgencyInstanceNode),
+  'elastic-group': markRaw(ElasticCapacityGroupNode),
 }
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const edgeTypes: Record<string, any> = {
@@ -134,16 +136,49 @@ const vfNodes = computed<VFNode[]>(() =>
           (e.source === n.id && e.target === props.selectedNodeId) ||
           (e.target === n.id && e.source === props.selectedNodeId),
       )
+    if (n.kind === 'elastic-group') {
+      return {
+        id: n.id,
+        type: 'elastic-group',
+        position: n.position,
+        draggable: true,
+        selectable: false,
+        connectable: false,
+        focusable: false,
+        zIndex: 0,
+        style: {
+          width: `${n.dimensions?.width ?? 150}px`,
+          height: `${n.dimensions?.height ?? 116}px`,
+        },
+        data: {
+          label: n.label,
+          accent: (n.meta.accent as string | undefined) ?? 'blue',
+        },
+      }
+    }
     if (n.kind === 'instance') {
+      const elasticGroup = n.isElasticCapacity
+        ? props.nodes.find(group => group.id === `${n.parentRoleId}::elastic-capacity`)
+        : undefined
       return {
         id: n.id,
         type: 'instance',
-        position: n.position,
+        position: elasticGroup
+          ? {
+              x: n.position.x - elasticGroup.position.x,
+              y: n.position.y - elasticGroup.position.y,
+            }
+          : n.position,
+        parentNode: elasticGroup?.id,
+        extent: elasticGroup ? 'parent' as const : undefined,
+        draggable: !elasticGroup,
         selected: n.id === props.selectedNodeId,
+        zIndex: 1,
         data: {
           label: n.label,
           accent: (n.meta.accent as string | undefined) ?? 'blue',
           isEntryPoint: n.isEntryPoint,
+          isElasticCapacity: n.isElasticCapacity ?? false,
           dimmed,
           handleEdges: handleEdgeMap.value.get(n.id) ?? NO_HANDLE_EDGES,
           // Pass collapse callback — collapses the parent role group
@@ -313,11 +348,17 @@ function isValidConnection(conn: Connection): boolean {
   // Only block self-loops here — duplicate detection happens in onConnect where
   // Vue Flow has already confirmed the connection, avoiding false positives from
   // ConnectionMode.Loose calling this during hover with unexpected handle pairings.
-  return !!conn.source && !!conn.target && conn.source !== conn.target
+  return !!conn.source && !!conn.target && conn.source !== conn.target &&
+    !isElasticCapacity(conn.source) && !isElasticCapacity(conn.target)
+}
+
+function isElasticCapacity(nodeId: string): boolean {
+  return props.nodes.some(n => n.id === nodeId && n.isElasticCapacity)
 }
 
 function onConnect(conn: Connection) {
   if (!conn.source || !conn.target) return
+  if (isElasticCapacity(conn.source) || isElasticCapacity(conn.target)) return
   // Block duplicate connections (same source→target regardless of handles).
   if (props.edges.some(e => e.source === conn.source && e.target === conn.target)) return
   const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
@@ -336,8 +377,9 @@ function onEdgeUpdateStart({ edge }: EdgeMouseEvent) {
 }
 
 function onEdgeUpdate({ edge, connection: conn }: EdgeUpdateEvent) {
-  edgeUpdateSuccessful = true
   if (!conn.source || !conn.target) return
+  if (isElasticCapacity(conn.source) || isElasticCapacity(conn.target)) return
+  edgeUpdateSuccessful = true
   const srcPos = nodePosMap.value.get(conn.source) ?? { x: 0, y: 0 }
   const tgtPos = nodePosMap.value.get(conn.target) ?? { x: 0, y: 0 }
   const best = getBestHandles(srcPos, tgtPos)
