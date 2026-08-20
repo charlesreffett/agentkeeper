@@ -850,6 +850,13 @@ export const useSessionStore = defineStore('sessions', () => {
       (s) => s.isDraft && s.projectPath === params.projectPath,
     )
     if (existing) {
+      // An untouched branch is only a snapshot of the checkout at the time the
+      // draft was first opened. Resolve it again when the draft is focused so
+      // an external rename/delete cannot leave the project shortcut pointing
+      // at a stale ref. Explicit picker selections are preserved.
+      if (existing.draftConfig && !existing.draftConfig.branchTouched) {
+        existing.draftConfig.branch = ''
+      }
       currentLiveId.value = existing.localId
       return existing.localId
     }

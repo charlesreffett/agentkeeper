@@ -15,6 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   'update:projectPath': [value: string]
+  'initialize:branch': [value: string]
   'update:branch': [value: string]
   'update:useWorktree': [value: boolean]
   'newProject': []
@@ -46,7 +47,7 @@ watch(branchOpen, (open) => {
   if (open) { branchQuery.value = ''; void refetch(); void nextTick(() => branchSearch.value?.focus()) }
 })
 watch([() => props.projectPath, currentBranch], () => {
-  if (props.projectPath && !props.branch && currentBranch.value?.name) emit('update:branch', currentBranch.value.name)
+  if (props.projectPath && !props.branch && currentBranch.value?.name) emit('initialize:branch', currentBranch.value.name)
 }, { immediate: true })
 
 function chooseProject(value: string) {

@@ -922,6 +922,7 @@ const streamingEventUuid = computed((): string | undefined => {
             :branch="draftCfg?.branch ?? ''"
             :use-worktree="draftCfg?.useWorktree ?? false"
             @update:project-path="changeContext"
+            @initialize:branch="(value) => { if (draftCfg && !draftCfg.branchTouched) draftCfg.branch = value }"
             @update:branch="(value) => { if (draftCfg) { draftCfg.branch = value; draftCfg.branchTouched = true } }"
             @update:use-worktree="(value) => { if (draftCfg) draftCfg.useWorktree = value }"
             @new-project="pickContextProject"
