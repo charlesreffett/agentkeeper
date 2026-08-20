@@ -1,5 +1,9 @@
 import type { HarnessCapabilities } from './types'
 
+type BooleanCapabilityKey = {
+  [K in keyof HarnessCapabilities]: HarnessCapabilities[K] extends boolean ? K : never
+}[keyof HarnessCapabilities]
+
 /** Map a CLI's `--help` text to capability flags. For each entry, the capability
  *  is `true` iff its marker substring appears in the help text — so a harness
  *  that shells out to a binary can detect exactly what the *installed* build
@@ -7,11 +11,11 @@ import type { HarnessCapabilities } from './types'
  *  fields; unlisted capabilities fall back to the adapter's static baseline. */
 export function mapHelpTextToCapabilities(
   helpText: string,
-  flagMap: Partial<Record<keyof HarnessCapabilities, string>>,
+  flagMap: Partial<Record<BooleanCapabilityKey, string>>,
 ): Partial<HarnessCapabilities> {
   const result: Partial<HarnessCapabilities> = {}
   for (const [cap, marker] of Object.entries(flagMap)) {
-    if (marker) result[cap as keyof HarnessCapabilities] = helpText.includes(marker)
+    if (marker) result[cap as BooleanCapabilityKey] = helpText.includes(marker)
   }
   return result
 }
@@ -23,7 +27,7 @@ export function mapHelpTextToCapabilities(
 export async function probeHelpText(
   run: (args: string[]) => Promise<string>,
   helpArgs: string[],
-  flagMap: Partial<Record<keyof HarnessCapabilities, string>>,
+  flagMap: Partial<Record<BooleanCapabilityKey, string>>,
 ): Promise<Partial<HarnessCapabilities>> {
   try {
     const helpText = await run(helpArgs)

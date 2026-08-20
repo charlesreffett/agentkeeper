@@ -1,49 +1,87 @@
+import { webContents } from 'electron'
 import { getHarness } from './harness'
-import type { ModelsListResult } from '../shared/ipc-contract'
+import type { AvailableModel, HarnessModelSnapshot } from '../shared/ipc-contract'
+import { IPC_CHANNELS } from '../shared/ipc-contract'
 import { sanitizeCustomModel } from '@agentkeeper/core'
+import { settingsStore } from './settings'
 
-// Cached per harness for the app session. The harness list is account/plan
-// dependent and costs a subprocess spin-up, so it is fetched eagerly at startup
-// and only re-fetched on explicit refresh.
-const cache = new Map<string, ModelsListResult>()
-const inflight = new Map<string, Promise<ModelsListResult>>()
+const snapshots = new Map<string, HarnessModelSnapshot>()
+const inflight = new Map<string, Promise<HarnessModelSnapshot>>()
 
 function harnessIdFor(harnessId?: string): string {
   return getHarness(harnessId).id
 }
 
-async function fetchModels(harnessId: string): Promise<ModelsListResult> {
-  try {
-    const models = await getHarness(harnessId).getSupportedModels()
-    return { harnessId, models }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { harnessId, models: [], error: message }
+function broadcast(snapshot: HarnessModelSnapshot): void {
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) wc.send(IPC_CHANNELS.modelsChanged, snapshot)
   }
 }
 
-export async function getAvailableModels(harnessId?: string): Promise<ModelsListResult> {
-  const id = harnessIdFor(harnessId)
-  const cached = cache.get(id)
-  if (cached && !cached.error) return cached
+async function discover(id: string): Promise<AvailableModel[]> {
+  const adapter = getHarness(id)
+  const discovered = await adapter.getSupportedModels()
+  if (!adapter.capabilities.customModels) return discovered
+  const seen = new Set(discovered.map((model) => model.value))
+  const custom = (settingsStore.get().customModels?.[id] ?? [])
+    .map((value) => value.trim())
+    .map((value) => sanitizeCustomModel(value))
+    .filter((value): value is string => !!value && !seen.has(value))
+    .filter((value, index, values) => values.indexOf(value) === index)
+    .map((value) => ({ value, label: value, resolvedModel: value, isCustom: true }))
+  return [...discovered, ...custom]
+}
 
+function startRefresh(id: string): Promise<HarnessModelSnapshot> {
   const existing = inflight.get(id)
   if (existing) return existing
 
-  const promise = fetchModels(id).then((result) => {
-    cache.set(id, result)
-    inflight.delete(id)
-    return result
-  })
+  const previous = snapshots.get(id)
+  if (previous) {
+    const refreshing = { ...previous, status: 'refreshing' as const, error: undefined }
+    snapshots.set(id, refreshing)
+    broadcast(refreshing)
+  }
+
+  const promise = discover(id)
+    .then((models) => {
+      const snapshot: HarnessModelSnapshot = { harnessId: id, models, status: 'ready', refreshedAt: Date.now() }
+      snapshots.set(id, snapshot)
+      broadcast(snapshot)
+      return snapshot
+    })
+    .catch((err: unknown) => {
+      const snapshot: HarnessModelSnapshot = {
+        harnessId: id,
+        models: previous?.models ?? [],
+        status: 'error',
+        refreshedAt: previous?.refreshedAt ?? null,
+        error: err instanceof Error ? err.message : String(err),
+      }
+      snapshots.set(id, snapshot)
+      broadcast(snapshot)
+      return snapshot
+    })
+    .finally(() => inflight.delete(id))
   inflight.set(id, promise)
   return promise
 }
 
-export async function refreshAvailableModels(harnessId?: string): Promise<ModelsListResult> {
+export async function getAvailableModels(harnessId?: string): Promise<HarnessModelSnapshot> {
   const id = harnessIdFor(harnessId)
-  cache.delete(id)
-  inflight.delete(id)
-  return getAvailableModels(id)
+  const snapshot = snapshots.get(id)
+  if (snapshot) return snapshot.status === 'ready' ? { ...snapshot, status: 'cached' } : snapshot
+  return startRefresh(id)
+}
+
+export function refreshAvailableModels(harnessId?: string): Promise<HarnessModelSnapshot> {
+  return startRefresh(harnessIdFor(harnessId))
+}
+
+export function invalidateAvailableModels(harnessId?: string): void {
+  const id = harnessIdFor(harnessId)
+  const previous = snapshots.get(id)
+  if (previous) snapshots.set(id, { ...previous, status: 'cached', refreshedAt: null })
 }
 
 /** Harness-resolved default model. Never a hardcoded version — the harness
@@ -63,14 +101,18 @@ export async function getDefaultModel(harnessId?: string): Promise<string> {
 export async function validateCustomModel(harnessId: string | undefined, model: string): Promise<string | null> {
   if (sanitizeCustomModel(model) === null) return null
   const id = harnessIdFor(harnessId)
-  const cached = cache.get(id)
-  if (cached && !cached.error && cached.models.length > 0) {
-    return cached.models.some((m) => m.value === model) ? model : null
-  }
+  const snapshot = snapshots.get(id)
+  if (snapshot?.models.some((m) => m.value === model)) return model
+  if (!getHarness(id).capabilities.customModels && snapshot?.models.length) return null
   return model
 }
 
 /** Warm the default harness cache at startup so the first picker open is instant. */
 export function warmAvailableModels(): void {
   void getAvailableModels().catch(() => { /* error is captured in the cached result */ })
+}
+
+export function resetModelSnapshotsForTest(): void {
+  snapshots.clear()
+  inflight.clear()
 }

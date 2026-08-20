@@ -535,6 +535,8 @@ export interface AgencyInstanceSession {
   instanceId: string    // qualified: "developer-1", "developer-2", etc.
   instanceIndex: number // 1-based
   roleName: string
+  harnessId?: string
+  model?: string
   isEntryPoint: boolean
   isOverflow: boolean   // true if spawned above the min floor
 }
@@ -643,6 +645,8 @@ export interface AppSettings {
   /** Per-harness binary path overrides, keyed by harness id (e.g. claude-code
    *  → /path/to/claude). Empty means PATH lookup with *_BIN env fallback. */
   harnessBins?: Record<string, string>
+  /** Sanitized off-catalog model ids merged into catalogs for capable harnesses. */
+  customModels?: Record<string, string[]>
   mobileServer?: { enabled: boolean; port: number; secretKey: string }
   /** Skip the dirty-tree warning when switching branches (changes are carried over, never lost). Default false. */
   gitSwitchWithoutSoftReject?: boolean
@@ -820,6 +824,8 @@ export interface AvailableModel {
   /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`.
    *  Lets the UI always show the real model+version, not the alias label. */
   resolvedModel?: string
+  contextWindow?: number
+  isCustom?: boolean
   supportsEffort?: boolean
   effortLevels?: ModelEffortLevel[]
   supportsFastMode?: boolean
@@ -828,12 +834,21 @@ export interface AvailableModel {
   controls?: SessionControlDescriptor[]
 }
 
-export interface ModelsListResult {
+export interface HarnessModelSnapshot {
   harnessId: string
   models: AvailableModel[]
-  /** Set when the harness could not be queried; models is then empty. */
+  status: 'cached' | 'refreshing' | 'ready' | 'error'
+  refreshedAt: number | null
+  /** Refresh errors retain the last successful models. */
   error?: string
 }
+
+/** @deprecated Use HarnessModelSnapshot. */
+export type ModelsListResult = HarnessModelSnapshot
+
+export type SetModelResult =
+  | { ok: true }
+  | { ok: false; reason: 'model-selection-unsupported' | 'session-running' | 'session-terminal' | 'agency-owned' | 'model-invalid' | 'session-not-found'; message: string }
 
 export interface LegacyDayEntry {
   date: string
@@ -912,7 +927,7 @@ export interface AgentKeeperApi {
     resume: (localId: string) => Promise<string>
     deletePersisted: (localId: string) => Promise<void>
     touchPersisted: (localId: string) => Promise<void>
-    setModel: (localId: string, model: string) => Promise<void>
+    setModel: (localId: string, model: string) => Promise<SetModelResult>
     setEffort: (localId: string, effort: RoleEffort) => Promise<void>
     setPermissionMode: (localId: string, mode: PermissionMode) => Promise<void>
     deleteHistorical: (projectPath: string | null, sessionId: string) => Promise<void>
@@ -955,7 +970,7 @@ export interface AgentKeeperApi {
     ) => Promise<void>
     start: (params: StartAgencyParams) => Promise<AgencyInstance>
     resume: (instanceId: string) => Promise<AgencyInstance>
-    setFallbackModel: (instanceId: string, model: string) => Promise<void>
+    setFallbackModel: (instanceId: string, model: string) => Promise<SetModelResult>
     onScaling: (callback: (update: AgencyScalingUpdate) => void) => () => void
   }
   skills: {
@@ -1107,6 +1122,7 @@ export interface AgentKeeperApi {
   models: {
     list: (harnessId?: string) => Promise<ModelsListResult>
     refresh: (harnessId?: string) => Promise<ModelsListResult>
+    onChanged: (callback: (snapshot: HarnessModelSnapshot) => void) => () => void
   }
   drafts: {
     get: (sessionLocalId: string) => Promise<DraftRecord>
@@ -1275,6 +1291,7 @@ export const IPC_CHANNELS = {
   sessionsTouchPersisted: 'sessions:touchPersisted',
   modelsList: 'models:list',
   modelsRefresh: 'models:refresh',
+  modelsChanged: 'models:changed',
   sessionsSetModel: 'sessions:setModel',
   sessionsSetEffort: 'sessions:setEffort',
   sessionsSetPermissionMode: 'sessions:setPermissionMode',

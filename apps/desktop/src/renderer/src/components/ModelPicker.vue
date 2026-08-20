@@ -2,7 +2,7 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { Check, ChevronDown, Search, CornerDownLeft } from 'lucide-vue-next'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
-import { useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
+import { formatContextWindow, useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
 import { useActiveHarness, useHarnessList } from '@/composables/useHarness'
 import { featureFlags } from '@/lib/featureFlags'
 
@@ -42,7 +42,7 @@ const showRail = computed(
 )
 
 // Browse scope: the rail's currently-viewed harness drives the model list.
-const { optionsFor } = useModelsQuery(() => selectedHarnessId.value)
+const { optionsFor, refreshIfStale, status, error: catalogError } = useModelsQuery(() => selectedHarnessId.value)
 // Session scope: the session's own harness drives the trigger label and which
 // row is checked — browsing another harness must change neither.
 const { resolvedLabelFor, effectiveValueFor } = useModelsQuery(() => props.harnessId)
@@ -105,6 +105,7 @@ watch(open, (isOpen) => {
   if (isOpen) {
     query.value = ''
     selectedHarnessId.value = props.harnessId ?? defaultHarnessId.value
+    refreshIfStale()
     void nextTick(() => searchInput.value?.focus())
   }
 })
@@ -178,6 +179,8 @@ function onEnter() {
         </div>
 
         <div class="flex-1 min-w-0 h-full overflow-y-auto p-1">
+          <div v-if="status === 'refreshing'" class="px-2 py-1 text-xs text-muted-foreground">Refreshing models…</div>
+          <div v-if="catalogError && options.length" class="mx-2 mb-1 rounded border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">Refresh failed: {{ catalogError }}</div>
           <template v-for="group in grouped" :key="group.provider">
             <div
               class="sticky top-0 z-10 bg-background/95 backdrop-blur px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
@@ -205,8 +208,8 @@ function onEnter() {
                     {{ m.provider }}
                   </span>
                 </span>
-                <span v-if="m.description" class="block text-xs text-muted-foreground truncate">
-                  {{ m.description }}
+                <span v-if="formatContextWindow(m.contextWindow) || m.description" class="block text-xs text-muted-foreground truncate">
+                  {{ formatContextWindow(m.contextWindow) ?? m.description }}
                 </span>
               </span>
             </button>

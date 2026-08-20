@@ -41,6 +41,8 @@ import {
   type PermissionMode,
   type ModelPricing,
   type ModelsListResult,
+  type HarnessModelSnapshot,
+  type SetModelResult,
   type RemoteSource,
   type ResetRequest,
   type ReviewEvent,
@@ -192,7 +194,7 @@ const api: AgentKeeperApi = {
     touchPersisted: (localId: string) =>
       invoke(IPC_CHANNELS.sessionsTouchPersisted, localId) as Promise<void>,
     setModel: (localId: string, model: string) =>
-      invoke(IPC_CHANNELS.sessionsSetModel, localId, model) as Promise<void>,
+      invoke(IPC_CHANNELS.sessionsSetModel, localId, model) as Promise<SetModelResult>,
     setEffort: (localId: string, effort: RoleEffort) =>
       invoke(IPC_CHANNELS.sessionsSetEffort, localId, effort) as Promise<void>,
     setPermissionMode: (localId: string, mode: PermissionMode) =>
@@ -248,7 +250,7 @@ const api: AgentKeeperApi = {
     resume: (instanceId: string) =>
       invoke(IPC_CHANNELS.agenciesResume, instanceId) as Promise<never>,
     setFallbackModel: (instanceId: string, model: string) =>
-      invoke(IPC_CHANNELS.agenciesSetFallbackModel, instanceId, model) as Promise<void>,
+      invoke(IPC_CHANNELS.agenciesSetFallbackModel, instanceId, model) as Promise<SetModelResult>,
     onScaling: (cb) => onChannel<AgencyScalingUpdate>(IPC_CHANNELS.agencyScaling, cb),
   },
   skills: {
@@ -501,6 +503,7 @@ const api: AgentKeeperApi = {
   models: {
     list: (harnessId?: string) => invoke(IPC_CHANNELS.modelsList, harnessId) as Promise<ModelsListResult>,
     refresh: (harnessId?: string) => invoke(IPC_CHANNELS.modelsRefresh, harnessId) as Promise<ModelsListResult>,
+    onChanged: (callback) => onChannel<HarnessModelSnapshot>(IPC_CHANNELS.modelsChanged, callback),
   },
   drafts: {
     get: (sessionLocalId: string) =>

@@ -4,7 +4,7 @@ import { Bot, Check, ChevronDown, Network, Search } from 'lucide-vue-next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useActiveHarness, useHarnessList } from '@/composables/useHarness'
-import { useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
+import { formatContextWindow, useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
 import type { Agency, AvailableModel } from '@shared/ipc-contract'
 
 const props = withDefaults(defineProps<{
@@ -15,6 +15,13 @@ const props = withDefaults(defineProps<{
   disabled?: boolean
   allowAgencies?: boolean
   harnessSwitchable?: boolean
+  disabledReason?: string
+  capabilities?: {
+    canSwitchHarness: boolean
+    canSelectAgency: boolean
+    canSwitchModel: boolean
+    disabledReason?: string
+  }
 }>(), {
   agencyKey: '',
   agencies: () => [],
@@ -26,6 +33,10 @@ const emit = defineEmits<{
   'update:harnessId': [value: string]
   'update:agencyKey': [value: string]
 }>()
+const canSwitchModel = computed(() => props.capabilities?.canSwitchModel ?? !props.disabled)
+const canSwitchHarness = computed(() => props.capabilities?.canSwitchHarness ?? props.harnessSwitchable)
+const canSelectAgency = computed(() => props.capabilities?.canSelectAgency ?? props.allowAgencies)
+const explanatoryReason = computed(() => props.capabilities?.disabledReason ?? props.disabledReason)
 
 const open = ref(false)
 const tab = ref<'models' | 'agencies'>(props.agencyKey ? 'agencies' : 'models')
@@ -34,7 +45,7 @@ const searchInput = ref<HTMLInputElement | null>(null)
 const browsingHarnessId = ref<string | undefined>(props.harnessId)
 const { data: harnesses } = useHarnessList()
 const { data: activeHarness } = useActiveHarness()
-const { models, isLoading, error } = useModelsQuery(() => browsingHarnessId.value)
+const { models, isLoading, error, status, refreshIfStale } = useModelsQuery(() => browsingHarnessId.value)
 const { resolvedLabelFor } = useModelsQuery(() => props.harnessId)
 const allHarnessModels = ref<Array<{ harnessId: string; harnessName: string; model: AvailableModel }>>([])
 const isLoadingAllModels = ref(false)
@@ -70,15 +81,18 @@ const filteredAgencies = computed(() => {
 })
 
 async function loadAllHarnessModels() {
-  if (!props.harnessSwitchable) return
+  if (!canSwitchHarness.value) return
   const available = (harnesses.value ?? []).filter((harness) => harness.available)
   if (!available.length) return
   isLoadingAllModels.value = true
   try {
-    const catalogs = await Promise.all(available.map(async (harness) => ({
-      harness,
-      result: await window.agentkeeper.models.list(harness.id),
-    })))
+    const catalogs = await Promise.all(available.map(async (harness) => {
+      let result = await window.agentkeeper.models.list(harness.id)
+      if (result.refreshedAt === null || Date.now() - result.refreshedAt >= 5 * 60 * 1000) {
+        result = await window.agentkeeper.models.refresh(harness.id)
+      }
+      return { harness, result }
+    }))
     allHarnessModels.value = catalogs.flatMap(({ harness, result }) =>
       result.models.map((model) => ({ harnessId: harness.id, harnessName: harness.name, model })),
     )
@@ -89,10 +103,11 @@ async function loadAllHarnessModels() {
 
 watch(open, (value) => {
   if (!value) return
-  tab.value = props.allowAgencies && props.agencyKey ? 'agencies' : 'models'
+  tab.value = canSelectAgency.value && props.agencyKey ? 'agencies' : 'models'
   browsingHarnessId.value = props.harnessId ?? activeHarness.value?.id ?? harnesses.value?.[0]?.id
   query.value = ''
-  if (props.harnessSwitchable) void loadAllHarnessModels()
+  if (canSwitchHarness.value) void loadAllHarnessModels()
+  refreshIfStale()
   void nextTick(() => searchInput.value?.focus())
 })
 watch(harnesses, () => {
@@ -104,6 +119,7 @@ watch(tab, () => {
 })
 
 function chooseModel(value: string) {
+  if (!canSwitchModel.value) return
   const harnessId = browsingHarnessId.value ?? props.harnessId ?? activeHarness.value?.id
   if (harnessId) emit('update:harnessId', harnessId)
   emit('update:agencyKey', '')
@@ -111,6 +127,7 @@ function chooseModel(value: string) {
   open.value = false
 }
 function chooseModelFromHarness(harnessId: string, value: string) {
+  if (!canSwitchModel.value) return
   browsingHarnessId.value = harnessId
   emit('update:harnessId', harnessId)
   emit('update:agencyKey', '')
@@ -126,7 +143,7 @@ function chooseAgency(agency: Agency) {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <button type="button" :disabled="disabled" class="flex h-7 max-w-48 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
+      <button type="button" class="flex h-7 max-w-48 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
         <Network v-if="selectedAgency" class="size-3.5 shrink-0" />
         <Bot v-else class="size-3.5 shrink-0" />
         <span class="truncate">{{ triggerLabel }}</span>
@@ -135,7 +152,7 @@ function chooseAgency(agency: Agency) {
       </button>
     </PopoverTrigger>
     <PopoverContent align="start" class="w-[460px] border-muted-foreground/40 p-0">
-      <Tabs v-if="allowAgencies" v-model="tab" class="border-b border-border p-1.5 dark:border-white/30">
+      <Tabs v-if="canSelectAgency" v-model="tab" class="border-b border-border p-1.5 dark:border-white/30">
         <TabsList class="grid w-full grid-cols-2">
           <TabsTrigger value="models">Models</TabsTrigger>
           <TabsTrigger value="agencies">Agencies</TabsTrigger>
@@ -148,31 +165,33 @@ function chooseAgency(agency: Agency) {
           <input ref="searchInput" v-model="query" class="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search models" />
         </div>
         <div class="flex min-h-0 flex-1">
-          <div v-if="harnessSwitchable" class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border dark:border-white/30 p-1.5">
+          <div v-if="canSwitchHarness" class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border dark:border-white/30 p-1.5">
           <button v-for="harness in harnesses" :key="harness.id" type="button" :disabled="!harness.available" :title="harness.available ? harness.name : harness.unavailableReason" :aria-label="harness.name" class="grid size-8 shrink-0 place-items-center rounded-md border text-xs font-semibold uppercase transition-colors disabled:opacity-40" :class="browsingHarnessId === harness.id ? 'border-primary bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'" @click="browsingHarnessId = harness.id; query = ''">
             {{ harness.name.charAt(0) }}
           </button>
           </div>
 
           <div class="min-w-0 flex-1 overflow-y-auto p-1.5">
-            <template v-if="query.trim() && harnessSwitchable">
+            <div v-if="status === 'refreshing'" class="px-2 py-1 text-xs text-muted-foreground">Refreshing models…</div>
+            <div v-if="error && models.length" class="mx-2 mb-1 rounded border border-destructive/30 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">Refresh failed: {{ error }}</div>
+            <template v-if="query.trim() && canSwitchHarness">
               <div v-if="isLoadingAllModels" class="py-12 text-center text-xs text-muted-foreground">Searching model catalogs…</div>
-              <button v-for="result in globalSearchResults" v-else :key="`${result.harnessId}:${result.model.value}`" type="button" :aria-pressed="result.harnessId === harnessId && result.model.value === modelValue" class="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors" :class="result.harnessId === harnessId && result.model.value === modelValue ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'" @click="chooseModelFromHarness(result.harnessId, result.model.value)">
+              <button v-for="result in globalSearchResults" v-else :key="`${result.harnessId}:${result.model.value}`" type="button" :disabled="!canSwitchModel" :aria-pressed="result.harnessId === harnessId && result.model.value === modelValue" class="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors disabled:opacity-50" :class="result.harnessId === harnessId && result.model.value === modelValue ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'" @click="chooseModelFromHarness(result.harnessId, result.model.value)">
                 <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border border-muted-foreground/40 text-[9px] font-semibold uppercase">{{ result.harnessName.charAt(0) }}</span>
                 <span class="min-w-0 flex-1">
                   <span class="flex items-center gap-1.5"><span class="truncate text-sm font-medium">{{ result.model.label }}</span><span v-if="result.model.isDefault" class="rounded border border-muted-foreground/40 px-1 text-[9px] uppercase text-muted-foreground">Default</span></span>
-                  <span class="block truncate text-xs text-muted-foreground">{{ result.harnessName }}<template v-if="result.model.provider"> · {{ result.model.provider }}</template><template v-if="result.model.description"> · {{ result.model.description }}</template></span>
+                  <span class="block truncate text-xs text-muted-foreground">{{ result.harnessName }}<template v-if="result.model.provider"> · {{ result.model.provider }}</template><template v-if="formatContextWindow(result.model.contextWindow)"> · {{ formatContextWindow(result.model.contextWindow) }}</template></span>
                 </span>
               </button>
               <div v-if="!isLoadingAllModels && !globalSearchResults.length" class="py-12 text-center text-xs text-muted-foreground">No matching models across any harness</div>
             </template>
             <div v-else-if="isLoading" class="py-12 text-center text-xs text-muted-foreground">Loading models…</div>
-            <div v-else-if="error" class="px-3 py-8 text-center text-xs text-destructive">{{ error }}</div>
+            <div v-else-if="error && !models.length" class="px-3 py-8 text-center text-xs text-destructive">{{ error }}</div>
             <template v-for="group in groupedModels" v-else :key="group.provider">
-              <button v-for="model in group.items" :key="model.value" type="button" :aria-pressed="browsingHarnessId === harnessId && model.value === modelValue" class="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors" :class="browsingHarnessId === harnessId && model.value === modelValue ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'" @click="chooseModel(model.value)">
+              <button v-for="model in group.items" :key="model.value" type="button" :disabled="!canSwitchModel" :aria-pressed="browsingHarnessId === harnessId && model.value === modelValue" class="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors disabled:opacity-50" :class="browsingHarnessId === harnessId && model.value === modelValue ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'" @click="chooseModel(model.value)">
                 <span class="min-w-0 flex-1">
                   <span class="flex items-center gap-1.5"><span class="truncate text-sm font-medium">{{ model.label }}</span><span v-if="model.isDefault" class="rounded border border-muted-foreground/40 px-1 text-[9px] uppercase text-muted-foreground">Default</span></span>
-                  <span v-if="model.description" class="block truncate text-xs text-muted-foreground">{{ model.description }}</span>
+                  <span v-if="formatContextWindow(model.contextWindow) || model.description" class="block truncate text-xs text-muted-foreground">{{ formatContextWindow(model.contextWindow) ?? model.description }}</span>
                 </span>
               </button>
             </template>
@@ -180,8 +199,7 @@ function chooseAgency(agency: Agency) {
           </div>
         </div>
       </div>
-
-      <div v-else class="flex h-[380px] flex-col">
+      <div v-if="tab !== 'models'" class="flex h-[380px] flex-col">
         <div class="flex items-center gap-2 border-b border-border dark:border-white/30 px-3 py-2">
           <Search class="size-4 shrink-0 text-muted-foreground" />
           <input ref="searchInput" v-model="query" class="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search agencies" />
@@ -196,6 +214,7 @@ function chooseAgency(agency: Agency) {
           <div v-if="!filteredAgencies.length" class="py-12 text-center text-xs text-muted-foreground">No matching agencies</div>
         </div>
       </div>
+      <div v-if="explanatoryReason" class="border-t border-border px-3 py-2 text-xs text-muted-foreground">{{ explanatoryReason }}</div>
     </PopoverContent>
   </Popover>
 </template>

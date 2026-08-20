@@ -60,6 +60,8 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     commands: true,
     skills: true,
     agencies: true,
+    modelSelection: 'idle',
+    customModels: true,
   }
 
   /** Singleton server — lazily started, shared across all runSession calls. */
@@ -531,7 +533,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
         concrete.push({
           value: `${provider.id}/${model.id}`,
           label: model.name,
-          description: describeModel(model),
+          contextWindow: model.limit?.context,
           provider: provider.name,
           resolvedModel: `${provider.id}/${model.id}`,
           supportsEffort: model.capabilities?.reasoning ?? false,
@@ -843,22 +845,6 @@ function assertOpenCodeMcpConnected(
   if (status?.status === 'connected') return
   const detail = status?.error ? `: ${status.error}` : ''
   throw new Error(`Failed to connect OpenCode MCP server '${name}'${detail}`)
-}
-
-/** Compact capability line derived from the server-reported context limit.
- *  Pricing is intentionally omitted from the model picker. */
-function describeModel(model: {
-  limit?: { context?: number; output?: number }
-}): string {
-  const ctx = model.limit?.context
-  return ctx ? `${formatTokens(ctx)} context` : 'OpenCode model'
-}
-
-/** `200_000` → `200K`, `1_000_000` → `1M`. */
-function formatTokens(n: number): string {
-  if (n >= 1_000_000 && n % 1_000_000 === 0) return `${n / 1_000_000}M`
-  if (n >= 1_000 && n % 1_000 === 0) return `${n / 1_000}K`
-  return n.toLocaleString()
 }
 
 /** Check if an error is a connection/network error that indicates the server died. */

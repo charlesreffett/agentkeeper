@@ -1437,6 +1437,8 @@ export async function startAgency(
         instanceId: instId,
         instanceIndex: idx,
         roleName: role.name,
+        harnessId: roleHarnessId,
+        model: resolvedModel,
         isEntryPoint: isEntry && idx === 1,
         isOverflow: false,
       })
@@ -1639,6 +1641,8 @@ export async function resumeAgency(instanceId: string): Promise<AgencyInstance> 
         instanceId: instId,
         instanceIndex: entry.instanceIndex,
         roleName: role.name,
+        harnessId: roleHarnessId,
+        model: resolvedModel,
         isEntryPoint: isEntry,
         isOverflow: false,
       })
@@ -1677,6 +1681,8 @@ export function listAgencyInstances(): AgencyInstance[] {
       instanceId: inst.instanceId,
       instanceIndex: inst.instanceIndex,
       roleName: inst.roleId,
+      harnessId: r.restartParamsByInstance.get(inst.localId)?.harnessId,
+      model: r.restartParamsByInstance.get(inst.localId)?.model,
       isEntryPoint: false,
       isOverflow: inst.elastic,
     })),
