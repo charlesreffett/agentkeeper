@@ -58,6 +58,8 @@ async function pathExists(p: string): Promise<boolean> {
 }
 
 export interface CreateWorktreeOptions {
+  /** Exact commit-ish to branch from. Defaults to HEAD for legacy callers. */
+  baseRef?: string
   branchRequest: string
 }
 
@@ -97,6 +99,12 @@ export async function createWorktree(
   opts: CreateWorktreeOptions,
 ): Promise<WorktreeInfo> {
   await ensureGitRepo(projectPath)
+  const baseRef = opts.baseRef?.trim() || 'HEAD'
+  try {
+    await git(projectPath, ['rev-parse', '--verify', `${baseRef}^{commit}`])
+  } catch {
+    throw new Error(`Cannot create worktree: base ref "${baseRef}" does not exist.`)
+  }
   const base = sanitizeBranch(opts.branchRequest)
   const rootDir = worktreesRoot(projectPath)
 
@@ -105,7 +113,7 @@ export async function createWorktree(
   const { branch, wtPath } = await findFreeBranch(projectPath, rootDir, base)
 
   try {
-    await git(projectPath, ['worktree', 'add', '-b', branch, wtPath])
+    await git(projectPath, ['worktree', 'add', '-b', branch, wtPath, baseRef])
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     throw new Error(`git worktree add failed: ${message}`)

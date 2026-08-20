@@ -429,9 +429,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.worktreesCreate,
-    async (_event, projectPath: string, branchRequest: string) => {
+    async (_event, projectPath: string, options: { baseRef?: string; branchRequest: string }) => {
       try {
-        return await createWorktree(projectPath, { branchRequest })
+        return await createWorktree(projectPath, options)
       } catch (err) {
         console.error('[ipc] worktrees:create failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
