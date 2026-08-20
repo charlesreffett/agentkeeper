@@ -7,7 +7,20 @@ import { useActiveHarness, useHarnessList } from '@/composables/useHarness'
 import { useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
 import type { Agency, AvailableModel } from '@shared/ipc-contract'
 
-const props = defineProps<{ modelValue: string; harnessId?: string; agencyKey: string; agencies: Agency[]; disabled?: boolean }>()
+const props = withDefaults(defineProps<{
+  modelValue: string
+  harnessId?: string
+  agencyKey?: string
+  agencies?: Agency[]
+  disabled?: boolean
+  allowAgencies?: boolean
+  harnessSwitchable?: boolean
+}>(), {
+  agencyKey: '',
+  agencies: () => [],
+  allowAgencies: true,
+  harnessSwitchable: true,
+})
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   'update:harnessId': [value: string]
@@ -57,6 +70,7 @@ const filteredAgencies = computed(() => {
 })
 
 async function loadAllHarnessModels() {
+  if (!props.harnessSwitchable) return
   const available = (harnesses.value ?? []).filter((harness) => harness.available)
   if (!available.length) return
   isLoadingAllModels.value = true
@@ -75,10 +89,10 @@ async function loadAllHarnessModels() {
 
 watch(open, (value) => {
   if (!value) return
-  tab.value = props.agencyKey ? 'agencies' : 'models'
+  tab.value = props.allowAgencies && props.agencyKey ? 'agencies' : 'models'
   browsingHarnessId.value = props.harnessId ?? activeHarness.value?.id ?? harnesses.value?.[0]?.id
   query.value = ''
-  void loadAllHarnessModels()
+  if (props.harnessSwitchable) void loadAllHarnessModels()
   void nextTick(() => searchInput.value?.focus())
 })
 watch(harnesses, () => {
@@ -121,7 +135,7 @@ function chooseAgency(agency: Agency) {
       </button>
     </PopoverTrigger>
     <PopoverContent align="start" class="w-[460px] border-muted-foreground/40 p-0">
-      <Tabs v-model="tab" class="border-b border-border p-1.5 dark:border-white/30">
+      <Tabs v-if="allowAgencies" v-model="tab" class="border-b border-border p-1.5 dark:border-white/30">
         <TabsList class="grid w-full grid-cols-2">
           <TabsTrigger value="models">Models</TabsTrigger>
           <TabsTrigger value="agencies">Agencies</TabsTrigger>
@@ -134,14 +148,14 @@ function chooseAgency(agency: Agency) {
           <input ref="searchInput" v-model="query" class="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none" placeholder="Search models" />
         </div>
         <div class="flex min-h-0 flex-1">
-          <div class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border dark:border-white/30 p-1.5">
+          <div v-if="harnessSwitchable" class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border dark:border-white/30 p-1.5">
           <button v-for="harness in harnesses" :key="harness.id" type="button" :disabled="!harness.available" :title="harness.available ? harness.name : harness.unavailableReason" :aria-label="harness.name" class="grid size-8 shrink-0 place-items-center rounded-md border text-xs font-semibold uppercase transition-colors disabled:opacity-40" :class="browsingHarnessId === harness.id ? 'border-primary bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'" @click="browsingHarnessId = harness.id; query = ''">
             {{ harness.name.charAt(0) }}
           </button>
           </div>
 
           <div class="min-w-0 flex-1 overflow-y-auto p-1.5">
-            <template v-if="query.trim()">
+            <template v-if="query.trim() && harnessSwitchable">
               <div v-if="isLoadingAllModels" class="py-12 text-center text-xs text-muted-foreground">Searching model catalogs…</div>
               <button v-for="result in globalSearchResults" v-else :key="`${result.harnessId}:${result.model.value}`" type="button" :aria-pressed="result.harnessId === harnessId && result.model.value === modelValue" class="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors" :class="result.harnessId === harnessId && result.model.value === modelValue ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'" @click="chooseModelFromHarness(result.harnessId, result.model.value)">
                 <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border border-muted-foreground/40 text-[9px] font-semibold uppercase">{{ result.harnessName.charAt(0) }}</span>

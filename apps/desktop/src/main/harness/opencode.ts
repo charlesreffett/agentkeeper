@@ -845,20 +845,13 @@ function assertOpenCodeMcpConnected(
   throw new Error(`Failed to connect OpenCode MCP server '${name}'${detail}`)
 }
 
-/** Compact capability line for a model, derived from the server-reported limit
- *  and cost metadata: `200K ctx · $3/$15 per MTok`. Skips pieces the provider
- *  didn't report so the row degrades gracefully. */
+/** Compact capability line derived from the server-reported context limit.
+ *  Pricing is intentionally omitted from the model picker. */
 function describeModel(model: {
   limit?: { context?: number; output?: number }
-  cost?: { input?: number; output?: number }
 }): string {
   const ctx = model.limit?.context
-  const ctxText = ctx ? `${formatTokens(ctx)} context` : null
-  const input = model.cost?.input
-  const output = model.cost?.output
-  const priceText =
-    input != null && output != null ? `$${input}/$${output} per MTok` : null
-  return [ctxText, priceText].filter(Boolean).join(' · ') || 'OpenCode model'
+  return ctx ? `${formatTokens(ctx)} context` : 'OpenCode model'
 }
 
 /** `200_000` → `200K`, `1_000_000` → `1M`. */
