@@ -55,15 +55,6 @@ const modKey = computed<'meta' | 'ctrl' | 'alt' | 'shift'>(() => {
   return isMac ? 'meta' : 'ctrl'
 })
 
-const modLabel = computed(() => {
-  switch (modKey.value) {
-    case 'meta':  return isMac ? '⌘' : 'Meta'
-    case 'ctrl':  return 'Ctrl'
-    case 'alt':   return isMac ? '⌥' : 'Alt'
-    case 'shift': return '⇧'
-  }
-})
-
 const ac = useCommandAutocomplete(text, resolvedProjectPath)
 
 function autosize() {
@@ -130,12 +121,6 @@ function onKeyDown(event: KeyboardEvent) {
     }
   }
 }
-
-const sendHint = computed(() =>
-  props.enterToSend
-    ? `${modLabel.value}+Enter for newline`
-    : `${modLabel.value}+Enter to send`,
-)
 
 const projectName = computed(() => {
   const path = resolvedProjectPath.value
@@ -216,7 +201,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="border-t border-border bg-card/50">
+  <div class="bg-card/50">
     <div class="max-w-4xl mx-auto p-4">
       <div class="relative">
         <CommandAutocomplete
@@ -226,8 +211,11 @@ defineExpose({
           @select="(cmd) => { text = ac.resolveBody(cmd); ac.close(); void send() }"
           @close="ac.close()"
         />
+        <div v-if="$slots.context" class="relative z-10 ml-5 -mb-px flex w-fit max-w-[calc(100%-2.5rem)] items-center rounded-t-xl border border-border bg-card px-1.5 py-1 shadow-sm">
+          <slot name="context" />
+        </div>
         <div
-          class="rounded-lg border border-border bg-background focus-within:border-ring transition"
+          class="rounded-2xl border border-border bg-background shadow-lg shadow-black/10 transition"
         >
           <div v-if="attachments.length > 0" class="flex flex-wrap gap-1.5 px-3 pt-2">
             <template v-for="(a, i) in attachments" :key="i">
@@ -267,11 +255,11 @@ defineExpose({
             :placeholder="placeholder ?? defaultPlaceholder"
             :disabled="disabled"
             rows="1"
-            class="w-full resize-none bg-transparent px-3 py-2.5 text-sm leading-relaxed focus:outline-none disabled:opacity-60 font-sans"
+            class="w-full max-h-[240px] resize-none overflow-y-auto bg-transparent px-4 py-3.5 text-[15px] leading-relaxed focus:outline-none disabled:opacity-60 font-sans"
             @keydown="onKeyDown"
             @paste="handlePaste"
           />
-          <div class="flex items-center justify-between gap-2 px-2 py-1.5 border-t border-border/60">
+          <div class="flex items-center justify-between gap-2 px-2.5 pb-2 pt-1.5">
             <div class="flex items-center gap-1.5 min-w-0 overflow-x-auto">
               <button
                 type="button"
@@ -284,7 +272,6 @@ defineExpose({
                 <Plus :size="16" />
               </button>
               <slot name="toolbar-left" />
-              <span class="text-[11px] text-muted-foreground px-1 whitespace-nowrap">{{ sendHint }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <button

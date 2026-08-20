@@ -41,6 +41,33 @@ export interface HarnessCLIOptions {
   timeout?: number
 }
 
+export type SessionControlValue = string | boolean
+export type SessionControlCategory = 'effort' | 'permission' | 'mode' | 'context' | 'speed' | 'advanced'
+export type SessionControlMutability = 'draft' | 'idle' | 'turn'
+
+export interface SessionControlChoice {
+  value: string
+  label: string
+  description?: string
+  isDefault?: boolean
+}
+
+export type SessionControlDescriptor = {
+  id: string
+  category: SessionControlCategory | (string & {})
+  label: string
+  description?: string
+  mutable: SessionControlMutability
+} & (
+  | { type: 'select'; choices: SessionControlChoice[]; defaultValue?: string }
+  | { type: 'boolean'; defaultValue?: boolean }
+)
+
+export interface SessionControlSelection {
+  id: string
+  value: SessionControlValue
+}
+
 export interface HarnessSessionOptions {
   model?: string
   cwd: string
@@ -50,6 +77,8 @@ export interface HarnessSessionOptions {
   mcpServers?: Record<string, unknown>
   permissionMode?: string
   effort?: string
+  /** Generic adapter-owned selections. Adapters reject unknown ids/values. */
+  controlSelections?: SessionControlSelection[]
   resume?: string
   abortController?: AbortController
   /** Tools removed from the model's context entirely. The SDK's `allowedTools`
@@ -80,6 +109,8 @@ export interface HarnessModelInfo {
   supportsFastMode?: boolean
   supportsAutoMode?: boolean
   isDefault?: boolean
+  /** Model-specific traits (effort, context, speed, and future controls). */
+  controls?: SessionControlDescriptor[]
 }
 
 /** What a harness can actually honor. Callers branch on these instead of on the

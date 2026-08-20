@@ -1257,8 +1257,11 @@ export async function startAgency(
 
   let worktreePath: string | null = null
   let branch: string | null = null
-  if (params.useWorktree && params.branch && !isGeneralProject(params.projectPath)) {
-    const wt = await createWorktree(params.projectPath, { branchRequest: params.branch })
+  if (params.useWorktree && (params.baseBranch || params.branch) && !isGeneralProject(params.projectPath)) {
+    const wt = await createWorktree(params.projectPath, {
+      baseRef: params.baseBranch,
+      branchRequest: params.branch ?? `agentkeeper/${Date.now()}`,
+    })
     worktreePath = wt.path
     branch = wt.branch
   }

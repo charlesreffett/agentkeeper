@@ -161,7 +161,7 @@ async function startSolo() {
     let worktreePath: string | undefined
     let resolvedBranch: string | undefined
     if (useWorktree.value && branch.value.trim()) {
-      const wt = await window.agentkeeper.worktrees.create(selectedProjectPath.value, branch.value.trim())
+      const wt = await window.agentkeeper.worktrees.create(selectedProjectPath.value, { branchRequest: branch.value.trim() })
       worktreePath = wt.path
       resolvedBranch = wt.branch
     }
@@ -198,7 +198,7 @@ async function startAgency() {
     let worktreePath: string | undefined
     let resolvedBranch: string | undefined
     if (agencyUseWorktree.value && agencyBranch.value.trim()) {
-      const wt = await window.agentkeeper.worktrees.create(selectedProjectPath.value, agencyBranch.value.trim())
+      const wt = await window.agentkeeper.worktrees.create(selectedProjectPath.value, { branchRequest: agencyBranch.value.trim() })
       worktreePath = wt.path
       resolvedBranch = wt.branch
     }

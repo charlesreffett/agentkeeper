@@ -219,8 +219,8 @@ const api: AgentKeeperApi = {
   worktrees: {
     list: (projectPath: string) =>
       invoke(IPC_CHANNELS.worktreesList, projectPath) as Promise<never>,
-    create: (projectPath: string, branchRequest: string) =>
-      invoke(IPC_CHANNELS.worktreesCreate, projectPath, branchRequest) as Promise<never>,
+    create: (projectPath: string, options: { baseRef?: string; branchRequest: string }) =>
+      invoke(IPC_CHANNELS.worktreesCreate, projectPath, options) as Promise<never>,
     remove: (projectPath: string, worktreePath: string) =>
       invoke(IPC_CHANNELS.worktreesRemove, projectPath, worktreePath) as Promise<void>,
     gitDiffStat: (worktreePath: string, baseBranch?: string) =>

@@ -4,8 +4,8 @@
 import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus }
 import type { PluginManifest } from '@agentkeeper/sdk'
-import type { HarnessCapabilities } from '@agentkeeper/core'
-export type { HarnessCapabilities }
+import type { HarnessCapabilities, SessionControlDescriptor } from '@agentkeeper/core'
+export type { HarnessCapabilities, SessionControlDescriptor, SessionControlSelection, SessionControlValue } from '@agentkeeper/core'
 import type {
   CheckRun,
   CheckState,
@@ -516,6 +516,8 @@ export interface StartAgencyParams {
   initialPrompt: string
   initialAttachments?: Attachment[]
   useWorktree: boolean
+  /** Exact branch/ref the new worktree branch starts from. */
+  baseBranch?: string
   branch?: string
   model?: string
   /** Harness adapter used by every member of this agency. */
@@ -662,6 +664,8 @@ export interface HarnessInfo {
   unavailableReason?: string
   defaultModel: string
   capabilities: HarnessCapabilities
+  /** Adapter-owned session controls such as permission policy and mode. */
+  controls?: SessionControlDescriptor[]
 }
 
 /** Per-harness auth status for the diagnostics surface. `ready` means a usable
@@ -821,6 +825,7 @@ export interface AvailableModel {
   supportsFastMode?: boolean
   supportsAutoMode?: boolean
   isDefault?: boolean
+  controls?: SessionControlDescriptor[]
 }
 
 export interface ModelsListResult {
@@ -922,7 +927,7 @@ export interface AgentKeeperApi {
   }
   worktrees: {
     list: (projectPath: string) => Promise<WorktreeInfo[]>
-    create: (projectPath: string, branchRequest: string) => Promise<WorktreeInfo>
+    create: (projectPath: string, options: { baseRef?: string; branchRequest: string }) => Promise<WorktreeInfo>
     remove: (projectPath: string, worktreePath: string) => Promise<void>
     gitDiffStat: (worktreePath: string, baseBranch?: string) => Promise<GitDiffStatFile[]>
   }

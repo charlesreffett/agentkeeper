@@ -32,6 +32,8 @@ export interface DraftSessionConfig {
   branch: string
   branchTouched: boolean
   effortTouched: boolean
+  /** Working behavior, distinct from command/filesystem permission policy. */
+  interactionMode: 'build' | 'plan'
   /** IDs of McpServerEntry items from AppSettings.mcpServers to activate. */
   mcpServerIds: string[]
 }
@@ -848,6 +850,13 @@ export const useSessionStore = defineStore('sessions', () => {
       (s) => s.isDraft && s.projectPath === params.projectPath,
     )
     if (existing) {
+      // An untouched branch is only a snapshot of the checkout at the time the
+      // draft was first opened. Resolve it again when the draft is focused so
+      // an external rename/delete cannot leave the project shortcut pointing
+      // at a stale ref. Explicit picker selections are preserved.
+      if (existing.draftConfig && !existing.draftConfig.branchTouched) {
+        existing.draftConfig.branch = ''
+      }
       currentLiveId.value = existing.localId
       return existing.localId
     }
@@ -889,6 +898,7 @@ export const useSessionStore = defineStore('sessions', () => {
         branch: '',
         branchTouched: false,
         effortTouched: false,
+        interactionMode: 'build',
         mcpServerIds: params.defaultMcpServerIds ?? [],
       },
       draftMessage: '',
@@ -943,8 +953,31 @@ export const useSessionStore = defineStore('sessions', () => {
       throw new Error('Not a draft session')
     }
     const cfg = draft.draftConfig
+    const launchPermissionMode: PermissionMode = cfg.interactionMode === 'plan'
+      ? 'plan'
+      : (draft.permissionMode ?? 'bypassPermissions')
     const projectPath = draft.projectPath
     const trimmedPrompt = prompt.trim()
+    const branchSlug = trimmedPrompt
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 36) || 'session'
+    const branchRequest = `agentkeeper/${localId.slice(0, 8)}-${branchSlug}`
+
+    // Branch browsing is draft-only state. Mutate the checkout only when the
+    // user actually launches, and leave the draft intact on every soft reject.
+    if (!cfg.useWorktree && cfg.branch.trim() && !isGeneralProject(projectPath)) {
+      const switchResult = await window.agentkeeper.git.switchBranch(projectPath, cfg.branch.trim())
+      if (!switchResult.ok) {
+        const reason = switchResult.blocked === 'dirty'
+          ? 'The working tree has uncommitted changes.'
+          : switchResult.blocked === 'live-session'
+            ? 'Another session is running in this project.'
+            : switchResult.reason
+        throw new Error(`Could not switch to ${cfg.branch.trim()}: ${reason}`)
+      }
+    }
 
     if (cfg.agencyKey) {
       const agency = ctx.agencies.find((a) => `${a.scope}:${a.id}` === cfg.agencyKey)
@@ -956,7 +989,9 @@ export const useSessionStore = defineStore('sessions', () => {
         initialPrompt: trimmedPrompt,
         ...(attachments && attachments.length > 0 ? { initialAttachments: attachments } : {}),
         useWorktree: cfg.useWorktree && !isGeneralProject(projectPath),
-        ...(cfg.useWorktree && cfg.branch.trim() && !isGeneralProject(projectPath) ? { branch: cfg.branch.trim() } : {}),
+        ...(cfg.useWorktree && cfg.branch.trim() && !isGeneralProject(projectPath)
+          ? { baseBranch: cfg.branch.trim(), branch: branchRequest }
+          : {}),
         ...(draft.model ? { model: draft.model } : {}),
         ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
       })
@@ -1004,7 +1039,10 @@ export const useSessionStore = defineStore('sessions', () => {
     let branch: string | undefined
     // General chats have no project — never spin up a worktree for them.
     if (cfg.useWorktree && cfg.branch.trim() && !isGeneralProject(projectPath)) {
-      const wt = await window.agentkeeper.worktrees.create(projectPath, cfg.branch.trim())
+      const wt = await window.agentkeeper.worktrees.create(projectPath, {
+        baseRef: cfg.branch.trim(),
+        branchRequest,
+      })
       worktreePath = wt.path
       branch = wt.branch
     }
@@ -1054,7 +1092,7 @@ export const useSessionStore = defineStore('sessions', () => {
       ...(draft.model ? { model: draft.model } : {}),
       ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
       ...(draft.effort ? { effort: draft.effort } : {}),
-      ...(draft.permissionMode ? { permissionMode: draft.permissionMode } : {}),
+      permissionMode: launchPermissionMode,
       ...(role?.name ? { roleName: role.name } : {}),
       ...(attachments && attachments.length > 0 ? { initialAttachments: attachments } : {}),
       ...(cfg.mcpServerIds.length > 0 ? { mcpServerIds: cfg.mcpServerIds } : {}),

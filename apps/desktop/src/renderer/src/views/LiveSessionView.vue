@@ -3,21 +3,22 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Brain,
-  ChevronDown,
-  KeyRound,
+  Hammer,
   LayoutGrid,
   MoreHorizontal,
+  ShieldCheck,
 } from 'lucide-vue-next'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Transcript from '@/components/transcript/Transcript.vue'
 import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
-import ModelPicker from '@/components/ModelPicker.vue'
+import ExecutionTargetPicker from '@/components/ExecutionTargetPicker.vue'
+import SessionLaunchContext from '@/components/SessionLaunchContext.vue'
+import SessionControlPicker from '@/components/SessionControlPicker.vue'
 import PillSelect from '@/components/PillSelect.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
-import BranchSwitcher from '@/components/BranchSwitcher.vue'
 import type { ScopeOption } from '@/composables/usePageScope'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -462,21 +463,20 @@ const { effortLevelsFor, models: availableModels, defaultValue: defaultModel } =
   () => session.value?.harnessId,
 )
 
-const PERM_MODE_LABELS: Record<PermissionMode, string> = {
-  bypassPermissions: 'Bypass',
-  acceptEdits: 'Accept Edits',
-  default: 'Default',
-  plan: 'Plan',
-}
-
 const effortOptions = computed(() => [
   { value: '', label: 'default' },
   ...effortLevelsFor(session.value?.model).map((e) => ({ value: e, label: e })),
 ])
 
-const permModeOptions = Object.entries(PERM_MODE_LABELS).map(
-  ([value, label]) => ({ value, label }),
-)
+const permissionOptions = [
+  { value: 'default', label: 'Supervised', description: 'Ask before commands and file changes.' },
+  { value: 'acceptEdits', label: 'Auto-accept edits', description: 'Approve edits, ask before other actions.' },
+  { value: 'bypassPermissions', label: 'Full access', description: 'Allow commands and edits without prompts.', isDefault: true },
+]
+const interactionModeOptions = [
+  { value: 'build', label: 'Build', description: 'Work directly on the request.', isDefault: true },
+  { value: 'plan', label: 'Plan', description: 'Create a plan before making changes.' },
+]
 
 const canEditParams = computed(() => {
   if (isDraft.value) return true
@@ -491,7 +491,8 @@ const isAgencySession = computed(() => {
   return !!session.value?.agencyName
 })
 
-const { agenciesCapable } = useHarnessCapabilities()
+const { agenciesCapable, capabilities } = useHarnessCapabilities()
+const supportsSessionPolicies = computed(() => capabilities(session.value?.harnessId)?.permissionModes ?? true)
 
 // A draft with an agency selected on a harness that can't run agencies (no MCP
 // coordination / tool removal) — block send and explain why. Backstopped in the
@@ -517,11 +518,6 @@ watch(() => session.value?.projectPath, () => {
 }, { immediate: true })
 
 watch(isDraft, (v) => { if (v) void loadDraftAgencies() })
-
-const agencyOptions = computed(() => [
-  { value: '', label: 'No agency' },
-  ...draftAgencies.value.map((a) => ({ value: `${a.scope}:${a.id}`, label: a.name })),
-])
 
 const draftCfg = computed(() => session.value?.draftConfig ?? null)
 
@@ -593,6 +589,27 @@ async function changePermissionMode(mode: PermissionMode) {
   if (isDraft.value) { session.value.permissionMode = mode; return }
   await window.agentkeeper.sessions.setPermissionMode(session.value.localId, mode)
   session.value.permissionMode = mode
+}
+
+const selectedPermissionPolicy = computed(() =>
+  session.value?.permissionMode === 'plan' ? 'bypassPermissions' : (session.value?.permissionMode ?? 'bypassPermissions'),
+)
+const selectedInteractionMode = computed<'build' | 'plan'>(() => {
+  if (isDraft.value) return draftCfg.value?.interactionMode ?? 'build'
+  return session.value?.permissionMode === 'plan' ? 'plan' : 'build'
+})
+
+async function changePermissionPolicy(value: string) {
+  await changePermissionMode(value as Exclude<PermissionMode, 'plan'>)
+}
+
+async function changeInteractionMode(value: string) {
+  const mode = value === 'plan' ? 'plan' : 'build'
+  if (isDraft.value) {
+    if (draftCfg.value) draftCfg.value.interactionMode = mode
+    return
+  }
+  await changePermissionMode(mode === 'plan' ? 'plan' : 'bypassPermissions')
 }
 
 // ─── Verbosity filter ────────────────────────────────────────────────────────
@@ -680,6 +697,7 @@ const streamingEventUuid = computed((): string | undefined => {
           <!-- Context control — colored badge, click to change the session's
                project context (draft re-targets, live starts a new session) -->
           <ScopeBar
+            v-if="!isDraft"
             v-model:open="contextOpen"
             :scope="contextPath"
             :options="contextOptions"
@@ -764,7 +782,7 @@ const streamingEventUuid = computed((): string | undefined => {
       </header>
 
       <!-- "Working in" strip — the session's context at a glance -->
-      <div class="border-b border-border/50 px-4 py-1 shrink-0 flex items-center gap-2 text-[11px] text-muted-foreground">
+      <div v-if="!isDraft" class="border-b border-border/50 px-4 py-1 shrink-0 flex items-center gap-2 text-[11px] text-muted-foreground">
         <span
           v-if="contextScopeColor"
           class="size-2 rounded-full shrink-0"
@@ -775,9 +793,7 @@ const streamingEventUuid = computed((): string | undefined => {
         </template>
         <template v-else>
           <span class="font-medium text-foreground">{{ contextScopeLabel }}</span>
-          <!-- Draft: switch/update branches before the session starts -->
-          <BranchSwitcher v-if="isDraft" :project-path="contextPath" />
-          <span v-else-if="rootSession?.branch" class="font-mono">· {{ rootSession.branch }}</span>
+          <span v-if="rootSession?.branch" class="font-mono">· {{ rootSession.branch }}</span>
           <span class="font-mono truncate">· {{ contextPath }}</span>
         </template>
       </div>
@@ -899,56 +915,36 @@ const streamingEventUuid = computed((): string | undefined => {
         @send="onSend"
         @stop="onStop"
       >
+        <template v-if="isDraft" #context>
+          <SessionLaunchContext
+            :project-path="session.projectPath"
+            :projects="contextOptions"
+            :branch="draftCfg?.branch ?? ''"
+            :use-worktree="draftCfg?.useWorktree ?? false"
+            @update:project-path="changeContext"
+            @initialize:branch="(value) => { if (draftCfg && !draftCfg.branchTouched) draftCfg.branch = value }"
+            @update:branch="(value) => { if (draftCfg) { draftCfg.branch = value; draftCfg.branchTouched = true } }"
+            @update:use-worktree="(value) => { if (draftCfg) draftCfg.useWorktree = value }"
+            @new-project="pickContextProject"
+          />
+        </template>
         <template #toolbar-left>
-          <div :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined">
-            <ModelPicker
-              :model-value="session.model ?? ''"
-              :harness-id="session.harnessId"
-              :harness-switchable="isDraft"
-              :disabled="!canEditParams"
-              align="start"
-              @update:model-value="changeModel"
-              @update:harness-id="changeHarness"
-            >
-              <template #trigger="{ label }">
-                <button
-                  type="button"
-                  :disabled="!canEditParams"
-                  class="flex items-center gap-1 text-[11px] text-muted-foreground font-mono bg-transparent border-none outline-none max-w-[110px] shrink-0"
-                  :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'opacity-50 cursor-not-allowed'"
-                >
-                  <span class="truncate">{{ label }}</span>
-                  <ChevronDown class="h-3 w-3 shrink-0" />
-                </button>
-              </template>
-            </ModelPicker>
-          </div>
-          <!-- Agency pill — draft only -->
-          <div
-            v-if="isDraft"
-            class="flex items-center gap-0.5 shrink-0"
-            :title="agenciesBlocked ? `${session.harnessId} can't run agencies — needs MCP coordination + tool restriction. Switch harness or pick No agency.` : undefined"
-          >
-            <PillSelect
-              :model-value="draftCfg?.agencyKey ?? ''"
-              :options="agencyOptions"
-              @update:model-value="draftCfg && (draftCfg.agencyKey = $event)"
-            />
-          </div>
+          <ExecutionTargetPicker
+            :model-value="session.model ?? ''"
+            :harness-id="session.harnessId"
+            :agency-key="draftCfg?.agencyKey ?? ''"
+            :agencies="draftAgencies"
+            :allow-agencies="isDraft"
+            :harness-switchable="isDraft"
+            :disabled="!canEditParams"
+            @update:model-value="changeModel"
+            @update:harness-id="changeHarness"
+            @update:agency-key="(value) => { if (draftCfg) draftCfg.agencyKey = value }"
+          />
           <span v-if="agenciesBlocked" class="text-[11px] text-destructive shrink-0">
             agencies unsupported on {{ session.harnessId }}
           </span>
-          <!-- Worktree pill — draft only -->
-          <div v-if="isDraft && !isNoProject" class="flex items-center gap-0.5 shrink-0">
-            <button
-              type="button"
-              class="text-[11px] text-muted-foreground bg-transparent border-none outline-none cursor-pointer hover:text-foreground transition-colors"
-              :class="draftCfg?.useWorktree ? 'text-foreground' : ''"
-              @click="draftCfg && (draftCfg.useWorktree = !draftCfg.useWorktree)"
-            >
-              {{ draftCfg?.useWorktree ? (draftCfg.branch || 'worktree') : 'No worktree' }}
-            </button>
-          </div>
+          <span v-if="!isAgencySession" class="mx-0.5 h-4 w-px shrink-0 bg-border" />
           <div v-if="!isAgencySession" class="flex items-center gap-0.5 shrink-0">
             <Brain :size="13" class="text-muted-foreground shrink-0" />
             <PillSelect
@@ -959,19 +955,28 @@ const streamingEventUuid = computed((): string | undefined => {
               @update:model-value="changeEffort"
             />
           </div>
-          <div
-            class="flex items-center gap-0.5 shrink-0"
-            :title="isAgencySession ? 'Agency roles always run with bypassed permissions' : undefined"
+          <span v-if="!isAgencySession && supportsSessionPolicies" class="mx-0.5 h-4 w-px shrink-0 bg-border" />
+          <SessionControlPicker
+            v-if="!isAgencySession && supportsSessionPolicies"
+            :model-value="selectedPermissionPolicy"
+            label="Permission policy"
+            :options="permissionOptions"
+            :disabled="!canEditParams"
+            @update:model-value="changePermissionPolicy"
           >
-            <KeyRound :size="13" class="text-muted-foreground shrink-0" />
-            <PillSelect
-              :model-value="isAgencySession ? 'bypassPermissions' : (session.permissionMode ?? 'bypassPermissions')"
-              :options="permModeOptions"
-              :disabled="isAgencySession || !canEditParams"
-              trigger-class="max-w-[92px]"
-              @update:model-value="changePermissionMode($event as PermissionMode)"
-            />
-          </div>
+            <template #icon><ShieldCheck class="size-3.5 shrink-0" /></template>
+          </SessionControlPicker>
+          <span v-if="!isAgencySession && supportsSessionPolicies" class="mx-0.5 h-4 w-px shrink-0 bg-border" />
+          <SessionControlPicker
+            v-if="!isAgencySession && supportsSessionPolicies"
+            :model-value="selectedInteractionMode"
+            label="Interaction mode"
+            :options="interactionModeOptions"
+            :disabled="!canEditParams"
+            @update:model-value="changeInteractionMode"
+          >
+            <template #icon><Hammer class="size-3.5 shrink-0" /></template>
+          </SessionControlPicker>
         </template>
       </MessageInput>
     </div>
