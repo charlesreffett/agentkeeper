@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Brain,
+  ChevronDown,
   Hammer,
   LayoutGrid,
   MoreHorizontal,
@@ -14,6 +15,7 @@ import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
 import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ExecutionTargetPicker from '@/components/ExecutionTargetPicker.vue'
+import ModelPicker from '@/components/ModelPicker.vue'
 import SessionLaunchContext from '@/components/SessionLaunchContext.vue'
 import SessionControlPicker from '@/components/SessionControlPicker.vue'
 import PillSelect from '@/components/PillSelect.vue'
@@ -940,9 +942,27 @@ const streamingEventUuid = computed((): string | undefined => {
             @update:harness-id="changeHarness"
             @update:agency-key="(value) => { if (draftCfg) draftCfg.agencyKey = value }"
           />
-          <span v-else class="flex max-w-44 items-center gap-1 truncate px-1 text-[11px] text-muted-foreground">
-            {{ isAgencySession ? session.agencyName : session.model }}
-          </span>
+          <div v-else :title="isAgencySession ? 'Fallback model for agency roles that don\'t set their own' : undefined">
+            <ModelPicker
+              :model-value="session.model ?? ''"
+              :harness-id="session.harnessId"
+              :disabled="!canEditParams"
+              align="start"
+              @update:model-value="changeModel"
+            >
+              <template #trigger="{ label }">
+                <button
+                  type="button"
+                  :disabled="!canEditParams"
+                  class="flex max-w-[110px] shrink-0 items-center gap-1 border-none bg-transparent text-[11px] text-muted-foreground outline-none font-mono"
+                  :class="canEditParams ? 'cursor-pointer hover:text-foreground' : 'cursor-not-allowed opacity-50'"
+                >
+                  <span class="truncate">{{ label }}</span>
+                  <ChevronDown class="size-3 shrink-0" />
+                </button>
+              </template>
+            </ModelPicker>
+          </div>
           <span v-if="agenciesBlocked" class="text-[11px] text-destructive shrink-0">
             agencies unsupported on {{ session.harnessId }}
           </span>
