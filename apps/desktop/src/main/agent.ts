@@ -5,6 +5,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { getHarness } from './harness/index'
 import { getCapabilities } from './capabilities'
+import { validateCustomModel } from './models'
+import { modelSelectionRejection } from './model-mutability'
 import type { HarnessEvent } from '@agentkeeper/core'
 import * as costLedger from './cost-ledger'
 import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
@@ -24,6 +26,7 @@ import type {
   RoleEffort,
   Session,
   StartSessionParams,
+  SetModelResult,
 } from '../shared/ipc-contract'
 import { AsyncQueue } from './async-queue'
 import { secrets, SECRET_KEYS } from './secrets'
@@ -1006,8 +1009,28 @@ async function restartIdle(
   }
 }
 
-export async function setModel(localId: string, model: string): Promise<void> {
-  return restartIdle(localId, { model })
+export async function setModel(localId: string, model: string): Promise<SetModelResult> {
+  const agent = registry.getAgent(localId)
+  const persisted = registry.getSession(agent?.sessionLocalId ?? localId)
+  if (!persisted) return { ok: false, reason: 'session-not-found', message: `Session ${localId} was not found.` }
+  if (persisted.agencyName) {
+    return { ok: false, reason: 'agency-owned', message: 'Model selection is owned by this agency.' }
+  }
+
+  const harnessId = persisted.harnessId ?? getHarness().id
+  const capability = (await getCapabilities(harnessId)).modelSelection
+  const currentStatus = active.get(localId)?.status ?? persisted.status
+  const rejection = modelSelectionRejection(capability, currentStatus)
+  if (rejection) return rejection
+  if (currentStatus === 'running' || currentStatus === 'starting') {
+    return { ok: false, reason: 'model-selection-unsupported', message: 'This adapter does not yet implement in-turn model changes.' }
+  }
+
+  const validated = await validateCustomModel(harnessId, model)
+  if (!validated) return { ok: false, reason: 'model-invalid', message: 'The selected model is not available for this harness.' }
+
+  await restartIdle(localId, { model: validated })
+  return { ok: true }
 }
 
 export async function setEffort(localId: string, effort: RoleEffort): Promise<void> {

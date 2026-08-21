@@ -104,6 +104,10 @@ export interface HarnessModelInfo {
   provider?: string
   /** Concrete model an alias/`default` resolves to, e.g. `claude-opus-4-8`. */
   resolvedModel?: string
+  /** Provider-reported maximum input/context tokens. Omitted when unknown. */
+  contextWindow?: number
+  /** True for a configured off-catalog identifier accepted by the harness. */
+  isCustom?: boolean
   supportsEffort?: boolean
   effortLevels?: HarnessEffortLevel[]
   supportsFastMode?: boolean
@@ -133,6 +137,10 @@ export interface HarnessCapabilities {
   /** Can run a multi-role agency. Requires `mcpServers && disallowedTools`;
    *  declared explicitly so the check is one field, not a derived expression. */
   agencies: boolean
+  /** Point in the session lifecycle at which the adapter can change models. */
+  modelSelection: 'draft-only' | 'idle' | 'turn'
+  /** Whether sanitized off-catalog model identifiers can reach the harness. */
+  customModels: boolean
 }
 
 export type HarnessEvent =

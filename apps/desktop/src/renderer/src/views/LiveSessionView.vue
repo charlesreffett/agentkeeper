@@ -32,7 +32,7 @@ import {
 } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { defaultModelFor, rememberModel } from '@/composables/useModelMemory'
-import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
+import { resolveModelSelectionState, useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
 import { useHarnessList } from '@/composables/useHarness'
 import type { Agency, Attachment, PermissionMode, RoleEffort, TranscriptEvent } from '@shared/ipc-contract'
 
@@ -492,6 +492,19 @@ const isAgencySession = computed(() => {
 })
 
 const { agenciesCapable, capabilities } = useHarnessCapabilities()
+const modelSelectionState = computed(() => resolveModelSelectionState(
+  capabilities(session.value?.harnessId)?.modelSelection,
+  isDraft.value,
+  session.value?.status,
+))
+const targetPickerCapabilities = computed(() => ({
+  canSwitchHarness: isDraft.value,
+  canSelectAgency: isDraft.value,
+  canSwitchModel: modelSelectionState.value.enabled && !isAgencySession.value,
+  disabledReason: isAgencySession.value && !isDraft.value
+    ? 'Model selection is owned by this agency.'
+    : modelSelectionState.value.reason,
+}))
 const supportsSessionPolicies = computed(() => capabilities(session.value?.harnessId)?.permissionModes ?? true)
 
 // A draft with an agency selected on a harness that can't run agencies (no MCP
@@ -555,11 +568,19 @@ async function changeModel(model: string) {
   if (isDraft.value) {
     session.value.model = model
   } else if (isAgencySession.value) {
-    await window.agentkeeper.agencies.setFallbackModel(session.value.localId, model)
+    const result = await window.agentkeeper.agencies.setFallbackModel(session.value.localId, model)
+    if (!result.ok) {
+      rewriteError.value = result.message
+      return
+    }
     session.value.model = model
     return // agency fallback is per-session; never the global default
   } else {
-    await window.agentkeeper.sessions.setModel(session.value.localId, model)
+    const result = await window.agentkeeper.sessions.setModel(session.value.localId, model)
+    if (!result.ok) {
+      rewriteError.value = result.message
+      return
+    }
     session.value.model = model
   }
   // Remember the pick per harness so future new drafts on this harness start
@@ -936,7 +957,7 @@ const streamingEventUuid = computed((): string | undefined => {
             :agencies="draftAgencies"
             :allow-agencies="isDraft"
             :harness-switchable="isDraft"
-            :disabled="!canEditParams"
+            :capabilities="targetPickerCapabilities"
             @update:model-value="changeModel"
             @update:harness-id="changeHarness"
             @update:agency-key="(value) => { if (draftCfg) draftCfg.agencyKey = value }"

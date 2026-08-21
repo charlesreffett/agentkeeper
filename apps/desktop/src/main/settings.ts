@@ -20,6 +20,7 @@ const DEFAULTS: AppSettings = {
   mcpServers: [],
   harnessId: 'claude-code',
   harnessBins: {},
+  customModels: {},
   mobileServer: { enabled: false, port: 57372, secretKey: '' },
   gitSwitchWithoutSoftReject: false,
   lastUsedModels: {},

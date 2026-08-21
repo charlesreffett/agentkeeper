@@ -52,6 +52,8 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     commands: true,
     skills: true,
     agencies: true,
+    modelSelection: 'idle',
+    customModels: true,
   }
 
   private childEnv(auth: Awaited<ReturnType<typeof resolveClaudeAuth>>, extra?: Record<string, string>): Record<string, string | undefined> {

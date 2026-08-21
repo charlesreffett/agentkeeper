@@ -35,7 +35,7 @@ import { jiraTicketActivity } from './db/schema'
 import { sql, eq, desc } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
 import { getAllPricing, refreshFromLiteLLM } from './pricing'
-import { getAvailableModels, refreshAvailableModels, getDefaultModel } from './models'
+import { getAvailableModels, refreshAvailableModels, getDefaultModel, invalidateAvailableModels, validateCustomModel } from './models'
 import { getCapabilities } from './capabilities'
 import {
   addComment as ghAddComment,
@@ -411,6 +411,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     (_event, partial: Partial<AppSettings>) => {
       const updated = settingsStore.set(partial)
       syncMobileServer(updated)
+      if (partial.harnessBins || partial.customModels) {
+        for (const id of new Set([
+          ...Object.keys(partial.harnessBins ?? {}),
+          ...Object.keys(partial.customModels ?? {}),
+        ])) {
+          invalidateAvailableModels(id)
+          void refreshAvailableModels(id)
+        }
+      }
       return updated
     },
   )
@@ -701,12 +710,17 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.secretsSet,
-    (_event, key: SecretKeyName, value: string) =>
-      secrets.set(secretKeyToKeytarKey(key), value),
+    async (_event, key: SecretKeyName, value: string) => {
+      await secrets.set(secretKeyToKeytarKey(key), value)
+      invalidateAvailableModels('claude-code')
+      void refreshAvailableModels('claude-code')
+    },
   )
-  ipcMain.handle(IPC_CHANNELS.secretsDelete, (_event, key: SecretKeyName) =>
-    secrets.delete(secretKeyToKeytarKey(key)),
-  )
+  ipcMain.handle(IPC_CHANNELS.secretsDelete, async (_event, key: SecretKeyName) => {
+    await secrets.delete(secretKeyToKeytarKey(key))
+    invalidateAvailableModels('claude-code')
+    void refreshAvailableModels('claude-code')
+  })
 
   // Factory reset
   ipcMain.handle(
@@ -1078,14 +1092,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsSetModel,
-    async (_event, localId: string, model: string) => {
-      try {
-        return await setModel(localId, model)
-      } catch (err) {
-        console.error('[ipc] sessions:setModel failed:', err)
-        throw new Error(err instanceof Error ? err.message : String(err))
-      }
-    },
+    (_event, localId: string, model: string) => setModel(localId, model),
   )
   ipcMain.handle(
     IPC_CHANNELS.sessionsSetEffort,
@@ -1213,13 +1220,23 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.agenciesSetFallbackModel,
-    (_event, instanceId: string, model: string) => {
-      try {
-        sessionRegistry.updateSession(instanceId, { model })
-      } catch (err) {
-        console.error('[ipc] agencies:setFallbackModel failed:', err)
-        throw new Error(err instanceof Error ? err.message : String(err))
+    async (_event, instanceId: string, model: string) => {
+      const session = sessionRegistry.getSession(instanceId)
+      if (!session) return { ok: false, reason: 'session-not-found', message: `Session ${instanceId} was not found.` }
+      if (!session.agencyName) return { ok: false, reason: 'agency-owned', message: 'This is not an agency session.' }
+      const status = sessionRegistry.computeSessionStatus(sessionRegistry.listAgentsBySession(instanceId))
+      if (status === 'running') return { ok: false, reason: 'session-running', message: 'Wait for the agency turn to finish before changing its fallback model.' }
+      if (status === 'completed' || status === 'inactive' || status === 'error') {
+        return { ok: false, reason: 'session-terminal', message: `Cannot change the model on a ${status} agency.` }
       }
+      const harnessId = session.harnessId
+      if ((await getCapabilities(harnessId)).modelSelection === 'draft-only') {
+        return { ok: false, reason: 'model-selection-unsupported', message: 'This harness fixes the model when the agency starts.' }
+      }
+      const validated = await validateCustomModel(harnessId, model)
+      if (!validated) return { ok: false, reason: 'model-invalid', message: 'The selected model is not available for this harness.' }
+      sessionRegistry.updateSession(instanceId, { model: validated })
+      return { ok: true }
     },
   )
   // Git utilities

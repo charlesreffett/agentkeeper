@@ -997,7 +997,6 @@ export const useSessionStore = defineStore('sessions', () => {
       })
       delete sessions[localId]
       for (const s of instance.sessions) {
-        const role = ctx.roles.find((r) => r.id === s.roleId) ?? null
         registerExternal({
           localId: s.localId,
           sessionLocalId: s.sessionLocalId,
@@ -1009,9 +1008,7 @@ export const useSessionStore = defineStore('sessions', () => {
           agencyName: instance.agencyName,
           initialPrompt: s.isEntryPoint ? trimmedPrompt : '(awaiting peers)',
           agencyPrompt: trimmedPrompt,
-          model: draft.harnessId === 'claude-code'
-            ? role?.model ?? draft.model
-            : (role?.model?.includes('/') ? role.model : draft.model),
+          model: s.model ?? draft.model,
           isEntryPoint: s.isEntryPoint,
         })
       }

@@ -1,4 +1,4 @@
-import { computed, toValue, type MaybeRefOrGetter } from 'vue'
+import { computed, onMounted, onUnmounted, toValue, type MaybeRefOrGetter } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
 import { ROLE_EFFORT_VALUES, type AvailableModel, type RoleEffort } from '@shared/ipc-contract'
@@ -12,6 +12,13 @@ export interface ModelOption extends AvailableModel {
 }
 
 const SESSION_DEFAULT_VALUE = ''
+const MODEL_STALE_TIME = 5 * 60 * 1000
+
+export function formatContextWindow(value?: number): string | undefined {
+  if (!value || !Number.isFinite(value) || value < 1) return undefined
+  const compact = Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
+  return `${compact} context`
+}
 
 function toShortLabel(label: string): string {
   return label.split(/[\s(]/)[0]?.toLowerCase() || label
@@ -49,8 +56,21 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
   const { data, isLoading } = useQuery({
     queryKey: computed(() => queryKeys.models.list(id())),
     queryFn: () => window.agentkeeper.models.list(id()),
-    staleTime: Infinity,
+    staleTime: MODEL_STALE_TIME,
   })
+
+  let stopSnapshotListener: (() => void) | undefined
+  onMounted(() => {
+    stopSnapshotListener = window.agentkeeper.models.onChanged((snapshot) => {
+      const currentId = id()
+      const current = queryClient.getQueryData<{ harnessId: string }>(queryKeys.models.list(currentId))
+      if (snapshot.harnessId === currentId || current?.harnessId === snapshot.harnessId) {
+        queryClient.setQueryData(queryKeys.models.list(currentId), snapshot)
+      }
+      queryClient.setQueryData(queryKeys.models.list(snapshot.harnessId), snapshot)
+    })
+  })
+  onUnmounted(() => stopSnapshotListener?.())
 
   const { mutate: refresh, isPending: isRefreshing } = useMutation({
     mutationFn: () => window.agentkeeper.models.refresh(id()),
@@ -59,9 +79,16 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
     },
   })
 
+  function refreshIfStale(): void {
+    const refreshedAt = data.value?.refreshedAt
+    if (data.value?.status === 'refreshing') return
+    if (refreshedAt === null || refreshedAt === undefined || Date.now() - refreshedAt >= MODEL_STALE_TIME) refresh()
+  }
+
   const models = computed<ModelOption[]>(() =>
     (data.value?.models ?? []).map((m) => ({ ...m, shortLabel: toShortLabel(m.label) })))
   const error = computed(() => data.value?.error)
+  const status = computed(() => data.value?.status)
   const isEmpty = computed(() => !isLoading.value && models.value.length === 0)
   const defaultValue = computed(() => models.value.find((m) => m.isDefault)?.value ?? models.value[0]?.value ?? '')
 
@@ -113,5 +140,5 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
     return ROLE_EFFORT_VALUES
   }
 
-  return { models, error, isLoading, isEmpty, defaultValue, refresh, isRefreshing, optionsFor, optionsWithDefaultFor, effortLevelsFor, resolvedLabelFor, effectiveValueFor }
+  return { models, error, status, isLoading, isEmpty, defaultValue, refresh, refreshIfStale, isRefreshing, optionsFor, optionsWithDefaultFor, effortLevelsFor, resolvedLabelFor, effectiveValueFor }
 }
