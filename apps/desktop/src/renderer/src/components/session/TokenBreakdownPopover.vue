@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Info } from 'lucide-vue-next'
+import { Info } from '@/components/icons/app-icons'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { useSessionStore } from '@/stores/sessions'
 import { usePricingQuery } from '@/composables/usePricingQuery'

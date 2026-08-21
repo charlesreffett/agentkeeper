@@ -196,7 +196,7 @@ import {
   ChevronLeft, Users, Copy, Activity, ExternalLink,
   Layers, Code2, GitBranch, FlaskConical, Eye,
   FileText, Shield, Zap, Brain,
-} from 'lucide-vue-next'
+} from '@/components/icons/app-icons'
 import { Switch } from '@/components/ui/switch'
 import {
   NumberField,

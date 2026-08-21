@@ -7,7 +7,7 @@ import {
   LayoutGrid,
   MoreHorizontal,
   ShieldCheck,
-} from 'lucide-vue-next'
+} from '@/components/icons/app-icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Transcript from '@/components/transcript/Transcript.vue'
 import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'

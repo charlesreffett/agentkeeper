@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronRight, TriangleAlert } from 'lucide-vue-next'
+import { ChevronRight, TriangleAlert } from '@/components/icons/app-icons'
 import type { ContentBlock } from '@shared/ipc-contract'
 
 const props = defineProps<{

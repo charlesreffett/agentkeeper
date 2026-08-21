@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft } from 'lucide-vue-next'
+import { ArrowLeft } from '@/components/icons/app-icons'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 
 defineProps<{

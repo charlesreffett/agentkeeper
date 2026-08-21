@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { Check, ChevronDown, Folder, GitBranch, Search } from 'lucide-vue-next'
+import { Check, ChevronDown, Folder, GitBranch, Search } from '@/components/icons/app-icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useGitBranches } from '@/composables/useGitBranches'

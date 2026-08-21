@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, nextTick, watch, computed, toRaw } from 'vue'
-import { OctagonX, Plus, SquareSlash, SendHorizontal } from 'lucide-vue-next'
+import { OctagonX, Plus, SquareSlash, SendHorizontal } from '@/components/icons/app-icons'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useCommandAutocomplete } from '@/composables/useCommandAutocomplete'
 import CommandAutocomplete from '@/components/CommandAutocomplete.vue'

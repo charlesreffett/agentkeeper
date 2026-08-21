@@ -14,7 +14,7 @@ import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useRolesQuery } from '@/composables/useRolesQuery'
 import ScopeBar from '@/components/ScopeBar.vue'
 import ModelPicker from '@/components/ModelPicker.vue'
-import { Plus } from 'lucide-vue-next'
+import { Plus } from '@/components/icons/app-icons'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
   usePageScope('roles', { includeGlobal: true })

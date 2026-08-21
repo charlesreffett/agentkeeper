@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Share2, Sparkles, Terminal, Wrench } from 'lucide-vue-next'
+import { Share2, Sparkles, Terminal, Wrench } from '@/components/icons/app-icons'
 import { type VerbosityMode, type VerbosityState, MODE_DEFAULTS } from '@/lib/verbosity'
 
 const props = defineProps<{

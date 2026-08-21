@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { Check, ChevronDown, Search, CornerDownLeft } from 'lucide-vue-next'
+import { Check, ChevronDown, Search, CornerDownLeft } from '@/components/icons/app-icons'
+import HarnessIcon from '@/components/icons/HarnessIcon.vue'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { formatContextWindow, useModelsQuery, type ModelOption } from '@/composables/useModelsQuery'
 import { useActiveHarness, useHarnessList } from '@/composables/useHarness'
@@ -168,13 +169,14 @@ function onEnter() {
             type="button"
             :disabled="!h.available"
             :title="h.available ? h.name : h.unavailableReason ?? `${h.name} — unavailable`"
+            :aria-label="h.name"
             class="size-8 shrink-0 rounded-md border text-xs font-semibold uppercase transition-colors disabled:opacity-40"
             :class="selectedHarnessId === h.id
               ? 'border-primary bg-primary/10 text-primary'
               : 'border-transparent text-muted-foreground hover:bg-accent'"
             @click="selectedHarnessId = h.id"
           >
-            {{ h.name.charAt(0) }}
+            <HarnessIcon :harness-id="h.id" :harness-name="h.name" decorative class="size-4" />
           </button>
         </div>
 

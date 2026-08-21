@@ -160,7 +160,7 @@ import {
   Plus, Check,
   Layers, Code2, GitBranch, FlaskConical, Eye,
   FileText, Activity, Shield, Zap, Brain,
-} from 'lucide-vue-next'
+} from '@/components/icons/app-icons'
 import type { Agency, Role } from '../../../../shared/ipc-contract'
 import { queryKeys } from '@/lib/queryKeys'
 import { useModelsQuery } from '@/composables/useModelsQuery'

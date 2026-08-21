@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Check, ChevronDown } from 'lucide-vue-next'
+import { Check, ChevronDown } from '@/components/icons/app-icons'
 import {
   DropdownMenu,
   DropdownMenuTrigger,

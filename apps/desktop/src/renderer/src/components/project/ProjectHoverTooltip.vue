@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Folder, MessageCircle } from 'lucide-vue-next'
+import { Folder, MessageCircle } from '@/components/icons/app-icons'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 defineProps<{

@@ -29,6 +29,7 @@
     "@atlaskit/pragmatic-drag-and-drop": "^3.0.0",
     "@atlaskit/pragmatic-drag-and-drop-hitbox": "^2.0.1",
     "@comark/vue": "^0.3.1",
+    "@iconify/vue": "^5.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opencode-ai/sdk": "^1.17.18",
     "@tanstack/vue-query": "^5",

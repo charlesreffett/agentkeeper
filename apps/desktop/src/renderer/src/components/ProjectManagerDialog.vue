@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { FolderPlus, FolderOpen, Pencil, X } from 'lucide-vue-next'
+import { FolderPlus, FolderOpen, Pencil, X } from '@/components/icons/app-icons'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'

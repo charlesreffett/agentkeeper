@@ -144,7 +144,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { Plus, Check } from 'lucide-vue-next'
+import { Plus, Check } from '@/components/icons/app-icons'
 import { Button } from '@/components/ui/button'
 import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useRolesQuery } from '@/composables/useRolesQuery'

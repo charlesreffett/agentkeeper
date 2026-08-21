@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { PropType } from 'vue'
-import { CheckCircle2, Loader2 } from 'lucide-vue-next'
+import { CheckCircle2, Loader2 } from '@/components/icons/app-icons'
 import type { LiveSessionStatus } from '@shared/ipc-contract'
 import { toolDisplayName } from '@/lib/verbosity'
 

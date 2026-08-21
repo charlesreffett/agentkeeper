@@ -8,7 +8,7 @@ import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useSkillsDataStore } from '@/stores/skillsData'
 import { useClaudeAuth } from '@/composables/useClaudeAuth'
 import ScopeBar from '@/components/ScopeBar.vue'
-import { Download, Sparkles } from 'lucide-vue-next'
+import { Download, Sparkles } from '@/components/icons/app-icons'
 
 const { scope, options, label, color, setScope, pickAndAdd, isAll, isGlobal, isProject, currentProject } =
   usePageScope('skills', { includeGlobal: true })

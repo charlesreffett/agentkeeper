@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChevronRight, KeyRound } from 'lucide-vue-next'
+import { ChevronRight, KeyRound } from '@/components/icons/app-icons'
 import type { ContentBlock } from '@shared/ipc-contract'
 
 const props = defineProps<{

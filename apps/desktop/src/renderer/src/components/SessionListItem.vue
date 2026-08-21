@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Pencil } from 'lucide-vue-next'
+import { Pencil } from '@/components/icons/app-icons'
 import { formatRelativeTime } from '@/lib/format'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 
