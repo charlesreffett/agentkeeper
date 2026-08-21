@@ -121,6 +121,12 @@ const activeHarnessName = computed(
     'agent harness',
 )
 const isOpenCodeHarness = computed(() => activeHarnessId.value === 'opencode')
+const harnessLoginCommand = computed(() => {
+  if (activeHarnessId.value === 'codex') return 'codex login'
+  if (activeHarnessId.value === 'cursor') return 'cursor-agent login'
+  if (activeHarnessId.value === 'grok') return 'grok login'
+  return 'claude login'
+})
 
 // ─── Harness diagnostics ───────────────────────────────────────────────────────
 
@@ -343,8 +349,8 @@ async function onReset() {
                 </template>
                 <template v-else>
                   Run
-                  <code class="font-mono bg-background px-1 rounded">claude login</code>
-                  in a terminal once. The app shares those credentials — no API key needed here.
+                  <code class="font-mono bg-background px-1 rounded">{{ harnessLoginCommand }}</code>
+                  in a terminal once. The app uses that harness’s own credentials.
                 </template>
               </p>
             </div>

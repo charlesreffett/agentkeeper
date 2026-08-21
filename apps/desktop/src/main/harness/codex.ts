@@ -1,0 +1,94 @@
+import os from 'node:os'
+import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailability, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
+import { sanitizeCustomModel } from '@agentkeeper/core'
+import { resolveBin, type BinConfig } from './bin'
+import { jsonLines, spawnHarnessProcess, waitForExit } from './cli-process'
+
+const execFileAsync = promisify(execFile)
+const CODEX_BIN: BinConfig = { harnessId: 'codex', fallbackBins: ['codex'], envVar: 'CODEX_BIN' }
+
+export class CodexHarnessAdapter implements HarnessAdapter {
+  readonly id = 'codex'
+  readonly name = 'Codex'
+  readonly capabilities: HarnessCapabilities = {
+    mcpServers: false, disallowedTools: false, systemPromptAppend: true,
+    permissionModes: true, effort: true, commands: false, skills: true,
+    agencies: false, modelSelection: 'turn', customModels: true,
+  }
+
+  private bin(): string {
+    const bin = resolveBin(CODEX_BIN)
+    if (!bin) throw new Error('Codex binary not found — install `codex`, set CODEX_BIN, or configure a bin path in settings.')
+    return bin
+  }
+
+  private args(prompt: string, options: HarnessSessionOptions): string[] {
+    const args = ['exec']
+    if (options.resume) args.push('resume', options.resume)
+    args.push('--json', '--skip-git-repo-check', '--dangerously-bypass-approvals-and-sandbox')
+    const model = options.model && sanitizeCustomModel(options.model)
+    if (model && model !== 'default') args.push('--model', model)
+    if (options.effort) args.push('--config', `model_reasoning_effort=${JSON.stringify(options.effort)}`)
+    const composed = options.systemPrompt ? `${options.systemPrompt}\n\n${prompt}` : prompt
+    args.push(composed)
+    return args
+  }
+
+  async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
+    const child = spawnHarnessProcess(this.bin(), this.args(prompt, options), { cwd: options.cwd, env: options.env, signal: options.abortController?.signal })
+    let sessionId: string | undefined
+    let finalText = ''
+    for await (const raw of jsonLines(child.stdout)) {
+      const event = raw as { type?: string; thread_id?: string; item?: { type?: string; text?: string } }
+      if (event.type === 'thread.started') {
+        sessionId = event.thread_id
+        yield { type: 'system', subtype: 'init', session_id: sessionId }
+      } else if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
+        finalText = event.item.text ?? ''
+        yield { type: 'assistant', session_id: sessionId, message: { role: 'assistant', content: [{ type: 'text', text: finalText }], model: options.model } }
+      } else {
+        yield { type: 'stream_event', provider: 'codex', event: raw }
+      }
+    }
+    await waitForExit(child)
+    yield { type: 'result', subtype: 'success', session_id: sessionId, result: finalText }
+  }
+
+  async runPrompt(prompt: string, options: HarnessSessionOptions): Promise<string> {
+    let text = ''
+    for await (const event of this.runSession(prompt, options)) {
+      if (event.type === 'result' && typeof event.result === 'string') text = event.result
+    }
+    return text
+  }
+
+  async getSupportedModels(): Promise<HarnessModelInfo[]> {
+    return [
+      { value: 'gpt-5.6-sol', label: 'GPT-5.6 Sol', provider: 'OpenAI', supportsEffort: true, effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'], isDefault: true },
+      { value: 'gpt-5.6-terra', label: 'GPT-5.6 Terra', provider: 'OpenAI', supportsEffort: true, effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { value: 'gpt-5.6-luna', label: 'GPT-5.6 Luna', provider: 'OpenAI', supportsEffort: true, effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+      { value: 'gpt-5.5', label: 'GPT-5.5', provider: 'OpenAI', supportsEffort: true, effortLevels: ['low', 'medium', 'high', 'xhigh'] },
+      { value: 'gpt-5.4', label: 'GPT-5.4', provider: 'OpenAI', supportsEffort: true, effortLevels: ['low', 'medium', 'high', 'xhigh'] },
+    ]
+  }
+
+  getSessionsRoot() { return path.join(os.homedir(), '.codex', 'sessions') }
+  getCommandsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.codex', 'prompts') : path.join(os.homedir(), '.codex', 'prompts') }
+  getSkillsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.agents', 'skills') : path.join(os.homedir(), '.codex', 'skills') }
+  getPluginsDir() { return path.join(os.homedir(), '.codex', 'plugins') }
+  getSettingsPath() { return path.join(os.homedir(), '.codex', 'config.toml') }
+  encodeCwd(cwd: string) { return cwd.replaceAll('/', '-') }
+  async runCLI(args: string[], options?: HarnessCLIOptions) { return (await execFileAsync(this.bin(), args, { cwd: options?.cwd, env: { ...process.env, ...options?.env }, timeout: options?.timeout })).stdout }
+  async resolveAuth(): Promise<HarnessAuth> { return { type: 'cli' } }
+  async probeAuthDetail(): Promise<HarnessAuthDetail> {
+    try { await this.runCLI(['login', 'status']); return { type: 'cli', ready: true, detail: 'Codex login is configured.' } }
+    catch { return { type: 'cli', ready: false, detail: 'Not authenticated — run `codex login`.' } }
+  }
+  async probeAvailability(): Promise<HarnessAvailability> {
+    try { await this.runCLI(['--version']); return { available: true } }
+    catch (error) { return { available: false, reason: error instanceof Error ? error.message : String(error) } }
+  }
+}
