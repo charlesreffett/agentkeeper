@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Activity, ChartColumnBig, MessageSquarePlus } from 'lucide-vue-next'
+import { Activity, ChartColumnBig, MessageSquarePlus } from '@/components/icons/app-icons'
 import { Button } from '@/components/ui/button'
 import { useUnifiedSessions } from '@/composables/useUnifiedSessions'
 import { useSessionStore } from '@/stores/sessions'

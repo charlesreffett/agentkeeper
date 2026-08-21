@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useRouter } from 'vue-router'
-import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from 'lucide-vue-next'
+import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from '@/components/icons/app-icons'
 import NewPlanModal from '@/components/planner/NewPlanModal.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'

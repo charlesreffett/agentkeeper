@@ -22,7 +22,7 @@ import {
   Shield,
   Pencil,
   MessageSquare,
-} from 'lucide-vue-next'
+} from '@/components/icons/app-icons'
 import { Comark } from '@comark/vue'
 import { transcriptComponents, transcriptPlugins } from '@/lib/comark-config'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'

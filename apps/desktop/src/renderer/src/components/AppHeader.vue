@@ -7,7 +7,7 @@ import {
   Settings,
   Settings2,
   SquareTerminal,
-} from 'lucide-vue-next'
+} from '@/components/icons/app-icons'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,

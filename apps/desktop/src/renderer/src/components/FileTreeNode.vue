@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { ChevronRight, Folder, File } from 'lucide-vue-next'
+import { ChevronRight, Folder, File } from '@/components/icons/app-icons'
 
 interface Entry {
   name: string

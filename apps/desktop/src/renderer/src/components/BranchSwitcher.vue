@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
-import { GitBranch, ChevronDown, Star, Plus, Check, Loader2, Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, GitCommitHorizontal } from 'lucide-vue-next'
+import { GitBranch, ChevronDown, Star, Plus, Check, Loader2, Eye, EyeOff, ArrowDownToLine, ArrowUpFromLine, GitCommitHorizontal } from '@/components/icons/app-icons'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'

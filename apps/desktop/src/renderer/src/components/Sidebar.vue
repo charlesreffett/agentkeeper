@@ -19,7 +19,7 @@ import {
   Puzzle,
   Plug,
   ChartColumnBig,
-} from 'lucide-vue-next'
+} from '@/components/icons/app-icons'
 import type { Component } from 'vue'
 import IconSessions from '@/components/icons/IconSessions.vue'
 import { useUIContributionsStore } from '@/stores/uiContributions'

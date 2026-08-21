@@ -2,7 +2,7 @@
 import { computed, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { Bot, ChevronDown, ChevronRight, Plus, Settings, SlidersHorizontal } from 'lucide-vue-next'
+import { Bot, ChevronDown, ChevronRight, Plus, Settings, SlidersHorizontal } from '@/components/icons/app-icons'
 import { usePluginHealth } from '@/composables/usePluginHealth'
 import { useSessionStore } from '@/stores/sessions'
 import { Input } from '@/components/ui/input'

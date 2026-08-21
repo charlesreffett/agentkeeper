@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Settings } from 'lucide-vue-next'
+import { Settings } from '@/components/icons/app-icons'
 import JiraIssueDetail from './JiraIssueDetail.vue'
 import type { WorkItem } from '@shared/ipc-contract'
 

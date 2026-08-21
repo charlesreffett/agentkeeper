@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { JiraActivityEntry } from '@shared/ipc-contract'
 import { useRoute } from 'vue-router'
-import { Bot, ChevronDown, Sparkles, User } from 'lucide-vue-next'
+import { Bot, ChevronDown, Sparkles, User } from '@/components/icons/app-icons'
 import {
   DropdownMenu,
   DropdownMenuContent,

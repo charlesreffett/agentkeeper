@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { Bot, Check, ChevronDown, Network, Search } from 'lucide-vue-next'
+import { Bot, Check, ChevronDown, Network, Search } from '@/components/icons/app-icons'
+import HarnessIcon from '@/components/icons/HarnessIcon.vue'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useActiveHarness, useHarnessList } from '@/composables/useHarness'
@@ -167,7 +168,7 @@ function chooseAgency(agency: Agency) {
         <div class="flex min-h-0 flex-1">
           <div v-if="canSwitchHarness" class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-border dark:border-white/30 p-1.5">
           <button v-for="harness in harnesses" :key="harness.id" type="button" :disabled="!harness.available" :title="harness.available ? harness.name : harness.unavailableReason" :aria-label="harness.name" class="grid size-8 shrink-0 place-items-center rounded-md border text-xs font-semibold uppercase transition-colors disabled:opacity-40" :class="browsingHarnessId === harness.id ? 'border-primary bg-primary/10 text-primary' : 'border-transparent text-muted-foreground hover:bg-muted hover:text-foreground'" @click="browsingHarnessId = harness.id; query = ''">
-            {{ harness.name.charAt(0) }}
+            <HarnessIcon :harness-id="harness.id" :harness-name="harness.name" decorative class="size-4" />
           </button>
           </div>
 
@@ -177,7 +178,7 @@ function chooseAgency(agency: Agency) {
             <template v-if="query.trim() && canSwitchHarness">
               <div v-if="isLoadingAllModels" class="py-12 text-center text-xs text-muted-foreground">Searching model catalogs…</div>
               <button v-for="result in globalSearchResults" v-else :key="`${result.harnessId}:${result.model.value}`" type="button" :disabled="!canSwitchModel" :aria-pressed="result.harnessId === harnessId && result.model.value === modelValue" class="flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left transition-colors disabled:opacity-50" :class="result.harnessId === harnessId && result.model.value === modelValue ? 'bg-accent text-accent-foreground' : 'hover:bg-muted'" @click="chooseModelFromHarness(result.harnessId, result.model.value)">
-                <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border border-muted-foreground/40 text-[9px] font-semibold uppercase">{{ result.harnessName.charAt(0) }}</span>
+                <span class="mt-0.5 grid size-5 shrink-0 place-items-center rounded border border-muted-foreground/40"><HarnessIcon :harness-id="result.harnessId" :harness-name="result.harnessName" decorative class="size-3" /></span>
                 <span class="min-w-0 flex-1">
                   <span class="flex items-center gap-1.5"><span class="truncate text-sm font-medium">{{ result.model.label }}</span><span v-if="result.model.isDefault" class="rounded border border-muted-foreground/40 px-1 text-[9px] uppercase text-muted-foreground">Default</span></span>
                   <span class="block truncate text-xs text-muted-foreground">{{ result.harnessName }}<template v-if="result.model.provider"> · {{ result.model.provider }}</template><template v-if="formatContextWindow(result.model.contextWindow)"> · {{ formatContextWindow(result.model.contextWindow) }}</template></span>

@@ -85,7 +85,7 @@ import { Handle, Position } from '@vue-flow/core'
 import {
   Layers, Code2, GitBranch, FlaskConical, Eye,
   FileText, Activity, Shield, Zap, Brain,
-} from 'lucide-vue-next'
+} from '@/components/icons/app-icons'
 import { accentColor, accentBg, accentSolid } from './colors'
 import { useLayoutStore } from '@/stores/layout'
 

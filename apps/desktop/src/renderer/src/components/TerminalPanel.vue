@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, nextTick, ref } from 'vue'
-import { X, RotateCcw, Plus } from 'lucide-vue-next'
+import { X, RotateCcw, Plus } from '@/components/icons/app-icons'
 import { useTerminalStore } from '@/stores/terminalStore'
 import { useSessionStore } from '@/stores/sessions'
 import { isGeneralProject } from '@shared/ipc-contract'

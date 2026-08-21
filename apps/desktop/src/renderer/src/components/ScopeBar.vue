@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { ChevronDown, Folder, FolderPlus, Globe, Layers } from 'lucide-vue-next'
+import { ChevronDown, Folder, FolderPlus, Globe, Layers } from '@/components/icons/app-icons'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Button } from '@/components/ui/button'
 import ProjectManagerDialog from '@/components/ProjectManagerDialog.vue'
