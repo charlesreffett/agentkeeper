@@ -30,6 +30,7 @@ import { initDb } from './db/index'
 import { runLegacyImport } from './db/legacy-import'
 import { pruneOrphanedDrafts } from './drafts'
 import { stopAllWatchers, removeSubscriber } from './watcher.js'
+import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -150,6 +151,10 @@ app.whenReady().then(async () => {
         label: 'AgentKeeper',
         submenu: [
           { role: 'about' },
+          {
+            label: 'Check for Updates…',
+            click: () => void checkForAppUpdate(),
+          },
           { type: 'separator' },
           { role: 'services' },
           { type: 'separator' },
@@ -166,7 +171,7 @@ app.whenReady().then(async () => {
     ]))
     app.setAboutPanelOptions({
       applicationName: 'AgentKeeper',
-      applicationVersion: '0.1.0',
+      applicationVersion: app.getVersion(),
       version: '',
       credits: '',
       copyright: 'Copyright © 2024',
@@ -188,6 +193,7 @@ app.whenReady().then(async () => {
   warmCapabilities()
   syncMobileServer(settingsStore.get())
   const win = createWindow()
+  initializeAppUpdater()
   setWebContentsOnActiveHosts(win.webContents)
   win.webContents.on('destroyed', () => {
     removeSubscriber(win.webContents.id)

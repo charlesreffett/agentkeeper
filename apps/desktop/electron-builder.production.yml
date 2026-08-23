@@ -1,0 +1,25 @@
+extends: ./electron-builder.yml
+
+publish:
+  provider: github
+  owner: agentkeeper-ai
+  repo: agentkeeper
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  hardenedRuntime: true
+  gatekeeperAssess: true
+  notarize: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+
+dmg:
+  sign: true

@@ -91,6 +91,7 @@ import { harnessRegistry, getHarness } from './harness/index'
 import { syncMobileServer } from './mobile-server'
 import { startWatching, stopWatching } from './watcher.js'
 import { registerTerminalHandlers } from './terminal'
+import { checkForAppUpdate, downloadAppUpdate, getAppUpdateState, installAppUpdate } from './app-updater'
 import type {
   AgencyDraft,
   AgencyScope,
@@ -140,6 +141,11 @@ function secretKeyToKeytarKey(k: SecretKeyName) {
 }
 
 export function registerIpcHandlers(registry: WorkItemRegistryFull) {
+  ipcMain.handle(IPC_CHANNELS.appUpdatesGetState, () => getAppUpdateState())
+  ipcMain.handle(IPC_CHANNELS.appUpdatesCheck, () => checkForAppUpdate())
+  ipcMain.handle(IPC_CHANNELS.appUpdatesDownload, () => downloadAppUpdate())
+  ipcMain.handle(IPC_CHANNELS.appUpdatesInstall, () => installAppUpdate())
+
   // Every session — including ones revived via resume/auto-resume paths that
   // don't pass an mcpFactory — gets the agentkeeper MCP server. General chats
   // skip it entirely: no project means no plan store, so the agent stays a
