@@ -95,3 +95,37 @@ Releases ensures the website and in-app updater refer to the same signed bytes.
 Before implementing the public site, decide its domain, hosting provider,
 analytics/privacy requirements, documentation authoring format, and whether
 release notes should be edited independently from the Release Please changelog.
+
+## iOS TestFlight distribution
+
+Pull requests and pushes run `.github/workflows/ios-ci.yml`, which compiles the
+shared `AgentKeeperCompanion` scheme for a generic iOS Simulator destination.
+Code signing is disabled, so this check does not have access to Apple secrets.
+
+Run **Publish iOS to TestFlight** manually to archive, export, and upload an iOS
+Release build. The job uses the `production-signing` environment and requires
+these organization variables:
+
+| Name | Value |
+| --- | --- |
+| `APPLE_TEAM_ID` | Ten-character Apple Developer team ID |
+| `APPLE_API_KEY_ID` | App Store Connect API key ID |
+| `APPLE_API_ISSUER` | App Store Connect issuer UUID |
+
+The environment must provide one secret:
+
+| Name | Value |
+| --- | --- |
+| `APPLE_API_KEY` | Complete contents of the App Store Connect `.p8` key |
+
+The workflow writes the key to `RUNNER_TEMP`, uses authenticated automatic
+signing and provisioning, assigns `${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}`
+as the build number, exports an App Store Connect IPA, and uploads it. Apple
+processes accepted uploads for TestFlight; selecting a tested build and
+submitting it to App Review remains a manual App Store Connect operation.
+
+The App Store Connect API key must have enough access to manage signing assets
+and upload builds, and the app record and bundle ID `com.agentkeeper.companion`
+must already exist. If automatic signing cannot provide a distribution identity
+on a clean GitHub runner, install an Apple Distribution certificate/private key
+and matching provisioning profile in the job rather than committing them.
