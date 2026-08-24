@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct AgentKeeperCompanionApp: App {
+struct AgentKeeperRemoteApp: App {
     @StateObject private var config = AppConfig.shared
 
     var body: some Scene {

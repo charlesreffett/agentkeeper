@@ -199,7 +199,7 @@ plain-text reply is returned as the caller's tool_result. Rules and limits:
 ## iOS Companion
 
 Enable via Settings → Mobile tab in the desktop app. Set a secret key, note the URL shown.
-Open `apps/ios/AgentKeeperCompanion/AgentKeeperCompanion.xcodeproj` in Xcode, set your
+Open `apps/ios/AgentKeeperRemote/AgentKeeperRemote.xcodeproj` in Xcode, set your
 development team, build and run on device or simulator. Enter the desktop URL + secret key
 in the iOS app's Setup screen to pair. For TestFlight: archive → Distribute App → App Store
-Connect → upload. Bundle ID: `com.agentkeeper.companion`.
+Connect → upload. Bundle ID: `com.agentkeeper.remote`.

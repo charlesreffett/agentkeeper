@@ -14,7 +14,7 @@ enum APIError: LocalizedError {
         case .decodingError:
             return "Received an unexpected response from the desktop app."
         case .networkError:
-            return "Can't reach the desktop app. Make sure AgentKeeper is running and this device is on the same network."
+            return "Can't reach the AgentKeeper server. Check the server address and your network connection."
         }
     }
 

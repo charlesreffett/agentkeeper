@@ -65,11 +65,11 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild archive \
-            -project apps/ios/AgentKeeperCompanion/AgentKeeperCompanion.xcodeproj \
-            -scheme AgentKeeperCompanion \
+            -project apps/ios/AgentKeeperRemote/AgentKeeperRemote.xcodeproj \
+            -scheme AgentKeeperRemote \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath "$RUNNER_TEMP/AgentKeeperCompanion.xcarchive" \
+            -archivePath "$RUNNER_TEMP/AgentKeeperRemote.xcarchive" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$APPLE_API_KEY_PATH" \
             -authenticationKeyID "$APPLE_API_KEY_ID" \
@@ -82,8 +82,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/AgentKeeperCompanion.xcarchive" \
-            -exportPath "$RUNNER_TEMP/AgentKeeperCompanion-export" \
+            -archivePath "$RUNNER_TEMP/AgentKeeperRemote.xcarchive" \
+            -exportPath "$RUNNER_TEMP/AgentKeeperRemote-export" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$APPLE_API_KEY_PATH" \
@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ipa_path="$(find "$RUNNER_TEMP/AgentKeeperCompanion-export" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          ipa_path="$(find "$RUNNER_TEMP/AgentKeeperRemote-export" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
           if [[ -z "$ipa_path" ]]; then
             echo 'No IPA was exported' >&2
             exit 1
@@ -109,7 +109,7 @@ jobs:
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AgentKeeperCompanion-${{ github.run_number }}.${{ github.run_attempt }}
-          path: ${{ runner.temp }}/AgentKeeperCompanion-export/*.ipa
+          name: AgentKeeperRemote-${{ github.run_number }}.${{ github.run_attempt }}
+          path: ${{ runner.temp }}/AgentKeeperRemote-export/*.ipa
           if-no-files-found: error
           retention-days: 7

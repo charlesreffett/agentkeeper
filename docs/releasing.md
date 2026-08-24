@@ -99,7 +99,7 @@ release notes should be edited independently from the Release Please changelog.
 ## iOS TestFlight distribution
 
 Pull requests and pushes run `.github/workflows/ios-ci.yml`, which compiles the
-shared `AgentKeeperCompanion` scheme for a generic iOS Simulator destination.
+shared `AgentKeeperRemote` scheme for a generic iOS Simulator destination.
 Code signing is disabled, so this check does not have access to Apple secrets.
 
 Run **Publish iOS to TestFlight** manually to archive, export, and upload an iOS
@@ -125,7 +125,7 @@ processes accepted uploads for TestFlight; selecting a tested build and
 submitting it to App Review remains a manual App Store Connect operation.
 
 The App Store Connect API key must have enough access to manage signing assets
-and upload builds, and the app record and bundle ID `com.agentkeeper.companion`
+and upload builds, and the app record and bundle ID `com.agentkeeper.remote`
 must already exist. If automatic signing cannot provide a distribution identity
 on a clean GitHub runner, install an Apple Distribution certificate/private key
 and matching provisioning profile in the job rather than committing them.

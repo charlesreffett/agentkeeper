@@ -28,10 +28,10 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild \
-            -project apps/ios/AgentKeeperCompanion/AgentKeeperCompanion.xcodeproj \
-            -scheme AgentKeeperCompanion \
+            -project apps/ios/AgentKeeperRemote/AgentKeeperRemote.xcodeproj \
+            -scheme AgentKeeperRemote \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/AgentKeeperCompanion-DerivedData" \
+            -derivedDataPath "$RUNNER_TEMP/AgentKeeperRemote-DerivedData" \
             CODE_SIGNING_ALLOWED=NO \
             build

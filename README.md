@@ -90,7 +90,7 @@ Vue Query conventions, the plugin boundary rules, and the commit format. Key rul
 ## iOS Companion
 
 Enable via Settings → Mobile tab in the desktop app. Set a secret key and note the
-URL shown. Open `apps/ios/AgentKeeperCompanion/AgentKeeperCompanion.xcodeproj` in
+URL shown. Open `apps/ios/AgentKeeperRemote/AgentKeeperRemote.xcodeproj` in
 Xcode, set your development team, then build and run on a device or simulator. Enter
 the desktop URL + secret key on the iOS Setup screen to pair. Bundle ID:
-`com.agentkeeper.companion`.
+`com.agentkeeper.remote`.
