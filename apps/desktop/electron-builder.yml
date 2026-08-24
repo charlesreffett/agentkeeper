@@ -32,8 +32,7 @@ mac:
         - x64
         - arm64
   category: public.app-category.developer-tools
-  # Disable hardened runtime + Gatekeeper check for unsigned local builds.
-  # Re-enable and add entitlements when setting up notarization.
+  # Production signing is layered on by electron-builder.production.yml.
   hardenedRuntime: false
   gatekeeperAssess: false
   # icon: build/icon.icns   # 1024×1024 ICNS — add when ready

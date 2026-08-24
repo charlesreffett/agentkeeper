@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import { Button } from '@/components/ui/button'
-import { ROLE_EFFORT_VALUES, type AppSettings } from '@shared/ipc-contract'
+import { ROLE_EFFORT_VALUES, type AppSettings, type AppUpdateState } from '@shared/ipc-contract'
 import { NOTIFICATION_SOUND_VALUES, NOTIFICATION_SOUND_LABELS, playNotificationSound } from '@/lib/notificationSound'
 import { useLayoutStore } from '@/stores/layout'
 import { usePageScope } from '@/composables/usePageScope'
@@ -65,6 +65,35 @@ const keyStored = ref(false)
 const settings = ref<AppSettings | null>(null)
 const baseline = ref<AppSettings | null>(null)
 const saving = ref(false)
+const appUpdate = ref<AppUpdateState | null>(null)
+let removeAppUpdateListener: (() => void) | null = null
+
+onMounted(async () => {
+  appUpdate.value = await window.agentkeeper.appUpdates.getState()
+  removeAppUpdateListener = window.agentkeeper.appUpdates.onStateChanged((next) => {
+    appUpdate.value = next
+  })
+})
+
+onUnmounted(() => removeAppUpdateListener?.())
+
+async function checkForAppUpdate() {
+  appUpdate.value = await window.agentkeeper.appUpdates.check()
+}
+
+async function downloadAppUpdate() {
+  try {
+    await window.agentkeeper.appUpdates.download()
+  } catch (error) {
+    toast.error('Update download failed', {
+      description: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+function installAppUpdate() {
+  void window.agentkeeper.appUpdates.install()
+}
 
 const DIRTY_FIELDS = [
   'defaultModel', 'defaultEffort', 'defaultUseWorktree',
@@ -590,6 +619,60 @@ async function onReset() {
                 </div>
               </div>
 
+            </div>
+          </section>
+
+          <!-- Application updates -->
+          <section v-if="appUpdate" class="space-y-3">
+            <h2 class="text-sm font-semibold">AgentKeeper updates</h2>
+            <div class="rounded-lg border px-4 py-3 space-y-3">
+              <div class="flex items-center gap-4">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium">Version {{ appUpdate.currentVersion }}</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">
+                    <template v-if="appUpdate.status === 'unsupported'">{{ appUpdate.message }}</template>
+                    <template v-else-if="appUpdate.status === 'checking'">Checking for updates…</template>
+                    <template v-else-if="appUpdate.status === 'available'">Version {{ appUpdate.availableVersion }} is available.</template>
+                    <template v-else-if="appUpdate.status === 'downloading'">Downloading version {{ appUpdate.availableVersion }}… {{ appUpdate.progressPercent ?? 0 }}%</template>
+                    <template v-else-if="appUpdate.status === 'downloaded'">Version {{ appUpdate.availableVersion }} is ready to install.</template>
+                    <template v-else-if="appUpdate.status === 'up-to-date'">AgentKeeper is up to date.</template>
+                    <template v-else-if="appUpdate.status === 'error'">{{ appUpdate.message ?? 'Update check failed.' }}</template>
+                    <template v-else>Updates are checked shortly after startup.</template>
+                  </p>
+                </div>
+                <Button
+                  v-if="appUpdate.status === 'available'"
+                  size="sm"
+                  @click="downloadAppUpdate"
+                >
+                  Download update
+                </Button>
+                <Button
+                  v-else-if="appUpdate.status === 'downloaded'"
+                  size="sm"
+                  @click="installAppUpdate"
+                >
+                  Restart and install
+                </Button>
+                <Button
+                  v-else
+                  variant="outline"
+                  size="sm"
+                  :disabled="appUpdate.status === 'checking' || appUpdate.status === 'downloading' || appUpdate.status === 'unsupported'"
+                  @click="checkForAppUpdate"
+                >
+                  Check for updates
+                </Button>
+              </div>
+              <div v-if="appUpdate.status === 'downloading'" class="h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  class="h-full bg-primary transition-[width]"
+                  :style="{ width: `${appUpdate.progressPercent ?? 0}%` }"
+                />
+              </div>
+              <p v-if="appUpdate.releaseNotes" class="text-xs text-muted-foreground whitespace-pre-wrap border-t pt-3">
+                {{ appUpdate.releaseNotes }}
+              </p>
             </div>
           </section>
 

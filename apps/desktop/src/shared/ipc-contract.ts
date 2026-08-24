@@ -879,9 +879,35 @@ export interface UpdateAvailable {
   releaseNotes?: string
 }
 
+export type AppUpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'up-to-date'
+  | 'error'
+  | 'unsupported'
+
+export interface AppUpdateState {
+  status: AppUpdateStatus
+  currentVersion: string
+  availableVersion?: string
+  releaseNotes?: string
+  progressPercent?: number
+  message?: string
+}
+
 // ─── IPC API exposed to renderer as window.agentkeeper ──────────────────────
 
 export interface AgentKeeperApi {
+  appUpdates: {
+    getState: () => Promise<AppUpdateState>
+    check: () => Promise<AppUpdateState>
+    download: () => Promise<void>
+    install: () => Promise<void>
+    onStateChanged: (callback: (state: AppUpdateState) => void) => () => void
+  }
   projects: {
     add: (path: string) => Promise<RecentProject>
     remove: (path: string) => Promise<void>
@@ -1188,6 +1214,11 @@ export interface PerformanceSummary {
 }
 
 export const IPC_CHANNELS = {
+  appUpdatesGetState: 'appUpdates:getState',
+  appUpdatesCheck: 'appUpdates:check',
+  appUpdatesDownload: 'appUpdates:download',
+  appUpdatesInstall: 'appUpdates:install',
+  appUpdatesStateChanged: 'appUpdates:stateChanged',
   projectsAdd: 'projects:add',
   projectsRemove: 'projects:remove',
   projectsList: 'projects:list',

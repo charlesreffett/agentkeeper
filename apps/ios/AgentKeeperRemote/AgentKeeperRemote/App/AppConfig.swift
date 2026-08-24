@@ -23,7 +23,7 @@ final class AppConfig: ObservableObject {
     var isConfigured: Bool { !baseURL.isEmpty && !secretKey.isEmpty }
 
     // MARK: Keychain
-    private static let keychainService = "com.agentkeeper.companion"
+    private static let keychainService = "com.agentkeeper.remote"
     private static let keychainAccount = "secretKey"
 
     static func loadKey() -> String? {

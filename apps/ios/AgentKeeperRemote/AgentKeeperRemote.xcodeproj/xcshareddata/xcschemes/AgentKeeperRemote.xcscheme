@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "BF500001000000000000001A"
-               BuildableName = "AgentKeeperCompanion.app"
-               BlueprintName = "AgentKeeperCompanion"
-               ReferencedContainer = "container:AgentKeeperCompanion.xcodeproj">
+               BuildableName = "AgentKeeperRemote.app"
+               BlueprintName = "AgentKeeperRemote"
+               ReferencedContainer = "container:AgentKeeperRemote.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,9 +46,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BF500001000000000000001A"
-            BuildableName = "AgentKeeperCompanion.app"
-            BlueprintName = "AgentKeeperCompanion"
-            ReferencedContainer = "container:AgentKeeperCompanion.xcodeproj">
+            BuildableName = "AgentKeeperRemote.app"
+            BlueprintName = "AgentKeeperRemote"
+            ReferencedContainer = "container:AgentKeeperRemote.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -63,9 +63,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "BF500001000000000000001A"
-            BuildableName = "AgentKeeperCompanion.app"
-            BlueprintName = "AgentKeeperCompanion"
-            ReferencedContainer = "container:AgentKeeperCompanion.xcodeproj">
+            BuildableName = "AgentKeeperRemote.app"
+            BlueprintName = "AgentKeeperRemote"
+            ReferencedContainer = "container:AgentKeeperRemote.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

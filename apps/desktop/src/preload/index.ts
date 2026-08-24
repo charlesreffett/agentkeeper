@@ -65,6 +65,7 @@ import {
   type JiraActivityEntry,
   type PluginRecord,
   type UpdateAvailable,
+  type AppUpdateState,
   type PerformanceSummary,
 } from '../shared/ipc-contract'
 
@@ -128,6 +129,14 @@ function onChannel<P>(
 }
 
 const api: AgentKeeperApi = {
+  appUpdates: {
+    getState: () => invoke(IPC_CHANNELS.appUpdatesGetState) as Promise<AppUpdateState>,
+    check: () => invoke(IPC_CHANNELS.appUpdatesCheck) as Promise<AppUpdateState>,
+    download: () => invoke(IPC_CHANNELS.appUpdatesDownload) as Promise<void>,
+    install: () => invoke(IPC_CHANNELS.appUpdatesInstall) as Promise<void>,
+    onStateChanged: (callback) =>
+      onChannel<AppUpdateState>(IPC_CHANNELS.appUpdatesStateChanged, callback),
+  },
   auth: {
     status: () => invoke(IPC_CHANNELS.authStatus) as Promise<ClaudeAuthType>,
   },
