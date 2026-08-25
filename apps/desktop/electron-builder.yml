@@ -35,17 +35,18 @@ mac:
   # Production signing is layered on by electron-builder.production.yml.
   hardenedRuntime: false
   gatekeeperAssess: false
-  # icon: build/icon.icns   # 1024×1024 ICNS — add when ready
+  icon: build/AppIcon.icon
 
 dmg:
   sign: false
+  icon: build/icon.icns
 
 win:
   target:
     - target: nsis
       arch:
         - x64
-  # icon: build/icon.ico    # 256×256 ICO — add when ready
+  icon: build/icon.png
 
 nsis:
   oneClick: false

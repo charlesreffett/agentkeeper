@@ -43,7 +43,7 @@ jobs:
 
   build-mac:
     needs: prepare-release
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     environment: production-signing
     steps:
@@ -204,7 +204,7 @@ jobs:
 
       - name: Generate checksums
         working-directory: release-assets
-        run: sha256sum * > SHA256SUMS.txt
+        run: sha256sum -- * > SHA256SUMS.txt
 
       - name: Upload assets and publish release
         env:

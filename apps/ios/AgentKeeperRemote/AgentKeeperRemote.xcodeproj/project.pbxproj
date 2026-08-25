@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		7A9FC900303CFDA5006E71D0 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 7A9FC8FF303CFDA5006E71D0 /* AppIcon.icon */; };
 		BF100001000000000000001A /* AgentKeeperRemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF200001000000000000001A /* AgentKeeperRemoteApp.swift */; };
 		BF100002000000000000001A /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF200002000000000000001A /* AppConfig.swift */; };
 		BF100003000000000000001A /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF200003000000000000001A /* ContentView.swift */; };
@@ -23,6 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		7A9FC8FF303CFDA5006E71D0 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		BF200001000000000000001A /* AgentKeeperRemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentKeeperRemoteApp.swift; sourceTree = "<group>"; };
 		BF200002000000000000001A /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		BF200003000000000000001A /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -72,6 +74,7 @@
 		BF400003000000000000001A /* AgentKeeperRemote */ = {
 			isa = PBXGroup;
 			children = (
+				7A9FC8FF303CFDA5006E71D0 /* AppIcon.icon */,
 				BF400004000000000000001A /* App */,
 				BF400005000000000000001A /* Network */,
 				BF400007000000000000001A /* Views */,
@@ -102,6 +105,14 @@
 			path = Network;
 			sourceTree = "<group>";
 		};
+		BF400006000000000000001A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				BF200009000000000000001A /* Security.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		BF400007000000000000001A /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -111,14 +122,6 @@
 				BF20000E000000000000001A /* NewSessionView.swift */,
 			);
 			path = Views;
-			sourceTree = "<group>";
-		};
-		BF400006000000000000001A /* Frameworks */ = {
-			isa = PBXGroup;
-			children = (
-				BF200009000000000000001A /* Security.framework */,
-			);
-			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -179,6 +182,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A9FC900303CFDA5006E71D0 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -327,11 +331,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SVLC6QDF7V;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AgentKeeperRemote/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AgentKeeper Remote";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -350,11 +356,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = SVLC6QDF7V;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = AgentKeeperRemote/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AgentKeeper Remote";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
