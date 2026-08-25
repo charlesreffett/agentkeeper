@@ -2,6 +2,12 @@ node_modules
 dist
 out
 build
+!apps/desktop/build/
+apps/desktop/build/*
+!apps/desktop/build/AppIcon.icon/
+!apps/desktop/build/AppIcon.icon/**
+!apps/desktop/build/icon.icns
+!apps/desktop/build/icon.png
 .vite
 *.log
 .DS_Store
