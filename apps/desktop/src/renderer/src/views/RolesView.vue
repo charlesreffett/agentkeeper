@@ -7,7 +7,7 @@ import {
   type RoleDraft,
   type RoleScope,
 } from '@shared/ipc-contract'
-import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import { useHarnessAuthGuard } from '@/composables/useHarnessAuthGuard'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
@@ -76,7 +76,7 @@ const generatePrompt = ref('')
 const generating = ref(false)
 const generateError = ref<string | null>(null)
 
-const { handleAuthError } = useClaudeAuth()
+const { handleAuthError } = useHarnessAuthGuard()
 
 function resetGenerate() {
   generatePrompt.value = ''

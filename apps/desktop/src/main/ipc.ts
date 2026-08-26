@@ -17,12 +17,12 @@ import {
   type ProjectDayTotal,
   type HarnessInfo,
   type HarnessAuthInfo,
+  type HarnessConfigurationState,
   type MergeMethod,
   type PRFilters,
   type PluginSource,
   type RecentProject,
   type ReviewEvent,
-  type SecretKeyName,
   type StartSessionParams,
   type WorkItemCreateParams,
   type WorkItemStatus,
@@ -75,7 +75,7 @@ import { commit, createBranch, detectRemoteSources, getBranch, getStatus, isGitR
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp, setDefaultMcpFactoryResolver, editAndRerun, undoEditAndRerun } from './agent'
-import { SECRET_KEYS, secrets, resolveClaudeAuth } from './secrets'
+import { harnessSecrets } from './secrets'
 import { settingsStore } from './settings'
 import { createWorktree, gitDiffStat, listWorktrees, removeWorktree } from './worktrees'
 import { deleteRole, generateRoleContent, listRoles, saveRole } from './roles'
@@ -131,13 +131,6 @@ async function pickProject(): Promise<RecentProject | null> {
   }
   recentProjectsStore.add(project)
   return project
-}
-
-function secretKeyToKeytarKey(k: SecretKeyName) {
-  switch (k) {
-    case 'anthropicApiKey':
-      return SECRET_KEYS.anthropicApiKey
-  }
 }
 
 export function registerIpcHandlers(registry: WorkItemRegistryFull) {
@@ -703,30 +696,6 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
     },
   )
-
-  // Auth
-  ipcMain.handle(IPC_CHANNELS.authStatus, async () => {
-    const auth = await resolveClaudeAuth()
-    return auth.type
-  })
-
-  // Secrets
-  ipcMain.handle(IPC_CHANNELS.secretsHas, (_event, key: SecretKeyName) =>
-    secrets.has(secretKeyToKeytarKey(key)),
-  )
-  ipcMain.handle(
-    IPC_CHANNELS.secretsSet,
-    async (_event, key: SecretKeyName, value: string) => {
-      await secrets.set(secretKeyToKeytarKey(key), value)
-      invalidateAvailableModels('claude-code')
-      void refreshAvailableModels('claude-code')
-    },
-  )
-  ipcMain.handle(IPC_CHANNELS.secretsDelete, async (_event, key: SecretKeyName) => {
-    await secrets.delete(secretKeyToKeytarKey(key))
-    invalidateAvailableModels('claude-code')
-    void refreshAvailableModels('claude-code')
-  })
 
   // Factory reset
   ipcMain.handle(
@@ -1549,7 +1518,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
         available: avail.available,
         unavailableReason: avail.reason,
         defaultModel: await getDefaultModel(a.id),
-        capabilities: await getCapabilities(a.id),
+      capabilities: await getCapabilities(a.id),
+      configuration: a.configuration,
+      authentication: a.authentication,
       }
     }))
   })
@@ -1564,6 +1535,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       unavailableReason: avail.reason,
       defaultModel: await getDefaultModel(active.id),
       capabilities: await getCapabilities(active.id),
+      configuration: active.configuration,
+      authentication: active.authentication,
     }
   })
 
@@ -1580,10 +1553,50 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       }
       const auth = await a.resolveAuth()
       if (auth.type === 'api-key' && auth.key) {
-        return { id: a.id, type: 'api-key', ready: true, detail: 'API key configured.' }
+        return { id: a.id, type: 'api-key', status: 'authenticated', detail: 'API key configured.' }
       }
-      return { id: a.id, type: 'cli', ready: true, detail: 'Relies on the binary’s own login.' }
+      return { id: a.id, type: 'cli', status: 'unknown', detail: 'Relies on the binary’s own login.' }
     }))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessConfigGet, async (_e, id: string): Promise<HarnessConfigurationState> => {
+    const adapter = getHarness(id)
+    const values = settingsStore.get().harnessConfig?.[id] ?? {}
+    const secretFields: string[] = []
+    for (const field of adapter.configuration?.fields ?? []) {
+      if (field.type === 'secret' && await harnessSecrets.has(id, field.id)) secretFields.push(field.id)
+    }
+    return { values, secretFields }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessConfigSet, (_e, id: string, values: Record<string, string | boolean>) => {
+    const adapter = getHarness(id)
+    const allowed = new Set((adapter.configuration?.fields ?? []).filter((f) => f.type !== 'secret').map((f) => f.id))
+    const sanitized = Object.fromEntries(Object.entries(values).filter(([key, value]) => allowed.has(key) && (typeof value === 'string' || typeof value === 'boolean')))
+    const current = settingsStore.get().harnessConfig ?? {}
+    settingsStore.set({ harnessConfig: { ...current, [id]: sanitized } })
+    invalidateAvailableModels(id)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessConfigSecretSet, async (_e, id: string, fieldId: string, value: string) => {
+    const field = getHarness(id).configuration?.fields.find((candidate) => candidate.id === fieldId)
+    if (field?.type !== 'secret') throw new Error(`Unknown secret field '${fieldId}' for harness '${id}'`)
+    await harnessSecrets.set(id, fieldId, value)
+    invalidateAvailableModels(id)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessConfigSecretDelete, async (_e, id: string, fieldId: string) => {
+    const field = getHarness(id).configuration?.fields.find((candidate) => candidate.id === fieldId)
+    if (field?.type !== 'secret') throw new Error(`Unknown secret field '${fieldId}' for harness '${id}'`)
+    await harnessSecrets.delete(id, fieldId)
+    invalidateAvailableModels(id)
+  })
+
+  ipcMain.handle(IPC_CHANNELS.harnessAuthAction, async (_e, id: string) => {
+    const adapter = getHarness(id)
+    const command = adapter.authentication?.login
+    if (!command) throw new Error(`${adapter.name} does not provide an authentication action.`)
+    return adapter.runCLI(command.args)
   })
 
   registerTerminalHandlers()

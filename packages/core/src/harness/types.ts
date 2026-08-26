@@ -29,10 +29,34 @@ export interface HarnessAvailability {
  *  credential is present; `detail` explains what's configured. */
 export interface HarnessAuthDetail {
   type: string
-  ready: boolean
+  status: 'authenticated' | 'unauthenticated' | 'expired' | 'unknown' | 'not-required'
   /** Authenticated provider ids (e.g. opencode's auth store) — empty otherwise. */
   providers?: string[]
   detail?: string
+}
+
+export type HarnessConfigurationField = {
+  id: string
+  label: string
+  description?: string
+  required?: boolean
+  advanced?: boolean
+  placeholder?: string
+  /** Simple adapters can map a field directly into their child environment. */
+  env?: string
+} & (
+  | { type: 'text' | 'path' | 'url'; secret?: false }
+  | { type: 'secret'; secret: true }
+  | { type: 'boolean'; defaultValue?: boolean }
+  | { type: 'select'; choices: Array<{ value: string; label: string }> }
+)
+
+export interface HarnessConfigurationDescriptor {
+  fields: HarnessConfigurationField[]
+}
+
+export interface HarnessAuthenticationDescriptor {
+  login?: { command: string; args: string[]; label?: string }
 }
 
 export interface HarnessCLIOptions {
@@ -156,6 +180,8 @@ export interface HarnessAdapter {
   /** Static baseline of what this harness honors — synchronous so the UI can
    *  paint immediately. `probeCapabilities` may refine it at runtime. */
   readonly capabilities: HarnessCapabilities
+  readonly configuration?: HarnessConfigurationDescriptor
+  readonly authentication?: HarnessAuthenticationDescriptor
 
   /** Optional runtime refinement of {@link capabilities}. This is the
    *  CLI-wrapping seam: a harness that shells out to a binary parses its

@@ -63,6 +63,9 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     modelSelection: 'idle',
     customModels: true,
   }
+  readonly authentication = {
+    login: { command: 'opencode', args: ['auth', 'login'], label: 'Authenticate' },
+  }
 
   /** Singleton server — lazily started, shared across all runSession calls. */
   private singleton: { url: string; client: OpencodeClient; close(): void } | null = null
@@ -711,14 +714,14 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     if (providers.length > 0 || apiKey) {
       return {
         type: 'provider',
-        ready: true,
+        status: 'authenticated',
         providers,
         detail: `${providerDetail}${apiKey ? ' Sessions may also use the stored Anthropic API key.' : ''}`,
       }
     }
     return {
       type: 'provider',
-      ready: false,
+      status: 'unauthenticated',
       providers: [],
       detail: 'Not authenticated — run `opencode auth login` or add an Anthropic API key in Settings.',
     }

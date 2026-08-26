@@ -1,6 +1,7 @@
 import keytar from 'keytar'
 
 const SERVICE = 'orchestral-ai'
+const HARNESS_PREFIX = 'harness:'
 
 export const SECRET_KEYS = {
   anthropicApiKey: 'anthropic-api-key',
@@ -21,6 +22,27 @@ export const secrets = {
   },
   async delete(key: SecretKey): Promise<void> {
     await keytar.deletePassword(SERVICE, key)
+  },
+}
+
+export const harnessSecrets = {
+  get(harnessId: string, fieldId: string): Promise<string | null> {
+    return keytar.getPassword(SERVICE, `${HARNESS_PREFIX}${harnessId}:${fieldId}`)
+  },
+  set(harnessId: string, fieldId: string, value: string): Promise<void> {
+    return keytar.setPassword(SERVICE, `${HARNESS_PREFIX}${harnessId}:${fieldId}`, value)
+  },
+  async has(harnessId: string, fieldId: string): Promise<boolean> {
+    return Boolean(await this.get(harnessId, fieldId))
+  },
+  async delete(harnessId: string, fieldId: string): Promise<void> {
+    await keytar.deletePassword(SERVICE, `${HARNESS_PREFIX}${harnessId}:${fieldId}`)
+  },
+  async deleteAll(): Promise<void> {
+    const entries = await keytar.findCredentials(SERVICE)
+    await Promise.all(entries
+      .filter((entry) => entry.account.startsWith(HARNESS_PREFIX))
+      .map((entry) => keytar.deletePassword(SERVICE, entry.account)))
   },
 }
 

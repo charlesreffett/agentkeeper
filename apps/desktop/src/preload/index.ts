@@ -9,7 +9,6 @@ import {
   type AgencyScope,
   type AppSettings,
   type Attachment,
-  type ClaudeAuthType,
   type HarnessInfo,
   type HarnessAuthInfo,
   type CreatePRParams,
@@ -50,7 +49,6 @@ import {
   type RoleEffort,
   type RoleScope,
   type RolesGenerateResult,
-  type SecretKeyName,
   type SessionStatRow,
   type Skill,
   type SkillPreview,
@@ -136,9 +134,6 @@ const api: AgentKeeperApi = {
     install: () => invoke(IPC_CHANNELS.appUpdatesInstall) as Promise<void>,
     onStateChanged: (callback) =>
       onChannel<AppUpdateState>(IPC_CHANNELS.appUpdatesStateChanged, callback),
-  },
-  auth: {
-    status: () => invoke(IPC_CHANNELS.authStatus) as Promise<ClaudeAuthType>,
   },
   projects: {
     add: (projectPath: string) =>
@@ -330,14 +325,6 @@ const api: AgentKeeperApi = {
       ipcRenderer.on(IPC_CHANNELS.notificationsNavigate, handler)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.notificationsNavigate, handler)
     },
-  },
-  secrets: {
-    has: (key: SecretKeyName) =>
-      invoke(IPC_CHANNELS.secretsHas, key) as Promise<boolean>,
-    set: (key: SecretKeyName, value: string) =>
-      invoke(IPC_CHANNELS.secretsSet, key, value) as Promise<void>,
-    delete: (key: SecretKeyName) =>
-      invoke(IPC_CHANNELS.secretsDelete, key) as Promise<void>,
   },
   reset: {
     execute: (request: ResetRequest) =>
@@ -554,6 +541,15 @@ const api: AgentKeeperApi = {
     getActive: () => invoke(IPC_CHANNELS.harnessGetActive) as Promise<HarnessInfo>,
     setActive: (id: string) => invoke(IPC_CHANNELS.harnessSetActive, id) as Promise<void>,
     auth: () => invoke(IPC_CHANNELS.harnessAuth) as Promise<HarnessAuthInfo[]>,
+    getConfiguration: (id: string) => invoke(IPC_CHANNELS.harnessConfigGet, id) as Promise<never>,
+    setConfiguration: (id: string, values: Record<string, string | boolean>) =>
+      invoke(IPC_CHANNELS.harnessConfigSet, id, values) as Promise<void>,
+    setSecret: (id: string, fieldId: string, value: string) =>
+      invoke(IPC_CHANNELS.harnessConfigSecretSet, id, fieldId, value) as Promise<void>,
+    deleteSecret: (id: string, fieldId: string) =>
+      invoke(IPC_CHANNELS.harnessConfigSecretDelete, id, fieldId) as Promise<void>,
+    authenticate: (id: string) =>
+      invoke(IPC_CHANNELS.harnessAuthAction, id) as Promise<string>,
   },
   mobile: {
     generateKey: () => invoke(IPC_CHANNELS.mobileGenerateKey) as Promise<string>,

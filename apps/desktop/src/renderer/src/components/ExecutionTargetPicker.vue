@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
   allowAgencies?: boolean
   harnessSwitchable?: boolean
   disabledReason?: string
+  display?: 'compact' | 'field'
   capabilities?: {
     canSwitchHarness: boolean
     canSelectAgency: boolean
@@ -28,6 +29,7 @@ const props = withDefaults(defineProps<{
   agencies: () => [],
   allowAgencies: true,
   harnessSwitchable: true,
+  display: 'compact',
 })
 const emit = defineEmits<{
   'update:modelValue': [value: string]
@@ -53,6 +55,14 @@ const isLoadingAllModels = ref(false)
 
 const selectedAgency = computed(() => props.agencies.find((a) => `${a.scope}:${a.id}` === props.agencyKey))
 const triggerLabel = computed(() => selectedAgency.value?.name ?? resolvedLabelFor(props.modelValue))
+const selectedHarnessName = computed(() =>
+  harnesses.value?.find((harness) => harness.id === (props.harnessId ?? activeHarness.value?.id))?.name,
+)
+const displayedTriggerLabel = computed(() =>
+  props.display === 'field' && !selectedAgency.value && selectedHarnessName.value
+    ? `${selectedHarnessName.value} · ${triggerLabel.value}`
+    : triggerLabel.value,
+)
 const filteredModels = computed(() => {
   const q = query.value.trim().toLowerCase()
   return q
@@ -144,10 +154,16 @@ function chooseAgency(agency: Agency) {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <button type="button" class="flex h-7 max-w-48 items-center gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground">
+      <button
+        type="button"
+        class="flex items-center gap-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+        :class="display === 'field'
+          ? 'h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm'
+          : 'h-7 max-w-48 rounded-lg px-2 text-xs'"
+      >
         <Network v-if="selectedAgency" class="size-3.5 shrink-0" />
         <Bot v-else class="size-3.5 shrink-0" />
-        <span class="truncate">{{ triggerLabel }}</span>
+        <span class="truncate">{{ displayedTriggerLabel }}</span>
         <span v-if="selectedAgency" class="shrink-0 text-[10px]">{{ selectedAgency.roles.length }} roles</span>
         <ChevronDown class="size-3 shrink-0" />
       </button>

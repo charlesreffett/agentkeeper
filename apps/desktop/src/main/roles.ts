@@ -2,7 +2,6 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
-import Anthropic from '@anthropic-ai/sdk'
 import {
   isGeneralProject,
   ROLE_EFFORT_VALUES,
@@ -11,7 +10,6 @@ import {
   type RolesGenerateResult,
   type RoleScope,
 } from '../shared/ipc-contract'
-import { resolveClaudeAuth } from './secrets'
 import { getHarness } from './harness/index'
 
 function stripAnsi(s: string): string {
@@ -215,22 +213,7 @@ function parseRoleGenerationResponse(text: string): RolesGenerateResult {
 }
 
 export async function generateRoleContent(prompt: string): Promise<RolesGenerateResult> {
-  const auth = await resolveClaudeAuth()
   const content = ROLE_GENERATION_PROMPT(prompt)
-
-  if (auth.type === 'api-key') {
-    const client = new Anthropic({ apiKey: auth.key })
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      messages: [{ role: 'user', content }],
-    })
-    const first = message.content[0]
-    const text = first?.type === 'text' ? first.text : ''
-    return parseRoleGenerationResponse(text)
-  }
-
-  // Pro/Max path — harness CLI picks up `claude login` credentials
   try {
     const stdout = await getHarness().runPrompt(content, { cwd: os.homedir() })
     return parseRoleGenerationResponse(stdout)

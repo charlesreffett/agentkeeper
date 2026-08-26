@@ -1,9 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
-import Anthropic from '@anthropic-ai/sdk'
 import { isGeneralProject, type SlashCommand } from '../shared/ipc-contract'
-import { resolveClaudeAuth } from './secrets'
 import { getHarness } from './harness/index'
 
 function nameFromBody(body: string, id: string): string {
@@ -197,22 +195,7 @@ function validateGeneratedCommand(text: string): string {
 }
 
 export async function generateCommandContent(prompt: string): Promise<string> {
-  const auth = await resolveClaudeAuth()
   const userContent = `Create an agent slash command that does the following: ${prompt}`
-
-  if (auth.type === 'api-key') {
-    const client = new Anthropic({ apiKey: auth.key })
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      system: COMMAND_GENERATION_SYSTEM,
-      messages: [{ role: 'user', content: userContent }],
-    })
-    const text = response.content.find((b) => b.type === 'text')?.text ?? ''
-    return validateGeneratedCommand(text)
-  }
-
-  // Pro/Max plan path — picks up `claude login` credentials
   const fullPrompt = `${COMMAND_GENERATION_SYSTEM}\n\n${userContent}`
   try {
     const stdout = await getHarness().runPrompt(fullPrompt, { cwd: os.homedir() })

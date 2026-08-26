@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { ResetRequest, ResetResult } from '../shared/ipc-contract'
-import { SECRET_KEYS, secrets, type SecretKey } from './secrets'
+import { SECRET_KEYS, secrets, harnessSecrets, type SecretKey } from './secrets'
 
 async function removeSafely(p: string): Promise<void> {
   try {
@@ -23,6 +23,7 @@ async function resetAppSettings(): Promise<void> {
       // keytar throws if the entry never existed — ignore.
     }
   }
+  await harnessSecrets.deleteAll()
 }
 
 async function resetProjectDefinitions(projectPath: string): Promise<void> {

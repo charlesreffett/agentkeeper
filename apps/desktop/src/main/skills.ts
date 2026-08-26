@@ -3,9 +3,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import Anthropic from '@anthropic-ai/sdk'
 import type { Skill, SkillPreview } from '../shared/ipc-contract'
-import { resolveClaudeAuth } from './secrets'
 import { getHarness } from './harness/index'
 
 const execFileAsync = promisify(execFile)
@@ -420,22 +418,7 @@ function validateGeneratedSkill(raw: string): string {
 }
 
 export async function generateSkillContent(prompt: string): Promise<string> {
-  const auth = await resolveClaudeAuth()
   const userContent = `Create an agent skill that does the following: ${prompt}`
-
-  if (auth.type === 'api-key') {
-    const client = new Anthropic({ apiKey: auth.key })
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2048,
-      system: SKILL_GENERATION_SYSTEM,
-      messages: [{ role: 'user', content: userContent }],
-    })
-    const text = response.content.find((b) => b.type === 'text')?.text ?? ''
-    return validateGeneratedSkill(text)
-  }
-
-  // Pro/Max plan path — harness CLI picks up `claude login` credentials
   const fullPrompt = `${SKILL_GENERATION_SYSTEM}\n\n${userContent}`
   try {
     const stdout = await getHarness().runPrompt(fullPrompt, { cwd: os.homedir() })

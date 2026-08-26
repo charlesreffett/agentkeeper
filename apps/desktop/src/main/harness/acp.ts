@@ -68,6 +68,7 @@ type AcpHarnessConfig = {
   authMethod: string
   defaultModel: string
   provider: string
+  login: { command: string; args: string[] }
 }
 
 export function modelsFromAcp(value: unknown, fallback: HarnessModelInfo): HarnessModelInfo[] {
@@ -94,7 +95,12 @@ export class AcpHarnessAdapter implements HarnessAdapter {
     permissionModes: true, effort: false, commands: false, skills: true,
     agencies: false, modelSelection: 'turn', customModels: true,
   }
-  constructor(private config: AcpHarnessConfig) { this.id = config.id; this.name = config.name }
+  readonly authentication: HarnessAdapter['authentication']
+  constructor(private config: AcpHarnessConfig) {
+    this.id = config.id
+    this.name = config.name
+    this.authentication = { login: { ...config.login, label: 'Authenticate' } }
+  }
 
   private bin(): string {
     const bin = resolveBin(this.config.bin)
@@ -173,9 +179,9 @@ export class AcpHarnessAdapter implements HarnessAdapter {
   encodeCwd(cwd: string) { return cwd.replaceAll('/', '-') }
   async runCLI(args: string[], options?: HarnessCLIOptions) { return (await execFileAsync(this.bin(), args, { cwd: options?.cwd, env: { ...process.env, ...options?.env }, timeout: options?.timeout })).stdout }
   async resolveAuth(): Promise<HarnessAuth> { return { type: 'cli' } }
-  async probeAuthDetail(): Promise<HarnessAuthDetail> { return { type: 'cli', ready: true, detail: `Relies on ${this.name}’s own login.` } }
+  async probeAuthDetail(): Promise<HarnessAuthDetail> { return { type: 'cli', status: 'unknown', detail: `Relies on ${this.name}’s own login.` } }
   async probeAvailability(): Promise<HarnessAvailability> { try { await this.runCLI(['--version']); return { available: true } } catch (error) { return { available: false, reason: error instanceof Error ? error.message : String(error) } } }
 }
 
-export const cursorHarness = new AcpHarnessAdapter({ id: 'cursor', name: 'Cursor', bin: { harnessId: 'cursor', fallbackBins: ['cursor-agent'], envVar: 'CURSOR_AGENT_BIN' }, args: ['acp'], authMethod: 'cursor_login', defaultModel: 'default', provider: 'Cursor' })
-export const grokHarness = new AcpHarnessAdapter({ id: 'grok', name: 'Grok', bin: { harnessId: 'grok', fallbackBins: ['grok'], envVar: 'GROK_BIN' }, args: ['agent', 'stdio'], authMethod: 'cached_token', defaultModel: 'grok-build', provider: 'xAI' })
+export const cursorHarness = new AcpHarnessAdapter({ id: 'cursor', name: 'Cursor', bin: { harnessId: 'cursor', fallbackBins: ['cursor-agent'], envVar: 'CURSOR_AGENT_BIN' }, args: ['acp'], authMethod: 'cursor_login', defaultModel: 'default', provider: 'Cursor', login: { command: 'cursor-agent', args: ['login'] } })
+export const grokHarness = new AcpHarnessAdapter({ id: 'grok', name: 'Grok', bin: { harnessId: 'grok', fallbackBins: ['grok'], envVar: 'GROK_BIN' }, args: ['agent', 'stdio'], authMethod: 'cached_token', defaultModel: 'grok-build', provider: 'xAI', login: { command: 'grok', args: ['login'] } })

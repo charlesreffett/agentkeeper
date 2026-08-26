@@ -1,1 +1,1 @@
-export { useClaudeAuth as useApiKeyGuard } from './useClaudeAuth'
+export { useHarnessAuthGuard as useApiKeyGuard } from './useHarnessAuthGuard'

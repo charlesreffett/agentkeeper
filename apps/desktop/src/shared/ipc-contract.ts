@@ -4,8 +4,8 @@
 import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus }
 import type { PluginManifest } from '@agentkeeper/sdk'
-import type { HarnessCapabilities, SessionControlDescriptor } from '@agentkeeper/core'
-export type { HarnessCapabilities, SessionControlDescriptor, SessionControlSelection, SessionControlValue } from '@agentkeeper/core'
+import type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor } from '@agentkeeper/core'
+export type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor, SessionControlSelection, SessionControlValue } from '@agentkeeper/core'
 import type {
   CheckRun,
   CheckState,
@@ -645,6 +645,8 @@ export interface AppSettings {
   /** Per-harness binary path overrides, keyed by harness id (e.g. claude-code
    *  → /path/to/claude). Empty means PATH lookup with *_BIN env fallback. */
   harnessBins?: Record<string, string>
+  /** Non-secret values for adapter-declared configuration fields. */
+  harnessConfig?: Record<string, Record<string, string | boolean>>
   /** Sanitized off-catalog model ids merged into catalogs for capable harnesses. */
   customModels?: Record<string, string[]>
   mobileServer?: { enabled: boolean; port: number; secretKey: string }
@@ -656,10 +658,6 @@ export interface AppSettings {
   lastUsedModels?: Record<string, string>
 }
 
-export type SecretKeyName = 'anthropicApiKey'
-
-export type ClaudeAuthType = 'api-key' | 'cli'
-
 export interface HarnessInfo {
   id: string
   name: string
@@ -668,6 +666,8 @@ export interface HarnessInfo {
   unavailableReason?: string
   defaultModel: string
   capabilities: HarnessCapabilities
+  configuration?: HarnessConfigurationDescriptor
+  authentication?: HarnessAuthenticationDescriptor
   /** Adapter-owned session controls such as permission policy and mode. */
   controls?: SessionControlDescriptor[]
 }
@@ -679,10 +679,15 @@ export interface HarnessAuthInfo {
   /** 'api-key' (key stored), 'cli' (relies on `claude login`), or 'provider'
    *  (open-code style auth store). */
   type: string
-  ready: boolean
+  status: 'authenticated' | 'unauthenticated' | 'expired' | 'unknown' | 'not-required'
   /** Authenticated provider ids (opencode) — empty otherwise. */
   providers?: string[]
   detail?: string
+}
+
+export interface HarnessConfigurationState {
+  values: Record<string, string | boolean>
+  secretFields: string[]
 }
 
 // ─── Factory reset ──────────────────────────────────────────────────────────
@@ -1038,14 +1043,6 @@ export interface AgentKeeperApi {
     trigger: (sessionLocalId: string, sessionTitle: string, silent: boolean) => Promise<void>
     onNavigate: (callback: (sessionLocalId: string) => void) => () => void
   }
-  auth: {
-    status: () => Promise<ClaudeAuthType>
-  }
-  secrets: {
-    has: (key: SecretKeyName) => Promise<boolean>
-    set: (key: SecretKeyName, value: string) => Promise<void>
-    delete: (key: SecretKeyName) => Promise<void>
-  }
   reset: {
     execute: (request: ResetRequest) => Promise<ResetResult>
   }
@@ -1175,6 +1172,11 @@ export interface AgentKeeperApi {
     setActive: (id: string) => Promise<void>
     /** Auth/availability diagnostics for every registered harness. */
     auth: () => Promise<HarnessAuthInfo[]>
+    getConfiguration: (id: string) => Promise<HarnessConfigurationState>
+    setConfiguration: (id: string, values: Record<string, string | boolean>) => Promise<void>
+    setSecret: (id: string, fieldId: string, value: string) => Promise<void>
+    deleteSecret: (id: string, fieldId: string) => Promise<void>
+    authenticate: (id: string) => Promise<string>
   }
   mobile: {
     generateKey: () => Promise<string>
@@ -1271,10 +1273,6 @@ export const IPC_CHANNELS = {
   commandsChanged: 'commands:changed',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
-  authStatus: 'auth:status',
-  secretsHas: 'secrets:has',
-  secretsSet: 'secrets:set',
-  secretsDelete: 'secrets:delete',
   resetExecute: 'reset:execute',
   workItemsList: 'workItems:list',
   workItemsGet: 'workItems:get',
@@ -1389,6 +1387,11 @@ export const IPC_CHANNELS = {
   harnessGetActive: 'harness:getActive',
   harnessSetActive: 'harness:setActive',
   harnessAuth: 'harness:auth',
+  harnessConfigGet: 'harness:config:get',
+  harnessConfigSet: 'harness:config:set',
+  harnessConfigSecretSet: 'harness:config:secret:set',
+  harnessConfigSecretDelete: 'harness:config:secret:delete',
+  harnessAuthAction: 'harness:auth:action',
   mobileGenerateKey: 'mobile:generateKey',
   mobileGetLocalIp: 'mobile:getLocalIp',
   performanceGetSummary: 'performance:getSummary',
