@@ -6,6 +6,7 @@ import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailabilit
 import { sanitizeCustomModel } from '@agentkeeper/core'
 import { resolveBin, type BinConfig } from './bin'
 import { jsonLines, spawnHarnessProcess, waitForExit } from './cli-process'
+import { resolveHarnessEnvironment } from './configuration'
 
 const execFileAsync = promisify(execFile)
 const CODEX_BIN: BinConfig = { harnessId: 'codex', fallbackBins: ['codex'], envVar: 'CODEX_BIN' }
@@ -18,6 +19,13 @@ export class CodexHarnessAdapter implements HarnessAdapter {
     permissionModes: true, effort: true, commands: false, skills: true,
     agencies: false, modelSelection: 'turn', customModels: true,
   }
+  readonly configuration = {
+    fields: [
+      { id: 'home', label: 'Codex home', type: 'path' as const, env: 'CODEX_HOME', placeholder: '~/.codex', description: 'Use a separate Codex profile.' },
+      { id: 'apiKey', label: 'OpenAI API key', type: 'secret' as const, secret: true as const, env: 'OPENAI_API_KEY', placeholder: 'sk-…', description: 'Optional API key stored in the OS keychain.' },
+    ],
+  }
+  readonly authentication = { login: { command: 'codex', args: ['login'], label: 'Authenticate' } }
 
   private bin(): string {
     const bin = resolveBin(CODEX_BIN)
@@ -38,7 +46,8 @@ export class CodexHarnessAdapter implements HarnessAdapter {
   }
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
-    const child = spawnHarnessProcess(this.bin(), this.args(prompt, options), { cwd: options.cwd, env: options.env, signal: options.abortController?.signal })
+    const env = await resolveHarnessEnvironment(this, options.env)
+    const child = spawnHarnessProcess(this.bin(), this.args(prompt, options), { cwd: options.cwd, env, signal: options.abortController?.signal })
     let sessionId: string | undefined
     let finalText = ''
     for await (const raw of jsonLines(child.stdout)) {
@@ -81,11 +90,11 @@ export class CodexHarnessAdapter implements HarnessAdapter {
   getPluginsDir() { return path.join(os.homedir(), '.codex', 'plugins') }
   getSettingsPath() { return path.join(os.homedir(), '.codex', 'config.toml') }
   encodeCwd(cwd: string) { return cwd.replaceAll('/', '-') }
-  async runCLI(args: string[], options?: HarnessCLIOptions) { return (await execFileAsync(this.bin(), args, { cwd: options?.cwd, env: { ...process.env, ...options?.env }, timeout: options?.timeout })).stdout }
+  async runCLI(args: string[], options?: HarnessCLIOptions) { const env = await resolveHarnessEnvironment(this, options?.env); return (await execFileAsync(this.bin(), args, { cwd: options?.cwd, env: { ...process.env, ...env }, timeout: options?.timeout })).stdout }
   async resolveAuth(): Promise<HarnessAuth> { return { type: 'cli' } }
   async probeAuthDetail(): Promise<HarnessAuthDetail> {
-    try { await this.runCLI(['login', 'status']); return { type: 'cli', ready: true, detail: 'Codex login is configured.' } }
-    catch { return { type: 'cli', ready: false, detail: 'Not authenticated — run `codex login`.' } }
+    try { await this.runCLI(['login', 'status'], { timeout: 5_000 }); return { type: 'cli', status: 'authenticated', detail: 'Codex login is configured.' } }
+    catch { return { type: 'cli', status: 'unauthenticated', detail: 'Not authenticated — run `codex login`.' } }
   }
   async probeAvailability(): Promise<HarnessAvailability> {
     try { await this.runCLI(['--version']); return { available: true } }

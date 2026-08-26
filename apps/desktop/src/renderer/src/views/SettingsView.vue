@@ -13,8 +13,8 @@ import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { queryKeys } from '@/lib/queryKeys'
 import { pluginSettingsPanels } from '@/lib/pluginSettingsPanels'
 import { useModelsQuery } from '@/composables/useModelsQuery'
-import { useHarnessList, useActiveHarness, useHarnessAuth } from '@/composables/useHarness'
-import ModelPicker from '@/components/ModelPicker.vue'
+import { useHarnessList, useActiveHarness, useHarnessAuth, useSetActiveHarness } from '@/composables/useHarness'
+import ExecutionTargetPicker from '@/components/ExecutionTargetPicker.vue'
 import PageHeader from '@/components/PageHeader.vue'
 
 const route = useRoute()
@@ -27,7 +27,6 @@ const { scope, options, setScope, pickAndAdd, label, color, isProject, currentPr
   usePageScope('settings', { includeGlobal: true })
 const {
   settings: storedSettings,
-  apiKeyStored: storedApiKeyStored,
   isLoading,
   invalidateAll,
 } = useSettingsQuery()
@@ -60,8 +59,6 @@ const activePluginPanel = computed(() =>
 
 const OWNER_REPO_RE = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/
 
-const apiKeyInput = ref('')
-const keyStored = ref(false)
 const settings = ref<AppSettings | null>(null)
 const baseline = ref<AppSettings | null>(null)
 const saving = ref(false)
@@ -99,11 +96,13 @@ const DIRTY_FIELDS = [
   'defaultModel', 'defaultEffort', 'defaultUseWorktree',
   'enterToSend', 'sendModifier', 'sessionExpiryEnabled', 'sessionExpiryDays', 'notifications', 'notificationSound',
   'gitSwitchWithoutSoftReject',
+  'harnessId',
 ] as const satisfies ReadonlyArray<keyof AppSettings>
 
 const isDirty = computed(() => {
   if (activeTab.value !== 'general') return false
-  if (apiKeyInput.value.trim()) return true
+  if (Object.values(harnessSecretInputs.value).some((value) => value.trim())) return true
+  if (JSON.stringify(harnessConfigValues.value) !== JSON.stringify(harnessConfigBaseline.value)) return true
   if (!settings.value || !baseline.value) return false
   return DIRTY_FIELDS.some((f) => settings.value![f] !== baseline.value![f])
 })
@@ -135,13 +134,14 @@ function captureModifier(e: KeyboardEvent) {
   else if (e.key === 'Shift')   settings.value!.sendModifier = 'shift'
 }
 
-const { effortLevelsFor, error: modelsError, isEmpty: noModels } = useModelsQuery()
+const { effortLevelsFor } = useModelsQuery()
 
 // Which harness new sessions actually run on (persisted active harness, with
 // the IPC query as a fresher fallback). The auth + default-model sections
 // adapt their copy/controls to it.
 const { data: activeHarness } = useActiveHarness()
 const { data: harnesses } = useHarnessList()
+const setActiveHarness = useSetActiveHarness()
 const activeHarnessId = computed(() => activeHarness.value?.id ?? settings.value?.harnessId)
 const activeHarnessName = computed(
   () =>
@@ -149,13 +149,39 @@ const activeHarnessName = computed(
     harnesses.value?.find((h) => h.id === settings.value?.harnessId)?.name ??
     'agent harness',
 )
-const isOpenCodeHarness = computed(() => activeHarnessId.value === 'opencode')
-const harnessLoginCommand = computed(() => {
-  if (activeHarnessId.value === 'codex') return 'codex login'
-  if (activeHarnessId.value === 'cursor') return 'cursor-agent login'
-  if (activeHarnessId.value === 'grok') return 'grok login'
-  return 'claude login'
-})
+const activeHarnessDescriptor = computed(() => harnesses.value?.find((h) => h.id === activeHarnessId.value))
+const harnessConfigValues = ref<Record<string, string | boolean>>({})
+const harnessConfigBaseline = ref<Record<string, string | boolean>>({})
+const harnessSecretInputs = ref<Record<string, string>>({})
+const harnessSecretFields = ref<string[]>([])
+
+async function loadHarnessConfiguration(id?: string) {
+  if (!id) return
+  const state = await window.agentkeeper.harness.getConfiguration(id)
+  harnessConfigValues.value = { ...state.values }
+  harnessConfigBaseline.value = { ...state.values }
+  harnessSecretFields.value = state.secretFields
+  harnessSecretInputs.value = {}
+}
+
+watch(activeHarnessId, (id) => { void loadHarnessConfiguration(id) }, { immediate: true })
+
+const authenticatingHarnessId = ref<string | null>(null)
+
+async function authenticateHarness(id: string) {
+  authenticatingHarnessId.value = id
+  try {
+    await window.agentkeeper.harness.authenticate(id)
+    await queryClient.invalidateQueries({ queryKey: queryKeys.harness.auth() })
+    toast.success('Authentication completed')
+  } catch (error) {
+    toast.error('Could not authenticate', {
+      description: error instanceof Error ? error.message : String(error),
+    })
+  } finally {
+    authenticatingHarnessId.value = null
+  }
+}
 
 // ─── Harness diagnostics ───────────────────────────────────────────────────────
 
@@ -187,30 +213,28 @@ function seedFromQuery() {
     settings.value = seeded
     baseline.value = { ...seeded }
   }
-  if (storedApiKeyStored.value != null) keyStored.value = storedApiKeyStored.value
 }
 
 watch(storedSettings, (s) => {
   if (s) seedFromQuery()
 }, { immediate: true })
 
-watch(storedApiKeyStored, (v) => {
-  if (v != null) keyStored.value = v
-})
-
 function cancel() {
   if (baseline.value) settings.value = { ...baseline.value }
-  apiKeyInput.value = ''
+  harnessSecretInputs.value = {}
   router.back()
 }
 
 async function save() {
   saving.value = true
   try {
-    if (apiKeyInput.value.trim()) {
-      await window.agentkeeper.secrets.set('anthropicApiKey', apiKeyInput.value.trim())
-      queryClient.setQueryData(queryKeys.settings.secrets(), true)
-      apiKeyInput.value = ''
+    if (activeHarnessId.value) {
+      await window.agentkeeper.harness.setConfiguration(activeHarnessId.value, harnessConfigValues.value)
+      for (const [fieldId, value] of Object.entries(harnessSecretInputs.value)) {
+        if (value.trim()) await window.agentkeeper.harness.setSecret(activeHarnessId.value, fieldId, value.trim())
+      }
+      await loadHarnessConfiguration(activeHarnessId.value)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.harness.auth() })
     }
     if (settings.value) {
       const toSave: Partial<AppSettings> = {
@@ -224,8 +248,10 @@ async function save() {
         notifications: settings.value.notifications,
         notificationSound: settings.value.notificationSound,
         gitSwitchWithoutSoftReject: settings.value.gitSwitchWithoutSoftReject,
+        harnessId: settings.value.harnessId,
       }
       await window.agentkeeper.settings.set(toSave)
+      if (settings.value.harnessId) await setActiveHarness.mutateAsync(settings.value.harnessId)
       queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value })
     }
     toast.success('Settings saved')
@@ -238,11 +264,11 @@ async function save() {
   }
 }
 
-async function clearKey() {
-  await window.agentkeeper.secrets.delete('anthropicApiKey')
-  queryClient.setQueryData(queryKeys.settings.secrets(), false)
-  keyStored.value = false
-  invalidateAll()
+async function clearHarnessSecret(fieldId: string) {
+  if (!activeHarnessId.value) return
+  await window.agentkeeper.harness.deleteSecret(activeHarnessId.value, fieldId)
+  await loadHarnessConfiguration(activeHarnessId.value)
+  await queryClient.invalidateQueries({ queryKey: queryKeys.harness.auth() })
 }
 
 async function onReset() {
@@ -343,13 +369,16 @@ async function onReset() {
               <div v-for="h in harnesses" :key="h.id" class="flex items-center gap-3 px-4 py-3">
                 <span
                   class="size-2 shrink-0 rounded-full"
-                  :class="h.available ? 'bg-emerald-500' : 'bg-destructive'"
+                  :class="!h.available || authFor(h.id)?.status === 'unauthenticated' || authFor(h.id)?.status === 'expired' ? 'bg-destructive' : authFor(h.id)?.status === 'unknown' ? 'bg-amber-500' : 'bg-emerald-500'"
                 />
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium">{{ h.name }}</p>
                   <p class="text-xs text-muted-foreground mt-0.5">
                     <template v-if="h.available">
-                      <span class="text-emerald-600 dark:text-emerald-400">Ready</span>
+                      <span v-if="authFor(h.id)?.status === 'authenticated'" class="text-emerald-600 dark:text-emerald-400">Authenticated</span>
+                      <span v-else-if="authFor(h.id)?.status === 'unauthenticated'" class="text-destructive">Not authenticated</span>
+                      <span v-else-if="authFor(h.id)?.status === 'expired'" class="text-destructive">Authentication expired</span>
+                      <span v-else class="text-amber-600 dark:text-amber-400">Available</span>
                       <span v-if="authFor(h.id)"> · {{ authFor(h.id)!.detail }}</span>
                     </template>
                     <template v-else>
@@ -358,51 +387,62 @@ async function onReset() {
                     </template>
                   </p>
                 </div>
+                <Button
+                  v-if="h.available && h.authentication?.login"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  :disabled="authenticatingHarnessId !== null || authFor(h.id)?.status === 'authenticated'"
+                  @click="authenticateHarness(h.id)"
+                >
+                  {{
+                    authenticatingHarnessId === h.id
+                      ? 'Authenticating…'
+                      : authFor(h.id)?.status === 'authenticated'
+                        ? 'Authenticated'
+                        : (h.authentication.login.label ?? 'Authenticate')
+                  }}
+                </Button>
               </div>
             </div>
           </section>
 
-          <!-- Authentication -->
-          <section class="space-y-3">
-            <h2 class="text-sm font-semibold">Authentication</h2>
-            <div class="rounded-md border border-border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed space-y-1">
-              <p class="text-foreground font-medium">
-                {{ activeHarnessName }} account
-              </p>
-              <p class="text-muted-foreground">
-                <template v-if="isOpenCodeHarness">
-                  Run
-                  <code class="font-mono bg-background px-1 rounded">opencode auth login</code>
-                  in a terminal once. The app connects to your OpenCode server, which
-                  uses those credentials — or add an Anthropic Console key below.
-                </template>
-                <template v-else>
-                  Run
-                  <code class="font-mono bg-background px-1 rounded">{{ harnessLoginCommand }}</code>
-                  in a terminal once. The app uses that harness’s own credentials.
-                </template>
-              </p>
-            </div>
-            <div class="space-y-2">
-              <p class="text-xs text-muted-foreground">
-                Anthropic Console key (stored in OS keychain via keytar):
-              </p>
-              <input
-                v-model="apiKeyInput"
-                type="password"
-                autocomplete="off"
-                :placeholder="
-                  keyStored
-                    ? '•••••••••• (key set) — enter new to replace'
-                    : 'sk-ant-… (optional)'
-                "
-                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
-              />
-              <div v-if="keyStored" class="flex items-center justify-between">
-                <span class="text-xs text-muted-foreground">API key is configured.</span>
-                <button class="text-xs text-destructive hover:underline" @click="clearKey">
-                  Remove key
-                </button>
+          <section v-if="activeHarnessDescriptor?.configuration?.fields.length" class="space-y-3">
+            <h2 class="text-sm font-semibold">{{ activeHarnessName }} configuration</h2>
+            <div v-if="activeHarnessDescriptor?.configuration?.fields.length" class="space-y-3">
+              <div v-for="field in activeHarnessDescriptor.configuration.fields" :key="field.id" class="space-y-1.5">
+                <label class="text-xs font-medium">{{ field.label }}</label>
+                <p v-if="field.description" class="text-xs text-muted-foreground">{{ field.description }}</p>
+                <select
+                  v-if="field.type === 'select'"
+                  v-model="harnessConfigValues[field.id]"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option v-for="choice in field.choices" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
+                </select>
+                <label v-else-if="field.type === 'boolean'" class="flex items-center gap-2 text-xs">
+                  <input v-model="harnessConfigValues[field.id]" type="checkbox">
+                  Enabled
+                </label>
+                <input
+                  v-else-if="field.type === 'secret'"
+                  v-model="harnessSecretInputs[field.id]"
+                  type="password"
+                  autocomplete="off"
+                  :placeholder="harnessSecretFields.includes(field.id) ? '•••••••••• (set) — enter to replace' : field.placeholder"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+                >
+                <input
+                  v-else
+                  v-model="harnessConfigValues[field.id]"
+                  :type="field.type === 'url' ? 'url' : 'text'"
+                  :placeholder="field.placeholder"
+                  class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono"
+                >
+                <div v-if="field.type === 'secret' && harnessSecretFields.includes(field.id)" class="flex items-center justify-between">
+                  <span class="text-xs text-muted-foreground">Stored in the OS keychain.</span>
+                  <button type="button" class="text-xs text-destructive hover:underline" @click="clearHarnessSecret(field.id)">Remove</button>
+                </div>
               </div>
             </div>
           </section>
@@ -413,20 +453,22 @@ async function onReset() {
             <div class="rounded-lg border divide-y">
 
               <!-- Default model -->
-              <div class="flex items-center gap-4 px-4 py-3">
-                <div class="flex-1 min-w-0">
+              <div class="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(12rem,1fr)_minmax(16rem,22rem)] sm:items-center">
+                <div class="min-w-0">
                   <p class="text-sm font-medium">Default model</p>
                   <p class="text-xs text-muted-foreground mt-0.5">
-                    Baseline model for new sessions on {{ activeHarnessName }}; overridable per session.
+                    Harness and model used for new sessions; overridable per session.
                   </p>
                 </div>
-                <ModelPicker
+                <ExecutionTargetPicker
                   :model-value="settings.defaultModel"
-                  :disabled="noModels"
-                  align="end"
+                  :harness-id="settings.harnessId"
+                  :allow-agencies="false"
+                  :harness-switchable="true"
+                  display="field"
                   @update:model-value="settings.defaultModel = $event"
+                  @update:harness-id="settings.harnessId = $event"
                 />
-                <p v-if="modelsError" class="text-xs text-destructive">Harness unavailable.</p>
               </div>
 
               <!-- Default effort -->

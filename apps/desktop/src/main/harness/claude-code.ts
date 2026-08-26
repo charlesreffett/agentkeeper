@@ -5,7 +5,8 @@ import { promisify } from 'node:util'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailability, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { sanitizeCustomModel } from '@agentkeeper/core'
-import { resolveClaudeAuth } from '../secrets'
+import { resolveClaudeAuth, harnessSecrets } from '../secrets'
+import { resolveHarnessEnvironment } from './configuration'
 import { resolveBin, type BinConfig } from './bin'
 import { isMissingBinary } from './diagnostics'
 
@@ -55,6 +56,21 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     modelSelection: 'idle',
     customModels: true,
   }
+  readonly configuration = {
+    fields: [
+      { id: 'configDir', label: 'Config directory', type: 'path' as const, env: 'CLAUDE_CONFIG_DIR', placeholder: '~/.claude', description: 'Use a separate Claude Code profile without changing HOME.' },
+      { id: 'apiKey', label: 'Anthropic API key', type: 'secret' as const, secret: true as const, env: 'ANTHROPIC_API_KEY', placeholder: 'sk-ant-…', description: 'Optional Console API key stored in the OS keychain.' },
+    ],
+  }
+  readonly authentication = {
+    login: { command: 'claude', args: ['auth', 'login'], label: 'Authenticate' },
+  }
+
+  private async resolvedAuth() {
+    const key = await harnessSecrets.get(this.id, 'apiKey')
+    if (key) return { type: 'api-key' as const, key }
+    return resolveClaudeAuth()
+  }
 
   private childEnv(auth: Awaited<ReturnType<typeof resolveClaudeAuth>>, extra?: Record<string, string>): Record<string, string | undefined> {
     const env: Record<string, string | undefined> = {
@@ -74,14 +90,15 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   }
 
   async runPrompt(prompt: string, options: HarnessSessionOptions): Promise<string> {
-    const auth = await resolveClaudeAuth()
+    const auth = await this.resolvedAuth()
+    const configuredEnv = await resolveHarnessEnvironment(this, options.env)
     const model = this.sanitizedModel(options.model)
     const q = query({
       prompt,
       options: {
         cwd: options.cwd,
         ...(model ? { model } : {}),
-        env: this.childEnv(auth, options.env),
+        env: this.childEnv(auth, configuredEnv),
         permissionMode: 'bypassPermissions',
         abortController: options.abortController,
         spawnClaudeCodeProcess,
@@ -103,11 +120,12 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   }
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
-    const auth = await resolveClaudeAuth()
+    const auth = await this.resolvedAuth()
+    const configuredEnv = await resolveHarnessEnvironment(this, options.env)
     const childEnv: Record<string, string | undefined> = {
       ...process.env,
       CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
-      ...(options.env ?? {}),
+      ...configuredEnv,
     }
     if (auth.type === 'api-key' && auth.key) {
       childEnv['ANTHROPIC_API_KEY'] = auth.key
@@ -164,10 +182,12 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   }
 
   async getSupportedModels(): Promise<HarnessModelInfo[]> {
-    const auth = await resolveClaudeAuth()
+    const auth = await this.resolvedAuth()
+    const configuredEnv = await resolveHarnessEnvironment(this)
     const childEnv: Record<string, string | undefined> = {
       ...process.env,
       CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
+      ...configuredEnv,
     }
     if (auth.type === 'api-key' && auth.key) {
       childEnv['ANTHROPIC_API_KEY'] = auth.key
@@ -236,16 +256,17 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
         "Claude binary not found — install Claude Code, set CLAUDE_BIN, or configure a bin path in settings.",
       )
     }
+    const configuredEnv = await resolveHarnessEnvironment(this, options?.env)
     const { stdout } = await execFileAsync(bin, args, {
       cwd: options?.cwd,
-      env: options?.env ? { ...process.env, ...options.env } : process.env,
+      env: { ...process.env, ...configuredEnv },
       timeout: options?.timeout,
     })
     return stdout
   }
 
   async resolveAuth(): Promise<HarnessAuth> {
-    const result = await resolveClaudeAuth()
+    const result = await this.resolvedAuth()
     if (result.type === 'api-key') {
       return { type: 'api-key', key: result.key }
     }
@@ -253,11 +274,15 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   }
 
   async probeAuthDetail(): Promise<HarnessAuthDetail> {
-    const result = await resolveClaudeAuth()
-    if (result.type === 'api-key' && result.key) {
-      return { type: 'api-key', ready: true, detail: 'Anthropic API key stored in the keychain.' }
+    if (await harnessSecrets.has(this.id, 'apiKey')) {
+      return { type: 'api-key', status: 'authenticated', detail: 'Anthropic API key stored in the keychain.' }
     }
-    return { type: 'cli', ready: true, detail: 'Uses Claude Code login (Pro/Max) — run `claude login` if sessions fail.' }
+    try {
+      await this.runCLI(['auth', 'status'], { timeout: 5_000 })
+      return { type: 'cli', status: 'authenticated', detail: 'Claude Code login is configured.' }
+    } catch {
+      return { type: 'cli', status: 'unauthenticated', detail: 'Not authenticated — run `claude auth login`.' }
+    }
   }
 
   async probeAvailability(): Promise<HarnessAvailability> {

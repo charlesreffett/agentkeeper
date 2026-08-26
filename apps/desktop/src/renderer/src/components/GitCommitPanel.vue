@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import type { CommitGroup, CommitSuggestion } from '@shared/ipc-contract'
-import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import { useHarnessAuthGuard } from '@/composables/useHarnessAuthGuard'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const props = defineProps<{ projectPath: string; autoAnalyze?: number }>()
@@ -12,7 +12,7 @@ const emit = defineEmits<{ committed: [] }>()
 
 type Phase = 'idle' | 'analyzing' | 'reviewing' | 'committing' | 'done' | 'error'
 
-const { handleAuthError } = useClaudeAuth()
+const { handleAuthError } = useHarnessAuthGuard()
 
 const phase = ref<Phase>('idle')
 const errorMessage = ref('')

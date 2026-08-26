@@ -29,7 +29,6 @@ import type {
   SetModelResult,
 } from '../shared/ipc-contract'
 import { AsyncQueue } from './async-queue'
-import { secrets, SECRET_KEYS } from './secrets'
 import type { WorkItemRegistryFull } from './plugins'
 import * as registry from './session-registry'
 
@@ -555,14 +554,6 @@ export async function startSession(
   params: StartSessionParams,
   extras: InternalStartExtras = {},
 ): Promise<string> {
-  // Auth is either:
-  //   (a) an ANTHROPIC_API_KEY stored in the OS keychain (Console users), or
-  //   (b) an existing `claude login` session on disk (Pro/Max users) —
-  //       the SDK subprocess is the same binary as the terminal `claude` CLI,
-  //       so it picks up those credentials automatically.
-  // We prefer (a) if set, otherwise let the SDK fall through to (b).
-  const apiKey = await secrets.get(SECRET_KEYS.anthropicApiKey)
-
   let systemPromptAppend = params.systemPromptAppend
   if (params.workItemId && workItemRegistry) {
     const item = await workItemRegistry.get(params.workItemId)
@@ -669,14 +660,6 @@ export async function startSession(
     registry.updateAgent(agentLocalId, { status: 'starting', lastActivityAt: now })
   }
 
-  const childEnv: Record<string, string | undefined> = {
-    ...process.env,
-    CLAUDE_AGENT_SDK_CLIENT_APP: 'agent-keeper',
-  }
-  if (apiKey) {
-    childEnv['ANTHROPIC_API_KEY'] = apiKey
-  }
-
   // Resolve the agentkeeper MCP server for this session. Resume paths don't
   // pass a factory, so fall back to the injected default — otherwise a resumed
   // agent silently loses plan tools and send_message.
@@ -716,7 +699,6 @@ export async function startSession(
       ? { preset: 'claude_code', systemPrompt: systemPromptAppend }
       : isResume ? {}
       : { preset: 'claude_code' }),
-    env: childEnv as Record<string, string>,
     messageQueue: input,
     ...(params.resumeSdkSessionId ? { resume: params.resumeSdkSessionId } : {}),
     ...(params.effort ? { effort: params.effort } : {}),

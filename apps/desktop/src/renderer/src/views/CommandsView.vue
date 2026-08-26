@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import type { SlashCommand } from '@shared/ipc-contract'
-import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import { useHarnessAuthGuard } from '@/composables/useHarnessAuthGuard'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useCommandsDataStore } from '@/stores/commandsData'
@@ -20,7 +20,7 @@ const commandsDataStore = useCommandsDataStore()
 const projectPath = computed(() =>
   isAll.value || isGlobal.value ? '' : isProject.value ? currentProject.value?.path ?? '' : '',
 )
-const { handleAuthError } = useClaudeAuth()
+const { handleAuthError } = useHarnessAuthGuard()
 
 // All scope = union of global + every project's commands (+ plugin commands,
 // which are global by nature), deduped by file path.

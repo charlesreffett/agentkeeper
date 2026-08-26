@@ -6,7 +6,7 @@ import type { Skill, SkillPreview } from '@shared/ipc-contract'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { useSkillsDataStore } from '@/stores/skillsData'
-import { useClaudeAuth } from '@/composables/useClaudeAuth'
+import { useHarnessAuthGuard } from '@/composables/useHarnessAuthGuard'
 import ScopeBar from '@/components/ScopeBar.vue'
 import { Download, Sparkles } from '@/components/icons/app-icons'
 
@@ -20,7 +20,7 @@ const skillsDataStore = useSkillsDataStore()
 const projectPath = computed(() =>
   isAll.value || isGlobal.value ? '' : isProject.value ? currentProject.value?.path ?? '' : '',
 )
-const { handleAuthError } = useClaudeAuth()
+const { handleAuthError } = useHarnessAuthGuard()
 
 // All scope = union of global + every project's skills, deduped by file path.
 const { data: allSkills, isLoading: allLoading } = useQuery({
