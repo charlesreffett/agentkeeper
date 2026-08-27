@@ -17,8 +17,6 @@ Environment secrets:
 | `MAC_CSC_LINK` | Base64-encoded Developer ID Application `.p12` |
 | `MAC_CSC_KEY_PASSWORD` | Password protecting the `.p12` |
 | `MAC_APPLE_API_KEY` | Contents of the App Store Connect `.p8` key |
-| `MAC_APPLE_API_KEY_ID` | App Store Connect API key ID |
-| `MAC_APPLE_API_ISSUER` | App Store Connect issuer UUID |
 | `WIN_CSC_LINK` | Base64-encoded Windows Authenticode `.pfx` |
 | `WIN_CSC_KEY_PASSWORD` | Password protecting the `.pfx` |
 
@@ -26,6 +24,8 @@ Environment variable:
 
 | Name | Value |
 | --- | --- |
+| `MAC_APPLE_API_KEY_ID` | App Store Connect API key ID |
+| `MAC_APPLE_API_ISSUER` | App Store Connect issuer UUID |
 | `MAC_APPLE_TEAM_ID` | Ten-character Apple Developer team ID |
 
 The workflow maps these platform-prefixed values onto the environment names

@@ -65,8 +65,8 @@ jobs:
           MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           MAC_APPLE_API_KEY: ${{ secrets.MAC_APPLE_API_KEY }}
-          MAC_APPLE_API_KEY_ID: ${{ secrets.MAC_APPLE_API_KEY_ID }}
-          MAC_APPLE_API_ISSUER: ${{ secrets.MAC_APPLE_API_ISSUER }}
+          MAC_APPLE_API_KEY_ID: ${{ vars.MAC_APPLE_API_KEY_ID }}
+          MAC_APPLE_API_ISSUER: ${{ vars.MAC_APPLE_API_ISSUER }}
           MAC_APPLE_TEAM_ID: ${{ vars.MAC_APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
@@ -82,7 +82,7 @@ jobs:
         shell: bash
         env:
           API_KEY: ${{ secrets.MAC_APPLE_API_KEY }}
-          API_KEY_ID: ${{ secrets.MAC_APPLE_API_KEY_ID }}
+          API_KEY_ID: ${{ vars.MAC_APPLE_API_KEY_ID }}
         run: |
           set -euo pipefail
           key_path="$RUNNER_TEMP/AuthKey_${API_KEY_ID}.p8"
@@ -98,8 +98,8 @@ jobs:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ steps.apple-key.outputs.path }}
-          APPLE_API_KEY_ID: ${{ secrets.MAC_APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.MAC_APPLE_API_ISSUER }}
+          APPLE_API_KEY_ID: ${{ vars.MAC_APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ vars.MAC_APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ vars.MAC_APPLE_TEAM_ID }}
         run: |
           pnpm build
