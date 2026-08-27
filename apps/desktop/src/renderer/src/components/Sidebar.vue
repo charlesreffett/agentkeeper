@@ -27,18 +27,22 @@ import { usePluginHealth } from '@/composables/usePluginHealth'
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/sidebar'
+import { openSettings } from '@/lib/settingsNavigation'
 
 const router = useRouter()
 const route = useRoute()
 const uiStore = useUIContributionsStore()
 const { isHealthy: githubHealthy } = usePluginHealth('github')
+const { isMobile, setOpenMobile } = useSidebar()
 
 const { data: pluginList } = useQuery({
   queryKey: queryKeys.plugins.list(),
@@ -114,10 +118,15 @@ const pluginItems = computed(() => {
 function isActive(path: string): boolean {
   return route.path === path || route.path.startsWith(path + '/')
 }
+
+function openAppSettings() {
+  if (isMobile.value) setOpenMobile(false)
+  void openSettings(router, route)
+}
 </script>
 
 <template>
-  <Sidebar collapsible="icon">
+  <Sidebar collapsible="icon" class="!h-full">
     <SidebarContent>
       <!-- Core navigation -->
       <SidebarGroup>
@@ -192,6 +201,24 @@ function isActive(path: string): boolean {
         </SidebarMenu>
       </SidebarGroup>
     </SidebarContent>
+
+    <SidebarFooter class="border-t border-sidebar-border">
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            size="sm"
+            tooltip="Settings"
+            aria-label="Settings"
+            @click="openAppSettings"
+          >
+            <span class="flex w-8 shrink-0 items-center justify-center">
+              <Settings2 class="size-5" />
+            </span>
+            <span>Settings</span>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarFooter>
 
     <SidebarRail />
   </Sidebar>

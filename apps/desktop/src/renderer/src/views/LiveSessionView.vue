@@ -2,7 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Brain,
   Hammer,
   LayoutGrid,
   MoreHorizontal,
@@ -16,7 +15,7 @@ import MessageInput from '@/components/MessageInput.vue'
 import ExecutionTargetPicker from '@/components/ExecutionTargetPicker.vue'
 import SessionLaunchContext from '@/components/SessionLaunchContext.vue'
 import SessionControlPicker from '@/components/SessionControlPicker.vue'
-import PillSelect from '@/components/PillSelect.vue'
+import EffortPicker from '@/components/EffortPicker.vue'
 import ContextPanel from '@/components/session/ContextPanel.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import type { ScopeOption } from '@/composables/usePageScope'
@@ -459,14 +458,9 @@ function removeFromList() {
 // Scope to the session's own harness — a draft on opencode must validate its
 // model against opencode's catalog, not the active harness's, or the reset
 // watcher below would clobber a valid cross-harness pick.
-const { effortLevelsFor, models: availableModels, defaultValue: defaultModel } = useModelsQuery(
+const { models: availableModels, defaultValue: defaultModel } = useModelsQuery(
   () => session.value?.harnessId,
 )
-
-const effortOptions = computed(() => [
-  { value: '', label: 'default' },
-  ...effortLevelsFor(session.value?.model).map((e) => ({ value: e, label: e })),
-])
 
 const permissionOptions = [
   { value: 'default', label: 'Supervised', description: 'Ask before commands and file changes.' },
@@ -966,16 +960,15 @@ const streamingEventUuid = computed((): string | undefined => {
             agencies unsupported on {{ session.harnessId }}
           </span>
           <span v-if="!isAgencySession" class="mx-0.5 h-4 w-px shrink-0 bg-border" />
-          <div v-if="!isAgencySession" class="flex items-center gap-0.5 shrink-0">
-            <Brain :size="13" class="text-muted-foreground shrink-0" />
-            <PillSelect
-              :model-value="session.effort ?? ''"
-              :options="effortOptions"
-              :disabled="!canEditParams"
-              trigger-class="max-w-[72px]"
-              @update:model-value="changeEffort"
-            />
-          </div>
+          <EffortPicker
+            v-if="!isAgencySession"
+            :model-value="session.effort ?? ''"
+            :model="session.model ?? ''"
+            :harness-id="session.harnessId"
+            :disabled="!canEditParams"
+            include-default
+            @update:model-value="changeEffort"
+          />
           <span v-if="!isAgencySession && supportsSessionPolicies" class="mx-0.5 h-4 w-px shrink-0 bg-border" />
           <SessionControlPicker
             v-if="!isAgencySession && supportsSessionPolicies"

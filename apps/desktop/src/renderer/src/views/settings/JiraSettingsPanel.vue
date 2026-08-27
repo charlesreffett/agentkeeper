@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { JiraProject } from '@shared/ipc-contract'
+import { useSettingsLeavePrompt } from '@/composables/useSettingsLeavePrompt'
 
 interface Mapping {
   jiraProjectKey: string
@@ -24,6 +25,7 @@ interface RegisteredProject {
 }
 
 const mappings = ref<Mapping[]>([])
+const baselineMappings = ref<Mapping[]>([])
 const projects = ref<RegisteredProject[]>([])
 const jiraProjects = ref<JiraProject[]>([])
 const loadingJiraProjects = ref(false)
@@ -57,6 +59,7 @@ async function load() {
   } else if (typeof typed?.projectKey === 'string' && typed.projectKey) {
     mappings.value = [{ jiraProjectKey: typed.projectKey, projectPath: '' }]
   }
+  baselineMappings.value = mappings.value.map(mapping => ({ ...mapping }))
 }
 
 onMounted(() => { void load() })
@@ -99,14 +102,19 @@ async function save() {
       .filter((m) => m.jiraProjectKey.trim() !== '')
       .map((m) => ({ jiraProjectKey: m.jiraProjectKey, projectPath: m.projectPath }))
     await window.agentkeeper.plugins.setConfig('jira', { projectMappings: filtered })
+    baselineMappings.value = mappings.value.map(mapping => ({ ...mapping }))
     saved.value = true
     setTimeout(() => { saved.value = false }, 2000)
   } catch (err) {
     saveError.value = err instanceof Error ? err.message : String(err)
+    throw err
   } finally {
     saving.value = false
   }
 }
+
+const isDirty = computed(() => JSON.stringify(mappings.value) !== JSON.stringify(baselineMappings.value))
+useSettingsLeavePrompt(isDirty, save)
 </script>
 
 <template>

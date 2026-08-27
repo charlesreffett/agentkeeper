@@ -1,6 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+export type ThemePreference = 'system' | 'light' | 'dark'
+
+export function resolveThemePreference(theme: ThemePreference, prefersDark: boolean): 'light' | 'dark' {
+  return theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme
+}
+
 export const useLayoutStore = defineStore('layout', () => {
   const rightPanelOpen = ref(false)
   function toggleRightPanel() {
@@ -16,27 +22,42 @@ export const useLayoutStore = defineStore('layout', () => {
     hoveredEdgeId.value = id
   }
 
-  const theme = ref<'light' | 'dark'>('dark')
+  const theme = ref<ThemePreference>('dark')
+  const resolvedTheme = ref<'light' | 'dark'>('dark')
+  let systemThemeQuery: MediaQueryList | null = null
 
-  function _applyClass(t: 'light' | 'dark') {
-    document.documentElement.classList.toggle('dark', t === 'dark')
+  function resolveTheme(t: ThemePreference): 'light' | 'dark' {
+    return resolveThemePreference(t, window.matchMedia('(prefers-color-scheme: dark)').matches)
+  }
+
+  function applyTheme(t: ThemePreference) {
+    resolvedTheme.value = resolveTheme(t)
+    document.documentElement.classList.toggle('dark', resolvedTheme.value === 'dark')
+  }
+
+  function onSystemThemeChange() {
+    if (theme.value === 'system') applyTheme('system')
+  }
+
+  function watchSystemTheme() {
+    if (systemThemeQuery) return
+    systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
+    systemThemeQuery.addEventListener('change', onSystemThemeChange)
   }
 
   // Called once on app startup — applies without writing back to disk.
-  function initTheme(t: 'light' | 'dark') {
+  function initTheme(t: ThemePreference) {
+    watchSystemTheme()
     theme.value = t
-    _applyClass(t)
+    applyTheme(t)
   }
 
-  async function setTheme(t: 'light' | 'dark') {
+  async function setTheme(t: ThemePreference) {
+    watchSystemTheme()
     theme.value = t
-    _applyClass(t)
+    applyTheme(t)
     await window.agentkeeper.settings.set({ theme: t })
   }
 
-  function toggleTheme() {
-    return setTheme(theme.value === 'dark' ? 'light' : 'dark')
-  }
-
-  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, initTheme, setTheme, toggleTheme }
+  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, resolvedTheme, initTheme, setTheme }
 })

@@ -37,6 +37,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import PluginSettingsForm from './PluginSettingsForm.vue'
 
+withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
+
 const queryClient = useQueryClient()
 
 // ── Queries ──────────────────────────────────────────────────────────────────
@@ -304,7 +306,7 @@ function openExternal(url: string) {
 <template>
   <div class="h-full flex flex-col overflow-hidden">
     <!-- Header -->
-    <div class="px-6 py-4 border-b border-border">
+    <div v-if="!embedded" class="px-6 py-4 border-b border-border">
       <h1 class="text-lg font-semibold">Plugin Management</h1>
       <p class="text-sm text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</p>
       <div class="flex items-center gap-2 mt-3">
@@ -416,6 +418,12 @@ function openExternal(url: string) {
 
     <div class="flex-1 overflow-y-auto min-h-0">
       <div class="max-w-[700px] mx-auto px-6 py-4">
+      <div v-if="embedded" class="mb-4 flex flex-wrap items-center gap-2">
+        <span class="mr-auto text-sm text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</span>
+        <Button size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
+        <Button size="sm" @click="openInstallDialog">Install from AKP</Button>
+        <span v-if="mutationError" class="text-xs text-destructive">{{ mutationError }}</span>
+      </div>
       <div v-if="isLoading" class="text-sm text-muted-foreground animate-pulse">
         Loading plugins…
       </div>

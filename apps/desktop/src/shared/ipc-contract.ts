@@ -635,7 +635,7 @@ export interface AppSettings {
   sessionExpiryEnabled: boolean
   /** Days of inactivity before a persisted session is auto-pruned, when sessionExpiryEnabled. null = never expire. */
   sessionExpiryDays: number | null
-  theme: 'light' | 'dark'
+  theme: 'system' | 'light' | 'dark'
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
   notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
   /** User-configured external MCP servers available to sessions. */

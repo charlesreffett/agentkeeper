@@ -16,9 +16,14 @@ import AgenciesView from '@/views/AgenciesView.vue'
 import RolesView from '@/views/RolesView.vue'
 import SkillsView from '@/views/SkillsView.vue'
 import CommandsView from '@/views/CommandsView.vue'
-import SettingsView from '@/views/SettingsView.vue'
+import SettingsLayout from '@/views/settings/SettingsLayout.vue'
+import GeneralSettingsView from '@/views/settings/GeneralSettingsView.vue'
+import ModelsSettingsView from '@/views/settings/ModelsSettingsView.vue'
+import AppearanceSettingsView from '@/views/settings/AppearanceSettingsView.vue'
 import SessionsWorkspace from '@/views/SessionsWorkspace.vue'
 import StatsView from '@/views/StatsView.vue'
+import { captureSettingsOrigin } from '@/lib/settingsNavigation'
+import { shouldCaptureSettingsOrigin } from '@/lib/settingsShell'
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -34,8 +39,23 @@ const router = createRouter({
     { path: '/roles', component: RolesView },
     { path: '/skills', component: SkillsView },
     { path: '/commands', component: CommandsView },
-    { path: '/settings', component: SettingsView },
-    { path: '/plugins', component: () => import('../views/plugins/PluginsView.vue') },
+    {
+      path: '/settings',
+      component: SettingsLayout,
+      children: [
+        { path: '', redirect: '/settings/general' },
+        { path: 'general', component: GeneralSettingsView },
+        { path: 'models', component: ModelsSettingsView },
+        { path: 'appearance', component: AppearanceSettingsView },
+        { path: 'plugins', component: () => import('../views/settings/PluginsSettingsView.vue') },
+        { path: 'remote', component: () => import('../views/settings/RemoteSettingsView.vue') },
+        { path: 'github', component: () => import('../views/settings/GitHubSettingsView.vue') },
+        { path: 'jira', component: () => import('../views/settings/JiraSettingsView.vue') },
+        { path: 'mcp', component: () => import('../views/settings/McpSettingsView.vue') },
+        { path: 'updates', component: () => import('../views/settings/UpdatesSettingsView.vue') },
+        { path: 'data', component: () => import('../views/settings/DataSettingsView.vue') },
+      ],
+    },
     {
       path: '/jira',
       component: JiraLayout,
@@ -65,5 +85,11 @@ const router = createRouter({
 })
 
 installPrefetchGuard(router)
+
+router.beforeEach((to, from) => {
+  if (shouldCaptureSettingsOrigin(to.path, from.path, from.matched.length > 0)) {
+    captureSettingsOrigin(from.fullPath)
+  }
+})
 
 export default router

@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/vue-query'
 import { useSettingsQuery } from '@/composables/useSettingsQuery'
 import { queryKeys } from '@/lib/queryKeys'
 import type { McpServerEntry, McpServerType } from '@shared/ipc-contract'
+import { useSettingsLeavePrompt } from '@/composables/useSettingsLeavePrompt'
 
 const queryClient = useQueryClient()
 const { settings } = useSettingsQuery()
@@ -97,6 +98,12 @@ async function saveForm() {
   queryClient.setQueryData(queryKeys.settings.app(), { ...settings.value, mcpServers: updated })
   cancelForm()
 }
+
+const hasUnsavedForm = computed(() => showForm.value)
+useSettingsLeavePrompt(hasUnsavedForm, async () => {
+  await saveForm()
+  if (formError.value) throw new Error(formError.value)
+})
 
 async function removeServer(id: string) {
   const updated = (settings.value?.mcpServers ?? []).filter((e) => e.id !== id)
