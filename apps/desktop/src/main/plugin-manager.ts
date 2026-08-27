@@ -455,6 +455,16 @@ export async function unloadDevPlugin(pluginId: string): Promise<void> {
 
 // Call on app quit to clear ephemeral dev rows
 export function clearDevPluginRegistry(): void {
-  const db = getRawSqlite()
-  db.prepare("DELETE FROM plugin_registry WHERE source = 'dev'").run()
+  try {
+    const db = getRawSqlite()
+    const tableExists = db.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'plugin_registry'",
+    ).get()
+    if (tableExists) {
+      db.prepare("DELETE FROM plugin_registry WHERE source = 'dev'").run()
+    }
+  } catch (err) {
+    // Shutdown cleanup is best-effort and must not mask an earlier startup error.
+    console.warn('[plugin-dev] failed to clear registry during shutdown:', err)
+  }
 }
