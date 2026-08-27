@@ -1,24 +1,29 @@
 name: Release Preview
 
 on:
-  pull_request:
-    types: [labeled, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or commit to build
+        required: true
+        default: main
+        type: string
+      pr_number:
+        description: Optional PR number to receive the build summary
+        required: false
+        type: string
 
 permissions:
   contents: read
   pull-requests: write
 
 concurrency:
-  group: release-preview-${{ github.event.pull_request.number }}
+  group: release-preview-${{ inputs.ref }}
   cancel-in-progress: true
 
 jobs:
   metadata:
     name: Resolve preview metadata
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'preview:release') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'preview:release')
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -27,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - id: meta
@@ -54,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - uses: pnpm/action-setup@v4
@@ -128,7 +133,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - uses: pnpm/action-setup@v4
@@ -194,7 +199,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - name: Require and materialize Apple distribution credentials
@@ -267,14 +272,34 @@ jobs:
           retention-days: 7
 
   summary:
-    name: Post preview summary
+    name: Publish preview summary
     needs: [metadata, macos, windows, testflight]
     if: ${{ always() && needs.metadata.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
+      - name: Write workflow summary
+        shell: bash
+        env:
+          PREVIEW_VERSION: ${{ needs.metadata.outputs.version }}
+          PREVIEW_BUILD_NUMBER: ${{ needs.metadata.outputs.build_number }}
+          MAC_RESULT: ${{ needs.macos.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          TESTFLIGHT_RESULT: ${{ needs.testflight.result }}
+        run: |
+          {
+            echo '### Release preview'
+            echo
+            echo "Identity: ${PREVIEW_VERSION} (${PREVIEW_BUILD_NUMBER})"
+            echo "- macOS signed/notarized ZIPs: **${MAC_RESULT}**"
+            echo "- Windows signed installer: **${WINDOWS_RESULT}**"
+            echo "- TestFlight upload: **${TESTFLIGHT_RESULT}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Comment on PR
+        if: ${{ inputs.pr_number != '' }}
         uses: actions/github-script@v7
         env:
+          PR_NUMBER: ${{ inputs.pr_number }}
           PREVIEW_VERSION: ${{ needs.metadata.outputs.version }}
           PREVIEW_BUILD_NUMBER: ${{ needs.metadata.outputs.build_number }}
           MAC_RESULT: ${{ needs.macos.result }}
@@ -298,7 +323,7 @@ jobs:
             const comments = await github.paginate(github.rest.issues.listComments, {
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
+              issue_number: Number(process.env.PR_NUMBER),
               per_page: 100,
             });
             const existing = comments.find((comment) => comment.body?.includes(marker));
@@ -313,7 +338,7 @@ jobs:
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: context.issue.number,
+                issue_number: Number(process.env.PR_NUMBER),
                 body,
               });
             }
