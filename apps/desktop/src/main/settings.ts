@@ -28,7 +28,7 @@ const DEFAULTS: AppSettings = {
 }
 
 const SEND_MODIFIER_VALUES: AppSettings['sendModifier'][] = ['auto', 'meta', 'ctrl', 'alt', 'shift']
-const THEME_VALUES: AppSettings['theme'][] = ['light', 'dark']
+const THEME_VALUES: AppSettings['theme'][] = ['system', 'light', 'dark']
 const NOTIFICATIONS_VALUES: AppSettings['notifications'][] = ['all', 'notification-only', 'sound-only', 'toast', 'disabled']
 const NOTIFICATION_SOUND_VALUES: AppSettings['notificationSound'][] = ['chime', 'bell', 'ping', 'ding', 'pulse']
 

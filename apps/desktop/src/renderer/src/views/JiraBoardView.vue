@@ -356,7 +356,7 @@ onUnmounted(() => unsub?.())
           <button
             class="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
             title="Jira settings"
-            @click="void router.push('/settings?tab=jira')"
+            @click="void router.push('/settings/jira')"
           >
             <Settings :size="12" />
           </button>

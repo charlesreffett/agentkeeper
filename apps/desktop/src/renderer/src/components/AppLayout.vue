@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount } from 'vue'
-import { RouterView } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 import Sidebar from '@/components/Sidebar.vue'
+import SettingsSidebar from '@/components/SettingsSidebar.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import RightPanel from '@/components/RightPanel.vue'
 import TerminalPanel from '@/components/TerminalPanel.vue'
@@ -11,10 +12,13 @@ import { useLayoutStore } from '@/stores/layout'
 import { useSessionStore } from '@/stores/sessions'
 import { useTerminalStore } from '@/stores/terminalStore'
 import { isGeneralProject } from '@shared/ipc-contract'
+import { isSettingsRoute } from '@/lib/settingsShell'
 
 const layoutStore = useLayoutStore()
 const sessionStore = useSessionStore()
 const terminalStore = useTerminalStore()
+const route = useRoute()
+const isSettings = computed(() => isSettingsRoute(route.path))
 
 // The right panel + terminal follow the active session's context, not an
 // app-wide focus. General (no-project) sessions have no repository to inspect.
@@ -43,7 +47,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
   >
     <AppHeader />
     <div class="flex flex-1 min-h-0 overflow-hidden [transform:translateZ(0)]">
-      <Sidebar />
+      <SettingsSidebar v-if="isSettings" />
+      <Sidebar v-else />
       <SidebarInset class="flex flex-col overflow-hidden min-h-0">
         <div class="flex flex-col flex-1 min-h-0">
           <div class="flex flex-1 min-h-0 overflow-hidden">
@@ -51,11 +56,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
               <RouterView />
             </div>
             <RightPanel
-              v-if="layoutStore.rightPanelOpen"
+              v-if="layoutStore.rightPanelOpen && !isSettings"
               :project-path="activeProjectPath"
             />
           </div>
-          <TerminalPanel v-if="terminalStore.isOpen" />
+          <TerminalPanel v-if="terminalStore.isOpen && !isSettings" />
         </div>
       </SidebarInset>
     </div>

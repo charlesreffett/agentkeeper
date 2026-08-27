@@ -42,28 +42,28 @@ const serverUrl = computed(() =>
 </script>
 
 <template>
-  <div class="space-y-6 p-4 max-w-lg">
+  <div class="max-w-lg space-y-6">
     <div class="flex items-center gap-3">
-      <Switch :model-value="settings.enabled" @update:model-value="v => { settings.enabled = v; save() }" />
-      <label class="text-sm font-medium leading-none">Enable mobile server</label>
+      <Switch id="remote-enabled" :model-value="settings.enabled" @update:model-value="v => { settings.enabled = v; save() }" />
+      <label for="remote-enabled" class="text-sm font-medium leading-none">Enable remote access</label>
     </div>
 
     <div class="space-y-1">
-      <label class="text-sm font-medium leading-none">Port</label>
-      <Input type="number" v-model.number="settings.port" @change="save" class="w-32" />
+      <label for="remote-port" class="text-sm font-medium leading-none">Port</label>
+      <Input id="remote-port" type="number" v-model.number="settings.port" @change="save" class="w-32" />
     </div>
 
     <div class="space-y-1">
-      <label class="text-sm font-medium leading-none">Secret key</label>
+      <label for="remote-secret" class="text-sm font-medium leading-none">Secret key</label>
       <div class="flex gap-2">
-        <Input :value="settings.secretKey || '(not set)'" readonly class="font-mono text-xs flex-1" />
+        <Input id="remote-secret" :value="settings.secretKey || '(not set)'" readonly class="font-mono text-xs flex-1" />
         <Button size="sm" variant="outline" @click="regenerate">Regenerate</Button>
         <Button size="sm" variant="outline" @click="copyKey">{{ copyDone ? 'Copied!' : 'Copy' }}</Button>
       </div>
     </div>
 
     <div v-if="settings.enabled && settings.secretKey" class="rounded-md bg-muted px-4 py-3 text-sm">
-      <p class="font-medium mb-1">Pair with iOS app</p>
+      <p class="font-medium mb-1">Pair with the AgentKeeper companion app</p>
       <p class="font-mono text-xs text-muted-foreground">{{ serverUrl }}</p>
       <p class="text-xs text-muted-foreground mt-1">Enter this URL and your secret key in the iOS companion app.</p>
     </div>

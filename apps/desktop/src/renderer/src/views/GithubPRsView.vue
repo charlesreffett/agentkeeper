@@ -106,8 +106,7 @@ const reviewLabel: Record<NonNullable<ReviewDecision>, string> = {
 }
 
 function openSettingsModal() {
-  // Emit to parent via a custom event on the window so the app shell can open settings
-  window.dispatchEvent(new CustomEvent('agentkeeper:open-settings'))
+  void router.push('/settings/github')
 }
 </script>
 
