@@ -37,9 +37,10 @@ configuration deliberately remains suitable for unsigned local packaging.
 
 ## On-demand release previews
 
-Add the `preview:release` label to a same-repository pull request to build a
-tester-ready release candidate. Each update to the labeled pull request
-replaces any in-progress preview with builds from its latest commit.
+Run the **Release Preview** workflow manually and provide the branch, tag, or
+commit to build. An optional pull request number makes the workflow post its
+result back to that pull request. Starting another preview for the same ref
+cancels the older in-progress run.
 
 The preview workflow produces signed and notarized macOS ZIPs for Apple Silicon
 and Intel, a signed Windows installer, and an iOS build uploaded to TestFlight.
@@ -52,6 +53,12 @@ build number is `RUN.ATTEMPT`, so workflow run 310, attempt 1 appears as version
 the macOS and Windows packages. Artifacts use the filesystem-safe corresponding
 label `0.2.0-build.310.1`. TestFlight may need several minutes to process the
 upload before it becomes available to the configured tester group.
+
+The desktop and TestFlight jobs use the protected `production-signing`
+environment. Configure required reviewers on that environment to control who
+may authorize access to signing credentials and distribution. Repository users
+need Actions write access to start a manual workflow; GitHub does not provide a
+separate per-workflow runner allowlist.
 
 ## Release flow
 
