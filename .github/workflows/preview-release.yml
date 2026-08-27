@@ -30,7 +30,7 @@ jobs:
       build_number: ${{ steps.meta.outputs.build_number }}
       label: ${{ steps.meta.outputs.label }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
@@ -57,15 +57,15 @@ jobs:
     timeout-minutes: 45
     environment: production-signing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Materialize App Store Connect API key
@@ -131,15 +131,15 @@ jobs:
     timeout-minutes: 45
     environment: production-signing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6.0.10
+      - uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Require Windows signing credentials
@@ -197,7 +197,7 @@ jobs:
       PREVIEW_VERSION: ${{ needs.metadata.outputs.version }}
       PREVIEW_BUILD_NUMBER: ${{ needs.metadata.outputs.build_number }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false

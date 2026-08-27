@@ -20,7 +20,7 @@ local network.
 
 ## Prerequisites
 
-- Node.js >= 20
+- Node.js >= 24
 - pnpm 9 (`corepack enable` will provide the pinned version)
 - Authentication, one of:
   - A Claude Pro/Max plan via an existing `claude login`, or
