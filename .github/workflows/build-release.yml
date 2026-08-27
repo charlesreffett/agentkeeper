@@ -47,16 +47,16 @@ jobs:
     timeout-minutes: 45
     environment: production-signing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6.0.10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Require macOS signing credentials
@@ -136,16 +136,16 @@ jobs:
     timeout-minutes: 45
     environment: production-signing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6.0.10
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
-          node-version: 20
+          node-version: 24
           cache: pnpm
 
       - name: Require Windows signing credentials
