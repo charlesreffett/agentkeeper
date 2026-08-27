@@ -1,0 +1,319 @@
+name: Release Preview
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: release-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  metadata:
+    name: Resolve preview metadata
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview:release') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'preview:release')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      build_number: ${{ steps.meta.outputs.build_number }}
+      label: ${{ steps.meta.outputs.label }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - id: meta
+        name: Set version and RC build number
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./apps/desktop/package.json').version")"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Preview version must be a three-part numeric version, got: $version" >&2
+            exit 1
+          fi
+          build_number="${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build_number=$build_number" >> "$GITHUB_OUTPUT"
+          echo "label=${version}-build.${build_number}" >> "$GITHUB_OUTPUT"
+
+  macos:
+    name: Build signed macOS preview
+    needs: metadata
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: production-signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Materialize App Store Connect API key
+        id: apple-key
+        shell: bash
+        env:
+          API_KEY: ${{ secrets.MAC_APPLE_API_KEY }}
+          API_KEY_ID: ${{ secrets.MAC_APPLE_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          : "${API_KEY:?MAC_APPLE_API_KEY is required}"
+          : "${API_KEY_ID:?MAC_APPLE_API_KEY_ID is required}"
+          key_path="$RUNNER_TEMP/AuthKey_${API_KEY_ID}.p8"
+          printf '%s' "$API_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          echo "path=$key_path" >> "$GITHUB_OUTPUT"
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build, sign, and notarize Intel and Apple Silicon ZIPs
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_API_KEY: ${{ steps.apple-key.outputs.path }}
+          APPLE_API_KEY_ID: ${{ secrets.MAC_APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.MAC_APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.MAC_APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          pnpm build
+          pnpm --filter desktop exec electron-builder \
+            --config electron-builder.production.yml \
+            --mac zip --arm64 --x64 --publish never \
+            -c.buildVersion='${{ needs.metadata.outputs.build_number }}' \
+            -c.artifactName='AgentKeeper-${version}-build.${buildVersion}-${arch}.${ext}' \
+            -c.forceCodeSigning=true
+
+      - name: Verify signatures and notarization
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r -d '' app_path; do
+            found=1
+            codesign --verify --deep --strict --verbose=2 "$app_path"
+            spctl --assess --type execute --verbose=4 "$app_path"
+            xcrun stapler validate "$app_path"
+          done < <(find apps/desktop/dist -type d -name 'AgentKeeper.app' -print0)
+          [[ "$found" == 1 ]] || { echo 'No packaged AgentKeeper.app found' >&2; exit 1; }
+
+      - name: Upload macOS previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentKeeper-${{ needs.metadata.outputs.label }}-macos
+          path: apps/desktop/dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Build signed Windows preview
+    needs: metadata
+    runs-on: windows-latest
+    timeout-minutes: 45
+    environment: production-signing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Require Windows signing credentials
+        shell: pwsh
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)) { throw "WIN_CSC_LINK is missing" }
+          if ([string]::IsNullOrWhiteSpace($env:WIN_CSC_KEY_PASSWORD)) { throw "WIN_CSC_KEY_PASSWORD is missing" }
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build and sign Windows installer
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          pnpm build
+          pnpm --filter desktop exec electron-builder \
+            --config electron-builder.production.yml \
+            --win --x64 --publish never \
+            -c.buildVersion='${{ needs.metadata.outputs.build_number }}' \
+            -c.artifactName='AgentKeeper-${version}-build.${buildVersion}-${arch}.${ext}' \
+            -c.forceCodeSigning=true
+
+      - name: Verify Windows signature
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem "apps/desktop/dist" -Filter "*.exe")
+          if ($installers.Count -eq 0) { throw "No Windows installer was generated" }
+          foreach ($installer in $installers) {
+            $signature = Get-AuthenticodeSignature $installer.FullName
+            if ($signature.Status -ne "Valid") { throw "Invalid signature: $($installer.FullName)" }
+          }
+
+      - name: Upload Windows preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentKeeper-${{ needs.metadata.outputs.label }}-windows
+          path: apps/desktop/dist/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  testflight:
+    name: Upload iOS RC to TestFlight
+    needs: metadata
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: production-signing
+    env:
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      APPLE_API_KEY_ID: ${{ vars.APPLE_API_KEY_ID }}
+      APPLE_API_ISSUER: ${{ vars.APPLE_API_ISSUER }}
+      PREVIEW_VERSION: ${{ needs.metadata.outputs.version }}
+      PREVIEW_BUILD_NUMBER: ${{ needs.metadata.outputs.build_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Require and materialize Apple distribution credentials
+        shell: bash
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+        run: |
+          set -euo pipefail
+          for name in APPLE_TEAM_ID APPLE_API_KEY_ID APPLE_API_ISSUER APPLE_API_KEY; do
+            [[ -n "${!name:-}" ]] || { echo "Missing production-signing value: $name" >&2; exit 1; }
+          done
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s' "$APPLE_API_KEY" > "$key_path"
+          chmod 600 "$key_path"
+          echo "APPLE_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+          echo "API_PRIVATE_KEYS_DIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
+      - name: Create App Store Connect export options
+        shell: bash
+        run: |
+          plutil -create xml1 "$RUNNER_TEMP/ExportOptions.plist"
+          plutil -insert method -string app-store-connect "$RUNNER_TEMP/ExportOptions.plist"
+          plutil -insert destination -string export "$RUNNER_TEMP/ExportOptions.plist"
+          plutil -insert signingStyle -string automatic "$RUNNER_TEMP/ExportOptions.plist"
+          plutil -insert teamID -string "$APPLE_TEAM_ID" "$RUNNER_TEMP/ExportOptions.plist"
+          plutil -insert stripSwiftSymbols -bool YES "$RUNNER_TEMP/ExportOptions.plist"
+
+      - name: Archive TestFlight RC
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project apps/ios/AgentKeeperRemote/AgentKeeperRemote.xcodeproj \
+            -scheme AgentKeeperRemote \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/AgentKeeperRemote.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$APPLE_API_KEY_PATH" \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            MARKETING_VERSION="$PREVIEW_VERSION" \
+            CURRENT_PROJECT_VERSION="$PREVIEW_BUILD_NUMBER"
+
+      - name: Export and upload IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/AgentKeeperRemote.xcarchive" \
+            -exportPath "$RUNNER_TEMP/AgentKeeperRemote-export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$APPLE_API_KEY_PATH" \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER"
+          ipa_path="$(find "$RUNNER_TEMP/AgentKeeperRemote-export" -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+          [[ -n "$ipa_path" ]] || { echo 'No IPA was exported' >&2; exit 1; }
+          xcrun altool --upload-app --type ios --file "$ipa_path" --apiKey "$APPLE_API_KEY_ID" --apiIssuer "$APPLE_API_ISSUER"
+          canonical_ipa="$RUNNER_TEMP/AgentKeeperRemote-export/AgentKeeperRemote-${PREVIEW_VERSION}-build.${PREVIEW_BUILD_NUMBER}.ipa"
+          mv "$ipa_path" "$canonical_ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentKeeperRemote-${{ needs.metadata.outputs.label }}
+          path: ${{ runner.temp }}/AgentKeeperRemote-export/*.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+  summary:
+    name: Post preview summary
+    needs: [metadata, macos, windows, testflight]
+    if: ${{ always() && needs.metadata.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        env:
+          PREVIEW_VERSION: ${{ needs.metadata.outputs.version }}
+          PREVIEW_BUILD_NUMBER: ${{ needs.metadata.outputs.build_number }}
+          MAC_RESULT: ${{ needs.macos.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          TESTFLIGHT_RESULT: ${{ needs.testflight.result }}
+        with:
+          script: |
+            const marker = '<!-- agentkeeper-release-preview -->';
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const body = [
+              marker,
+              '### Release preview',
+              '',
+              `Identity: ${process.env.PREVIEW_VERSION} (${process.env.PREVIEW_BUILD_NUMBER})`,
+              `- macOS signed/notarized ZIPs: **${process.env.MAC_RESULT}**`,
+              `- Windows signed installer: **${process.env.WINDOWS_RESULT}**`,
+              `- TestFlight upload: **${process.env.TESTFLIGHT_RESULT}**`,
+              '',
+              `[Download desktop artifacts or inspect the run](${runUrl})`,
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
