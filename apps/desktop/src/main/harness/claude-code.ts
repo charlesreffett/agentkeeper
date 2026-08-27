@@ -41,6 +41,19 @@ const spawnClaudeCodeProcess: NonNullable<NonNullable<Parameters<typeof query>[0
   }) as unknown as ReturnType<NonNullable<NonNullable<Parameters<typeof query>[0]['options']>['spawnClaudeCodeProcess']>>
 })
 
+/**
+ * The desktop distribution intentionally does not package the Agent SDK's
+ * ~236 MB native CLI. Supplying a path also prevents the SDK from requiring
+ * that optional package before our custom spawn hook gets a chance to select
+ * the configured/PATH binary.
+ */
+function externalClaudeOptions() {
+  return {
+    pathToClaudeCodeExecutable: resolveBin(CLAUDE_BIN) ?? 'claude',
+    spawnClaudeCodeProcess,
+  } as const
+}
+
 export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
   readonly id = 'claude-code'
   readonly name = 'Claude Code'
@@ -101,7 +114,7 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
         env: this.childEnv(auth, configuredEnv),
         permissionMode: 'bypassPermissions',
         abortController: options.abortController,
-        spawnClaudeCodeProcess,
+        ...externalClaudeOptions(),
       },
     })
     let out = ''
@@ -142,7 +155,7 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
       permissionMode: (options.permissionMode ?? 'bypassPermissions') as 'bypassPermissions',
       settingSources: (options.settingSources ?? ['user', 'project']) as ['user', 'project'],
       includePartialMessages: options.includePartialMessages ?? true,
-      spawnClaudeCodeProcess,
+      ...externalClaudeOptions(),
     }
 
     if (options.systemPrompt || options.preset) {
@@ -200,6 +213,7 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
         abortController,
         env: childEnv,
         permissionMode: 'bypassPermissions',
+        ...externalClaudeOptions(),
       },
     })
     try {

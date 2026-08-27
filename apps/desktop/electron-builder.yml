@@ -15,13 +15,19 @@ files:
   - package.json
   - "!node_modules/.cache/**"
   - "!node_modules/@agentkeeper/**"
+  # AgentKeeper invokes the user's installed Claude Code CLI. The Agent SDK's
+  # optional native CLI is ~236 MB per architecture and duplicates it.
+  - "!node_modules/@anthropic-ai/claude-agent-sdk-*/**"
   - "!**/*.map"
 
 # .node files must live outside the asar archive so Electron can dlopen them.
 asarUnpack:
   - "**/*.node"
-  - node_modules/better-sqlite3/**
-  - node_modules/keytar/**
+
+# Chromium ships dozens of locale packs by default. The UI currently has no
+# locale switching, so retain English only.
+electronLanguages:
+  - en-US
 
 npmRebuild: true
 

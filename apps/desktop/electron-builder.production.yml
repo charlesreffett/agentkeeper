@@ -18,8 +18,6 @@ mac:
   hardenedRuntime: true
   gatekeeperAssess: true
   notarize: true
-  entitlements: build/entitlements.mac.plist
-  entitlementsInherit: build/entitlements.mac.inherit.plist
 
 dmg:
   sign: true

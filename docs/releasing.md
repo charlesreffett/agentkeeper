@@ -35,6 +35,24 @@ committed to the repository.
 Production uses `apps/desktop/electron-builder.production.yml`; the base
 configuration deliberately remains suitable for unsigned local packaging.
 
+## On-demand release previews
+
+Add the `preview:release` label to a same-repository pull request to build a
+tester-ready release candidate. Each update to the labeled pull request
+replaces any in-progress preview with builds from its latest commit.
+
+The preview workflow produces signed and notarized macOS ZIPs for Apple Silicon
+and Intel, a signed Windows installer, and an iOS build uploaded to TestFlight.
+Desktop artifacts are retained in the workflow run for seven days and are not
+published to the stable updater feed.
+
+The iOS marketing version comes from `apps/desktop/package.json`. Its TestFlight
+build number is `RUN.ATTEMPT`, so workflow run 310, attempt 1 appears as version
+`0.2.0 (310.1)` in TestFlight. The same version and build number are embedded in
+the macOS and Windows packages. Artifacts use the filesystem-safe corresponding
+label `0.2.0-build.310.1`. TestFlight may need several minutes to process the
+upload before it becomes available to the configured tester group.
+
 ## Release flow
 
 1. Merge conventional commits into `main`.
