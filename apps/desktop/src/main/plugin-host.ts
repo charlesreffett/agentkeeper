@@ -1,4 +1,4 @@
-import { utilityProcess, MessageChannelMain } from 'electron'
+import { app, utilityProcess, MessageChannelMain } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import keytar from 'keytar'
@@ -8,11 +8,11 @@ import type { EventBus } from '@agentkeeper/sdk'
 import type { WorkItemRegistryFull } from './plugins.js'
 import { getRawSqlite } from './db/index.js'
 
-// Dev path — production build needs bootstrap compiled as a separate entry point
-// and this path updated to point at the compiled output.
 function resolveBootstrapPath(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url))
-  return path.join(dir, '..', '..', '..', '..', 'packages', 'sdk', 'src', 'bootstrap.ts')
+  return app.isPackaged
+    ? path.join(dir, 'plugin-bootstrap.js')
+    : path.join(dir, '..', '..', '..', '..', 'packages', 'sdk', 'src', 'bootstrap.ts')
 }
 
 function awaitAck(port: Electron.MessagePortMain, type: string, timeoutMs = 10_000): Promise<void> {

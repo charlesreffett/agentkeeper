@@ -15,7 +15,7 @@ const JsonSchemaPropertySchema = z.object({
 
 const SettingsSchemaSchema = z.object({
   type: z.literal('object'),
-  properties: z.record(JsonSchemaPropertySchema),
+  properties: z.record(z.string(), JsonSchemaPropertySchema),
   required: z.array(z.string()).optional(),
 })
 
