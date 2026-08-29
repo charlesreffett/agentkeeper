@@ -169,6 +169,8 @@ CREATE TABLE IF NOT EXISTS jira_ticket_activity (
 
 CREATE INDEX IF NOT EXISTS jira_ticket_activity_ticket_ref
   ON jira_ticket_activity(ticket_ref);
+
+DROP TABLE IF EXISTS __drizzle_migrations;
 `
 
 export default defineMigration({

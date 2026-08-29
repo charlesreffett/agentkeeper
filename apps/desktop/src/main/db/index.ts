@@ -19,7 +19,7 @@ function hasApplicationTables(sqlite: InstanceType<typeof Database>): boolean {
     SELECT 1 FROM sqlite_master
     WHERE type = 'table'
       AND name NOT LIKE 'sqlite_%'
-      AND name NOT IN ('app_migrations')
+      AND name NOT IN ('app_migrations', '__drizzle_migrations')
     LIMIT 1
   `).get() !== undefined
 }
@@ -54,12 +54,20 @@ export async function initDb(userDataPath: string, appVersion = 'development'): 
 
     const hadApplicationTables = hasApplicationTables(sqlite)
     const hadCoreHistory = sqlite.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'app_migrations'").get() !== undefined
-    if (hadApplicationTables && !hadCoreHistory) {
-      throw new Error('Existing database has no recognized migration history; refusing to assume its schema version')
+    if (hadApplicationTables && (!hadCoreHistory || migrationsPending(sqlite))) {
+      await backupBeforeMigration(sqlite, userDataPath)
     }
 
-    if (hadApplicationTables && migrationsPending(sqlite)) {
-      await backupBeforeMigration(sqlite, userDataPath)
+    // Pre-release builds used Drizzle's migration history. Adopt those
+    // databases based on their actual schema rather than retaining the old
+    // journal and SQL files solely for bookkeeping compatibility.
+    if (hadApplicationTables && !hadCoreHistory) {
+      try {
+        verifyCurrentSchema(new SqliteSchema(sqlite))
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(`Existing database is incompatible with the current schema: ${detail}`)
+      }
     }
 
     runCoreMigrations(sqlite, coreMigrations, appVersion)
