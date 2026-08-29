@@ -1,8 +1,8 @@
-import { app, BrowserWindow, shell, Menu } from 'electron'
-// DEV ONLY: enable CDP for agent-browser testing. Overridable so a second
-// instance (live-verification driver) can run alongside a dev instance instead
-// of failing to bind 9223.
-if (process.env['NODE_ENV'] !== 'production') {
+import { app, BrowserWindow, shell, Menu, dialog } from 'electron'
+// DEV ONLY: enable CDP for agent-browser testing. NODE_ENV is commonly unset in
+// packaged apps, so use Electron's packaged-state flag as the source of truth.
+// The port remains overridable so concurrent development instances can run.
+if (!app.isPackaged) {
   app.commandLine.appendSwitch(
     'remote-debugging-port',
     process.env['AGENTKEEPER_DEBUG_PORT'] ?? '9223',
@@ -33,6 +33,15 @@ import { stopAllWatchers, removeSubscriber } from './watcher.js'
 import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const devUserDataPath = process.env['AGENTKEEPER_USER_DATA_DIR']
+if (!app.isPackaged && devUserDataPath) {
+  app.setPath('userData', path.resolve(devUserDataPath))
+  console.info(`[startup] Using development data directory: ${app.getPath('userData')}`)
+}
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
+
+let cliServer: net.Server | null = null
 
 async function startCliSocket(): Promise<void> {
   const userDataPath = app.getPath('userData')
@@ -63,7 +72,15 @@ async function startCliSocket(): Promise<void> {
       }
     })
   })
-  server.listen(sockPath)
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(sockPath, () => {
+      server.off('error', reject)
+      server.on('error', (error) => console.error('[cli-socket] server error:', error))
+      resolve()
+    })
+  })
+  cliServer = server
 }
 
 function createWindow(): BrowserWindow {
@@ -86,6 +103,12 @@ function createWindow(): BrowserWindow {
   })
 
   win.on('ready-to-show', () => win.show())
+  win.webContents.on('did-finish-load', () => {
+    if (!win.isVisible()) win.show()
+  })
+  win.webContents.on('did-fail-load', (_event, code, description) => {
+    dialog.showErrorBox('AgentKeeper could not load', `${description} (${code})`)
+  })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
@@ -126,12 +149,12 @@ app.on('open-file', (_event, filePath) => {
 // Windows/Linux: .akp passed as argv in second-instance
 app.on('second-instance', (_event, argv) => {
   const akp = argv.find((a) => a.endsWith('.akp'))
-  if (!akp) return
   const win = BrowserWindow.getAllWindows()[0]
   if (win) {
     if (win.isMinimized()) win.restore()
+    if (!win.isVisible()) win.show()
     win.focus()
-    win.webContents.send('plugin:open-file', akp)
+    if (akp) win.webContents.send('plugin:open-file', akp)
   }
 })
 
@@ -142,9 +165,12 @@ app.on('before-quit', () => {
   clearDevPluginRegistry()
   for (const adapter of harnessRegistry.list()) void adapter.dispose?.()
   void teardownMobileServer()
+  cliServer?.close()
+  cliServer = null
 })
 
 app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return
   if (process.platform === 'darwin') {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {
@@ -178,7 +204,7 @@ app.whenReady().then(async () => {
     })
   }
   const userData = app.getPath('userData')
-  initDb(userData)
+  await initDb(userData, app.getVersion())
   runLegacyImport(userData)
   pruneOrphanedDrafts()
   initPricing()
@@ -186,19 +212,19 @@ app.whenReady().then(async () => {
   installBundledPlugins()
   const registry = new WorkItemRegistryImpl()
   setWorkItemRegistry(registry)
-  await activatePlugins(registry)
   registerIpcHandlers(registry)
   initHarnessDefault(settingsStore.get().harnessId)
   warmAvailableModels()
   warmCapabilities()
   syncMobileServer(settingsStore.get())
   const win = createWindow()
+  wirePluginEventRelay(win)
+  await activatePlugins(registry, win.webContents)
   initializeAppUpdater()
   setWebContentsOnActiveHosts(win.webContents)
   win.webContents.on('destroyed', () => {
     removeSubscriber(win.webContents.id)
   })
-  wirePluginEventRelay(win)
   await startCliSocket()
 
   // Flush any .akp path queued before the window existed (macOS open-file)
@@ -213,6 +239,14 @@ app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+}).catch((error: unknown) => {
+  const message = error instanceof Error ? error.stack ?? error.message : String(error)
+  console.error('[startup] Failed to initialize AgentKeeper:', error)
+  dialog.showErrorBox(
+    'AgentKeeper could not start',
+    `The application failed during startup.\n\n${message}`,
+  )
+  app.quit()
 })
 
 app.on('window-all-closed', () => {

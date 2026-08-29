@@ -17,6 +17,7 @@ import type {
   WorkItemSource,
   WorkItemStatus,
 } from '@agentkeeper/sdk'
+import { PluginManifestSchema } from '@agentkeeper/sdk'
 
 export interface WorkItemRegistryFull extends WorkItemRegistry {
   list(): Promise<WorkItem[]>
@@ -158,12 +159,15 @@ export async function setPluginConfig(pluginId: string, config: unknown, db: Ins
   pluginEventBus?.emit('settings.changed', { pluginId, config })
 }
 
-export async function activatePlugins(workItemRegistry: WorkItemRegistryFull): Promise<void> {
+export async function activatePlugins(
+  workItemRegistry: WorkItemRegistryFull,
+  webContents?: Electron.WebContents,
+): Promise<void> {
   // Initialize event bus before loader so getPluginEventBus() is non-null during activation
   if (!pluginEventBus) {
     pluginEventBus = buildEventBus()
   }
-  await initPluginLoader(workItemRegistry)
+  await initPluginLoader(workItemRegistry, webContents)
 }
 
 export function installBundledPlugins(): void {
@@ -189,20 +193,21 @@ export function installBundledPlugins(): void {
         ? path.join(repoRoot, 'packages', 'plugin-jira')
         : path.join(process.resourcesPath, 'plugins', 'plugin-jira'),
     },
-    {
+    ...(isDev ? [{
       id: 'agentkeeper-test',
       name: 'Test Plugin',
       version: '1.0.0',
-      dirPath: isDev
-        ? path.join(repoRoot, 'packages', 'plugin-test')
-        : path.join(process.resourcesPath, 'plugins', 'plugin-test'),
-    },
+      dirPath: path.join(repoRoot, 'packages', 'plugin-test'),
+    }] : []),
   ]
 
   for (const p of bundled) {
     const manifestPath = path.join(p.dirPath, 'manifest.json')
-    let manifestJson = '{}'
-    try { manifestJson = fs.readFileSync(manifestPath, 'utf8') } catch {}
+    const manifestJson = fs.readFileSync(manifestPath, 'utf8')
+    const parsed = PluginManifestSchema.safeParse(JSON.parse(manifestJson) as unknown)
+    if (!parsed.success) {
+      throw new Error(`Invalid bundled plugin manifest at ${manifestPath}: ${parsed.error.message}`)
+    }
 
     const existing = db.prepare('SELECT id FROM plugin_registry WHERE id = ?').get(p.id)
     if (!existing) {

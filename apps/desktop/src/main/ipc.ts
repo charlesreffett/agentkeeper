@@ -1395,14 +1395,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   if (!app.isPackaged) {
     ipcMain.handle(IPC_CHANNELS.devRunMigrations, () => {
-      const db = getDb()
-      const count = () =>
-        (db.get<{ n: number }>(sql`SELECT count(*) as n FROM __drizzle_migrations`) ?? { n: 0 }).n
-      const before = count()
-      runMigrations()
-      const applied = count() - before
-      console.log(`[dev] migrations: ${applied} applied`)
-      return { applied }
+      const result = runMigrations(app.getVersion())
+      console.log(`[dev] migrations: ${result.applied.length} applied`)
+      return { applied: result.applied.length }
     })
   }
 

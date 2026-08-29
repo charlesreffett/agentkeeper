@@ -29,6 +29,22 @@ asarUnpack:
 electronLanguages:
   - en-US
 
+# Bundled plugins run in isolated utility processes and therefore need their
+# manifests and compiled entry points as real files outside app.asar.
+extraResources:
+  - from: ../../packages/plugin-github
+    to: plugins/plugin-github
+    filter:
+      - manifest.json
+      - package.json
+      - dist/**
+  - from: ../../packages/plugin-jira
+    to: plugins/plugin-jira
+    filter:
+      - manifest.json
+      - package.json
+      - dist/**
+
 npmRebuild: true
 
 mac:
