@@ -1,3 +1,9 @@
 {
-  ".": "0.1.0"
+  "apps/desktop": "0.1.0",
+  "apps/ios": "0.1.0",
+  "packages/core": "0.0.1",
+  "packages/sdk": "0.0.1",
+  "packages/cli": "0.1.0",
+  "plugins/github": "0.1.0",
+  "plugins/jira": "0.1.0"
 }

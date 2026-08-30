@@ -56,8 +56,8 @@ apps/desktop/src/shared/    IPC contract types — pure, no runtime imports
 apps/ios/                   iOS companion app (SwiftUI)
 packages/core/              Session engine / Role-Agency engine
 packages/sdk/               @agentkeeper/sdk — plugin contract (types-only)
-packages/plugin-github/     GitHub plugin (separately installed; PRs via `gh` CLI)
-packages/plugin-jira/       Jira plugin (separately installed; wraps the `jira` CLI)
+plugins/github/             GitHub plugin (separately installed; PRs via `gh` CLI)
+plugins/jira/               Jira plugin (separately installed; wraps the `jira` CLI)
 ```
 
 ## Vocabulary

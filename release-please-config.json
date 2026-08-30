@@ -1,12 +1,55 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "release-type": "node",
+  "separate-pull-requests": false,
+  "include-component-in-tag": true,
+  "plugins": [
+    {
+      "type": "node-workspace",
+      "updatePeerDependencies": true
+    }
+  ],
   "packages": {
-    ".": {
+    "apps/desktop": {
+      "component": "desktop",
+      "package-name": "AgentKeeper Desktop"
+    },
+    "apps/ios": {
+      "component": "ios",
+      "package-name": "AgentKeeper Remote",
+      "release-type": "simple",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "AgentKeeperRemote/AgentKeeperRemote.xcodeproj/project.pbxproj"
+        }
+      ]
+    },
+    "packages/core": {
+      "component": "core"
+    },
+    "packages/sdk": {
+      "component": "sdk"
+    },
+    "packages/cli": {
+      "component": "cli"
+    },
+    "plugins/github": {
+      "component": "plugin-github",
       "extra-files": [
         {
           "type": "json",
-          "path": "apps/desktop/package.json",
+          "path": "manifest.json",
+          "jsonpath": "$.version"
+        }
+      ]
+    },
+    "plugins/jira": {
+      "component": "plugin-jira",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "manifest.json",
           "jsonpath": "$.version"
         }
       ]

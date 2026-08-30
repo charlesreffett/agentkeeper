@@ -32,9 +32,8 @@ apps/desktop/src/shared/    IPC contract types — pure, no runtime imports
 packages/core/              shared harness abstraction (HarnessAdapter, session/event types)
 packages/sdk/               @agentkeeper/sdk — plugin contract (types-only)
 packages/cli/               CLI toolchain for plugin authors
-packages/plugin-github/     GitHub plugin (separately installed; V6)
-packages/plugin-jira/       Jira plugin (separately installed; V5)
-packages/plugin-test*/      installable-plugin test fixtures (.akp bundles)
+plugins/github/             GitHub plugin (separately installed; V6)
+plugins/jira/               Jira plugin (separately installed; V5)
 packages/skills/            bundled agent skills (e.g. agent-role-generator)
 apps/ios/                   SwiftUI companion app (pairs with the mobile server)
 ```
@@ -68,7 +67,7 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
   - ✅ Full backend (skills.ts, commands.ts), IPC, preload
   - ✅ Routed views at `/skills` and `/commands`
 - V5 🔄 Jira plugin (wraps user's `jira` CLI, Jira Cloud)
-  - ✅ Plugin package (`packages/plugin-jira`) — CLI wrapping, WorkItemSource, activation lifecycle
+  - ✅ Plugin project (`plugins/jira`) — CLI wrapping, WorkItemSource, activation lifecycle
   - ✅ IPC handlers — workItems list/get/transition/updateStatus, plugin config get/set
   - ✅ Preload bridge — workItems + plugins config APIs
   - ✅ Routed page — `/jira` (JiraLayout → board + issue views), start-session and

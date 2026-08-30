@@ -13,8 +13,8 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      desktop_release_created: ${{ steps.release.outputs['apps/desktop--release_created'] }}
+      desktop_tag_name: ${{ steps.release.outputs['apps/desktop--tag_name'] }}
     steps:
       - id: release
         uses: googleapis/release-please-action@v4
@@ -24,11 +24,11 @@ jobs:
 
   production-release:
     needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
+    if: needs.release-please.outputs.desktop_release_created == 'true'
     uses: ./.github/workflows/build-release.yml
     permissions:
       contents: write
     secrets: inherit
     with:
-      tag_name: ${{ needs.release-please.outputs.tag_name }}
-      ref: ${{ needs.release-please.outputs.tag_name }}
+      tag_name: ${{ needs.release-please.outputs.desktop_tag_name }}
+      ref: ${{ needs.release-please.outputs.desktop_tag_name }}
