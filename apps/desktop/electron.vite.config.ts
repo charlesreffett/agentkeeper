@@ -9,8 +9,6 @@ import { resolve } from 'node:path'
 const WORKSPACE_PKGS = [
   '@agentkeeper/sdk',
   '@agentkeeper/core',
-  '@agentkeeper/plugin-jira',
-  '@agentkeeper/plugin-github',
 ]
 
 export default defineConfig({

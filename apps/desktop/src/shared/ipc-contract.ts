@@ -1,41 +1,11 @@
 // Shared between main, preload, and renderer. Pure types/constants only — no
 // runtime imports from Electron or Node.
 
-import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
-export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus }
+import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemReference, WorkItemStatus } from '@agentkeeper/sdk'
+export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemReference, WorkItemStatus }
 import type { PluginManifest } from '@agentkeeper/sdk'
 import type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor } from '@agentkeeper/core'
 export type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor, SessionControlSelection, SessionControlValue } from '@agentkeeper/core'
-import type {
-  CheckRun,
-  CheckState,
-  CreatePRParams,
-  GitHubConfig,
-  MergeMethod,
-  PRComment,
-  PRDetail,
-  PRFilters,
-  PRReview,
-  PRState,
-  PRSummary,
-  ReviewDecision,
-  ReviewEvent,
-} from './github-types'
-export type {
-  CheckRun,
-  CheckState,
-  CreatePRParams,
-  GitHubConfig,
-  MergeMethod,
-  PRComment,
-  PRDetail,
-  PRFilters,
-  PRReview,
-  PRState,
-  PRSummary,
-  ReviewDecision,
-  ReviewEvent,
-}
 
 // ─── General (no-project) sessions ─────────────────────────────────────────
 
@@ -69,19 +39,6 @@ export interface RemoteSource {
   /** git remote name, e.g. "origin" */
   remote: string
   url: string
-}
-
-export interface JiraProject {
-  key: string
-  name: string
-}
-
-export interface JiraActivityEntry {
-  id: string
-  ticketRef: string
-  actor: string
-  message: string
-  createdAt: number
 }
 
 // ─── Projects ───────────────────────────────────────────────────────────────
@@ -292,8 +249,7 @@ export interface Session {
   lastActivityAt: number
   lastUserMessageAt: number | null
   status: LiveSessionStatus
-  workItemKey: string | null
-  workItemTitle: string | null
+  workItem: WorkItemReference | null
   title: string | null
   planState: PlanTodo[] | null
   /** Computed — not stored; populated by registry queries. */
@@ -342,12 +298,8 @@ export interface StartSessionParams {
   agencyId?: string
   /** Scope of the agency definition. */
   agencyScope?: AgencyScope
-  /** Work item to attach as context for the session. */
-  workItemId?: string
-  /** Display key for the linked work item, e.g. "CORE-482", "MOB-631". */
-  workItemKey?: string | null
-  /** Human-readable title of the linked work item. */
-  workItemTitle?: string | null
+  /** Provider-addressed work item to attach as context for the session. */
+  workItem?: WorkItemReference | null
   /** Resume an existing SDK session by its session_id. When set, the session
    *  starts in 'idle' and no initial prompt is pushed to the queue. */
   resumeSdkSessionId?: string
@@ -522,8 +474,7 @@ export interface StartAgencyParams {
   model?: string
   /** Harness adapter used by every member of this agency. */
   harnessId?: string
-  workItemKey?: string | null
-  workItemTitle?: string | null
+  workItem?: WorkItemReference | null
 }
 
 export interface AgencyInstanceSession {
@@ -743,8 +694,7 @@ export interface Plan {
   title: string
   /** The original prompt that triggered planning. */
   prompt?: string
-  externalRef?: string
-  workItemId?: string
+  workItem?: WorkItemReference | null
   agencyId?: string | null
   agencyScope?: AgencyScope | null
   status: PlanStatus
@@ -1068,36 +1018,19 @@ export interface AgentKeeperApi {
     disable: (pluginId: string) => Promise<void>
     checkUpdates: () => Promise<UpdateAvailable[]>
     update: (pluginId: string) => Promise<void>
+    invoke: (pluginId: string, commandId: string, args?: unknown) => Promise<unknown>
+    getRendererBundle: (pluginId: string, viewId: string) => Promise<{ script: string }>
   }
   workItems: {
-    list: () => Promise<WorkItem[]>
-    get: (id: string) => Promise<WorkItem | undefined>
-    updateStatus: (id: string, status: WorkItemStatus) => Promise<void>
-    getTransitions: (id: string) => Promise<IssueTransition[]>
-    transition: (id: string, name: string) => Promise<void>
-    create: (params: WorkItemCreateParams) => Promise<WorkItem>
-    counts: (boards: string[]) => Promise<Record<string, number>>
-  }
-  jira: {
-    listProjects: () => Promise<JiraProject[]>
-    activityList: (ticketRef: string) => Promise<JiraActivityEntry[]>
-    activityAdd: (entry: { ticketRef: string; actor: string; message: string }) => Promise<JiraActivityEntry>
+    list: (sourceId?: string) => Promise<WorkItem[]>
+    get: (reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>) => Promise<WorkItem | undefined>
+    updateStatus: (reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, status: WorkItemStatus) => Promise<void>
+    getTransitions: (reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>) => Promise<IssueTransition[]>
+    transition: (reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, name: string) => Promise<void>
+    create: (sourceId: string, params: WorkItemCreateParams) => Promise<WorkItem>
   }
   remotes: {
     detect: (projectPath: string) => Promise<RemoteSource[]>
-  }
-  github: {
-    getConfig: () => Promise<GitHubConfig>
-    setConfig: (config: GitHubConfig) => Promise<void>
-    listPRs: (filters: PRFilters) => Promise<PRSummary[]>
-    getPR: (repo: string, number: number) => Promise<PRDetail>
-    getPRDiff: (repo: string, number: number) => Promise<string>
-    getPRChecks: (repo: string, number: number) => Promise<CheckRun[]>
-    getPRComments: (repo: string, number: number) => Promise<PRComment[]>
-    addComment: (repo: string, number: number, body: string) => Promise<void>
-    submitReview: (repo: string, number: number, event: ReviewEvent, body: string) => Promise<void>
-    mergePR: (repo: string, number: number, method: MergeMethod) => Promise<void>
-    createPR: (params: CreatePRParams) => Promise<PRSummary>
   }
   dialog: {
     openFiles: () => Promise<Attachment[]>
@@ -1193,7 +1126,8 @@ export interface AgentKeeperApi {
 
 // ─── Performance ────────────────────────────────────────────────────────────
 export interface CostPerWorkItem {
-  workItemKey: string
+  workItemSourceId: string
+  workItemExternalRef: string
   workItemTitle: string | null
   totalCostUsd: number
 }
@@ -1280,10 +1214,6 @@ export const IPC_CHANNELS = {
   workItemsGetTransitions: 'workItems:getTransitions',
   workItemsTransition: 'workItems:transition',
   workItemsCreate: 'workItems:create',
-  workItemsCounts: 'workItems:counts',
-  jiraListProjects: 'jira:listProjects',
-  jiraActivityList: 'jira:activity:list',
-  jiraActivityAdd: 'jira:activity:add',
   pluginsConfigGet: 'plugins:config:get',
   pluginsConfigSet: 'plugins:config:set',
   pluginEvent: 'plugin:event',
@@ -1301,17 +1231,8 @@ export const IPC_CHANNELS = {
   pluginsDisable: 'plugins:disable',
   pluginsCheckUpdates: 'plugins:checkUpdates',
   pluginsUpdate: 'plugins:update',
-  githubConfigGet: 'github:config:get',
-  githubConfigSet: 'github:config:set',
-  githubListPRs: 'github:prs:list',
-  githubGetPR: 'github:prs:get',
-  githubGetPRDiff: 'github:prs:diff',
-  githubGetPRChecks: 'github:prs:checks',
-  githubGetPRComments: 'github:prs:comments',
-  githubAddComment: 'github:prs:comment',
-  githubSubmitReview: 'github:prs:review',
-  githubMergePR: 'github:prs:merge',
-  githubCreatePR: 'github:prs:create',
+  pluginsInvoke: 'plugins:invoke',
+  pluginsGetRendererBundle: 'plugins:getRendererBundle',
   remotesDetect: 'remotes:detect',
   sessionsListPersisted: 'sessions:listPersisted',
   sessionsGetByLocalId: 'sessions:getByLocalId',

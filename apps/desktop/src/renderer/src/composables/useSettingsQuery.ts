@@ -1,26 +1,14 @@
-import { computed } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
-import type { GitHubConfig } from '@shared/ipc-contract'
 
 export function useSettingsQuery() {
   const queryClient = useQueryClient()
 
-  const { data: appSettings, isLoading: isLoadingSettings } = useQuery({
+  const { data: appSettings, isLoading } = useQuery({
     queryKey: queryKeys.settings.app(),
     queryFn: () => window.agentkeeper.settings.get(),
     staleTime: 0,
   })
-
-  const { data: githubConfig, isLoading: isLoadingGithub } = useQuery({
-    queryKey: queryKeys.settings.github(),
-    queryFn: () => window.agentkeeper.github.getConfig(),
-    staleTime: 0,
-  })
-
-  const isLoading = computed(
-    () => isLoadingSettings.value || isLoadingGithub.value,
-  )
 
   function invalidateAll() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.settings.all() })
@@ -32,17 +20,10 @@ export function useSettingsQuery() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.app() }),
   })
 
-  const { mutateAsync: saveGithubConfig } = useMutation({
-    mutationFn: (cfg: GitHubConfig) => window.agentkeeper.github.setConfig(cfg),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.settings.github() }),
-  })
-
   return {
     settings: appSettings,
-    githubConfig,
     isLoading,
     invalidateAll,
     saveSettings,
-    saveGithubConfig,
   }
 }

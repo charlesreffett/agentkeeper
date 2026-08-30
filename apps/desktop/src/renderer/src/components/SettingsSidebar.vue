@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useQuery } from '@tanstack/vue-query'
 import type { Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -8,6 +9,7 @@ import {
 } from '@/components/icons/app-icons'
 import { leaveSettings, readSettingsOrigin, replaceSettingsRoute } from '@/lib/settingsNavigation'
 import { settingsGroups, settingsSections } from '@/lib/settingsSections'
+import { queryKeys } from '@/lib/queryKeys'
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarHeader,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarRail, useSidebar,
@@ -16,6 +18,11 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { isMobile, setOpenMobile } = useSidebar()
+const { data: plugins } = useQuery({
+  queryKey: queryKeys.plugins.list(),
+  queryFn: () => window.agentkeeper.plugins.list(),
+  staleTime: 30_000,
+})
 const iconMap: Record<string, Component> = {
   Settings2, Bot, Palette, Puzzle, Radio, GitPullRequest, Layers, Plug, Download, RotateCcw,
 }
@@ -26,6 +33,18 @@ const originLabel = computed(() => {
   const segment = path.split(/[/?#]/).filter(Boolean)[0]
   return segment ? `Back to ${segment[0]!.toUpperCase()}${segment.slice(1)}` : 'Back'
 })
+
+const pluginSections = computed(() => (plugins.value ?? [])
+  .filter(plugin => plugin.enabled)
+  .flatMap(plugin => (plugin.manifest.contributes?.settings ?? []).map(page => ({
+    path: `/settings/plugin/${encodeURIComponent(plugin.id)}/${page.route.replace(/^\/+/, '')}`,
+    label: page.label,
+    icon: page.icon ?? 'Puzzle',
+    group: page.group,
+  }))))
+
+const allSections = computed(() => [...settingsSections, ...pluginSections.value])
+const visibleGroups = computed(() => settingsGroups.filter(group => allSections.value.some(section => section.group === group)))
 
 function closeMobile() {
   if (isMobile.value) setOpenMobile(false)
@@ -55,11 +74,11 @@ function selectSection(path: string) {
       </SidebarMenu>
     </SidebarHeader>
     <SidebarContent>
-      <SidebarGroup v-for="group in settingsGroups" :key="group">
+      <SidebarGroup v-for="group in visibleGroups" :key="group">
         <SidebarGroupLabel>{{ group }}</SidebarGroupLabel>
         <SidebarMenu>
           <SidebarMenuItem
-            v-for="item in settingsSections.filter(section => section.group === group)"
+            v-for="item in allSections.filter(section => section.group === group)"
             :key="item.path"
           >
             <SidebarMenuButton

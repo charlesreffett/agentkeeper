@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "agentkeeper-jira",
+  "id": "jira",
   "name": "Jira",
   "version": "0.1.0",
   "entry": "dist/index.js",
@@ -8,7 +8,24 @@
   "author": "AgentKeeper",
   "license": "MIT",
   "activation_events": ["onStartup"],
-  "permissions": ["workItems", "secrets", "sidebar", "background"],
+  "permissions": ["workItems", "secrets", "commands", "ui", "background"],
+  "renderer": {
+    "entry": "dist/renderer.js",
+    "views": ["jira-board", "jira-work-item", "jira-settings"]
+  },
+  "contributes": {
+    "navigation": [
+      { "id": "jira", "label": "Jira", "icon": "Layers", "route": "board", "order": 10 }
+    ],
+    "settings": [
+      { "id": "jira-settings", "label": "Jira", "icon": "Layers", "route": "settings", "group": "Integrations" }
+    ],
+    "routes": [
+      { "id": "board", "path": "board", "view": "jira-board" },
+      { "id": "work-items", "path": "work-items", "view": "jira-work-item" },
+      { "id": "settings", "path": "settings", "view": "jira-settings" }
+    ]
+  },
   "settings_schema": {
     "type": "object",
     "properties": {

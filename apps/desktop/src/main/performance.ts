@@ -60,18 +60,29 @@ export function getPerformanceSummary(opts: { projectPath: string | null; rangeD
   )
   const avgCostPerSessionUsd = sessionCount > 0 ? totalCostUsd / sessionCount : 0
 
-  const workItemMap: Record<string, { title: string | null; cost: number }> = {}
+  const workItemMap: Record<string, { sourceId: string; externalRef: string; title: string | null; cost: number }> = {}
   for (const s of filteredSessions) {
-    if (!s.workItemKey) continue
+    if (!s.workItemSourceId || !s.workItemExternalRef) continue
     const cost = statsById[s.localId]?.totalCostUsd ?? 0
-    if (!workItemMap[s.workItemKey]) {
-      workItemMap[s.workItemKey] = { title: s.workItemTitle ?? null, cost: 0 }
+    const key = `${s.workItemSourceId}:${s.workItemExternalRef}`
+    if (!workItemMap[key]) {
+      workItemMap[key] = {
+        sourceId: s.workItemSourceId,
+        externalRef: s.workItemExternalRef,
+        title: s.workItemTitle ?? null,
+        cost: 0,
+      }
     }
-    workItemMap[s.workItemKey]!.cost += cost
+    workItemMap[key]!.cost += cost
   }
   const costPerWorkItem: CostPerWorkItem[] = Object.entries(workItemMap)
     .filter(([, v]) => v.cost > 0)
-    .map(([key, v]) => ({ workItemKey: key, workItemTitle: v.title, totalCostUsd: v.cost }))
+    .map(([, value]) => ({
+      workItemSourceId: value.sourceId,
+      workItemExternalRef: value.externalRef,
+      workItemTitle: value.title,
+      totalCostUsd: value.cost,
+    }))
 
   const filteredPlans = allPlans.filter(
     (p) =>

@@ -22,8 +22,6 @@ import {
 } from '@/components/icons/app-icons'
 import type { Component } from 'vue'
 import IconSessions from '@/components/icons/IconSessions.vue'
-import { useUIContributionsStore } from '@/stores/uiContributions'
-import { usePluginHealth } from '@/composables/usePluginHealth'
 import {
   Sidebar,
   SidebarContent,
@@ -40,8 +38,6 @@ import { openSettings } from '@/lib/settingsNavigation'
 
 const router = useRouter()
 const route = useRoute()
-const uiStore = useUIContributionsStore()
-const { isHealthy: githubHealthy } = usePluginHealth('github')
 const { isMobile, setOpenMobile } = useSidebar()
 
 const { data: pluginList } = useQuery({
@@ -49,11 +45,6 @@ const { data: pluginList } = useQuery({
   queryFn: () => window.agentkeeper.plugins.list(),
   staleTime: 30_000,
 })
-
-const BUNDLED_SIDEBAR: Record<string, { label: string; icon: string; path: string; order: number }> = {
-  'agentkeeper-github': { label: 'GitHub', icon: 'GitPullRequest', path: '/github/prs', order: 20 },
-  'agentkeeper-jira':   { label: 'Jira',   icon: 'Layers',        path: '/jira',       order: 10 },
-}
 
 const iconMap: Record<string, Component> = {
   IconSessions,
@@ -88,31 +79,17 @@ const workspaceItems = [
   { id: 'commands', label: 'Commands', icon: 'Terminal', path: '/commands' },
 ]
 
-const pluginRoutes: Record<string, string> = {
-  github: '/github/prs',
-  jira: '/jira',
-}
-
 const pluginItems = computed(() => {
-  // Bundled plugins: derive from DB enabled state so toggle hides/shows the item
-  const fromDb = (pluginList.value ?? [])
-    .filter(p => p.enabled && BUNDLED_SIDEBAR[p.id])
-    .map(p => {
-      const cfg = BUNDLED_SIDEBAR[p.id]!
-      const shortId = p.id.replace('agentkeeper-', '')
-      return { ...cfg, id: shortId, unhealthy: shortId === 'github' && !githubHealthy.value }
-    })
+  const fromManifests = (pluginList.value ?? [])
+    .filter((plugin) => plugin.enabled)
+    .flatMap((plugin) => (plugin.manifest.contributes?.navigation ?? []).map((item) => ({
+      ...item,
+      id: `${plugin.id}:${item.id}`,
+      path: `/plugin/${encodeURIComponent(plugin.id)}/${item.route.replace(/^\/+/, '')}`,
+      unhealthy: plugin.status === 'unhealthy',
+    })))
 
-  // Dynamic contributions from actually-running plugin hosts (future / test plugins)
-  const fromContributions = uiStore.getSlot('sidebar.primary')
-    .filter(c => !fromDb.some(d => d.id === c.id))
-    .map(c => ({
-      ...c,
-      path: pluginRoutes[c.id] ?? `/${c.id}`,
-      unhealthy: c.id === 'github' && !githubHealthy.value,
-    }))
-
-  return [...fromDb, ...fromContributions].sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
+  return fromManifests.sort((a, b) => (a.order ?? 100) - (b.order ?? 100))
 })
 
 function isActive(path: string): boolean {

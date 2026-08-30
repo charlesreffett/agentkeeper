@@ -1,6 +1,3 @@
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import { app } from 'electron'
 import { EventEmitter } from 'node:events'
 import Database from 'better-sqlite3'
 import { getRawSqlite } from './db/index'
@@ -13,19 +10,20 @@ import type {
   ScopedKVStore,
   WorkItem,
   WorkItemCreateParams,
+  WorkItemReference,
   WorkItemRegistry,
   WorkItemSource,
   WorkItemStatus,
 } from '@agentkeeper/sdk'
-import { PluginManifestSchema } from '@agentkeeper/sdk'
 
 export interface WorkItemRegistryFull extends WorkItemRegistry {
-  list(): Promise<WorkItem[]>
-  get(id: string): Promise<WorkItem | undefined>
-  updateStatus(id: string, status: WorkItemStatus): Promise<void>
-  getTransitions(id: string): Promise<IssueTransition[]>
-  transition(id: string, name: string): Promise<void>
-  create(params: WorkItemCreateParams): Promise<WorkItem>
+  list(sourceId?: string): Promise<WorkItem[]>
+  get(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>): Promise<WorkItem | undefined>
+  updateStatus(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, status: WorkItemStatus): Promise<void>
+  getTransitions(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>): Promise<IssueTransition[]>
+  transition(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, name: string): Promise<void>
+  addComment(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, body: string): Promise<void>
+  create(sourceId: string, params: WorkItemCreateParams): Promise<WorkItem>
 }
 
 export class WorkItemRegistryImpl implements WorkItemRegistryFull {
@@ -39,68 +37,50 @@ export class WorkItemRegistryImpl implements WorkItemRegistryFull {
     this.sources.delete(id)
   }
 
-  async list(): Promise<WorkItem[]> {
-    const results = await Promise.all(
-      Array.from(this.sources.values()).map((s) => s.list()),
-    )
+  async list(sourceId?: string): Promise<WorkItem[]> {
+    const selected = sourceId ? [this.requireSource(sourceId)] : Array.from(this.sources.values())
+    const results = await Promise.all(selected.map((source) => source.list()))
     return results.flat()
   }
 
-  async get(id: string): Promise<WorkItem | undefined> {
-    for (const source of this.sources.values()) {
-      const item = await source.get(id)
-      if (item !== undefined) return item
-    }
-    return undefined
+  async get(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>): Promise<WorkItem | undefined> {
+    return this.requireSource(reference.sourceId).get(reference.itemId)
   }
 
-  async updateStatus(id: string, status: WorkItemStatus): Promise<void> {
-    for (const source of this.sources.values()) {
-      const item = await source.get(id)
-      if (item !== undefined) {
-        if (!source.updateStatus) throw new Error(`Source '${source.id}' does not support updateStatus`)
-        await source.updateStatus(id, status)
-        return
-      }
-    }
-    throw new Error(`No registered source owns work item '${id}'`)
+  async updateStatus(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, status: WorkItemStatus): Promise<void> {
+    const source = this.requireSource(reference.sourceId)
+    if (!source.updateStatus) throw new Error(`Source '${source.id}' does not support updateStatus`)
+    await source.updateStatus(reference.itemId, status)
   }
 
-  async addComment(id: string, body: string): Promise<void> {
-    const item = await this.get(id)
-    if (!item) return
-    const source = this.sources.get(item.source)
-    await source?.addComment?.(id, body)
+  async getTransitions(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>): Promise<IssueTransition[]> {
+    const source = this.requireSource(reference.sourceId)
+    if (!source.getTransitions) throw new Error(`Source '${source.id}' does not support getTransitions`)
+    return source.getTransitions(reference.itemId)
   }
 
-  async getTransitions(id: string): Promise<IssueTransition[]> {
-    for (const source of this.sources.values()) {
-      const item = await source.get(id)
-      if (item !== undefined) {
-        if (!source.getTransitions) throw new Error(`Source '${source.id}' does not support getTransitions`)
-        return source.getTransitions(id)
-      }
-    }
-    throw new Error(`No registered source owns work item '${id}'`)
+  async transition(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, name: string): Promise<void> {
+    const source = this.requireSource(reference.sourceId)
+    if (!source.transition) throw new Error(`Source '${source.id}' does not support transition`)
+    await source.transition(reference.itemId, name)
   }
 
-  async transition(id: string, name: string): Promise<void> {
-    for (const source of this.sources.values()) {
-      const item = await source.get(id)
-      if (item !== undefined) {
-        if (!source.transition) throw new Error(`Source '${source.id}' does not support transition`)
-        await source.transition(id, name)
-        return
-      }
-    }
-    throw new Error(`No registered source owns work item '${id}'`)
+  async addComment(reference: Pick<WorkItemReference, 'sourceId' | 'itemId'>, body: string): Promise<void> {
+    const source = this.requireSource(reference.sourceId)
+    if (!source.addComment) throw new Error(`Source '${source.id}' does not support addComment`)
+    await source.addComment(reference.itemId, body)
   }
 
-  async create(params: WorkItemCreateParams): Promise<WorkItem> {
-    for (const source of this.sources.values()) {
-      if (source.create) return source.create(params)
-    }
-    throw new Error('No registered source supports creating work items.')
+  async create(sourceId: string, params: WorkItemCreateParams): Promise<WorkItem> {
+    const source = this.requireSource(sourceId)
+    if (!source.create) throw new Error(`Source '${source.id}' does not support create`)
+    return source.create(params)
+  }
+
+  private requireSource(sourceId: string): WorkItemSource {
+    const source = this.sources.get(sourceId)
+    if (!source) throw new Error('Provider not available')
+    return source
   }
 }
 
@@ -170,55 +150,11 @@ export async function activatePlugins(
   await initPluginLoader(workItemRegistry, webContents)
 }
 
-export function installBundledPlugins(): void {
+export function pruneLegacyBundledPlugins(): void {
   const db = getRawSqlite()
-  const isDev = !app.isPackaged
-  // Use app.getAppPath() (= apps/desktop in dev) to reliably find the repo root
-  const repoRoot = isDev ? path.resolve(app.getAppPath(), '../..') : ''
-
-  const bundled = [
-    {
-      id: 'agentkeeper-github',
-      name: 'GitHub',
-      version: '0.1.0',
-      dirPath: isDev
-        ? path.join(repoRoot, 'packages', 'plugin-github')
-        : path.join(process.resourcesPath, 'plugins', 'plugin-github'),
-    },
-    {
-      id: 'agentkeeper-jira',
-      name: 'Jira',
-      version: '0.1.0',
-      dirPath: isDev
-        ? path.join(repoRoot, 'packages', 'plugin-jira')
-        : path.join(process.resourcesPath, 'plugins', 'plugin-jira'),
-    },
-    ...(isDev ? [{
-      id: 'agentkeeper-test',
-      name: 'Test Plugin',
-      version: '1.0.0',
-      dirPath: path.join(repoRoot, 'packages', 'plugin-test'),
-    }] : []),
-  ]
-
-  for (const p of bundled) {
-    const manifestPath = path.join(p.dirPath, 'manifest.json')
-    const manifestJson = fs.readFileSync(manifestPath, 'utf8')
-    const parsed = PluginManifestSchema.safeParse(JSON.parse(manifestJson) as unknown)
-    if (!parsed.success) {
-      throw new Error(`Invalid bundled plugin manifest at ${manifestPath}: ${parsed.error.message}`)
-    }
-
-    const existing = db.prepare('SELECT id FROM plugin_registry WHERE id = ?').get(p.id)
-    if (!existing) {
-      db.prepare(`
-        INSERT INTO plugin_registry (id, name, version, enabled, manifest, source, installed_at, dev_path)
-        VALUES (?, ?, ?, 1, ?, 'bundled', ?, ?)
-      `).run(p.id, p.name, p.version, manifestJson, Date.now(), p.dirPath)
-    } else {
-      // Refresh manifest and dev_path each startup so stale/empty manifests self-heal
-      db.prepare('UPDATE plugin_registry SET manifest = ?, dev_path = ? WHERE id = ?')
-        .run(manifestJson, p.dirPath, p.id)
-    }
-  }
+  db.prepare(`
+    DELETE FROM plugin_registry
+    WHERE source = 'bundled'
+      AND id IN ('agentkeeper-github', 'agentkeeper-jira', 'github', 'jira', 'agentkeeper-test')
+  `).run()
 }

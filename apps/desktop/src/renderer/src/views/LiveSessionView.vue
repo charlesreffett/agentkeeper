@@ -725,10 +725,10 @@ const streamingEventUuid = computed((): string | undefined => {
 
           <!-- Ticket pill — always from root session -->
           <span
-            v-if="rootSession?.workItemKey"
+            v-if="rootSession?.workItem"
             class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-muted text-muted-foreground"
           >
-            {{ rootSession.workItemKey }}
+            {{ rootSession.workItem.externalRef }}
           </span>
 
           <!-- Status badge — always from root session -->

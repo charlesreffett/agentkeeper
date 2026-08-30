@@ -197,7 +197,12 @@ onUnmounted(() => {
 
 // ── Computed helpers ─────────────────────────────────────────────────────────
 
-const planRef = computed(() => plan.value?.planRef ?? plan.value?.externalRef ?? planId.value.slice(0, 8).toUpperCase())
+const planRef = computed(() => plan.value?.planRef ?? planId.value.slice(0, 8).toUpperCase())
+const workItemPath = computed(() => {
+  const reference = plan.value?.workItem
+  if (!reference) return null
+  return `/plugin/${encodeURIComponent(reference.sourceId)}/work-items/${encodeURIComponent(reference.itemId)}`
+})
 
 const totalMinutes = computed(() =>
   plan.value?.estimatedMinutes || plan.value?.steps.reduce((s, x) => s + x.estimatedMinutes, 0) || 0,
@@ -501,7 +506,7 @@ async function startAllSteps(agencyId: string | null, agencyScope: AgencyScope |
     : ''
   const prompt = `Execute the following implementation plan step by step.
 
-Plan: ${cur.title} (${cur.externalRef ?? cur.id})
+Plan: ${cur.title} (${cur.planRef ?? cur.id})
 
 Steps:
 ${stepsText}
@@ -518,8 +523,7 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
         agencyScope,
         initialPrompt: prompt,
         useWorktree: false,
-        workItemKey: cur.externalRef ?? null,
-        workItemTitle: cur.title,
+        workItem: cur.workItem ?? null,
       })
       if (instance.instanceId) {
         const withSession = await window.agentkeeper.plans.update(project.path, planId.value, {
@@ -532,7 +536,7 @@ Execute each step in sequence (run parallel:true steps concurrently where safe).
       const localId = await sessionStore.start({
         projectPath: project.path,
         initialPrompt: prompt,
-        workItemId: cur.workItemId || undefined,
+        workItem: cur.workItem ?? null,
       })
       const withSession = await window.agentkeeper.plans.update(project.path, planId.value, {
         sessionIds: [...(plan.value?.sessionIds ?? []), localId],
@@ -585,7 +589,7 @@ async function startNewPlanSession() {
     : ''
   const prompt = `Execute the following remaining implementation plan steps.
 
-Plan: ${cur.title} (${cur.externalRef ?? cur.id})
+Plan: ${cur.title} (${cur.planRef ?? cur.id})
 Note: Some earlier steps have already been completed. Resume from the first step below.
 
 Remaining Steps:
@@ -600,7 +604,7 @@ Execute each step in sequence. Mark steps complete using the update_plan MCP too
     const newLocalId = await sessionStore.start({
       projectPath: project.path,
       initialPrompt: prompt,
-      workItemId: cur.workItemId || undefined,
+      workItem: cur.workItem ?? null,
     })
     const withSession = await window.agentkeeper.plans.update(project.path, planId.value, {
       sessionIds: [...(plan.value?.sessionIds ?? []), newLocalId],
@@ -628,7 +632,7 @@ async function replan() {
   const prompt = `Revise the steps of an existing plan. Do NOT call create_plan — the plan already exists.
 
 Plan id: "${cur.id}"
-Plan: ${cur.externalRef ?? cur.id} — ${cur.title}
+Plan: ${cur.planRef ?? cur.id} — ${cur.title}
 Original prompt (must not change): "${cur.prompt ?? ''}"
 Current steps:
 ${existingSteps}
@@ -659,11 +663,11 @@ Guidelines:
 - agent: explorer | main | qa | doc
 - parallel: true if the step can safely run concurrently with its neighbours
 - Aim for 4–8 focused, concrete steps — no filler
-- Do NOT include prompt, title, externalRef, or workItemId in the patch`
+- Do NOT include prompt, title, planRef, or workItem in the patch`
   try {
     await sessionStore.start({
       projectPath: project.path,
-      workItemId: cur.workItemId,
+      workItem: cur.workItem ?? null,
       initialPrompt: prompt,
     })
   } catch (err) {
@@ -875,11 +879,11 @@ Guidelines:
             <div class="px-4 py-3">
               <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Tickets</p>
               <router-link
-                v-if="plan.workItemId"
-                :to="`/jira/issue/${plan.workItemId}`"
+                v-if="plan.workItem && workItemPath"
+                :to="workItemPath"
                 class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background hover:bg-muted/60 transition-colors"
               >
-                {{ plan.externalRef || plan.workItemId }}
+                {{ plan.workItem.externalRef }}
               </router-link>
               <span v-else class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground">—</span>
             </div>

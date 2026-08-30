@@ -19,7 +19,7 @@ export class JiraWorkItemSource implements WorkItemSource {
   private lastError: Error | null = null
 
   constructor(
-    private projectMappings: Array<{ jiraProjectKey: string; projectPath: string }> = [],
+    private projectKeys: string[] = [],
     private legacyProjectKey?: string,
   ) {}
 
@@ -54,7 +54,7 @@ export class JiraWorkItemSource implements WorkItemSource {
   }
 
   async create(params: WorkItemCreateParams): Promise<WorkItem> {
-    const key = this.legacyProjectKey ?? this.projectMappings[0]?.jiraProjectKey
+    const key = this.legacyProjectKey ?? this.projectKeys[0]
     if (!key) throw new Error('No Jira project key configured — add a mapping in Jira settings.')
     const raw = await createIssue(key, params)
     const item = mapToWorkItem(raw)
@@ -63,7 +63,7 @@ export class JiraWorkItemSource implements WorkItemSource {
   }
 
   async refresh(): Promise<void> {
-    const keys = this.projectMappings.map((m) => m.jiraProjectKey)
+    const keys = this.projectKeys
     const fieldMeta = await getFieldMeta().catch(() => new Map<string, string>())
     try {
       if (keys.length > 0) {

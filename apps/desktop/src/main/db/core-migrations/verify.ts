@@ -14,7 +14,6 @@ const requiredSchema: Readonly<Record<string, readonly string[]>> = {
   plan_steps: ['id', 'plan_id', 'position', 'status', 'parallel', 'requires_approval'],
   plugin_storage: ['plugin_id', 'key', 'value'],
   plugin_registry: ['id', 'name', 'version', 'enabled', 'manifest', 'source', 'dev_path'],
-  jira_ticket_activity: ['id', 'ticket_ref', 'actor', 'message', 'created_at'],
 }
 
 export function verifyCurrentSchema(schema: Schema): void {

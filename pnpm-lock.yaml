@@ -17,12 +17,6 @@ importers:
       '@agentkeeper/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@agentkeeper/plugin-github':
-        specifier: workspace:*
-        version: link:../../packages/plugin-github
-      '@agentkeeper/plugin-jira':
-        specifier: workspace:*
-        version: link:../../packages/plugin-jira
       '@agentkeeper/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -246,6 +240,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19
+      esbuild:
+        specifier: ^0.27.0
+        version: 0.27.7
 
   packages/plugin-jira:
     dependencies:
@@ -259,18 +256,9 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19
-
-  packages/plugin-test:
-    dependencies:
-      '@agentkeeper/sdk':
-        specifier: workspace:*
-        version: link:../sdk
-
-  packages/plugin-test-v2:
-    dependencies:
-      '@agentkeeper/sdk':
-        specifier: workspace:*
-        version: link:../sdk
+      esbuild:
+        specifier: ^0.27.0
+        version: 0.27.7
 
   packages/sdk:
     dependencies:
@@ -5346,7 +5334,6 @@ snapshots:
       '@esbuild/win32-arm64': 0.27.7
       '@esbuild/win32-ia32': 0.27.7
       '@esbuild/win32-x64': 0.27.7
-    optional: true
 
   escalade@3.2.0: {}
 

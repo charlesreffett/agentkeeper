@@ -47,8 +47,7 @@ async function submit() {
 
     const plan = await window.agentkeeper.plans.create(scopePath.value, {
       title: planTitle,
-      externalRef: ref,
-      workItemId: '',
+      planRef: ref,
       status: 'drafting',
       estimatedMinutes: 0,
       steps: [],

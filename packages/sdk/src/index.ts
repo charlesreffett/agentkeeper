@@ -36,6 +36,14 @@ export interface WorkItem {
   links: WorkItemLink[]
 }
 
+/** Persistable address plus an offline display snapshot for a provider-owned work item. */
+export interface WorkItemReference {
+  sourceId: string
+  itemId: string
+  externalRef: string
+  title?: string
+}
+
 export interface WorkItemCreateParams {
   summary: string
   description?: string
@@ -130,8 +138,6 @@ export type EventMap = {
   'job.failed': { jobId: string; error: string }
   'session.started': { sessionId: string; jobId?: string }
   'session.completed': { sessionId: string }
-  'pr.opened': { prUrl: string; workItemId?: string }
-  'pr.merged': { prUrl: string; workItemId?: string }
   'plugin.unhealthy': { pluginId: string; reason: string }
   'plugin.healthy': { pluginId: string }
   'settings.changed': { pluginId: string; config: unknown }
@@ -151,9 +157,7 @@ export interface EventBus {
   emit<K extends keyof EventMap>(event: K, payload: EventMap[K]): void
 }
 
-// Jira statusCategory.key — a platform constant (only these 4 exist) independent of an
-// org's custom status names. The deterministic color source: matches Jira's own lozenge
-// palette (To Do=gray, In Progress=blue, Done=green) regardless of board or org.
+/** Provider-neutral lifecycle categories used to render work-item status consistently. */
 export type StatusCategory = 'todo' | 'in-progress' | 'done' | 'unknown'
 
 export interface IssueTransition {
@@ -178,7 +182,6 @@ export interface WorkItemSource {
 export interface WorkItemRegistry {
   register(source: WorkItemSource): void
   unregister(id: string): void
-  addComment(id: string, body: string): Promise<void>
 }
 
 export type UISlot =
@@ -191,11 +194,9 @@ export type UISlot =
 
 export interface UIContribution {
   id: string
-  component: unknown
   label?: string
   icon?: string
   order?: number
-  when?: (ctx: unknown) => boolean
 }
 
 export interface UIContributions {
@@ -205,8 +206,7 @@ export interface UIContributions {
 export interface CommandDefinition {
   id: string
   label: string
-  handler: () => void | Promise<void>
-  when?: () => boolean
+  handler: (args: unknown) => unknown | Promise<unknown>
 }
 
 export interface CommandRegistry {

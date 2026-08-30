@@ -20,7 +20,7 @@ import { initHarnessDefault, harnessRegistry } from './harness'
 import { syncMobileServer, teardownMobileServer } from './mobile-server'
 import { settingsStore } from './settings'
 import { pruneExpiredIfEnabled } from './session-registry'
-import { activatePlugins, installBundledPlugins, WorkItemRegistryImpl } from './plugins'
+import { activatePlugins, pruneLegacyBundledPlugins, WorkItemRegistryImpl } from './plugins'
 import { loadDevPlugin, unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
 import { setWebContentsOnActiveHosts } from './plugin-loader.js'
 import { setWorkItemRegistry } from './agent'
@@ -205,11 +205,12 @@ app.whenReady().then(async () => {
   }
   const userData = app.getPath('userData')
   await initDb(userData, app.getVersion())
+  // Legacy sessions are imported without their ambiguous provider references.
   runLegacyImport(userData)
   pruneOrphanedDrafts()
   initPricing()
   initCostLedger(userData)
-  installBundledPlugins()
+  pruneLegacyBundledPlugins()
   const registry = new WorkItemRegistryImpl()
   setWorkItemRegistry(registry)
   registerIpcHandlers(registry)

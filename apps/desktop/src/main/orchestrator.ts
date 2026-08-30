@@ -977,18 +977,17 @@ function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefi
       'Create a structured implementation plan stored in SQLite. Returns an id (UUID) that must be used with update_plan. Do NOT call this if a plan already exists for this task — use update_plan instead.',
       {
         title: z.string(),
-        externalRef: z.string().describe('Ticket or feature ID, e.g. "EJP-45" or "auth-revamp".'),
-        workItemId: z.string().optional(),
+        planRef: z.string().describe('Short plan identifier, e.g. "PL-42" or "auth-revamp".'),
         prompt: z.string().optional().describe('Original task description or user request'),
         estimatedMinutes: z.number().describe('Sum of all step estimatedMinutes'),
         steps: planStepSchema,
       },
-      async ({ title, externalRef, workItemId, prompt, estimatedMinutes, steps }) => {
+      async ({ title, planRef, prompt, estimatedMinutes, steps }) => {
         try {
           const plan = await createPlan(projectPath, {
             title,
-            externalRef,
-            workItemId: workItemId ?? '',
+            planRef,
+            workItem: sessionId ? registry.getSession(sessionId)?.workItem ?? null : null,
             prompt,
             estimatedMinutes,
             steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' })),
@@ -1285,8 +1284,7 @@ export async function startAgency(
     agencyId: agency.id,
     agencyScope: agency.scope,
     title: null,
-    workItemKey: params.workItemKey ?? null,
-    workItemTitle: params.workItemTitle ?? null,
+    workItem: params.workItem ?? null,
     status: 'starting',
     startedAt: sessionNow,
     lastActivityAt: sessionNow,

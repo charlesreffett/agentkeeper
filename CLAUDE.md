@@ -32,8 +32,8 @@ apps/desktop/src/shared/    IPC contract types — pure, no runtime imports
 packages/core/              shared harness abstraction (HarnessAdapter, session/event types)
 packages/sdk/               @agentkeeper/sdk — plugin contract (types-only)
 packages/cli/               CLI toolchain for plugin authors
-packages/plugin-github/     GitHub plugin (shipped V6)
-packages/plugin-jira/       Jira plugin (shipped V5)
+packages/plugin-github/     GitHub plugin (separately installed; V6)
+packages/plugin-jira/       Jira plugin (separately installed; V5)
 packages/plugin-test*/      installable-plugin test fixtures (.akp bundles)
 packages/skills/            bundled agent skills (e.g. agent-role-generator)
 apps/ios/                   SwiftUI companion app (pairs with the mobile server)

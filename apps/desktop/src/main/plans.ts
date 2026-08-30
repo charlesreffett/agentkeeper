@@ -15,8 +15,14 @@ function rowToPlan(
     planRef: row.planRef ?? undefined,
     title: row.title,
     prompt: row.prompt ?? undefined,
-    externalRef: row.planRef ?? undefined,
-    workItemId: row.workItemId ?? undefined,
+    workItem: row.workItemSourceId && row.workItemId && row.workItemExternalRef
+      ? {
+          sourceId: row.workItemSourceId,
+          itemId: row.workItemId,
+          externalRef: row.workItemExternalRef,
+          ...(row.workItemTitle ? { title: row.workItemTitle } : {}),
+        }
+      : undefined,
     agencyId: row.agencyId ?? null,
     agencyScope: (row.agencyScope as Plan['agencyScope']) ?? null,
     status: row.status as Plan['status'],
@@ -63,8 +69,11 @@ export async function createPlan(
     id,
     projectId: projectPath,
     sessionId,
-    workItemId: data.workItemId ?? null,
-    planRef: data.externalRef ?? null,
+    workItemSourceId: data.workItem?.sourceId ?? null,
+    workItemId: data.workItem?.itemId ?? null,
+    workItemExternalRef: data.workItem?.externalRef ?? null,
+    workItemTitle: data.workItem?.title ?? null,
+    planRef: data.planRef ?? null,
     title: data.title,
     prompt: data.prompt ?? null,
     status: data.status ?? 'planned',
@@ -184,6 +193,12 @@ export async function updatePlan(
   }
   if (patch.prompt !== undefined) planUpdate.prompt = patch.prompt
   if (patch.title !== undefined) planUpdate.title = patch.title
+  if (patch.workItem !== undefined) {
+    planUpdate.workItemSourceId = patch.workItem?.sourceId ?? null
+    planUpdate.workItemId = patch.workItem?.itemId ?? null
+    planUpdate.workItemExternalRef = patch.workItem?.externalRef ?? null
+    planUpdate.workItemTitle = patch.workItem?.title ?? null
+  }
   if (patch.agencyId !== undefined) planUpdate.agencyId = patch.agencyId ?? null
   if (patch.agencyScope !== undefined) planUpdate.agencyScope = patch.agencyScope ?? null
 

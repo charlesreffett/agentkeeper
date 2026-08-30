@@ -31,7 +31,8 @@ export type PluginToHostMessage =
   | { id: string; type: 'background.every'; intervalMs: number; taskId: string }
   | { id: string; type: 'background.once'; delayMs: number; taskId: string }
   | { id: string; type: 'ui.contribute'; slot: string; contribution: unknown }
-  | { id: string; type: 'commands.register'; commandId: string; definition: unknown }
+  | { id: string; type: 'commands.register'; commandId: string; label: string }
+  | { id: string; type: 'commands.invoke.result'; result?: unknown; error?: string }
 
 export type HostToPluginMessage =
   | { type: 'activate'; config: Record<string, unknown> }
@@ -49,3 +50,4 @@ export type HostToPluginMessage =
   | { type: 'workItems.getTransitions'; id: string; itemId: string }
   | { type: 'workItems.transition'; id: string; itemId: string; transitionId: string }
   | { type: 'workItems.create'; id: string; fields: unknown }
+  | { type: 'commands.invoke'; id: string; commandId: string; args: unknown }

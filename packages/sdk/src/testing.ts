@@ -102,7 +102,6 @@ export function createMockContext<TSettings = unknown>(
       unregister(id: string) {
         workItemSources.delete(id)
       },
-      async addComment(_id: string, _body: string): Promise<void> {},
     },
     ui: {
       contribute(slot, contribution) {

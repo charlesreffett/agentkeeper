@@ -19,6 +19,7 @@ import type {
   WorkItemSource,
   UIContributions,
   CommandRegistry,
+  CommandDefinition,
   BackgroundWork,
 } from './index.js'
 
@@ -66,6 +67,7 @@ const pending = new Map<string, { resolve: (v: unknown) => void; reject: (e: Err
 const listeners = new Map<string, (event: string, payload: unknown) => void>()
 const taskHandlers = new Map<string, () => void | Promise<void>>()
 const workItemSources = new Map<string, WorkItemSource>()
+const commandHandlers = new Map<string, CommandDefinition['handler']>()
 
 // --- Helper: send a message and await correlated response ---
 function sendToHost(msg: PluginToHostMessage): Promise<unknown> {
@@ -138,14 +140,6 @@ const workItems: WorkItemRegistry = {
     workItemSources.delete(id)
     fireToHost({ id: makeId(), type: 'workItems.unregister', sourceId: id })
   },
-  async addComment(id, body) {
-    for (const src of workItemSources.values()) {
-      if (src.addComment) {
-        await src.addComment(id, body)
-        return
-      }
-    }
-  },
 }
 
 const ui: UIContributions = {
@@ -157,8 +151,9 @@ const ui: UIContributions = {
 
 const commands: CommandRegistry = {
   register(cmd) {
-    fireToHost({ id: makeId(), type: 'commands.register', commandId: cmd.id, definition: cmd })
-    return () => {}
+    commandHandlers.set(cmd.id, cmd.handler)
+    fireToHost({ id: makeId(), type: 'commands.register', commandId: cmd.id, label: cmd.label })
+    return () => { commandHandlers.delete(cmd.id) }
   },
 }
 
@@ -301,6 +296,25 @@ port.on('message', async (e: any) => {
     const src = Array.from(workItemSources.values())[0]
     const item = await src?.create?.(msg.fields as any)
     fireToHost({ id: msg.id, type: 'workItems.create.result', item })
+    return
+  }
+
+  if (msg.type === 'commands.invoke') {
+    const handler = commandHandlers.get(msg.commandId)
+    if (!handler) {
+      fireToHost({ id: msg.id, type: 'commands.invoke.result', error: `Unknown command: ${msg.commandId}` })
+      return
+    }
+    try {
+      const result = await handler(msg.args)
+      fireToHost({ id: msg.id, type: 'commands.invoke.result', result })
+    } catch (error) {
+      fireToHost({
+        id: msg.id,
+        type: 'commands.invoke.result',
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
     return
   }
 })

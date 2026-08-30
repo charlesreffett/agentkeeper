@@ -125,10 +125,10 @@ const canContinue = computed(() =>
 )
 
 const permissionLabels: Record<string, string> = {
-  workItems:  'Read and create work items (Jira / GitHub Issues)',
+  workItems:  'Read and create work items',
   secrets:    'Store credentials in the OS keychain',
   commands:   'Register slash commands in sessions',
-  sidebar:    'Add entries to the app sidebar',
+  ui:         'Add plugin routes and navigation',
   background: 'Run tasks in the background',
   network:    'Make outbound network requests',
 }

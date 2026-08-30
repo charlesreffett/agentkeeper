@@ -1,5 +1,6 @@
 import { app, utilityProcess, MessageChannelMain } from 'electron'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import keytar from 'keytar'
 import type { PluginManifest, PluginPermission, WorkItemSource, WorkItemStatus } from '@agentkeeper/sdk'
@@ -36,6 +37,7 @@ export class PluginHost {
   private timers = new Map<string, ReturnType<typeof setInterval>>()
   private eventListeners = new Map<string, () => void>()
   private pendingUiContributions: Array<{ slot: string; contribution: unknown }> = []
+  private registeredCommands = new Set<string>()
 
   constructor(
     private readonly manifest: PluginManifest,
@@ -121,6 +123,7 @@ export class PluginHost {
     this.timers.clear()
     for (const unsub of this.eventListeners.values()) unsub()
     this.eventListeners.clear()
+    this.registeredCommands.clear()
     this.eventBus.emit('plugin.deactivated', { pluginId: this.manifest.id })
   }
 
@@ -138,6 +141,31 @@ export class PluginHost {
     if (!this.port) return  // process already dead; skip onUninstall IPC
     this.port.postMessage({ type: 'uninstall' } as HostToPluginMessage)
     await awaitAck(this.port, 'uninstalled')
+  }
+
+  async invokeCommand(commandId: string, args: unknown): Promise<unknown> {
+    const port = this.port
+    if (!port) throw new Error('Provider not available')
+    if (!this.registeredCommands.has(commandId)) {
+      throw new Error(`Provider command is not available: ${commandId}`)
+    }
+    const id = randomUUID()
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        port.off('message', handler)
+        reject(new Error(`Provider command timed out: ${commandId}`))
+      }, 30_000)
+      const handler = (event: Electron.MessageEvent) => {
+        const message = event.data as PluginToHostMessage
+        if (message.type !== 'commands.invoke.result' || message.id !== id) return
+        clearTimeout(timeout)
+        port.off('message', handler)
+        if (message.error) reject(new Error(message.error))
+        else resolve(message.result)
+      }
+      port.on('message', handler)
+      port.postMessage({ type: 'commands.invoke', id, commandId, args } as HostToPluginMessage)
+    })
   }
 
   private hasPermission(permission: PluginPermission): boolean {
@@ -379,7 +407,7 @@ export class PluginHost {
 
       // --- UI ---
       case 'ui.contribute': {
-        if (!this.hasPermission('sidebar')) break
+        if (!this.hasPermission('ui')) break
         if (this.webContents && !this.webContents.isDestroyed()) {
           this.webContents.send('plugin:ui-contribution', {
             pluginId,
@@ -395,6 +423,7 @@ export class PluginHost {
       // --- Commands ---
       case 'commands.register': {
         if (!this.hasPermission('commands')) break
+        this.registeredCommands.add(msg.commandId)
         console.info(`[plugin:${pluginId}] registered command: ${msg.commandId}`)
         break
       }
@@ -406,6 +435,7 @@ export class PluginHost {
       case 'installed':
       case 'updated':
       case 'uninstalled':
+      case 'commands.invoke.result':
         break
 
       // workItems result acks — handled inline by proxySource listeners

@@ -1,15 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { installPrefetchGuard } from './prefetch'
 import MonitorView from '@/views/MonitorView.vue'
-import GithubLayout from '@/views/GithubLayout.vue'
-import GithubPRLayout from '@/views/GithubPRLayout.vue'
-import GithubPRsView from '@/views/GithubPRsView.vue'
-import GithubPRConversationsView from '@/views/GithubPRConversationsView.vue'
-import GithubPRChecksView from '@/views/GithubPRChecksView.vue'
-import GithubPRReviewsView from '@/views/GithubPRReviewsView.vue'
-import JiraLayout from '@/views/JiraLayout.vue'
-import JiraBoardView from '@/views/JiraBoardView.vue'
-import JiraIssueView from '@/views/JiraIssueView.vue'
+import PluginView from '@/views/plugins/PluginView.vue'
 import PlannerListView from '@/views/PlannerListView.vue'
 import PlannerDetailView from '@/views/PlannerDetailView.vue'
 import AgenciesView from '@/views/AgenciesView.vue'
@@ -49,38 +41,13 @@ const router = createRouter({
         { path: 'appearance', component: AppearanceSettingsView },
         { path: 'plugins', component: () => import('../views/settings/PluginsSettingsView.vue') },
         { path: 'remote', component: () => import('../views/settings/RemoteSettingsView.vue') },
-        { path: 'github', component: () => import('../views/settings/GitHubSettingsView.vue') },
-        { path: 'jira', component: () => import('../views/settings/JiraSettingsView.vue') },
         { path: 'mcp', component: () => import('../views/settings/McpSettingsView.vue') },
         { path: 'updates', component: () => import('../views/settings/UpdatesSettingsView.vue') },
         { path: 'data', component: () => import('../views/settings/DataSettingsView.vue') },
+        { path: 'plugin/:pluginId/:pathMatch(.*)*', component: PluginView },
       ],
     },
-    {
-      path: '/jira',
-      component: JiraLayout,
-      children: [
-        { path: '', redirect: '/jira/board' },
-        { path: 'board', component: JiraBoardView },
-        { path: 'issue/:id', component: JiraIssueView },
-      ],
-    },
-    {
-      path: '/github',
-      component: GithubLayout,
-      children: [
-        { path: 'prs', component: GithubPRsView },
-        {
-          path: 'pr/:number',
-          component: GithubPRLayout,
-          children: [
-            { path: 'conversations', component: GithubPRConversationsView },
-            { path: 'checks', component: GithubPRChecksView },
-            { path: 'reviews', component: GithubPRReviewsView },
-          ],
-        },
-      ],
-    },
+    { path: '/plugin/:pluginId/:pathMatch(.*)*', component: PluginView },
   ],
 })
 

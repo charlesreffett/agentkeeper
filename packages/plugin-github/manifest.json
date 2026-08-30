@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "id": "agentkeeper-github",
+  "id": "github",
   "name": "GitHub",
   "version": "0.1.0",
   "entry": "dist/index.js",
@@ -8,7 +8,20 @@
   "author": "AgentKeeper",
   "license": "MIT",
   "activation_events": ["onStartup"],
-  "permissions": ["workItems", "secrets", "sidebar", "background", "network"],
+  "permissions": ["workItems", "secrets", "commands", "ui", "background", "network"],
+  "renderer": {
+    "entry": "dist/renderer.js",
+    "views": ["github-pulls", "github-work-item"]
+  },
+  "contributes": {
+    "navigation": [
+      { "id": "github", "label": "GitHub", "icon": "GitPullRequest", "route": "pulls", "order": 20 }
+    ],
+    "routes": [
+      { "id": "pulls", "path": "pulls", "view": "github-pulls" },
+      { "id": "work-items", "path": "work-items", "view": "github-work-item" }
+    ]
+  },
   "network": {
     "hosts": ["api.github.com", "*.github.com"]
   },

@@ -1,6 +1,17 @@
 import { z } from 'zod'
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
-import { checkCliPresent } from './github-cli.js'
+import {
+  addComment,
+  checkCliPresent,
+  createPR,
+  getPR,
+  getPRChecks,
+  getPRComments,
+  getPRDiff,
+  listPRs,
+  mergePR,
+  submitReview,
+} from './github-cli.js'
 import { GitHubWorkItemSource } from './github-source.js'
 
 const GitHubSettingsSchema = z
@@ -13,6 +24,7 @@ type GitHubSettings = z.infer<typeof GitHubSettingsSchema>
 
 let cancelPolling: (() => void) | null = null
 let pluginCtx: PluginContext<GitHubSettings> | null = null
+let activeSource: GitHubWorkItemSource | null = null
 
 async function startGitHub(ctx: PluginContext<GitHubSettings>): Promise<void> {
   if (!ctx.config.repo) {
@@ -20,6 +32,7 @@ async function startGitHub(ctx: PluginContext<GitHubSettings>): Promise<void> {
     return
   }
   const source = new GitHubWorkItemSource(ctx.config.repo)
+  activeSource = source
   ctx.workItems.register(source)
   cancelPolling = ctx.background.every(5 * 60 * 1000, () => source.refresh())
   ctx.logger.info(`github plugin active (repo: ${ctx.config.repo})`)
@@ -28,13 +41,49 @@ async function startGitHub(ctx: PluginContext<GitHubSettings>): Promise<void> {
 const githubPlugin: Plugin<GitHubSettings> = {
   async activate(ctx: PluginContext<GitHubSettings>) {
     pluginCtx = ctx
-    ctx.ui.contribute('sidebar.primary', {
-      id: 'github',
-      label: 'GitHub',
-      icon: 'GitPullRequest',
-      order: 20,
-      component: null,
+    const configuredRepo = () => ctx.config.repo ?? ''
+    ctx.commands.register({
+      id: 'github.pulls.list',
+      label: 'List GitHub pull requests',
+      handler: (args) => {
+        const input = (args ?? {}) as Parameters<typeof listPRs>[1] & { repo?: string }
+        return listPRs(input.repo || configuredRepo(), input)
+      },
     })
+    ctx.commands.register({
+      id: 'github.pulls.get',
+      label: 'Get GitHub pull request',
+      handler: (args) => {
+        const input = args as { repo?: string; number: number }
+        return getPR(input.repo || configuredRepo(), input.number)
+      },
+    })
+    ctx.commands.register({ id: 'github.pulls.diff', label: 'Get GitHub pull request diff', handler: (args) => {
+      const input = args as { repo?: string; number: number }; return getPRDiff(input.repo || configuredRepo(), input.number)
+    } })
+    ctx.commands.register({ id: 'github.pulls.checks', label: 'Get GitHub pull request checks', handler: (args) => {
+      const input = args as { repo?: string; number: number }; return getPRChecks(input.repo || configuredRepo(), input.number)
+    } })
+    ctx.commands.register({ id: 'github.pulls.comments', label: 'Get GitHub pull request comments', handler: (args) => {
+      const input = args as { repo?: string; number: number }; return getPRComments(input.repo || configuredRepo(), input.number)
+    } })
+    ctx.commands.register({ id: 'github.pulls.comment', label: 'Comment on GitHub pull request', handler: (args) => {
+      const input = args as { repo?: string; number: number; body: string }; return addComment(input.repo || configuredRepo(), input.number, input.body)
+    } })
+    ctx.commands.register({ id: 'github.pulls.review', label: 'Review GitHub pull request', handler: (args) => {
+      const input = args as Parameters<typeof submitReview> extends [string, number, infer E, string] ? { repo?: string; number: number; event: E; body: string } : never
+      return submitReview(input.repo || configuredRepo(), input.number, input.event, input.body)
+    } })
+    ctx.commands.register({ id: 'github.pulls.merge', label: 'Merge GitHub pull request', handler: (args) => {
+      const input = args as Parameters<typeof mergePR> extends [string, number, infer M] ? { repo?: string; number: number; method: M } : never
+      return mergePR(input.repo || configuredRepo(), input.number, input.method)
+    } })
+    ctx.commands.register({ id: 'github.pulls.create', label: 'Create GitHub pull request', handler: (args) => {
+      const input = args as Parameters<typeof createPR>[1] & { repo?: string }
+      return createPR(input.repo || configuredRepo(), input)
+    } })
+    ctx.commands.register({ id: 'github.workItems.get', label: 'Get GitHub issue', handler: (args) =>
+      activeSource?.get(String((args as { itemId?: unknown })?.itemId ?? '')) })
     const cliFound = await checkCliPresent()
 
     if (!cliFound) {
@@ -67,6 +116,7 @@ const githubPlugin: Plugin<GitHubSettings> = {
     cancelPolling?.()
     cancelPolling = null
     pluginCtx?.workItems.unregister('github')
+    activeSource = null
     pluginCtx = null
   },
 }

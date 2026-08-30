@@ -88,7 +88,6 @@ export async function migrateJsonPlansToDb(db: AppDb): Promise<void> {
           id: planId,
           projectId: project.path,
           sessionId,
-          workItemId: legacy.workItemId ?? null,
           planRef: externalRef,
           title: legacy.title ?? externalRef,
           prompt: legacy.prompt ?? null,

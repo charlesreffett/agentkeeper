@@ -131,6 +131,40 @@ export interface UpdateAvailable {
   release: UpdateRelease
 }
 
+export async function getPluginRendererBundle(
+  pluginId: string,
+  viewId: string,
+): Promise<{ script: string }> {
+  const db = getRawSqlite()
+  const row = db.prepare(
+    'SELECT version, enabled, manifest, dev_path FROM plugin_registry WHERE id = ?',
+  ).get(pluginId) as {
+    version: string
+    enabled: number
+    manifest: string
+    dev_path: string | null
+  } | undefined
+  if (!row || row.enabled !== 1) throw new Error('Provider not available')
+
+  const manifest = PluginManifestSchema.parse(JSON.parse(row.manifest) as unknown)
+  if (!manifest.permissions.includes('ui') || !manifest.renderer?.views.includes(viewId)) {
+    throw new Error('Provider view not available')
+  }
+
+  const root = row.dev_path
+    ? path.resolve(row.dev_path)
+    : path.join(app.getPath('userData'), 'plugins', 'installed', `${pluginId}@${row.version}`)
+  const entry = path.resolve(root, manifest.renderer.entry)
+  if (entry !== root && !entry.startsWith(`${root}${path.sep}`)) {
+    throw new Error('Invalid provider renderer path')
+  }
+  const stat = await fsp.stat(entry)
+  if (!stat.isFile() || stat.size > 5 * 1024 * 1024) {
+    throw new Error('Invalid provider renderer bundle')
+  }
+  return { script: await fsp.readFile(entry, 'utf8') }
+}
+
 export async function checkForUpdates(): Promise<UpdateAvailable[]> {
   const db = getRawSqlite()
   const rows = db.prepare('SELECT id, version, manifest FROM plugin_registry WHERE enabled = 1').all() as { id: string; version: string; manifest: string }[]
