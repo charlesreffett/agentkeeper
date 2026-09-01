@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export type PluginPermission = 'workItems' | 'secrets' | 'commands' | 'ui' | 'background' | 'network'
+export type PluginPermission = 'workItems' | 'secrets' | 'commands' | 'ui' | 'background' | 'network' | 'projects'
 
 const JsonSchemaPropertySchema = z.object({
   type: z.enum(['string', 'number', 'boolean']),
@@ -66,7 +66,7 @@ export const PluginManifestSchema = z.object({
   homepage_url: z.string().url().optional(),
   min_app_version: z.string().optional(),
   activation_events: z.array(z.string()).default(['onStartup']),
-  permissions: z.array(z.enum(['workItems', 'secrets', 'commands', 'ui', 'background', 'network'])).default([]),
+  permissions: z.array(z.enum(['workItems', 'secrets', 'commands', 'ui', 'background', 'network', 'projects'])).default([]),
   network: z.object({
     hosts: z.array(z.string()),
   }).optional(),

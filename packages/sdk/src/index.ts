@@ -108,7 +108,25 @@ export interface PluginContext<TSettings = unknown> {
   ui: UIContributions
   commands: CommandRegistry
   background: BackgroundWork
+  projects: ProjectRegistry
   fetch(url: string | URL, init?: RequestInit): Promise<Response>
+}
+
+export interface ProjectRemote {
+  name: string
+  url: string
+  provider?: string
+  repository?: string
+}
+
+export interface ProjectDescriptor {
+  path: string
+  name: string
+  remotes: ProjectRemote[]
+}
+
+export interface ProjectRegistry {
+  list(): Promise<ProjectDescriptor[]>
 }
 
 export interface Logger {

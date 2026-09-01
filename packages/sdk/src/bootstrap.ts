@@ -21,6 +21,7 @@ import type {
   CommandRegistry,
   CommandDefinition,
   BackgroundWork,
+  ProjectRegistry,
 } from './index.js'
 
 const DENY_ALL_SENTINEL = 'http://127.0.0.1:0/__deny_all__'
@@ -172,6 +173,10 @@ const background: BackgroundWork = {
   },
 }
 
+const projects: ProjectRegistry = {
+  list: () => sendToHost({ id: makeId(), type: 'projects.list' }) as ReturnType<ProjectRegistry['list']>,
+}
+
 const ctx: PluginContext<Record<string, unknown>> = {
   config: {} as Record<string, unknown>,
   logger,
@@ -182,6 +187,7 @@ const ctx: PluginContext<Record<string, unknown>> = {
   ui,
   commands,
   background,
+  projects,
   fetch: globalThis.fetch.bind(globalThis),
 }
 

@@ -8,6 +8,8 @@ import type { PluginToHostMessage, HostToPluginMessage } from '@agentkeeper/sdk'
 import type { EventBus } from '@agentkeeper/sdk'
 import type { WorkItemRegistryFull } from './plugins.js'
 import { getRawSqlite } from './db/index.js'
+import { recentProjectsStore } from './store.js'
+import { detectRemoteSources } from './git.js'
 
 function resolveBootstrapPath(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url))
@@ -208,6 +210,31 @@ export class PluginHost {
         const rows = db.prepare('SELECT key FROM plugin_storage WHERE plugin_id = ?')
           .all(pluginId) as { key: string }[]
         this.respond(msg.id, rows.map((r) => r.key))
+        break
+      }
+
+      case 'projects.list': {
+        if (!this.hasPermission('projects')) { this.deny(msg.id, 'Missing projects permission'); break }
+        void Promise.all(recentProjectsStore.list().map(async (project) => {
+          const detected = await detectRemoteSources(project.path)
+          const remotes = detected.map((remote) => ({
+            name: remote.remote,
+            url: remote.url,
+            provider: remote.type,
+            repository: remote.repo,
+          }))
+          if (project.repo && !remotes.some((remote) => remote.provider === 'github' && remote.repository === project.repo)) {
+            remotes.push({
+              name: 'origin',
+              url: `https://github.com/${project.repo}`,
+              provider: 'github',
+              repository: project.repo,
+            })
+          }
+          return { path: project.path, name: project.name, remotes }
+        })).then((projects) => this.respond(msg.id, projects), (error: unknown) => {
+          this.deny(msg.id, error instanceof Error ? error.message : String(error))
+        })
         break
       }
 

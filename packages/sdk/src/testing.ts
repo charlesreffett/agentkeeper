@@ -128,6 +128,9 @@ export function createMockContext<TSettings = unknown>(
       every: () => () => {},
       once: () => () => {},
     },
+    projects: {
+      async list() { return [] },
+    },
     fetch: globalThis.fetch.bind(globalThis),
     _inspect: {
       uiContributions,

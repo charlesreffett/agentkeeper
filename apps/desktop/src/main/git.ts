@@ -320,6 +320,40 @@ export async function switchBranchCreate(
   }
 }
 
+function parseRemoteUrl(remoteUrl: string): { host: string; slug: string; resolveSshAlias: boolean } | null {
+  const scp = /^(?:[^@]+@)?([^:]+):(.+)$/.exec(remoteUrl)
+  if (scp && !remoteUrl.includes('://')) {
+    return { host: scp[1]!, slug: scp[2]!.replace(/^\/+|\.git$/g, ''), resolveSshAlias: true }
+  }
+  try {
+    const parsed = new URL(remoteUrl)
+    return {
+      host: parsed.hostname,
+      slug: parsed.pathname.replace(/^\/+|\.git$/g, ''),
+      resolveSshAlias: parsed.protocol === 'ssh:',
+    }
+  } catch {
+    return null
+  }
+}
+
+async function resolveSshHostname(host: string): Promise<string> {
+  try {
+    const { stdout } = await execFileAsync('ssh', ['-G', host], { timeout: 3_000 })
+    return /^hostname\s+(\S+)$/im.exec(stdout)?.[1] ?? host
+  } catch {
+    return host
+  }
+}
+
+function classifyRemoteHost(host: string): RemoteSource['type'] | null {
+  const normalized = host.toLowerCase()
+  if (normalized === 'github.com') return 'github'
+  if (normalized === 'gitlab.com') return 'gitlab'
+  if (normalized === 'bitbucket.org') return 'bitbucket'
+  return null
+}
+
 export async function detectRemoteSources(projectPath: string): Promise<RemoteSource[]> {
   try {
     const { stdout } = await execFileAsync('git', ['-C', projectPath, 'remote', '-v'])
@@ -333,31 +367,12 @@ export async function detectRemoteSources(projectPath: string): Promise<RemoteSo
       const remote = match[1] as string
       const url = match[2] as string
 
-      type HostType = RemoteSource['type']
-      let type: HostType | null = null
-      let slug: string | null = null
-
-      if (url.includes('github.com')) {
-        type = 'github'
-        const m =
-          /git@github\.com:([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url) ??
-          /https:\/\/github\.com\/([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url)
-        slug = m?.[1] ?? null
-      } else if (url.includes('gitlab.com')) {
-        type = 'gitlab'
-        const m =
-          /git@gitlab\.com:([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url) ??
-          /https:\/\/gitlab\.com\/([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url)
-        slug = m?.[1] ?? null
-      } else if (url.includes('bitbucket.org')) {
-        type = 'bitbucket'
-        const m =
-          /git@bitbucket\.org:([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url) ??
-          /https:\/\/bitbucket\.org\/([^/]+\/[^/\s]+?)(?:\.git)?$/.exec(url)
-        slug = m?.[1] ?? null
-      }
-
-      if (!type || !slug) continue
+      const parsed = parseRemoteUrl(url)
+      if (!parsed || !/^[^/]+\/[^/]+$/.test(parsed.slug)) continue
+      const host = parsed.resolveSshAlias ? await resolveSshHostname(parsed.host) : parsed.host
+      const type = classifyRemoteHost(host)
+      if (!type) continue
+      const slug = parsed.slug
 
       const key = `${type}:${slug}`
       if (seen.has(key)) continue
