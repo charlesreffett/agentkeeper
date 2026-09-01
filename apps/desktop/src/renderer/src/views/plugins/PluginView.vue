@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { PluginRecord } from '@shared/ipc-contract'
+import type { PluginRecord, WorkItem } from '@shared/ipc-contract'
+import WorkItemSessionModal from './WorkItemSessionModal.vue'
 
 type BridgeRequest = {
   channel: 'agentkeeper-plugin'
   id?: string
-  type: 'ready' | 'invoke' | 'navigate' | 'openExternal'
+  type: 'ready' | 'invoke' | 'navigate' | 'openExternal' | 'startSession'
   command?: string
   args?: unknown
   path?: string
   url?: string
+  itemId?: string
+  projectPath?: string
 }
 
 const route = useRoute()
@@ -20,6 +23,9 @@ const loading = ref(true)
 const unavailable = ref(false)
 const detail = ref('')
 const plugin = ref<PluginRecord | null>(null)
+const sessionItem = ref<WorkItem | null>(null)
+const sessionProjectPath = ref('')
+const sessionModalOpen = ref(false)
 
 const pluginId = computed(() => String(route.params.pluginId ?? ''))
 const pluginPath = computed(() => {
@@ -61,6 +67,7 @@ function buildDocument(script: string, viewId: string): string {
         },
         navigate(path) { send({ type: 'navigate', path }); },
         openExternal(url) { send({ type: 'openExternal', url }); },
+        startSession(itemId, projectPath) { send({ type: 'startSession', itemId, projectPath }); },
         onRouteChanged(listener) { routeListeners.add(listener); return () => routeListeners.delete(listener); },
       });
       addEventListener('message', (event) => {
@@ -144,6 +151,14 @@ async function onMessage(event: MessageEvent<BridgeRequest>): Promise<void> {
     window.open(target.href, '_blank')
     return
   }
+  if (message.type === 'startSession' && message.itemId) {
+    const item = await window.agentkeeper.workItems.get({ sourceId: pluginId.value, itemId: message.itemId })
+    if (!item) return
+    sessionItem.value = item
+    sessionProjectPath.value = message.projectPath ?? ''
+    sessionModalOpen.value = true
+    return
+  }
   if (message.type === 'invoke' && message.id && message.command) {
     try {
       const result = await window.agentkeeper.plugins.invoke(pluginId.value, message.command, message.args)
@@ -191,6 +206,13 @@ watch([pluginId, pluginPath], ([nextId], [previousId]) => {
       class="block size-full border-0"
       sandbox="allow-scripts"
       title="Plugin view"
+    />
+    <WorkItemSessionModal
+      :open="sessionModalOpen"
+      :source-id="pluginId"
+      :item="sessionItem"
+      :suggested-project-path="sessionProjectPath"
+      @close="sessionModalOpen = false"
     />
   </div>
 </template>
