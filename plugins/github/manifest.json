@@ -8,7 +8,7 @@
   "author": "AgentKeeper",
   "license": "MIT",
   "activation_events": ["onStartup"],
-  "permissions": ["workItems", "secrets", "commands", "ui", "background", "network"],
+  "permissions": ["workItems", "secrets", "commands", "ui", "background", "network", "projects"],
   "renderer": {
     "entry": "dist/renderer.js",
     "views": ["github-pulls", "github-work-item"]
@@ -24,16 +24,5 @@
   },
   "network": {
     "hosts": ["api.github.com", "*.github.com"]
-  },
-  "settings_schema": {
-    "type": "object",
-    "properties": {
-      "repo": {
-        "type": "string",
-        "title": "Repository",
-        "description": "GitHub repository in owner/repo format",
-        "placeholder": "owner/repo"
-      }
-    }
   }
 }

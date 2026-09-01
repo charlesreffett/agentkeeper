@@ -2,12 +2,23 @@ import type { WorkItem, WorkItemSource, WorkItemStatus } from '@agentkeeper/sdk'
 import { closeIssue, getIssue, listIssues, reopenIssue } from './github-cli.js'
 import type { GHIssue } from './types.js'
 
-function mapToWorkItem(issue: GHIssue, _repo: string): WorkItem {
+function itemId(repo: string, number: number): string {
+  return `${repo}#${number}`
+}
+
+function parseItemId(id: string): { repo: string; number: number } | null {
+  const separator = id.lastIndexOf('#')
+  if (separator < 1) return null
+  const number = Number(id.slice(separator + 1))
+  return Number.isInteger(number) ? { repo: id.slice(0, separator), number } : null
+}
+
+function mapToWorkItem(issue: GHIssue, repo: string): WorkItem {
   const status: WorkItemStatus = issue.state?.toUpperCase() === 'CLOSED' ? 'closed' : 'open'
   return {
-    id: String(issue.number),
+    id: itemId(repo, issue.number),
     source: 'github',
-    externalRef: `#${issue.number}`,
+    externalRef: `${repo}#${issue.number}`,
     title: issue.title,
     body: issue.body ?? '',
     status,
@@ -22,10 +33,10 @@ export class GitHubWorkItemSource implements WorkItemSource {
   readonly label = 'GitHub'
 
   private cache: WorkItem[] = []
-  private readonly repo: string
+  private readonly repos: string[]
 
-  constructor(repo: string) {
-    this.repo = repo
+  constructor(repos: string[]) {
+    this.repos = repos
   }
 
   async list(): Promise<WorkItem[]> {
@@ -36,27 +47,32 @@ export class GitHubWorkItemSource implements WorkItemSource {
   async get(id: string): Promise<WorkItem | undefined> {
     const cached = this.cache.find((i) => i.id === id)
     if (cached) return cached
+    const parsed = parseItemId(id)
+    if (!parsed || !this.repos.includes(parsed.repo)) return undefined
     try {
-      const issue = await getIssue(this.repo, Number(id))
-      return mapToWorkItem(issue, this.repo)
+      const issue = await getIssue(parsed.repo, parsed.number)
+      return mapToWorkItem(issue, parsed.repo)
     } catch {
       return undefined
     }
   }
 
   async updateStatus(id: string, status: WorkItemStatus): Promise<void> {
-    const number = Number(id)
+    const parsed = parseItemId(id)
+    if (!parsed || !this.repos.includes(parsed.repo)) throw new Error('Unknown GitHub work item')
     if (status === 'closed' || status === 'done') {
-      await closeIssue(this.repo, number)
+      await closeIssue(parsed.repo, parsed.number)
     } else {
-      await reopenIssue(this.repo, number)
+      await reopenIssue(parsed.repo, parsed.number)
     }
   }
 
   async refresh(): Promise<void> {
     try {
-      const issues = await listIssues(this.repo, 'open')
-      this.cache = issues.map((i) => mapToWorkItem(i, this.repo))
+      const results = await Promise.allSettled(this.repos.map(async (repo) => ({ repo, issues: await listIssues(repo, 'open') })))
+      this.cache = results.flatMap((result) => result.status === 'fulfilled'
+        ? result.value.issues.map((issue) => mapToWorkItem(issue, result.value.repo))
+        : [])
     } catch (err) {
       console.error('[github] refresh failed:', err)
     }

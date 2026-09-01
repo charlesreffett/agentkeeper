@@ -13,7 +13,6 @@
     "esbuild": "^0.27.0"
   },
   "dependencies": {
-    "@agentkeeper/sdk": "workspace:*",
-    "zod": "^3.23.8"
+    "@agentkeeper/sdk": "workspace:*"
   }
 }
