@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { PluginRecord, WorkItem } from '@shared/ipc-contract'
 import WorkItemSessionModal from './WorkItemSessionModal.vue'
@@ -29,6 +29,7 @@ const plugin = ref<PluginRecord | null>(null)
 const sessionItem = ref<WorkItem | null>(null)
 const sessionProjectPath = ref('')
 const sessionModalOpen = ref(false)
+let loadGeneration = 0
 
 const pluginId = computed(() => String(route.params.pluginId ?? ''))
 const pluginPath = computed(() => {
@@ -46,11 +47,11 @@ function scriptDataUrl(source: string): string {
   return `data:text/javascript;base64,${btoa(binary)}`
 }
 
-function buildDocument(script: string, viewId: string): string {
+function buildDocument(script: string, viewId: string, providerId: string, path: string): string {
   const initial = JSON.stringify({
-    pluginId: pluginId.value,
+    pluginId: providerId,
     viewId,
-    path: pluginPath.value,
+    path,
     colorScheme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
   }).replaceAll('<', '\\u003c')
   const bridge = `
@@ -115,25 +116,32 @@ function buildDocument(script: string, viewId: string): string {
 }
 
 async function load(): Promise<void> {
+  const generation = ++loadGeneration
+  const providerId = pluginId.value
+  const path = pluginPath.value
   loading.value = true
   unavailable.value = false
   detail.value = ''
+  await nextTick()
   try {
     const plugins = await window.agentkeeper.plugins.list()
-    const found = plugins.find((candidate) => candidate.id === pluginId.value && candidate.enabled)
+    if (generation !== loadGeneration) return
+    const found = plugins.find((candidate) => candidate.id === providerId && candidate.enabled)
     if (!found) throw new Error('Provider not available')
     plugin.value = found
     const routeContribution = found.manifest.contributes?.routes.find(
-      (candidate) => pluginPath.value === candidate.path || pluginPath.value.startsWith(`${candidate.path}/`),
+      (candidate) => path === candidate.path || path.startsWith(`${candidate.path}/`),
     )
     if (!routeContribution) throw new Error('Provider view not available')
     const bundle = await window.agentkeeper.plugins.getRendererBundle(found.id, routeContribution.view)
-    if (frame.value) frame.value.srcdoc = buildDocument(bundle.script, routeContribution.view)
+    if (generation !== loadGeneration) return
+    if (frame.value) frame.value.srcdoc = buildDocument(bundle.script, routeContribution.view, providerId, path)
   } catch (error) {
+    if (generation !== loadGeneration) return
     unavailable.value = true
     detail.value = error instanceof Error ? error.message : String(error)
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
@@ -230,6 +238,7 @@ watch([pluginId, pluginPath], ([nextId], [previousId]) => {
       </div>
     </div>
     <iframe
+      :key="pluginId"
       v-show="!loading && !unavailable"
       ref="frame"
       class="block size-full border-0"
