@@ -16,11 +16,6 @@ const DEFAULT_IGNORE = [
   '*.ts',
 ]
 
-// Patterns that re-include files excluded by a prior rule (e.g. .d.ts files)
-const RE_INCLUDE = [
-  '**/*.d.ts',
-]
-
 function makeIgnoreMatcher(patterns: string[]): (relPath: string) => boolean {
   return (relPath: string) => {
     for (const p of patterns) {
@@ -29,24 +24,7 @@ function makeIgnoreMatcher(patterns: string[]): (relPath: string) => boolean {
       if (relPath === normalized || relPath.startsWith(normalized + '/')) return true
       if (p.startsWith('*.')) {
         const ext = p.slice(1)
-        return relPath.endsWith(ext)
-      }
-    }
-    return false
-  }
-}
-
-function makeReIncludeMatcher(patterns: string[]): (relPath: string) => boolean {
-  return (relPath: string) => {
-    for (const p of patterns) {
-      if (p.startsWith('**/')) {
-        const suffix = p.slice(3)
-        if (relPath.endsWith(suffix) || relPath === suffix) return true
-      } else if (p.startsWith('*.')) {
-        const ext = p.slice(1)
         if (relPath.endsWith(ext)) return true
-      } else {
-        if (relPath === p || relPath.endsWith('/' + p)) return true
       }
     }
     return false
@@ -60,7 +38,7 @@ function parseAkpIgnore(content: string): string[] {
     .filter(l => l.length > 0 && !l.startsWith('#'))
 }
 
-function requirePackagedFile(root: string, entry: string, label: string): void {
+export function requirePackagedFile(root: string, entry: string, label: string): void {
   const resolved = path.resolve(root, entry)
   const relative = path.relative(root, resolved)
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
@@ -69,6 +47,21 @@ function requirePackagedFile(root: string, entry: string, label: string): void {
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
     throw new Error(`${label} does not exist. Build the plugin before packing: ${entry}`)
   }
+}
+
+export function collectPackageFiles(root: string, extraIgnorePatterns: string[] = []): string[] {
+  const shouldIgnore = makeIgnoreMatcher([...DEFAULT_IGNORE, ...extraIgnorePatterns])
+  function collect(rel: string): string[] {
+    const files: string[] = []
+    for (const entry of fs.readdirSync(path.join(root, rel || '.'), { withFileTypes: true })) {
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name
+      if (shouldIgnore(relPath)) continue
+      if (entry.isDirectory()) files.push(...collect(relPath))
+      else files.push(relPath)
+    }
+    return files
+  }
+  return collect('').sort((a, b) => a.localeCompare(b))
 }
 
 export const packCommand = new Command('pack')
@@ -114,24 +107,8 @@ export const packCommand = new Command('pack')
     if (fs.existsSync(akpignorePath)) {
       ignorePatterns.push(...parseAkpIgnore(fs.readFileSync(akpignorePath, 'utf8')))
     }
-    const shouldIgnore = makeIgnoreMatcher(ignorePatterns)
-    const shouldReInclude = makeReIncludeMatcher(RE_INCLUDE)
-
     // 3. Collect files
-    function collectFiles(base: string, rel: string): string[] {
-      const files: string[] = []
-      for (const entry of fs.readdirSync(path.join(base, rel || '.'), { withFileTypes: true })) {
-        const relPath = rel ? `${rel}/${entry.name}` : entry.name
-        if (shouldIgnore(relPath) && !shouldReInclude(relPath)) continue
-        if (entry.isDirectory()) {
-          files.push(...collectFiles(base, relPath))
-        } else {
-          files.push(relPath)
-        }
-      }
-      return files
-    }
-    const files = collectFiles(dir, '').sort((a, b) => a.localeCompare(b))
+    const files = collectPackageFiles(dir, ignorePatterns.slice(DEFAULT_IGNORE.length))
     console.log(`Packing ${files.length} files...`)
 
     // 4. Build zip
