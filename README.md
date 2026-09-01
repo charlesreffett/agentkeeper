@@ -39,6 +39,7 @@ pnpm dev          # start the Electron app in dev mode
 pnpm dev          # run the desktop app (electron-vite dev server)
 pnpm typecheck    # vue-tsc --noEmit across all workspaces
 pnpm build        # full production build
+pnpm pack:plugins # build installable GitHub and Jira .akp packages
 pnpm dist:mac     # build a macOS distributable
 pnpm dist:win     # build a Windows distributable
 ```
@@ -73,7 +74,9 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or `~/.agentkeeper/roles/<i
 ## Contributing
 
 See [CLAUDE.md](./CLAUDE.md) for architecture details, the IPC data-flow pattern,
-Vue Query conventions, the plugin boundary rules, and the commit format. Key rules:
+Vue Query conventions, and the commit format. See the [plugin author and release
+guide](./docs/plugins.md) for the plugin boundary, package format, renderer bridge,
+and distribution workflow. Key rules:
 
 - Plugins import only from `@agentkeeper/sdk`, never from `packages/core`.
 - Cross-boundary code goes through `apps/desktop/src/shared/` only.
