@@ -3,21 +3,24 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { PluginRecord, WorkItem } from '@shared/ipc-contract'
 import WorkItemSessionModal from './WorkItemSessionModal.vue'
+import { useSessionStore } from '@/stores/sessions'
 
 type BridgeRequest = {
   channel: 'agentkeeper-plugin'
   id?: string
-  type: 'ready' | 'invoke' | 'navigate' | 'openExternal' | 'startSession'
+  type: 'ready' | 'invoke' | 'navigate' | 'openExternal' | 'startSession' | 'workItemSessions' | 'openSession'
   command?: string
   args?: unknown
   path?: string
   url?: string
   itemId?: string
   projectPath?: string
+  sessionId?: string
 }
 
 const route = useRoute()
 const router = useRouter()
+const sessionStore = useSessionStore()
 const frame = ref<HTMLIFrameElement | null>(null)
 const loading = ref(true)
 const unavailable = ref(false)
@@ -68,6 +71,12 @@ function buildDocument(script: string, viewId: string): string {
         navigate(path) { send({ type: 'navigate', path }); },
         openExternal(url) { send({ type: 'openExternal', url }); },
         startSession(itemId, projectPath) { send({ type: 'startSession', itemId, projectPath }); },
+        getWorkItemSessions(itemId) {
+          const id = crypto.randomUUID();
+          send({ id, type: 'workItemSessions', itemId });
+          return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+        },
+        openSession(sessionId) { send({ type: 'openSession', sessionId }); },
         onRouteChanged(listener) { routeListeners.add(listener); return () => routeListeners.delete(listener); },
       });
       addEventListener('message', (event) => {
@@ -157,6 +166,26 @@ async function onMessage(event: MessageEvent<BridgeRequest>): Promise<void> {
     sessionItem.value = item
     sessionProjectPath.value = message.projectPath ?? ''
     sessionModalOpen.value = true
+    return
+  }
+  if (message.type === 'workItemSessions' && message.id) {
+    try {
+      const projects = await window.agentkeeper.projects.list()
+      const persisted = (await Promise.all([null, ...projects.map(project => project.path)].map(path => window.agentkeeper.sessions.listPersisted(path)))).flat()
+      const live = Object.values(sessionStore.sessions)
+      const sessions = [...live, ...persisted]
+        .filter((session, index, all) => all.findIndex(candidate => candidate.localId === session.localId) === index)
+        .filter(session => session.workItem?.sourceId === pluginId.value && (!message.itemId || session.workItem.itemId === message.itemId))
+        .map(session => ({ id: session.localId, itemId: session.workItem!.itemId, status: session.status, title: session.title, lastActivityAt: session.lastActivityAt }))
+      frame.value?.contentWindow?.postMessage({ channel: 'agentkeeper-host', type: 'response', id: message.id, result: sessions }, '*')
+    } catch (error) {
+      frame.value?.contentWindow?.postMessage({ channel: 'agentkeeper-host', type: 'response', id: message.id, error: error instanceof Error ? error.message : String(error) }, '*')
+    }
+    return
+  }
+  if (message.type === 'openSession' && message.sessionId) {
+    const session = sessionStore.sessions[message.sessionId] ?? await window.agentkeeper.sessions.getByLocalId(message.sessionId)
+    if (session?.workItem?.sourceId === pluginId.value) await router.push(`/sessions/${message.sessionId}`)
     return
   }
   if (message.type === 'invoke' && message.id && message.command) {

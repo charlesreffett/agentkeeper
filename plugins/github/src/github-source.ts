@@ -1,6 +1,6 @@
 import type { WorkItem, WorkItemSource, WorkItemStatus } from '@agentkeeper/sdk'
-import { closeIssue, getIssue, listIssues, reopenIssue } from './github-cli.js'
-import type { GHIssue } from './types.js'
+import { closeIssue, getIssue, getPR, listIssues, reopenIssue } from './github-cli.js'
+import type { GHIssue, PRDetail } from './types.js'
 
 function itemId(repo: string, number: number): string {
   return `${repo}#${number}`
@@ -25,6 +25,15 @@ function mapToWorkItem(issue: GHIssue, repo: string): WorkItem {
     statusLabel: status === 'closed' ? 'Closed' : 'Open',
     ...(issue.assignees?.[0] ? { assignee: issue.assignees[0].login } : {}),
     links: [{ type: 'related', url: issue.url, label: 'GitHub' }],
+  }
+}
+
+function mapPullRequestToWorkItem(pull: PRDetail): WorkItem {
+  const status: WorkItemStatus = pull.state === 'open' ? 'open' : pull.state === 'merged' ? 'done' : 'closed'
+  return {
+    id: itemId(pull.repo, pull.number), source: 'github', externalRef: `${pull.repo}#${pull.number}`,
+    title: pull.title, body: pull.body, status, statusLabel: pull.state === 'merged' ? 'Merged' : pull.state === 'closed' ? 'Closed' : 'Open',
+    links: [{ type: 'pr', url: pull.url, label: 'GitHub pull request' }],
   }
 }
 
@@ -53,7 +62,8 @@ export class GitHubWorkItemSource implements WorkItemSource {
       const issue = await getIssue(parsed.repo, parsed.number)
       return mapToWorkItem(issue, parsed.repo)
     } catch {
-      return undefined
+      try { return mapPullRequestToWorkItem(await getPR(parsed.repo, parsed.number)) }
+      catch { return undefined }
     }
   }
 
