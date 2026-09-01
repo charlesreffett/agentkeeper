@@ -31,6 +31,9 @@ const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
 
 const execFileAsync = (file: string, args: string[]) =>
   promisify(execFile)(file, args, { timeout: 10_000 })
+let jiraExecutable = 'jira'
+export function setJiraCliPath(value?: string): void { jiraExecutable = value?.trim() || 'jira' }
+const runJira = (args: string[]) => execFileAsync(jiraExecutable, args)
 
 export interface JiraProject {
   key: string
@@ -39,7 +42,7 @@ export interface JiraProject {
 
 export async function listProjects(): Promise<JiraProject[]> {
   try {
-    const { stdout } = await execFileAsync('jira', ['project', 'list'])
+    const { stdout } = await runJira(['project', 'list'])
     return stdout
       .split('\n')
       .slice(1)
@@ -78,7 +81,7 @@ export interface RawJiraIssue {
 
 export async function checkCliPresent(): Promise<boolean> {
   try {
-    await execFileAsync('jira', ['version'])
+    await runJira(['version'])
     return true
   } catch {
     return false
@@ -180,7 +183,7 @@ export async function createIssue(
   if (params.description) args.push('--description', params.description)
   if (params.issueType) args.push('--type', params.issueType)
   if (params.priority) args.push('--priority', params.priority)
-  const { stdout } = await execFileAsync('jira', args)
+  const { stdout } = await runJira(args)
   return JSON.parse(stdout.trim()) as RawJiraIssue
 }
 
@@ -200,7 +203,7 @@ export async function listIssues(
     const args = ['issue', 'list', '--raw', '--paginate', `${from}:${limit}`]
     if (projectKey) args.push('--project', projectKey)
     if (excludeDone) args.push('--jql', 'statusCategory != Done')
-    const { stdout } = await execFileAsync('jira', args)
+    const { stdout } = await runJira(args)
     const page = JSON.parse(stdout.trim()) as RawJiraIssue[]
     all.push(...page)
     if (page.length < limit) break
@@ -391,7 +394,7 @@ export async function countIssues(
 
 export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
   try {
-    const { stdout } = await execFileAsync('jira', ['issue', 'view', id, '--raw'])
+    const { stdout } = await runJira(['issue', 'view', id, '--raw'])
     return JSON.parse(stdout.trim()) as RawJiraIssue
   } catch {
     return undefined
@@ -434,7 +437,7 @@ export async function getIssueTransitions(id: string): Promise<IssueTransition[]
   }
 
   try {
-    await execFileAsync('jira', ['issue', 'move', id, '__JIRA_TRANSITION_PROBE__'])
+    await runJira(['issue', 'move', id, '__JIRA_TRANSITION_PROBE__'])
     return []
   } catch (err: unknown) {
     const output =
@@ -452,7 +455,7 @@ export async function getIssueTransitions(id: string): Promise<IssueTransition[]
 }
 
 export async function transitionIssue(id: string, name: string): Promise<void> {
-  await execFileAsync('jira', ['issue', 'move', id, name])
+  await runJira(['issue', 'move', id, name])
 }
 
 export async function updateIssueStatus(id: string, status: WorkItemStatus): Promise<void> {
@@ -504,5 +507,5 @@ export async function updateIssueStatus(id: string, status: WorkItemStatus): Pro
 }
 
 export async function addComment(id: string, body: string): Promise<void> {
-  await execFileAsync('jira', ['issue', 'comment', 'add', id, '-b', body])
+  await runJira(['issue', 'comment', 'add', id, '-b', body])
 }

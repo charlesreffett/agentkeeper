@@ -56,6 +56,10 @@ export class JiraWorkItemSource implements WorkItemSource {
   async create(params: WorkItemCreateParams): Promise<WorkItem> {
     const key = this.legacyProjectKey ?? this.projectKeys[0]
     if (!key) throw new Error('No Jira project key configured — add a mapping in Jira settings.')
+    return this.createForProject(key, params)
+  }
+
+  async createForProject(key: string, params: WorkItemCreateParams): Promise<WorkItem> {
     const raw = await createIssue(key, params)
     const item = mapToWorkItem(raw)
     this.cache.push(item)
