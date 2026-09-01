@@ -369,6 +369,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyPrompt: null,
       title: null,
       model: plain.model ?? null,
+      harnessId: plain.harnessId,
       effort: plain.effort ?? null,
       permissionMode: plain.permissionMode ?? null,
       status: 'starting',
