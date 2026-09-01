@@ -7,7 +7,7 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "build": "pnpm typecheck && esbuild src/index.ts --bundle --format=esm --platform=node --target=node24 --outfile=dist/index.js && esbuild renderer/index.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=dist/renderer.js"
+    "build": "pnpm typecheck && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && esbuild src/index.ts --bundle --format=esm --platform=node --target=node24 --outfile=dist/index.js && esbuild renderer/index.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=dist/renderer.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

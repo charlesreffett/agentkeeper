@@ -15,6 +15,10 @@ jobs:
     outputs:
       desktop_release_created: ${{ steps.release.outputs['apps/desktop--release_created'] }}
       desktop_tag_name: ${{ steps.release.outputs['apps/desktop--tag_name'] }}
+      github_plugin_release_created: ${{ steps.release.outputs['plugins/github--release_created'] }}
+      github_plugin_tag_name: ${{ steps.release.outputs['plugins/github--tag_name'] }}
+      jira_plugin_release_created: ${{ steps.release.outputs['plugins/jira--release_created'] }}
+      jira_plugin_tag_name: ${{ steps.release.outputs['plugins/jira--tag_name'] }}
     steps:
       - id: release
         uses: googleapis/release-please-action@v4
@@ -32,3 +36,27 @@ jobs:
     with:
       tag_name: ${{ needs.release-please.outputs.desktop_tag_name }}
       ref: ${{ needs.release-please.outputs.desktop_tag_name }}
+
+  publish-github-plugin:
+    needs: release-please
+    if: needs.release-please.outputs.github_plugin_release_created == 'true'
+    uses: ./.github/workflows/publish-plugin.yml
+    permissions:
+      contents: write
+    with:
+      plugin_id: github
+      plugin_dir: plugins/github
+      tag_name: ${{ needs.release-please.outputs.github_plugin_tag_name }}
+      feed_tag: plugin-github-feed
+
+  publish-jira-plugin:
+    needs: release-please
+    if: needs.release-please.outputs.jira_plugin_release_created == 'true'
+    uses: ./.github/workflows/publish-plugin.yml
+    permissions:
+      contents: write
+    with:
+      plugin_id: jira
+      plugin_dir: plugins/jira
+      tag_name: ${{ needs.release-please.outputs.jira_plugin_tag_name }}
+      feed_tag: plugin-jira-feed

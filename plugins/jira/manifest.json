@@ -7,6 +7,7 @@
   "description": "Jira work items via the jira CLI",
   "author": "AgentKeeper",
   "license": "MIT",
+  "update_url": "https://github.com/agentkeeper-ai/agentkeeper/releases/download/plugin-jira-feed/jira-update-manifest.json",
   "activation_events": ["onStartup"],
   "permissions": ["workItems", "secrets", "commands", "ui", "background"],
   "renderer": {

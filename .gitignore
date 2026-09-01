@@ -10,6 +10,7 @@ apps/desktop/build/*
 !apps/desktop/build/icon.png
 .vite
 *.log
+*.akp
 .DS_Store
 .env
 .env.local

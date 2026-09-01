@@ -8,6 +8,9 @@ import { PluginManifestSchema } from '@agentkeeper/sdk'
 const DEFAULT_IGNORE = [
   'node_modules/',
   'src/',
+  'renderer/',
+  'tsconfig.json',
+  '*.akp',
   '*.map',
   '.git/',
   '*.ts',
