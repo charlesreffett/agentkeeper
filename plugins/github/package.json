@@ -13,6 +13,8 @@
     "esbuild": "^0.27.0"
   },
   "dependencies": {
-    "@agentkeeper/sdk": "workspace:*"
+    "@agentkeeper/sdk": "workspace:*",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.11"
   }
 }
