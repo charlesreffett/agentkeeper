@@ -432,8 +432,8 @@ function openExternal(url: string) {
         v-else-if="!plugins || plugins.length === 0"
         class="text-sm text-muted-foreground"
       >
-        No plugins installed. Click <strong>Install from GitHub</strong> to add a plugin, or
-        <strong>Load dev plugin</strong> to point at a local directory during development.
+        No plugins installed. Click <strong>Install from AKP</strong> to add a packaged plugin, or
+        <strong>Load unpacked</strong> to point at a local directory during development.
       </div>
 
       <ul v-else class="divide-y divide-border/50">
