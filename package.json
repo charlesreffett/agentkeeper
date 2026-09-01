@@ -9,7 +9,10 @@
   },
   "scripts": {
     "dev": "pnpm --filter desktop dev",
-    "build": "pnpm -r --filter './packages/*' build && pnpm --filter desktop build",
+    "build": "pnpm -r --filter './packages/*' build && pnpm build:plugins && pnpm --filter desktop build",
+    "build:plugins": "pnpm -r --filter './plugins/*' build",
+    "typecheck:plugins": "pnpm -r --filter './plugins/*' typecheck",
+    "pack:plugins": "pnpm build:plugins && pnpm --filter @agentkeeper/cli build && pnpm --filter @agentkeeper/cli exec akp pack --dir ../../plugins/github && pnpm --filter @agentkeeper/cli exec akp pack --dir ../../plugins/jira",
     "typecheck": "pnpm -r typecheck",
     "dist:mac": "pnpm build && pnpm --filter desktop dist:mac",
     "dist:win": "pnpm build && pnpm --filter desktop dist:win",

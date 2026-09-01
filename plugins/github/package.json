@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && esbuild renderer/index.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=dist/renderer.js"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "pnpm typecheck && esbuild src/index.ts --bundle --format=esm --platform=node --target=node24 --outfile=dist/index.js && esbuild renderer/index.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=dist/renderer.js"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

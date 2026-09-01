@@ -57,6 +57,17 @@ function parseAkpIgnore(content: string): string[] {
     .filter(l => l.length > 0 && !l.startsWith('#'))
 }
 
+function requirePackagedFile(root: string, entry: string, label: string): void {
+  const resolved = path.resolve(root, entry)
+  const relative = path.relative(root, resolved)
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error(`${label} must stay inside the plugin directory: ${entry}`)
+  }
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    throw new Error(`${label} does not exist. Build the plugin before packing: ${entry}`)
+  }
+}
+
 export const packCommand = new Command('pack')
   .description('Pack a plugin directory into a .akp file')
   .option('-d, --dir <path>', 'Plugin directory (default: cwd)', process.cwd())
@@ -86,6 +97,14 @@ export const packCommand = new Command('pack')
     }
     const manifest = result.data
 
+    try {
+      requirePackagedFile(dir, manifest.entry, 'Plugin entry')
+      if (manifest.renderer) requirePackagedFile(dir, manifest.renderer.entry, 'Renderer entry')
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+      process.exit(1)
+    }
+
     // 2. Build ignore rules
     const ignorePatterns = [...DEFAULT_IGNORE]
     const akpignorePath = path.join(dir, '.akpignore')
@@ -109,7 +128,7 @@ export const packCommand = new Command('pack')
       }
       return files
     }
-    const files = collectFiles(dir, '')
+    const files = collectFiles(dir, '').sort((a, b) => a.localeCompare(b))
     console.log(`Packing ${files.length} files...`)
 
     // 4. Build zip
