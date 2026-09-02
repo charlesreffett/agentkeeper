@@ -30,6 +30,9 @@ export class WorkItemRegistryImpl implements WorkItemRegistryFull {
   private readonly sources = new Map<string, WorkItemSource>()
 
   register(source: WorkItemSource): void {
+    if (this.sources.has(source.id)) {
+      throw new Error(`Work-item source '${source.id}' is already registered`)
+    }
     this.sources.set(source.id, source)
   }
 
