@@ -11,6 +11,7 @@ import { getRawSqlite } from './db/index.js'
 import { recentProjectsStore } from './store.js'
 import { detectRemoteSources } from './git.js'
 import { buildPluginEnvironment, buildPluginExecArgv } from './plugin-environment.js'
+import { filterPluginSubscription, normalizePluginEmittedEvent } from './plugin-event-policy.js'
 
 function resolveBootstrapPath(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url))
@@ -274,18 +275,31 @@ export class PluginHost {
 
       // --- Events ---
       case 'events.emit': {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(this.eventBus.emit as (e: string, p: unknown) => void)(msg.event, msg.payload)
+        try {
+          const normalized = normalizePluginEmittedEvent(pluginId, msg.event, msg.payload)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(this.eventBus.emit as (e: string, p: unknown) => void)(normalized.event, normalized.payload)
+        } catch (error) {
+          console.warn(`[plugin:${pluginId}]`, error instanceof Error ? error.message : String(error))
+        }
         break
       }
       case 'events.on': {
         const { listenerId, event } = msg
+        try {
+          filterPluginSubscription(pluginId, event, { pluginId })
+        } catch (error) {
+          this.deny(msg.id, error instanceof Error ? error.message : String(error))
+          break
+        }
         const handler = (payload: unknown): void => {
+          const scopedPayload = filterPluginSubscription(pluginId, event, payload)
+          if (scopedPayload === undefined) return
           this.port?.postMessage({
             type: 'events.dispatch',
             listenerId,
             event,
-            payload,
+            payload: scopedPayload,
           } as HostToPluginMessage)
         }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -298,6 +312,7 @@ export class PluginHost {
         const unsub = this.eventListeners.get(msg.listenerId)
         unsub?.()
         this.eventListeners.delete(msg.listenerId)
+        this.respond(msg.id)
         break
       }
 
