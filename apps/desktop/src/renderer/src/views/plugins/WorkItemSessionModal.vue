@@ -104,10 +104,11 @@ async function start(): Promise<void> {
       </header>
       <div class="space-y-3 p-4">
         <label class="block space-y-1"><span class="text-xs font-medium">Project</span><select v-model="projectPath" class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" @change="loadProjectOptions"><option value="">Select project…</option><option v-for="project in projects" :key="project.path" :value="project.path">{{ project.name }}</option></select></label>
-        <label class="block space-y-1"><span class="text-xs font-medium">Model or agency</span><ExecutionTargetPicker v-model="model" v-model:harness-id="harnessId" v-model:agency-key="agencyKey" :agencies="agencies" :allow-agencies="agencySupported" harness-switchable display="field" /></label>
+        <label class="block space-y-1"><span class="text-xs font-medium">Model or agency</span><ExecutionTargetPicker v-model="model" v-model:harness-id="harnessId" v-model:agency-key="agencyKey" :agencies="agencies" allow-agencies harness-switchable display="field" /></label>
         <label class="block space-y-1"><span class="text-xs font-medium">Initial prompt</span><textarea v-model="prompt" rows="4" class="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm" /></label>
         <label v-if="!isAgency" class="block space-y-1"><span class="text-xs font-medium">Effort</span><select v-model="effort" class="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"><option v-for="level in effortLevelsFor(model)" :key="level">{{ level }}</option></select></label>
         <p v-if="modelsError" class="text-xs text-destructive">Harness models are unavailable.</p>
+        <p v-if="isAgency && !agencySupported" class="text-xs text-destructive">The selected harness cannot run agencies. Choose an agency-capable harness from the Models tab first.</p>
         <div class="space-y-2 rounded-md border border-border bg-muted/20 p-3"><label class="flex items-center gap-2 text-xs font-medium"><input v-model="useWorktree" type="checkbox" /> Create git worktree</label><input v-if="useWorktree" v-model="branch" class="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm" placeholder="Branch name" /></div>
         <p v-if="error" class="text-xs text-destructive">{{ error }}</p>
       </div>
