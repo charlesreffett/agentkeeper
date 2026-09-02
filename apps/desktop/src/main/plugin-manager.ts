@@ -13,6 +13,7 @@ import { proxyRegistry } from './plugin-proxy.js'
 import { getRawSqlite } from './db/index.js'
 import { getPluginEventBus } from './plugins.js'
 import { requirePluginFile, resolvePluginPath, validatePluginArchiveEntries } from './plugin-paths.js'
+import { assertReleaseIdentity, comparePluginVersions, type PluginReleaseIdentity } from './plugin-update-policy.js'
 
 // ---- helpers ----
 
@@ -44,14 +45,7 @@ async function downloadToTmp(url: string): Promise<string> {
 // ---- semver helpers ----
 
 function semverGt(a: string, b: string): boolean {
-  const parse = (v: string) => v.replace(/^v/, '').split('.').map(Number)
-  const av = parse(a), bv = parse(b)
-  for (let i = 0; i < 3; i++) {
-    const ai = av[i] ?? 0, bi = bv[i] ?? 0
-    if (ai > bi) return true
-    if (ai < bi) return false
-  }
-  return false
+  return comparePluginVersions(a.replace(/^v/, ''), b.replace(/^v/, '')) > 0
 }
 
 function satisfiesMin(appVer: string, minVer: string): boolean {
@@ -60,7 +54,7 @@ function satisfiesMin(appVer: string, minVer: string): boolean {
 
 // ---- main API ----
 
-export async function installPlugin(akpPath: string): Promise<void> {
+export async function installPlugin(akpPath: string, expectedRelease?: PluginReleaseIdentity): Promise<void> {
   const db = getRawSqlite()
   const tmpDir = path.join(os.tmpdir(), `agentkeeper-plugin-extract-${Date.now()}`)
   await fsp.mkdir(tmpDir, { recursive: true })
@@ -70,6 +64,7 @@ export async function installPlugin(akpPath: string): Promise<void> {
     const result = PluginManifestSchema.safeParse(manifestRaw)
     if (!result.success) throw new Error(`Invalid manifest: ${JSON.stringify(result.error.flatten())}`)
     const manifest = result.data
+    if (expectedRelease) assertReleaseIdentity(expectedRelease, manifest)
     requirePluginFile(tmpDir, manifest.entry, 'Plugin entry')
     if (manifest.renderer) requirePluginFile(tmpDir, manifest.renderer.entry, 'Renderer entry')
 
@@ -121,7 +116,7 @@ export async function installPluginFromUrl(manifestUrl: string): Promise<void> {
   try {
     const actualHash = await sha256File(tmpAkp)
     if (actualHash !== release.sha256) throw new Error(`SHA-256 mismatch: expected ${release.sha256}, got ${actualHash}`)
-    await installPlugin(tmpAkp)
+    await installPlugin(tmpAkp, { id: data.data.id, version: release.version })
   } finally {
     await fsp.unlink(tmpAkp).catch(() => {})
   }
@@ -190,7 +185,7 @@ export async function checkForUpdates(): Promise<UpdateAvailable[]> {
       }
       if (!res.ok) return
       const data = UpdateManifestSchema.safeParse(await res.json())
-      if (!data.success) return
+      if (!data.success || data.data.id !== row.id) return
       const candidates = data.data.releases
         .filter(r => semverGt(r.version, row.version) && (!r.min_app_version || satisfiesMin(appVer, r.min_app_version)))
         .sort((a, b) => semverGt(a.version, b.version) ? -1 : 1)
@@ -223,6 +218,7 @@ export async function updatePlugin(pluginId: string, release: UpdateRelease): Pr
       const result = PluginManifestSchema.safeParse(manifestRaw)
       if (!result.success) throw new Error('Invalid manifest in update package')
       const manifest = result.data
+      assertReleaseIdentity({ id: pluginId, version: release.version }, manifest, previousVersion)
       requirePluginFile(tmpDir, manifest.entry, 'Plugin entry')
       if (manifest.renderer) requirePluginFile(tmpDir, manifest.renderer.entry, 'Renderer entry')
 
@@ -260,6 +256,7 @@ export async function updatePlugin(pluginId: string, release: UpdateRelease): Pr
 interface PendingInstall {
   akpPath: string
   isTmp: boolean
+  expectedRelease?: PluginReleaseIdentity
 }
 
 const pendingInstalls = new Map<string, PendingInstall>()
@@ -267,6 +264,7 @@ const pendingInstalls = new Map<string, PendingInstall>()
 export async function prepareAkpInstall(opts: { filePath?: string; manifestUrl?: string }): Promise<{ manifest: PluginManifest; token: string }> {
   let akpPath: string
   let isTmp = false
+  let expectedRelease: PluginReleaseIdentity | undefined
 
   if (opts.filePath) {
     akpPath = opts.filePath
@@ -287,6 +285,7 @@ export async function prepareAkpInstall(opts: { filePath?: string; manifestUrl?:
       .filter(r => !r.min_app_version || satisfiesMin(appVer, r.min_app_version))
       .sort((a, b) => (semverGt(a.version, b.version) ? -1 : 1))[0]
     if (!release) throw new Error('No compatible release found in update manifest')
+    expectedRelease = { id: data.data.id, version: release.version }
     akpPath = await downloadToTmp(release.url)
     isTmp = true
     const actualHash = await sha256File(akpPath)
@@ -308,13 +307,14 @@ export async function prepareAkpInstall(opts: { filePath?: string; manifestUrl?:
     const result = PluginManifestSchema.safeParse(manifestRaw)
     if (!result.success) throw new Error(`Invalid manifest: ${JSON.stringify(result.error.flatten())}`)
     manifest = result.data
+    if (expectedRelease) assertReleaseIdentity(expectedRelease, manifest)
   } catch (err) {
     if (isTmp) await fsp.unlink(akpPath).catch(() => {})
     throw err
   }
 
   const token = crypto.randomUUID()
-  pendingInstalls.set(token, { akpPath, isTmp })
+  pendingInstalls.set(token, { akpPath, isTmp, expectedRelease })
   return { manifest, token }
 }
 
@@ -323,7 +323,7 @@ export async function confirmAkpInstall(token: string): Promise<void> {
   if (!pending) throw new Error('No pending install found — it may have expired')
   pendingInstalls.delete(token)
   try {
-    await installPlugin(pending.akpPath)
+    await installPlugin(pending.akpPath, pending.expectedRelease)
   } finally {
     if (pending.isTmp) await fsp.unlink(pending.akpPath).catch(() => {})
   }

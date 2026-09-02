@@ -98,15 +98,15 @@ export const PluginManifestSchema = z.object({
 export type PluginManifest = z.infer<typeof PluginManifestSchema>
 
 const UpdateReleaseSchema = z.object({
-  version: z.string(),
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),
   url: z.string().url(),
-  sha256: z.string(),
+  sha256: z.string().regex(/^[0-9a-fA-F]{64}$/),
   min_app_version: z.string().optional(),
   release_notes: z.string().optional(),
 })
 
 export const UpdateManifestSchema = z.object({
-  id: z.string(),
+  id: z.string().regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/),
   releases: z.array(UpdateReleaseSchema),
 })
 
