@@ -83,8 +83,9 @@ async function start(): Promise<void> {
     if (isAgency.value) {
       const agency = agencies.value.find(candidate => `${candidate.scope}:${candidate.id}` === agencyKey.value)
       if (!agency) throw new Error('Select an agency')
-      await window.agentkeeper.agencies.start({ projectPath: projectPath.value, agencyId: agency.id, agencyScope: agency.scope, initialPrompt: prompt.value.trim(), useWorktree: useWorktree.value, branch: branch.value.trim() || undefined, model: model.value, harnessId: harnessId.value, workItem: reference.value })
+      const instance = await window.agentkeeper.agencies.start({ projectPath: projectPath.value, agencyId: agency.id, agencyScope: agency.scope, initialPrompt: prompt.value.trim(), useWorktree: useWorktree.value, branch: branch.value.trim() || undefined, model: model.value, harnessId: harnessId.value, workItem: reference.value })
       emit('close')
+      await router.push(`/sessions/${instance.instanceId}`)
       return
     }
     const wt = await worktree()
