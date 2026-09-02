@@ -48,16 +48,22 @@ const PluginContributionsSchema = z.object({
 }).optional()
 
 const PluginRendererSchema = z.object({
-  entry: z.string().min(1),
+  entry: z.string().min(1).refine(isSafePackagePath, 'must be a relative path without traversal'),
   views: z.array(z.string().min(1)).min(1),
 }).optional()
 
+function isSafePackagePath(value: string): boolean {
+  return !value.startsWith('/') && !value.includes('\\') && value
+    .split('/')
+    .every(part => part.length > 0 && part !== '.' && part !== '..')
+}
+
 export const PluginManifestSchema = z.object({
   schema_version: z.literal(1),
-  id: z.string().min(1),
+  id: z.string().regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/),
   name: z.string().min(1),
-  version: z.string().regex(/^\d+\.\d+\.\d+/),
-  entry: z.string(),
+  version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),
+  entry: z.string().min(1).refine(isSafePackagePath, 'must be a relative path without traversal'),
   icon: z.string().optional(),
   description: z.string().optional(),
   author: z.string().optional(),

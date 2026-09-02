@@ -33,6 +33,24 @@ describe('plugin manifests', () => {
     expect(result.success).toBe(false)
   })
 
+  it('rejects unsafe identities and package entry paths', () => {
+    const base = {
+      schema_version: 1,
+      name: 'Unsafe',
+      version: '1.0.0',
+      entry: 'dist/index.js',
+    }
+    expect(PluginManifestSchema.safeParse({ ...base, id: '../../escape' }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({ ...base, id: 'safe', version: '1.0.0../../escape' }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({ ...base, id: 'safe', entry: '../outside.js' }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({ ...base, id: 'safe', entry: '/tmp/outside.js' }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({
+      ...base,
+      id: 'safe',
+      renderer: { entry: '..\\outside.js', views: ['main'] },
+    }).success).toBe(false)
+  })
+
   it('validates a release update feed', () => {
     expect(UpdateManifestSchema.parse({
       id: 'example',

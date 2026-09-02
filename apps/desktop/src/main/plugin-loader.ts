@@ -7,6 +7,7 @@ import { createPluginProxy, createDenyAllProxy } from './plugin-proxy.js'
 import { getRawSqlite } from './db/index.js'
 import { getPluginEventBus } from './plugins.js'
 import type { WorkItemRegistryFull } from './plugins.js'
+import { requirePluginFile } from './plugin-paths.js'
 
 const activeHosts = new Map<string, PluginHost>()
 // dormantRegistry: activationEvent → manifests not yet activated
@@ -115,12 +116,12 @@ function resolveEntryPath(manifest: PluginManifest): string {
   const db = getRawSqlite()
   const row = db.prepare('SELECT dev_path, source FROM plugin_registry WHERE id = ?').get(manifest.id) as { dev_path: string | null; source: string } | undefined
   if (row?.dev_path) {
-    return path.join(row.dev_path, manifest.entry)
+    return requirePluginFile(row.dev_path, manifest.entry, 'Plugin entry')
   }
   // Installed: plugins/installed/{id}@{version}/
   const userDataPath = app.getPath('userData')
   const installedDir = path.join(userDataPath, 'plugins', 'installed', `${manifest.id}@${manifest.version}`)
-  return path.join(installedDir, manifest.entry)
+  return requirePluginFile(installedDir, manifest.entry, 'Plugin entry')
 }
 
 function satisfiesMinVersion(appVer: string, minVer: string): boolean {

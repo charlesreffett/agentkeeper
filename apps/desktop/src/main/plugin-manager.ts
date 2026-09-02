@@ -12,11 +12,13 @@ import { spawnPlugin, activatePlugin, spawnAndActivate, getActiveHost, removeAct
 import { proxyRegistry } from './plugin-proxy.js'
 import { getRawSqlite } from './db/index.js'
 import { getPluginEventBus } from './plugins.js'
+import { requirePluginFile, resolvePluginPath, validatePluginArchiveEntries } from './plugin-paths.js'
 
 // ---- helpers ----
 
 async function extractZip(zipPath: string, destDir: string): Promise<void> {
   const zip = new AdmZip(zipPath)
+  validatePluginArchiveEntries(zip.getEntries().map(entry => entry.entryName))
   zip.extractAllTo(destDir, true)
 }
 
@@ -68,6 +70,8 @@ export async function installPlugin(akpPath: string): Promise<void> {
     const result = PluginManifestSchema.safeParse(manifestRaw)
     if (!result.success) throw new Error(`Invalid manifest: ${JSON.stringify(result.error.flatten())}`)
     const manifest = result.data
+    requirePluginFile(tmpDir, manifest.entry, 'Plugin entry')
+    if (manifest.renderer) requirePluginFile(tmpDir, manifest.renderer.entry, 'Renderer entry')
 
     const existing = db.prepare('SELECT id FROM plugin_registry WHERE id = ?').get(manifest.id)
     if (existing) throw new Error(`Plugin ${manifest.id} is already installed. Use updatePlugin() instead.`)
@@ -219,6 +223,8 @@ export async function updatePlugin(pluginId: string, release: UpdateRelease): Pr
       const result = PluginManifestSchema.safeParse(manifestRaw)
       if (!result.success) throw new Error('Invalid manifest in update package')
       const manifest = result.data
+      requirePluginFile(tmpDir, manifest.entry, 'Plugin entry')
+      if (manifest.renderer) requirePluginFile(tmpDir, manifest.renderer.entry, 'Renderer entry')
 
       // Deactivate current host
       const host = getActiveHost(pluginId)
@@ -388,14 +394,16 @@ export async function enablePlugin(pluginId: string): Promise<void> {
   const manifest = result.data
 
   // Skip spawning if the entry file doesn't exist (e.g. bundled plugin not yet built)
-  const entryFullPath = row.dev_path
-    ? path.join(row.dev_path, manifest.entry)
-    : path.join(app.getPath('userData'), 'plugins', 'installed', `${pluginId}@${manifest.version}`, manifest.entry)
+  const pluginRoot = row.dev_path
+    ? row.dev_path
+    : path.join(app.getPath('userData'), 'plugins', 'installed', `${pluginId}@${manifest.version}`)
+  const entryFullPath = resolvePluginPath(pluginRoot, manifest.entry, 'Plugin entry')
 
   if (!fs.existsSync(entryFullPath)) {
     console.info(`[plugin-manager] ${pluginId}: entry not found at ${entryFullPath}, enabled in DB only`)
     return
   }
+  requirePluginFile(pluginRoot, manifest.entry, 'Plugin entry')
 
   await spawnAndActivate(manifest)
 }
@@ -427,6 +435,8 @@ export async function loadDevPlugin(dirPath: string): Promise<void> {
   const result = PluginManifestSchema.safeParse(manifestRaw)
   if (!result.success) throw new Error(`Invalid manifest: ${JSON.stringify(result.error.flatten())}`)
   const manifest = result.data
+  requirePluginFile(dirPath, manifest.entry, 'Plugin entry')
+  if (manifest.renderer) requirePluginFile(dirPath, manifest.renderer.entry, 'Renderer entry')
 
   // Deactivate any previous dev instance
   const existing = getActiveHost(manifest.id)
