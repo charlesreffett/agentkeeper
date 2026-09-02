@@ -1,8 +1,5 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { readFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 
 // Jira statusCategory.key (platform constant) → SDK StatusCategory. Deterministic across
@@ -29,10 +26,15 @@ const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
   closed: 'Closed',
 }
 
+let jiraApiToken = ''
 const execFileAsync = (file: string, args: string[]) =>
-  promisify(execFile)(file, args, { timeout: 10_000 })
+  promisify(execFile)(file, args, {
+    timeout: 10_000,
+    env: jiraApiToken ? { ...process.env, JIRA_API_TOKEN: jiraApiToken } : process.env,
+  })
 let jiraExecutable = 'jira'
 export function setJiraCliPath(value?: string): void { jiraExecutable = value?.trim() || 'jira' }
+export function setJiraApiToken(value?: string): void { jiraApiToken = value ?? '' }
 const runJira = (args: string[]) => execFileAsync(jiraExecutable, args)
 
 export interface JiraProject {
@@ -41,17 +43,13 @@ export interface JiraProject {
 }
 
 export async function listProjects(): Promise<JiraProject[]> {
-  try {
-    const { stdout } = await runJira(['project', 'list'])
-    return stdout
-      .split('\n')
-      .slice(1)
-      .map((line) => line.split('\t').map((p) => p.trim()))
-      .filter((parts) => parts[0] && parts[0].length > 0)
-      .map((parts) => ({ key: parts[0]!, name: parts[1] ?? parts[0]! }))
-  } catch {
-    return []
-  }
+  const { stdout } = await runJira(['project', 'list'])
+  return stdout
+    .split('\n')
+    .slice(1)
+    .map((line) => line.split('\t').map((p) => p.trim()))
+    .filter((parts) => parts[0] && parts[0].length > 0)
+    .map((parts) => ({ key: parts[0]!, name: parts[1] ?? parts[0]! }))
 }
 
 export interface RawJiraIssue {
@@ -213,12 +211,6 @@ export async function listIssues(
   return all
 }
 
-interface JiraAuth {
-  server: string
-  login: string
-  token: string
-}
-
 interface AdfMark {
   type: string
   attrs?: Record<string, unknown>
@@ -320,42 +312,10 @@ function isAdfDoc(value: unknown): boolean {
   )
 }
 
-// jira CLI stores server/login in its YAML config; the API token lives in JIRA_API_TOKEN
-// (same source the CLI reads). Parsed by line, not full YAML, to avoid a yaml dependency.
-function readJiraAuth(): JiraAuth | null {
-  const token = process.env.JIRA_API_TOKEN
-  if (!token) return null
-  const cfgPath =
-    process.env.JIRA_CONFIG_FILE ?? join(homedir(), '.config', '.jira', '.config.yml')
-  try {
-    const text = readFileSync(cfgPath, 'utf8')
-    const server = text.match(/^server:\s*(.+)$/m)?.[1]?.trim()
-    const login = text.match(/^login:\s*(.+)$/m)?.[1]?.trim()
-    if (!server || !login) return null
-    return { server, login, token }
-  } catch {
-    return null
-  }
-}
-
 let fieldMetaCache: Map<string, string> | null = null
 
 export async function getFieldMeta(): Promise<Map<string, string>> {
-  if (fieldMetaCache) return fieldMetaCache
-  const auth = readJiraAuth()
-  if (!auth) { fieldMetaCache = new Map(); return fieldMetaCache }
-  try {
-    const res = await fetch(`${auth.server}/rest/api/3/field`, {
-      headers: {
-        Authorization: 'Basic ' + Buffer.from(`${auth.login}:${auth.token}`).toString('base64'),
-      },
-    })
-    if (!res.ok) { fieldMetaCache = new Map(); return fieldMetaCache }
-    const fields = (await res.json()) as Array<{ id: string; name: string }>
-    fieldMetaCache = new Map(fields.map((f) => [f.id, f.name]))
-  } catch {
-    fieldMetaCache = new Map()
-  }
+  fieldMetaCache ??= new Map()
   return fieldMetaCache
 }
 
@@ -364,32 +324,10 @@ export async function getFieldMeta(): Promise<Map<string, string>> {
 // Returns null when auth is unavailable or the request fails (callers fall back to the
 // loaded/capped count).
 export async function countIssues(
-  projectKey?: string,
-  { excludeDone = true }: { excludeDone?: boolean } = {},
+  _projectKey?: string,
+  _options: { excludeDone?: boolean } = {},
 ): Promise<number | null> {
-  const auth = readJiraAuth()
-  if (!auth) return null
-
-  const clauses: string[] = []
-  if (projectKey) clauses.push(`project = ${projectKey}`)
-  if (excludeDone) clauses.push('statusCategory != Done')
-  const jql = clauses.join(' AND ')
-
-  try {
-    const res = await fetch(`${auth.server}/rest/api/3/search/approximate-count`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Basic ' + Buffer.from(`${auth.login}:${auth.token}`).toString('base64'),
-      },
-      body: JSON.stringify({ jql }),
-    })
-    if (!res.ok) return null
-    const data = (await res.json()) as { count?: number }
-    return typeof data.count === 'number' ? data.count : null
-  } catch {
-    return null
-  }
+  return null
 }
 
 export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
@@ -405,37 +343,6 @@ export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
 // the probe only lists transition NAMES (e.g. "Stop work"), which mapStatus can't resolve,
 // collapsing every option to 'open'. Prefer REST; fall back to the probe when auth is absent.
 export async function getIssueTransitions(id: string): Promise<IssueTransition[]> {
-  const auth = readJiraAuth()
-  if (auth) {
-    try {
-      const res = await fetch(`${auth.server}/rest/api/3/issue/${id}/transitions`, {
-        headers: {
-          Authorization: 'Basic ' + Buffer.from(`${auth.login}:${auth.token}`).toString('base64'),
-        },
-      })
-      if (res.ok) {
-        const data = (await res.json()) as {
-          transitions?: Array<{
-            name: string
-            to?: { name?: string; statusCategory?: { name?: string; key?: string } }
-          }>
-        }
-        const transitions = (data.transitions ?? []).map((t) => {
-          const toStatus = mapStatus(t.to)
-          return {
-            name: t.name,
-            toStatus,
-            toStatusLabel: t.to?.name ?? toStatusDisplayLabel[toStatus],
-            toStatusCategory: mapStatusCategory(t.to?.statusCategory?.key),
-          }
-        })
-        if (transitions.length > 0) return transitions
-      }
-    } catch {
-      // fall through to CLI probe
-    }
-  }
-
   try {
     await runJira(['issue', 'move', id, '__JIRA_TRANSITION_PROBE__'])
     return []

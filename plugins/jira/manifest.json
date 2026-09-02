@@ -9,7 +9,10 @@
   "license": "MIT",
   "update_url": "https://github.com/agentkeeper-ai/agentkeeper/releases/download/plugin-jira-feed/jira-update-manifest.json",
   "activation_events": ["onStartup"],
-  "permissions": ["workItems", "secrets", "commands", "ui", "background", "projects"],
+  "permissions": ["workItems", "secrets", "commands", "ui", "background", "projects", "nativeProcess", "environment"],
+  "environment": {
+    "variables": ["JIRA_API_TOKEN", "JIRA_CONFIG_FILE"]
+  },
   "renderer": {
     "entry": "dist/renderer.js",
     "views": ["jira-board", "jira-work-item", "jira-settings"]

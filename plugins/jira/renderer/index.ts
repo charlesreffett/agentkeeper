@@ -4,7 +4,7 @@ import { marked } from 'marked'
 type PluginApi = { getRoute(): string; invoke<T>(command: string, args?: unknown): Promise<T>; navigate(path: string): void; openExternal(url: string): void; startSession(itemId: string, projectPath?: string): void; getWorkItemSessions(itemId?: string): Promise<WorkItemSession[]>; openSession(sessionId: string): void; onRouteChanged(listener: (path: string) => void): () => void }
 type WorkItem = { id: string; externalRef: string; title: string; body: string; status: string; statusLabel?: string; assignee?: string; reporter?: string; priority?: string; issueType?: string; storyPoints?: number; parentRef?: string; customFields?: Record<string, string> }
 type JiraProject = { key: string; name: string }
-type JiraSettingsData = { projects: JiraProject[]; agentProjects: Array<{ path: string; name: string }>; selectedKeys: string[]; projectMappings: Array<{ jiraProjectKey: string; projectPath: string }>; cliPath: string }
+type JiraSettingsData = { projects: JiraProject[]; projectError: string; agentProjects: Array<{ path: string; name: string }>; selectedKeys: string[]; projectMappings: Array<{ jiraProjectKey: string; projectPath: string }>; cliPath: string; apiTokenSource: 'keychain' | 'environment' | 'none' }
 type WorkItemSession = { id: string; itemId: string; status: string; title?: string | null; lastActivityAt: number }
 type IssueTransition = { name: string; toStatus: string; toStatusLabel: string }
 declare global { interface Window { agentkeeperPlugin: PluginApi } }
@@ -139,6 +139,7 @@ async function renderSettings(): Promise<void> {
     const draftMappings = new Map(data.projectMappings.map(mapping => [mapping.jiraProjectKey, mapping.projectPath]))
     let filter = ''
     let cliPath = data.cliPath
+    let apiToken = ''
     let saving = false
 
     const drawSettings = (message = '') => {
@@ -147,15 +148,16 @@ async function renderSettings(): Promise<void> {
       const bar = el('div', 'settings-bar'), search = el('input', 'search'), summary = el('span', 'selection-summary', `${draft.size} of ${data.projects.length} selected`), save = el('button', 'save', saving ? 'Saving…' : 'Save selection')
       search.type = 'search'; search.placeholder = 'Search projects'; search.value = filter
       search.addEventListener('input', () => { filter = search.value; drawSettings(); const next = document.querySelector<HTMLInputElement>('.settings .search'); next?.focus(); next?.setSelectionRange(filter.length, filter.length) })
-      save.disabled = saving || draft.size === 0
-      if (draft.size === 0) save.title = 'Select at least one project'
+      save.disabled = saving
       save.addEventListener('click', async () => {
         saving = true; drawSettings()
-        try { await api.invoke('jira.settings.selectProjects', { keys: [...draft], cliPath, projectMappings: [...draftMappings].filter(([key, path]) => draft.has(key) && path).map(([jiraProjectKey, projectPath]) => ({ jiraProjectKey, projectPath })) }); saving = false; drawSettings('Plugin settings saved.') }
-        catch { saving = false; showError() }
+        try { await api.invoke('jira.settings.selectProjects', { keys: [...draft], cliPath, apiToken, projectMappings: [...draftMappings].filter(([key, path]) => draft.has(key) && path).map(([jiraProjectKey, projectPath]) => ({ jiraProjectKey, projectPath })) }); saving = false; apiToken = ''; drawSettings('Plugin settings saved. Reload this page to refresh Jira projects.') }
+        catch (error) { saving = false; drawSettings(error instanceof Error ? error.message : String(error)) }
       })
       bar.append(summary, search, save); page.append(bar)
       const cliLabel = el('label', 'settings-copy', 'Jira CLI path'), cliInput = el('input', 'field'); cliInput.placeholder = 'jira (use PATH)'; cliInput.value = cliPath; cliInput.addEventListener('input', () => { cliPath = cliInput.value }); cliLabel.append(cliInput); page.append(cliLabel)
+      const tokenLabel = el('label', 'settings-copy', 'Jira API token'), tokenInput = el('input', 'field'); tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.placeholder = data.apiTokenSource === 'keychain' ? 'Using token stored in OS keychain' : data.apiTokenSource === 'environment' ? 'Using JIRA_API_TOKEN from host environment' : 'Required by Jira CLI'; tokenInput.value = apiToken; tokenInput.addEventListener('input', () => { apiToken = tokenInput.value }); tokenLabel.append(tokenInput); page.append(tokenLabel)
+      if (data.projectError) page.append(el('p', 'error', data.projectError))
       if (message) page.append(el('p', 'notice', message))
       const list = el('div', 'project-list')
       const visible = data.projects.filter(project => `${project.key} ${project.name}`.toLowerCase().includes(filter.trim().toLowerCase()))

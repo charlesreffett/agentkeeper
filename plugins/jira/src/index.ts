@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
-import { checkCliPresent, countIssues, listProjects, setJiraCliPath } from './jira-cli.js'
+import { checkCliPresent, countIssues, listProjects, setJiraApiToken, setJiraCliPath } from './jira-cli.js'
 import { JiraWorkItemSource } from './jira-source.js'
 
 export { listProjects }
@@ -44,6 +44,7 @@ const jiraPlugin: Plugin<JiraSettings> = {
   async activate(ctx: PluginContext<JiraSettings>) {
     pluginCtx = ctx
     setJiraCliPath(ctx.config.cliPath)
+    setJiraApiToken((await ctx.secrets.get('apiToken')) ?? await ctx.environment.get('JIRA_API_TOKEN'))
     ctx.commands.register({
       id: 'jira.workItems.list',
       label: 'List Jira work items',
@@ -52,35 +53,58 @@ const jiraPlugin: Plugin<JiraSettings> = {
     ctx.commands.register({
       id: 'jira.settings.get',
       label: 'Get Jira project selection',
-      handler: async () => ({
-        projects: await listProjects(),
-        agentProjects: (await ctx.projects.list()).map(project => ({ path: project.path, name: project.name })),
-        selectedKeys: ctx.config.projectKeys?.length
-          ? ctx.config.projectKeys
-          : (ctx.config.projectMappings ?? []).map(mapping => mapping.jiraProjectKey),
-        projectMappings: ctx.config.projectMappings ?? [],
-        cliPath: ctx.config.cliPath ?? '',
-      }),
+      handler: async () => {
+        const storedApiToken = await ctx.secrets.get('apiToken')
+        const environmentApiToken = await ctx.environment.get('JIRA_API_TOKEN')
+        let projects: Awaited<ReturnType<typeof listProjects>> = []
+        let projectError = ''
+        try {
+          projects = await listProjects()
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          projectError = /needs a Jira API token|JIRA_API_TOKEN/i.test(message)
+            ? 'Jira CLI authentication failed. Set a Jira API token below or provide JIRA_API_TOKEN in the host environment.'
+            : 'Jira CLI could not list projects. Check the CLI path and authentication.'
+        }
+        return {
+          projects,
+          projectError,
+          agentProjects: (await ctx.projects.list()).map(project => ({ path: project.path, name: project.name })),
+          selectedKeys: ctx.config.projectKeys?.length
+            ? ctx.config.projectKeys
+            : (ctx.config.projectMappings ?? []).map(mapping => mapping.jiraProjectKey),
+          projectMappings: ctx.config.projectMappings ?? [],
+          cliPath: ctx.config.cliPath ?? '',
+          apiTokenSource: storedApiToken
+            ? 'keychain'
+            : environmentApiToken
+              ? 'environment'
+              : 'none',
+        }
+      },
     })
     ctx.commands.register({
       id: 'jira.settings.selectProjects',
       label: 'Select Jira projects',
       handler: async (args) => {
-        const input = args as { keys?: unknown; cliPath?: unknown; projectMappings?: unknown }
+        const input = args as { keys?: unknown; cliPath?: unknown; projectMappings?: unknown; apiToken?: unknown }
         const keys = input?.keys
         if (!Array.isArray(keys) || !keys.every(key => typeof key === 'string')) throw new Error('Invalid project selection')
         const projectKeys = [...new Set(keys)] as string[]
         const cliPath = typeof input.cliPath === 'string' ? input.cliPath.trim() : ctx.config.cliPath ?? ''
         const projectMappings = ProjectMappingSchema.array().parse(input.projectMappings ?? [])
+        const apiToken = typeof input.apiToken === 'string' ? input.apiToken.trim() : ''
         const knownPaths = new Set((await ctx.projects.list()).map(project => project.path))
         if (projectMappings.some(mapping => !projectKeys.includes(mapping.jiraProjectKey) || !knownPaths.has(mapping.projectPath))) throw new Error('Invalid AgentKeeper project mapping')
         await ctx.storage.set('projectKeys', projectKeys)
         await ctx.storage.set('cliPath', cliPath)
         await ctx.storage.set('projectMappings', projectMappings)
+        if (apiToken) await ctx.secrets.set('apiToken', apiToken)
         ctx.config.projectKeys = projectKeys
         ctx.config.cliPath = cliPath
         ctx.config.projectMappings = projectMappings
         setJiraCliPath(cliPath)
+        if (apiToken) setJiraApiToken(apiToken)
         cancelPolling?.()
         cancelPolling = null
         ctx.workItems.unregister('jira')
