@@ -12,7 +12,7 @@ import { recentProjectsStore } from './store.js'
 import { detectRemoteSources } from './git.js'
 import { buildPluginEnvironment, buildPluginExecArgv } from './plugin-environment.js'
 import { filterPluginSubscription, normalizePluginEmittedEvent } from './plugin-event-policy.js'
-import { assertOwnedWorkItemSource } from './plugin-work-item-policy.js'
+import { PluginWorkItemOwnership } from './plugin-work-item-policy.js'
 
 function resolveBootstrapPath(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url))
@@ -43,16 +43,18 @@ export class PluginHost {
   private eventListeners = new Map<string, () => void>()
   private pendingUiContributions: Array<{ slot: string; contribution: unknown }> = []
   private registeredCommands = new Set<string>()
-  private registeredWorkItemSources = new Set<string>()
+  private readonly workItemOwnership: PluginWorkItemOwnership<WorkItemSource>
 
   constructor(
     private readonly manifest: PluginManifest,
     private readonly entryPath: string,
     private readonly proxyUrl: string,
     private readonly eventBus: EventBus,
-    private readonly workItemRegistry: WorkItemRegistryFull,
+    workItemRegistry: WorkItemRegistryFull,
     private webContents?: Electron.WebContents,
-  ) {}
+  ) {
+    this.workItemOwnership = new PluginWorkItemOwnership(manifest.id, workItemRegistry)
+  }
 
   async spawn(): Promise<void> {
     const bootstrapPath = resolveBootstrapPath()
@@ -140,10 +142,7 @@ export class PluginHost {
   }
 
   private cleanupWorkItemSources(): void {
-    for (const sourceId of this.registeredWorkItemSources) {
-      this.workItemRegistry.unregister(sourceId)
-    }
-    this.registeredWorkItemSources.clear()
+    this.workItemOwnership.dispose()
   }
 
   async install(): Promise<void> {
@@ -331,12 +330,6 @@ export class PluginHost {
       // --- WorkItems ---
       case 'workItems.register': {
         if (!this.hasPermission('workItems')) { this.deny(msg.id, 'Missing workItems permission'); break }
-        try {
-          assertOwnedWorkItemSource(pluginId, msg.sourceId)
-        } catch (error) {
-          this.deny(msg.id, error instanceof Error ? error.message : String(error))
-          break
-        }
         const port = this.port!
         const sourceId = msg.sourceId
         const makeId = () => Math.random().toString(36).slice(2)
@@ -446,8 +439,7 @@ export class PluginHost {
           },
         }
         try {
-          this.workItemRegistry.register(proxySource)
-          this.registeredWorkItemSources.add(sourceId)
+          this.workItemOwnership.register(proxySource)
           this.respond(msg.id)
         } catch (error) {
           this.deny(msg.id, error instanceof Error ? error.message : String(error))
@@ -457,13 +449,10 @@ export class PluginHost {
       case 'workItems.unregister': {
         if (!this.hasPermission('workItems')) break
         try {
-          assertOwnedWorkItemSource(pluginId, msg.sourceId)
+          this.workItemOwnership.unregister(msg.sourceId)
         } catch (error) {
           console.warn(`[plugin:${pluginId}]`, error instanceof Error ? error.message : String(error))
-          break
         }
-        this.workItemRegistry.unregister(msg.sourceId)
-        this.registeredWorkItemSources.delete(msg.sourceId)
         break
       }
 
