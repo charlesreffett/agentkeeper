@@ -36,6 +36,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm verify:plugin-boundaries
 
       - name: Build and pack plugin
         env:
