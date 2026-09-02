@@ -10,6 +10,7 @@ export type PluginToHostMessage =
   | { id: string; type: 'storage.delete'; key: string }
   | { id: string; type: 'storage.list' }
   | { id: string; type: 'projects.list' }
+  | { id: string; type: 'environment.get'; name: string }
   | { id: string; type: 'secrets.get'; key: string }
   | { id: string; type: 'secrets.set'; key: string; value: string }
   | { id: string; type: 'secrets.delete'; key: string }

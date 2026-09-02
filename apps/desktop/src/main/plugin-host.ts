@@ -10,6 +10,7 @@ import type { WorkItemRegistryFull } from './plugins.js'
 import { getRawSqlite } from './db/index.js'
 import { recentProjectsStore } from './store.js'
 import { detectRemoteSources } from './git.js'
+import { buildPluginEnvironment, buildPluginExecArgv } from './plugin-environment.js'
 
 function resolveBootstrapPath(): string {
   const dir = path.dirname(fileURLToPath(import.meta.url))
@@ -55,12 +56,15 @@ export class PluginHost {
     const { port1, port2 } = new MessageChannelMain()
 
     this.proc = utilityProcess.fork(bootstrapPath, [], {
-      env: {
-        ...process.env,
-        AK_PROXY_URL: this.proxyUrl,
-        AK_PLUGIN_ENTRY: this.entryPath,
-        AK_PLUGIN_ID: this.manifest.id,
-      },
+      execArgv: buildPluginExecArgv(this.manifest.permissions, {
+        bootstrapPath: path.dirname(bootstrapPath),
+        entryPath: path.dirname(this.entryPath),
+      }),
+      env: buildPluginEnvironment(process.env, {
+        proxyUrl: this.proxyUrl,
+        entryPath: this.entryPath,
+        id: this.manifest.id,
+      }),
       serviceName: `plugin:${this.manifest.id}`,
     })
 
@@ -235,6 +239,16 @@ export class PluginHost {
         })).then((projects) => this.respond(msg.id, projects), (error: unknown) => {
           this.deny(msg.id, error instanceof Error ? error.message : String(error))
         })
+        break
+      }
+
+      case 'environment.get': {
+        if (!this.hasPermission('environment')) { this.deny(msg.id, 'Missing environment permission'); break }
+        if (!this.manifest.environment?.variables.includes(msg.name)) {
+          this.deny(msg.id, `Environment variable is not declared: ${msg.name}`)
+          break
+        }
+        this.respond(msg.id, process.env[msg.name])
         break
       }
 

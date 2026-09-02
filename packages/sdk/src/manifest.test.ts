@@ -43,4 +43,41 @@ describe('plugin manifests', () => {
       }],
     }).releases).toHaveLength(1)
   })
+
+  it('accepts the high-risk native process permission', () => {
+    const result = PluginManifestSchema.parse({
+      schema_version: 1,
+      id: 'native-tool',
+      name: 'Native Tool',
+      version: '1.0.0',
+      entry: 'dist/index.js',
+      permissions: ['nativeProcess'],
+    })
+
+    expect(result.permissions).toEqual(['nativeProcess'])
+  })
+
+  it('requires environment variables and permission together', () => {
+    const base = {
+      schema_version: 1,
+      id: 'environment-tool',
+      name: 'Environment Tool',
+      version: '1.0.0',
+      entry: 'dist/index.js',
+    } as const
+
+    expect(PluginManifestSchema.safeParse({
+      ...base,
+      permissions: ['environment'],
+    }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({
+      ...base,
+      environment: { variables: ['EXAMPLE_TOKEN'] },
+    }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({
+      ...base,
+      permissions: ['environment'],
+      environment: { variables: ['EXAMPLE_TOKEN'] },
+    }).success).toBe(true)
+  })
 })

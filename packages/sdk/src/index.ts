@@ -103,6 +103,7 @@ export interface PluginContext<TSettings = unknown> {
   logger: Logger
   storage: ScopedKVStore
   secrets: SecretsApi
+  environment: EnvironmentApi
   events: EventBus
   workItems: WorkItemRegistry
   ui: UIContributions
@@ -110,6 +111,11 @@ export interface PluginContext<TSettings = unknown> {
   background: BackgroundWork
   projects: ProjectRegistry
   fetch(url: string | URL, init?: RequestInit): Promise<Response>
+}
+
+export interface EnvironmentApi {
+  /** Read a host environment variable explicitly declared by the plugin manifest. */
+  get(name: string): Promise<string | undefined>
 }
 
 export interface ProjectRemote {
@@ -144,6 +150,7 @@ export interface ScopedKVStore {
 }
 
 export interface SecretsApi {
+  /** Read only from this plugin's OS credential-store namespace. */
   get(key: string): Promise<string | undefined>
   set(key: string, value: string): Promise<void>
   delete(key: string): Promise<void>

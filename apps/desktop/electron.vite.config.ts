@@ -9,6 +9,8 @@ import { resolve } from 'node:path'
 const WORKSPACE_PKGS = [
   '@agentkeeper/sdk',
   '@agentkeeper/core',
+  'http-proxy-agent',
+  'https-proxy-agent',
 ]
 
 export default defineConfig({

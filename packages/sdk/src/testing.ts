@@ -12,6 +12,7 @@ export interface MockContextOptions<TSettings = unknown> {
   config?: TSettings
   secrets?: Record<string, string>
   storage?: Record<string, unknown>
+  environment?: Record<string, string>
 }
 
 export interface MockContext<TSettings = unknown> extends PluginContext<TSettings> {
@@ -76,6 +77,11 @@ export function createMockContext<TSettings = unknown>(
       },
       async delete(key) {
         secrets.delete(key)
+      },
+    },
+    environment: {
+      async get(name) {
+        return options.environment?.[name]
       },
     },
     events: {

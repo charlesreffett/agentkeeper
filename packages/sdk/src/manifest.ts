@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export type PluginPermission = 'workItems' | 'secrets' | 'commands' | 'ui' | 'background' | 'network' | 'projects'
+export type PluginPermission = 'workItems' | 'secrets' | 'commands' | 'ui' | 'background' | 'network' | 'projects' | 'nativeProcess' | 'environment'
 
 const JsonSchemaPropertySchema = z.object({
   type: z.enum(['string', 'number', 'boolean']),
@@ -66,7 +66,10 @@ export const PluginManifestSchema = z.object({
   homepage_url: z.string().url().optional(),
   min_app_version: z.string().optional(),
   activation_events: z.array(z.string()).default(['onStartup']),
-  permissions: z.array(z.enum(['workItems', 'secrets', 'commands', 'ui', 'background', 'network', 'projects'])).default([]),
+  permissions: z.array(z.enum(['workItems', 'secrets', 'commands', 'ui', 'background', 'network', 'projects', 'nativeProcess', 'environment'])).default([]),
+  environment: z.object({
+    variables: z.array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/)),
+  }).optional(),
   network: z.object({
     hosts: z.array(z.string()),
   }).optional(),
@@ -74,6 +77,16 @@ export const PluginManifestSchema = z.object({
   renderer: PluginRendererSchema,
   contributes: PluginContributionsSchema,
   update_url: z.string().url().optional(),
+}).superRefine((manifest, ctx) => {
+  const hasPermission = manifest.permissions.includes('environment')
+  const hasVariables = Boolean(manifest.environment?.variables.length)
+  if (hasPermission !== hasVariables) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['environment'],
+      message: 'environment permission and declared variables must be provided together',
+    })
+  }
 })
 
 export type PluginManifest = z.infer<typeof PluginManifestSchema>
