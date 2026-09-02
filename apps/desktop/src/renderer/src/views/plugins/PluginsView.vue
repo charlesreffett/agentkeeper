@@ -131,6 +131,8 @@ const permissionLabels: Record<string, string> = {
   ui:         'Add plugin routes and navigation',
   background: 'Run tasks in the background',
   network:    'Make outbound network requests',
+  nativeProcess: 'Execute arbitrary programs with your user permissions',
+  environment: 'Read declared environment variables',
 }
 
 function resetInstallDialog() {

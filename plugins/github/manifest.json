@@ -9,7 +9,7 @@
   "license": "MIT",
   "update_url": "https://github.com/agentkeeper-ai/agentkeeper/releases/download/plugin-github-feed/github-update-manifest.json",
   "activation_events": ["onStartup"],
-  "permissions": ["workItems", "secrets", "commands", "ui", "background", "network", "projects"],
+  "permissions": ["workItems", "secrets", "commands", "ui", "background", "projects", "nativeProcess"],
   "renderer": {
     "entry": "dist/renderer.js",
     "views": ["github-pulls", "github-work-item"]
@@ -22,8 +22,5 @@
       { "id": "pulls", "path": "pulls", "view": "github-pulls" },
       { "id": "work-items", "path": "work-items", "view": "github-work-item" }
     ]
-  },
-  "network": {
-    "hosts": ["api.github.com", "*.github.com"]
   }
 }

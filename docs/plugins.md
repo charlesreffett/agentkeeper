@@ -26,6 +26,26 @@ The built-in examples live in `plugins/github` and `plugins/jira`. They import t
 host contract only from `@agentkeeper/sdk`; plugins must never import desktop or core
 implementation files.
 
+Plugin processes run with Node's permission model enabled. They may load their own
+compiled code and the host bootstrap, but receive no general filesystem write access.
+Persistent data must use `ctx.storage`, credentials must use `ctx.secrets`, and
+project discovery must use `ctx.projects`. Network access is granted only to plugins
+declaring `network` and is routed through the host's allowlisting proxy.
+
+Plugins may request selected host environment variables by declaring the
+`environment` permission and listing exact uppercase variable names in
+`environment.variables`. They read those values through `ctx.environment.get(name)`;
+the values are never copied into the plugin process environment, and undeclared names
+are rejected by the host. Plugin settings may override a retrieved value locally
+without changing the host environment.
+
+Subprocess creation, worker threads, and native addons are denied by default. A
+plugin that genuinely needs to execute local programs must declare `nativeProcess`;
+this grants arbitrary user-level process execution and is shown as a high-risk
+permission during install. Programs launched under that permission execute with the
+user's filesystem access, so `nativeProcess` subsumes filesystem isolation in
+practice.
+
 ## Commands
 
 From the repository root:
