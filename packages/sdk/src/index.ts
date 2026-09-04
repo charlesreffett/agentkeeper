@@ -36,6 +36,14 @@ export interface WorkItem {
   links: WorkItemLink[]
 }
 
+/** Persistable address plus an offline display snapshot for a provider-owned work item. */
+export interface WorkItemReference {
+  sourceId: string
+  itemId: string
+  externalRef: string
+  title?: string
+}
+
 export interface WorkItemCreateParams {
   summary: string
   description?: string
@@ -95,12 +103,53 @@ export interface PluginContext<TSettings = unknown> {
   logger: Logger
   storage: ScopedKVStore
   secrets: SecretsApi
+  environment: EnvironmentApi
   events: EventBus
   workItems: WorkItemRegistry
   ui: UIContributions
   commands: CommandRegistry
   background: BackgroundWork
+  projects: ProjectRegistry
+  process: NativeProcessApi
   fetch(url: string | URL, init?: RequestInit): Promise<Response>
+}
+
+export interface NativeProcessResult {
+  stdout: string
+  stderr: string
+}
+
+export interface NativeProcessExecOptions {
+  cwd?: string
+  env?: Record<string, string>
+  timeoutMs?: number
+}
+
+export interface NativeProcessApi {
+  /** Execute a host-approved CLI without granting the plugin direct process access. */
+  execFile(file: string, args?: string[], options?: NativeProcessExecOptions): Promise<NativeProcessResult>
+}
+
+export interface EnvironmentApi {
+  /** Read a host environment variable explicitly declared by the plugin manifest. */
+  get(name: string): Promise<string | undefined>
+}
+
+export interface ProjectRemote {
+  name: string
+  url: string
+  provider?: string
+  repository?: string
+}
+
+export interface ProjectDescriptor {
+  path: string
+  name: string
+  remotes: ProjectRemote[]
+}
+
+export interface ProjectRegistry {
+  list(): Promise<ProjectDescriptor[]>
 }
 
 export interface Logger {
@@ -118,6 +167,7 @@ export interface ScopedKVStore {
 }
 
 export interface SecretsApi {
+  /** Read only from this plugin's OS credential-store namespace. */
   get(key: string): Promise<string | undefined>
   set(key: string, value: string): Promise<void>
   delete(key: string): Promise<void>
@@ -130,8 +180,6 @@ export type EventMap = {
   'job.failed': { jobId: string; error: string }
   'session.started': { sessionId: string; jobId?: string }
   'session.completed': { sessionId: string }
-  'pr.opened': { prUrl: string; workItemId?: string }
-  'pr.merged': { prUrl: string; workItemId?: string }
   'plugin.unhealthy': { pluginId: string; reason: string }
   'plugin.healthy': { pluginId: string }
   'settings.changed': { pluginId: string; config: unknown }
@@ -151,9 +199,7 @@ export interface EventBus {
   emit<K extends keyof EventMap>(event: K, payload: EventMap[K]): void
 }
 
-// Jira statusCategory.key — a platform constant (only these 4 exist) independent of an
-// org's custom status names. The deterministic color source: matches Jira's own lozenge
-// palette (To Do=gray, In Progress=blue, Done=green) regardless of board or org.
+/** Provider-neutral lifecycle categories used to render work-item status consistently. */
 export type StatusCategory = 'todo' | 'in-progress' | 'done' | 'unknown'
 
 export interface IssueTransition {
@@ -178,7 +224,6 @@ export interface WorkItemSource {
 export interface WorkItemRegistry {
   register(source: WorkItemSource): void
   unregister(id: string): void
-  addComment(id: string, body: string): Promise<void>
 }
 
 export type UISlot =
@@ -191,11 +236,9 @@ export type UISlot =
 
 export interface UIContribution {
   id: string
-  component: unknown
   label?: string
   icon?: string
   order?: number
-  when?: (ctx: unknown) => boolean
 }
 
 export interface UIContributions {
@@ -205,8 +248,7 @@ export interface UIContributions {
 export interface CommandDefinition {
   id: string
   label: string
-  handler: () => void | Promise<void>
-  when?: () => boolean
+  handler: (args: unknown) => unknown | Promise<unknown>
 }
 
 export interface CommandRegistry {

@@ -4,13 +4,16 @@
   "description": "CLI toolchain for AgentKeeper plugin authors",
   "type": "module",
   "bin": {
-    "akp": "./dist/cli.js"
+    "akp": "./dist/cli.cjs"
   },
-  "main": "./dist/cli.js",
-  "files": ["dist"],
+  "main": "./dist/cli.cjs",
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "build": "pnpm typecheck && esbuild src/cli.ts --bundle --format=cjs --platform=node --target=node24 --outfile=dist/cli.cjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@agentkeeper/sdk": "workspace:*",
@@ -20,6 +23,8 @@
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^22.0.0",
-    "typescript": "^5.6.3"
+    "esbuild": "^0.27.7",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
   }
 }

@@ -11,18 +11,14 @@ import {
   type AddAgentParams,
   type AppSettings,
   type Attachment,
-  type CreatePRParams,
   type CreateProjectParams,
   type DayTotal,
   type ProjectDayTotal,
   type HarnessInfo,
   type HarnessAuthInfo,
   type HarnessConfigurationState,
-  type MergeMethod,
-  type PRFilters,
   type PluginSource,
   type RecentProject,
-  type ReviewEvent,
   type StartSessionParams,
   type WorkItemCreateParams,
   type WorkItemStatus,
@@ -31,26 +27,11 @@ import * as costLedger from './cost-ledger'
 import { getDraft, setDraft, clearDraft } from './drafts'
 import { getAllStats, upsertStats, markStatsImported, isStatsImported, flushInProgressTokens } from './stats'
 import { getDb, runMigrations } from './db/index'
-import { jiraTicketActivity } from './db/schema'
-import { sql, eq, desc } from 'drizzle-orm'
+import { sql } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
 import { getAllPricing, refreshFromLiteLLM } from './pricing'
 import { getAvailableModels, refreshAvailableModels, getDefaultModel, invalidateAvailableModels, validateCustomModel } from './models'
 import { getCapabilities } from './capabilities'
-import {
-  addComment as ghAddComment,
-  createPR as ghCreatePR,
-  getPR as ghGetPR,
-  getPRChecks as ghGetPRChecks,
-  getPRComments as ghGetPRComments,
-  getPRDiff as ghGetPRDiff,
-  listPRs as ghListPRs,
-  mergePR as ghMergePR,
-  submitReview as ghSubmitReview,
-} from '@agentkeeper/plugin-github/src/github-cli'
-import { listProjects as jiraListProjects } from '@agentkeeper/plugin-jira'
-import { JiraWorkItemSource } from '@agentkeeper/plugin-jira/src/jira-source'
-import { countIssues as jiraCountIssues } from '@agentkeeper/plugin-jira/src/jira-cli'
 import type { WorkItemRegistryFull } from './plugins'
 import { getPluginConfig, getPluginEventBus, setPluginConfig } from './plugins'
 import {
@@ -59,14 +40,14 @@ import {
   confirmAkpInstall,
   disablePlugin,
   enablePlugin,
-  installPlugin,
-  installPluginFromUrl,
+  approvePluginPermissions,
   listPlugins,
   loadDevPlugin,
   prepareAkpInstall,
   uninstallPlugin,
   unloadDevPlugin,
   updatePlugin,
+  getPluginRendererBundle,
 } from './plugin-manager.js'
 import { getActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index'
@@ -133,7 +114,12 @@ async function pickProject(): Promise<RecentProject | null> {
   return project
 }
 
-export function registerIpcHandlers(registry: WorkItemRegistryFull) {
+export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebContents: Electron.WebContents) {
+  const assertTrustedMainRenderer = (event: Electron.IpcMainInvokeEvent): void => {
+    if (event.sender !== mainWebContents || event.senderFrame !== mainWebContents.mainFrame) {
+      throw new Error('Unauthorized plugin IPC sender')
+    }
+  }
   ipcMain.handle(IPC_CHANNELS.appUpdatesGetState, () => getAppUpdateState())
   ipcMain.handle(IPC_CHANNELS.appUpdatesCheck, () => checkForAppUpdate())
   ipcMain.handle(IPC_CHANNELS.appUpdatesDownload, () => downloadAppUpdate())
@@ -291,6 +277,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   ipcMain.handle(
     IPC_CHANNELS.sessionsRead,
     (_event, projectPath: string | null, sessionId: string, harnessId?: string) => readSession(projectPath, sessionId, harnessId),
+  )
+
+  ipcMain.handle(
+    IPC_CHANNELS.pluginsGetRendererBundle,
+    (event, pluginId: string, viewId: string) => { assertTrustedMainRenderer(event); return getPluginRendererBundle(pluginId, viewId) },
   )
 
   // Sessions — live. Every handler normalizes its error to a plain message
@@ -711,12 +702,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   // Plugin config
-  ipcMain.handle(IPC_CHANNELS.pluginsConfigGet, (_event, pluginId: string) =>
-    getPluginConfig(pluginId, getRawSqlite()),
+  ipcMain.handle(IPC_CHANNELS.pluginsConfigGet, (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
+    return getPluginConfig(pluginId, getRawSqlite())
+  },
   )
   ipcMain.handle(
     IPC_CHANNELS.pluginsConfigSet,
-    async (_event, pluginId: string, config: unknown) => {
+    async (event, pluginId: string, config: unknown) => {
+      assertTrustedMainRenderer(event)
       try {
         return await setPluginConfig(pluginId, config, getRawSqlite())
       } catch (err) {
@@ -727,7 +721,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   // Plugin management
-  ipcMain.handle(IPC_CHANNELS.pluginsList, () => {
+  ipcMain.handle(IPC_CHANNELS.pluginsList, (event) => {
+    assertTrustedMainRenderer(event)
     const rows = listPlugins()
     return rows.map((row) => ({
       id: row.id,
@@ -737,10 +732,13 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       source: row.source as PluginSource,
       status: getActiveHost(row.id) ? 'active' : (row.enabled === 1 && row.source === 'bundled' ? 'active' : 'inactive'),
       manifest: JSON.parse(row.manifest),
+      actionRequired: row.action_required === 1,
+      grantedAuthority: JSON.parse(row.granted_authority),
     }))
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsPickAkpFile, async (): Promise<string | null> => {
+  ipcMain.handle(IPC_CHANNELS.pluginsPickAkpFile, async (event): Promise<string | null> => {
+    assertTrustedMainRenderer(event)
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const result = win
       ? await dialog.showOpenDialog(win, {
@@ -754,40 +752,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsInstall, async (_event, akpPath?: string): Promise<void> => {
-    try {
-      let filePath = akpPath
-      if (!filePath) {
-        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-        const result = win
-          ? await dialog.showOpenDialog(win, {
-              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
-              properties: ['openFile'],
-            })
-          : await dialog.showOpenDialog({
-              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
-              properties: ['openFile'],
-            })
-        if (result.canceled || !result.filePaths[0]) return
-        filePath = result.filePaths[0]
-      }
-      await installPlugin(filePath)
-    } catch (err) {
-      console.error('[ipc] plugins:install failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-
-  ipcMain.handle(IPC_CHANNELS.pluginsInstallFromUrl, async (_event, manifestUrl: string) => {
-    try {
-      await installPluginFromUrl(manifestUrl)
-    } catch (err) {
-      console.error('[ipc] plugins:installFromUrl failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-
-  ipcMain.handle(IPC_CHANNELS.pluginsPrepareAkpInstall, async (_event, opts: { filePath?: string; manifestUrl?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsPrepareAkpInstall, async (event, opts: { filePath?: string; manifestUrl?: string }) => {
+    assertTrustedMainRenderer(event)
     try {
       return await prepareAkpInstall(opts)
     } catch (err) {
@@ -796,8 +762,16 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsConfirmAkpInstall, async (_event, token: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsConfirmAkpInstall, async (event, token: string) => {
+    assertTrustedMainRenderer(event)
     try {
+      const confirmation = await dialog.showMessageBox(BrowserWindow.fromWebContents(mainWebContents)!, {
+        type: 'warning', buttons: ['Cancel', 'Install'], defaultId: 0, cancelId: 0,
+        title: 'Install untrusted plugin?',
+        message: 'Plugins are unsigned. Confirm the exact package shown in AgentKeeper before installing.',
+        detail: 'The nativeProcess permission breaks the plugin sandbox and can use your account’s file and network access.',
+      })
+      if (confirmation.response !== 1) throw new Error('Plugin installation cancelled')
       await confirmAkpInstall(token)
     } catch (err) {
       console.error('[ipc] plugins:confirmAkpInstall failed:', err)
@@ -805,11 +779,14 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsCancelAkpInstall, (_event, token: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsCancelAkpInstall, (event, token: string) => {
+    assertTrustedMainRenderer(event)
     cancelAkpInstall(token)
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (_event, dirPath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (event, dirPath?: string) => {
+    assertTrustedMainRenderer(event)
+    if (app.isPackaged) throw new Error('Development plugin loading is disabled in packaged builds')
     try {
       let resolvedPath = dirPath
       if (!resolvedPath) {
@@ -827,7 +804,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsUnloadDev, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsUnloadDev, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await unloadDevPlugin(pluginId)
     } catch (err) {
@@ -836,7 +814,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsUninstall, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsUninstall, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await uninstallPlugin(pluginId)
     } catch (err) {
@@ -845,7 +824,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsEnable, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsEnable, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await enablePlugin(pluginId)
     } catch (err) {
@@ -854,7 +834,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsDisable, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsApprovePermissions, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
+    try {
+      await approvePluginPermissions(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:approvePermissions failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsDisable, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await disablePlugin(pluginId)
     } catch (err) {
@@ -863,7 +854,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsCheckUpdates, async () => {
+  ipcMain.handle(IPC_CHANNELS.pluginsCheckUpdates, async (event) => {
+    assertTrustedMainRenderer(event)
     try {
       const updates = await checkForUpdates()
       return updates.map(({ pluginId, currentVersion, availableVersion, releaseNotes }) => ({
@@ -878,128 +870,33 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsUpdate, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsUpdate, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       const updates = await checkForUpdates()
       const entry = updates.find((u) => u.pluginId === pluginId)
       if (!entry) throw new Error(`No update available for plugin ${pluginId}`)
-      await updatePlugin(pluginId, entry.release)
+      return await updatePlugin(pluginId, entry.release)
     } catch (err) {
       console.error('[ipc] plugins:update failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
 
+  ipcMain.handle(
+    IPC_CHANNELS.pluginsInvoke,
+    async (event, pluginId: string, commandId: string, args?: unknown) => {
+      assertTrustedMainRenderer(event)
+      const host = getActiveHost(pluginId)
+      if (!host) throw new Error('Provider not available')
+      return host.invokeCommand(commandId, args)
+    },
+  )
+
   // Remote sources
   ipcMain.handle(IPC_CHANNELS.remotesDetect, (_event, projectPath: string) =>
     detectRemoteSources(projectPath),
   )
-
-  // GitHub — config + PR channels
-  async function getGithubRepos(): Promise<string[]> {
-    const projects = recentProjectsStore.list()
-    return [...new Set(projects.map((p) => p.repo).filter((r): r is string => Boolean(r)))]
-  }
-
-  ipcMain.handle(IPC_CHANNELS.githubConfigGet, async () => {
-    const repos = await getGithubRepos()
-    return { repos }
-  })
-  ipcMain.handle(IPC_CHANNELS.githubConfigSet, async (_event, config: { repos: string[] }) => {
-    try {
-      return await setPluginConfig('github', config, getRawSqlite())
-    } catch (err) {
-      console.error('[ipc] github:config:set failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-  ipcMain.handle(IPC_CHANNELS.githubListPRs, async (_event, filters: PRFilters) => {
-    try {
-      const repos = await getGithubRepos()
-      const targets = filters.repo ? [filters.repo] : repos
-      if (targets.length === 0) return []
-      const results = await Promise.all(targets.map((r) => ghListPRs(r, filters)))
-      const flat = results.flat()
-      flat.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      return flat
-    } catch (err) {
-      console.error('[ipc] github:prs:list failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-  ipcMain.handle(IPC_CHANNELS.githubGetPR, async (_event, repo: string, number: number) => {
-    try {
-      return await ghGetPR(repo, number)
-    } catch (err) {
-      console.error('[ipc] github:prs:get failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-  ipcMain.handle(IPC_CHANNELS.githubGetPRDiff, async (_event, repo: string, number: number) => {
-    try {
-      return await ghGetPRDiff(repo, number)
-    } catch (err) {
-      console.error('[ipc] github:prs:diff failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-  ipcMain.handle(IPC_CHANNELS.githubGetPRChecks, async (_event, repo: string, number: number) => {
-    try {
-      return await ghGetPRChecks(repo, number)
-    } catch (err) {
-      console.error('[ipc] github:prs:checks failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-  ipcMain.handle(IPC_CHANNELS.githubGetPRComments, async (_event, repo: string, number: number) => {
-    try {
-      return await ghGetPRComments(repo, number)
-    } catch (err) {
-      console.error('[ipc] github:prs:comments failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-  ipcMain.handle(
-    IPC_CHANNELS.githubAddComment,
-    async (_event, repo: string, number: number, body: string) => {
-      try {
-        return await ghAddComment(repo, number, body)
-      } catch (err) {
-        console.error('[ipc] github:prs:comment failed:', err)
-        throw new Error(err instanceof Error ? err.message : String(err))
-      }
-    },
-  )
-  ipcMain.handle(
-    IPC_CHANNELS.githubSubmitReview,
-    async (_event, repo: string, number: number, event: ReviewEvent, body: string) => {
-      try {
-        return await ghSubmitReview(repo, number, event, body)
-      } catch (err) {
-        console.error('[ipc] github:prs:review failed:', err)
-        throw new Error(err instanceof Error ? err.message : String(err))
-      }
-    },
-  )
-  ipcMain.handle(
-    IPC_CHANNELS.githubMergePR,
-    async (_event, repo: string, number: number, method: MergeMethod) => {
-      try {
-        return await ghMergePR(repo, number, method)
-      } catch (err) {
-        console.error('[ipc] github:prs:merge failed:', err)
-        throw new Error(err instanceof Error ? err.message : String(err))
-      }
-    },
-  )
-  ipcMain.handle(IPC_CHANNELS.githubCreatePR, async (_event, params: CreatePRParams) => {
-    try {
-      return await ghCreatePR(params.repo, params)
-    } catch (err) {
-      console.error('[ipc] github:prs:create failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
 
   // Session registry — persisted sessions + resume + delete + touch
   // Reset any sessions left mid-flight by a previous process, then prune old ones.
@@ -1401,28 +1298,19 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     })
   }
 
-  // Work items — Jira runs in-main (like jira:listProjects), bypassing the worker
-  // plugin route whose unreliable PATH/config delivery returned 0 issues. Config is
-  // read under the 'jira' id, matching what the settings panel writes.
-  async function jiraSource(): Promise<JiraWorkItemSource> {
-    const cfg = (await getPluginConfig('jira', getRawSqlite())) as {
-      projectMappings?: Array<{ jiraProjectKey: string; projectPath: string }>
-      projectKey?: string
-    }
-    return new JiraWorkItemSource(cfg.projectMappings ?? [], cfg.projectKey)
-  }
-
-  ipcMain.handle(IPC_CHANNELS.workItemsList, async () => {
+  // Provider-neutral work item bridge. The registry routes directly to the
+  // installed provider identified by sourceId.
+  ipcMain.handle(IPC_CHANNELS.workItemsList, async (_event, sourceId?: string) => {
     try {
-      return await (await jiraSource()).list()
+      return await registry.list(sourceId)
     } catch (err) {
       console.error('[ipc] workItems:list failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
     }
   })
-  ipcMain.handle(IPC_CHANNELS.workItemsGet, async (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.workItemsGet, async (_event, reference: { sourceId: string; itemId: string }) => {
     try {
-      return await (await jiraSource()).get(id)
+      return await registry.get(reference)
     } catch (err) {
       console.error('[ipc] workItems:get failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -1430,18 +1318,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(
     IPC_CHANNELS.workItemsUpdateStatus,
-    async (_event, id: string, status: WorkItemStatus) => {
+    async (_event, reference: { sourceId: string; itemId: string }, status: WorkItemStatus) => {
       try {
-        return await (await jiraSource()).updateStatus(id, status)
+        return await registry.updateStatus(reference, status)
       } catch (err) {
         console.error('[ipc] workItems:updateStatus failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
   )
-  ipcMain.handle(IPC_CHANNELS.workItemsGetTransitions, async (_event, id: string) => {
+  ipcMain.handle(IPC_CHANNELS.workItemsGetTransitions, async (_event, reference: { sourceId: string; itemId: string }) => {
     try {
-      return await (await jiraSource()).getTransitions(id)
+      return await registry.getTransitions(reference)
     } catch (err) {
       console.error('[ipc] workItems:getTransitions failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -1449,9 +1337,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   })
   ipcMain.handle(
     IPC_CHANNELS.workItemsTransition,
-    async (_event, id: string, name: string) => {
+    async (_event, reference: { sourceId: string; itemId: string }, name: string) => {
       try {
-        return await (await jiraSource()).transition(id, name)
+        return await registry.transition(reference, name)
       } catch (err) {
         console.error('[ipc] workItems:transition failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
@@ -1460,47 +1348,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
   ipcMain.handle(
     IPC_CHANNELS.workItemsCreate,
-    async (_event, params: WorkItemCreateParams) => {
+    async (_event, sourceId: string, params: WorkItemCreateParams) => {
       try {
-        return await (await jiraSource()).create(params)
+        return await registry.create(sourceId, params)
       } catch (err) {
         console.error('[ipc] workItems:create failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
   )
-
-  ipcMain.handle(IPC_CHANNELS.workItemsCounts, async (_event, boards: string[]) => {
-    const entries = await Promise.all(
-      boards.map(async (key) => [key, await jiraCountIssues(key)] as const),
-    )
-    return Object.fromEntries(entries.filter((e): e is [string, number] => e[1] != null))
-  })
-
-  ipcMain.handle(IPC_CHANNELS.jiraListProjects, async () => {
-    try {
-      return await jiraListProjects()
-    } catch (err) {
-      console.error('[ipc] jira:listProjects failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-
-  ipcMain.handle(IPC_CHANNELS.jiraActivityList, (_e, ticketRef: string) => {
-    return getDb()
-      .select()
-      .from(jiraTicketActivity)
-      .where(eq(jiraTicketActivity.ticketRef, ticketRef))
-      .orderBy(desc(jiraTicketActivity.createdAt))
-      .all()
-      .map((r) => ({ id: r.id, ticketRef: r.ticketRef, actor: r.actor, message: r.message, createdAt: r.createdAt }))
-  })
-
-  ipcMain.handle(IPC_CHANNELS.jiraActivityAdd, (_e, entry: { ticketRef: string; actor: string; message: string }) => {
-    const row = { id: randomUUID(), ticketRef: entry.ticketRef, actor: entry.actor, message: entry.message, createdAt: Date.now() }
-    getDb().insert(jiraTicketActivity).values(row).run()
-    return row
-  })
 
   // Harness
   ipcMain.handle(IPC_CHANNELS.harnessListAdapters, async (): Promise<HarnessInfo[]> => {
@@ -1669,14 +1525,16 @@ export function wirePluginEventRelay(win: BrowserWindow): void {
   const events: (keyof EventMap)[] = [
     'plugin.healthy',
     'plugin.unhealthy',
+    'plugin.activated',
+    'plugin.deactivated',
+    'plugin.updated',
+    'plugin.uninstalled',
     'task.selected',
     'job.started',
     'job.completed',
     'job.failed',
     'session.started',
     'session.completed',
-    'pr.opened',
-    'pr.merged',
     'settings.changed',
   ]
   for (const event of events) {

@@ -64,6 +64,11 @@ function planProjectPath(plan: PlanWithProject): string | null {
   return isProject.value ? currentProject.value?.path ?? null : null
 }
 
+function workItemPath(plan: PlanWithProject): string {
+  const reference = plan.workItem!
+  return `/plugin/${encodeURIComponent(reference.sourceId)}/work-items/${encodeURIComponent(reference.itemId)}`
+}
+
 function refreshPlans(planPath?: string): void {
   if (isAll.value) {
     void queryClient.invalidateQueries({ queryKey: ['plans', 'list', SCOPE_ALL] })
@@ -298,7 +303,7 @@ function projectNameForPlan(plan: PlanWithProject): string {
           v-if="plans.length === 0"
           class="flex items-center justify-center h-32 text-sm text-muted-foreground border border-border rounded-lg"
         >
-          No plans yet — use "Plan with Claude" on a Jira ticket.
+          No plans yet — create one from a work item or start in the Planner.
         </div>
 
         <!-- Table -->
@@ -369,12 +374,12 @@ function projectNameForPlan(plan: PlanWithProject): string {
             <!-- Ticket ref -->
             <div>
               <router-link
-                v-if="plan.workItemId"
-                :to="`/jira/issue/${plan.workItemId}`"
+                v-if="plan.workItem"
+                :to="workItemPath(plan)"
                 class="text-xs px-2 py-0.5 rounded-md border border-border font-mono bg-background hover:bg-muted/60 transition-colors"
                 @click.stop
               >
-                {{ plan.externalRef || plan.workItemId }}
+                {{ plan.workItem.externalRef }}
               </router-link>
               <span v-else class="text-xs px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground">—</span>
             </div>

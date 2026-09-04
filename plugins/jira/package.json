@@ -1,0 +1,22 @@
+{
+  "name": "@agentkeeper/plugin-jira",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "pnpm typecheck && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && esbuild src/index.ts --bundle --format=iife --global-name=AgentKeeperPluginModule --platform=browser --target=es2022 --outfile=dist/index.js && esbuild renderer/index.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=dist/renderer.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.27.0"
+  },
+  "dependencies": {
+    "@agentkeeper/sdk": "workspace:*",
+    "dompurify": "^3.4.14",
+    "marked": "^18.0.11",
+    "zod": "^3.23.8"
+  }
+}

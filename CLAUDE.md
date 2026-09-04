@@ -32,9 +32,8 @@ apps/desktop/src/shared/    IPC contract types — pure, no runtime imports
 packages/core/              shared harness abstraction (HarnessAdapter, session/event types)
 packages/sdk/               @agentkeeper/sdk — plugin contract (types-only)
 packages/cli/               CLI toolchain for plugin authors
-packages/plugin-github/     GitHub plugin (shipped V6)
-packages/plugin-jira/       Jira plugin (shipped V5)
-packages/plugin-test*/      installable-plugin test fixtures (.akp bundles)
+plugins/github/             GitHub plugin (separately installed; V6)
+plugins/jira/               Jira plugin (separately installed; V5)
 packages/skills/            bundled agent skills (e.g. agent-role-generator)
 apps/ios/                   SwiftUI companion app (pairs with the mobile server)
 ```
@@ -67,19 +66,14 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
   - ✅ Commands: list, create, edit, delete — project + global scope
   - ✅ Full backend (skills.ts, commands.ts), IPC, preload
   - ✅ Routed views at `/skills` and `/commands`
-- V5 🔄 Jira plugin (wraps user's `jira` CLI, Jira Cloud)
-  - ✅ Plugin package (`packages/plugin-jira`) — CLI wrapping, WorkItemSource, activation lifecycle
-  - ✅ IPC handlers — workItems list/get/transition/updateStatus, plugin config get/set
-  - ✅ Preload bridge — workItems + plugins config APIs
-  - ✅ Routed page — `/jira` (JiraLayout → board + issue views), start-session and
-    create-ticket modals
-  - ⬜ Wire focused project filter into the Jira views
-- V6 🔄 GitHub plugin (PRs via `gh` CLI)
-  - ✅ Phase 0 — sidebar shell + plugin nav registry
-  - ✅ Phase 1+2 — GitHub settings, plugin health banner, GitHub routes
-  - ✅ Phase 3 — PR list, detail views, and review form
-  - ✅ Multi-repo config — `GitHubConfig.repos[]`, fan-out `listPRs`, per-repo
-    filter dropdown, `?repo=` query param on PR detail routes
+- V5 ✅ Jira plugin (separately distributed; wraps user's `jira` CLI, Jira Cloud)
+  - ✅ Plugin-owned board, issue detail, transitions, comments, ticket creation, settings,
+    project mappings, session launch, and session history
+- V6 ✅ GitHub plugin (separately distributed; PRs via `gh` CLI)
+  - ✅ Plugin-owned PR list and detail views, Markdown, checks, reviews, comments,
+    merge actions, project/repository filters, session launch, and session history
+  - ⬜ Pull-request diff viewer (intentionally deferred)
+  - ✅ Multi-repository discovery from the AgentKeeper project registry
   - ✅ Project registry — `recentProjectsStore` extended with `repo`
     (auto-detected from `.git/config`); adding a project auto-registers its
     GitHub repo. Context is now per-page (`usePageScope` + `ScopeBar`) and
@@ -89,8 +83,6 @@ Roles live at `.agentkeeper/roles/<id>.md` (project) or
     companion and migration only — the renderer never reads it.
   - ✅ Sessions view — global list (all projects + General); per-session
     context badge and per-context filter pills
-  - ⬜ Monitor view — wire focused project filter
-  - ⬜ Project-as-filter plumbing for V5 Jira views (see V5)
 
 
 ## Commands
@@ -121,11 +113,18 @@ All async renderer data goes through `@tanstack/vue-query`. The canonical key re
 
 ## Router
 
-`apps/desktop/src/renderer/src/router/index.ts` — uses `createWebHashHistory`. Add new top-level routes there. Plugin layout routes follow the pattern in `/jira` and `/github` (nested children under a Layout component).
+`apps/desktop/src/renderer/src/router/index.ts` uses `createWebHashHistory` for
+host-owned routes. Plugin pages are declared in the plugin manifest and rendered by
+the generic `/plugins/:pluginId/:pathMatch(.*)*` host route; do not add provider-specific
+routes to the desktop router.
 
 ## Plugin settings architecture
 
-Plugins activate in the main process (Node.js) and cannot contribute Vue components across the IPC boundary, so the `settingsPanels` UISlot in the SDK is structurally dormant. Plugin settings UI is implemented as renderer-side panel components registered in a static `pluginSettingsPanels` registry; `SettingsView.vue` renders a tab per registered panel. Adding a new bundled plugin: create a `<Plugin>SettingsPanel.vue` and add an entry to the registry.
+Plugin settings pages are renderer views declared by `contributes.settings` and
+`contributes.routes` in the plugin manifest. The generic plugin host renders them in
+the same sandboxed iframe used for other plugin views. Provider-specific Vue panels
+must not be compiled into the desktop application. See `docs/plugins.md` for the full
+authoring and distribution contract.
 
 ## Commit format
 

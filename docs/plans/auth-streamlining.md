@@ -122,7 +122,7 @@ if API calls return a 403 with `resource:application` in the header.
 
 ### 3b — Replace gh CLI calls with Octokit (1–2 days)
 
-- [ ] Add `@octokit/rest` to `packages/plugin-github`
+- [ ] Add `@octokit/rest` to `plugins/github`
 - [ ] Rewrite `github-cli.ts` → `github-api.ts`; replace each `execFileAsync('gh', ...)`
       call with the equivalent Octokit method:
 
@@ -137,7 +137,7 @@ if API calls return a 403 with `resource:application` in the header.
 
 - [ ] Remove health-check polling for `gh` binary; replace with a token
       presence check (`plugin.healthy` when keytar token exists)
-- [ ] Update `plugin-github/src/index.ts` activation to read token from keytar
+- [ ] Update `plugins/github/src/index.ts` activation to read token from keytar
       and construct `Octokit({ auth: token })`
 
 **Outcome**: GitHub works with zero CLI tools. SSO handled in browser.
@@ -170,7 +170,7 @@ Phase 5 (OAuth 3LO).
 ### 4b — Replace jira CLI calls with REST (1 day)
 
 - [ ] Add `node-fetch` or use the built-in `fetch` (Node 18+) in
-      `packages/plugin-jira`
+      `plugins/jira`
 - [ ] Write `jira-api.ts` with a typed Atlassian REST v3 client (base URL +
       Basic auth header `btoa(email:token)`)
 - [ ] Rewrite `jira-cli.ts` → `jira-api.ts`; replace each `execFileAsync('jira', ...)`
@@ -239,7 +239,7 @@ worktrees. Phase 5 is deferred until there's a concrete org that blocks on it.
 | `apps/desktop/src/shared/ipc-contract.ts` | Add new channel constants + type signatures |
 | `apps/desktop/src/renderer/src/views/SetupWizard.vue` | New first-run view |
 | `apps/desktop/src/renderer/src/components/settings/*` | Update Claude, GitHub, Jira panels |
-| `packages/plugin-github/src/github-api.ts` | New file; replaces `github-cli.ts` |
-| `packages/plugin-github/src/index.ts` | Read token from keytar; construct Octokit |
-| `packages/plugin-jira/src/jira-api.ts` | New file; replaces `jira-cli.ts` |
-| `packages/plugin-jira/src/index.ts` | Read credentials from keytar; health-check update |
+| `plugins/github/src/github-api.ts` | New file; replaces `github-cli.ts` |
+| `plugins/github/src/index.ts` | Read token from keytar; construct Octokit |
+| `plugins/jira/src/jira-api.ts` | New file; replaces `jira-cli.ts` |
+| `plugins/jira/src/index.ts` | Read credentials from keytar; health-check update |

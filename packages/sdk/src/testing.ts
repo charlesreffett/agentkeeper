@@ -12,6 +12,7 @@ export interface MockContextOptions<TSettings = unknown> {
   config?: TSettings
   secrets?: Record<string, string>
   storage?: Record<string, unknown>
+  environment?: Record<string, string>
 }
 
 export interface MockContext<TSettings = unknown> extends PluginContext<TSettings> {
@@ -78,6 +79,11 @@ export function createMockContext<TSettings = unknown>(
         secrets.delete(key)
       },
     },
+    environment: {
+      async get(name) {
+        return options.environment?.[name]
+      },
+    },
     events: {
       on(event, handler) {
         const set = eventHandlers.get(event) ?? new Set()
@@ -102,7 +108,6 @@ export function createMockContext<TSettings = unknown>(
       unregister(id: string) {
         workItemSources.delete(id)
       },
-      async addComment(_id: string, _body: string): Promise<void> {},
     },
     ui: {
       contribute(slot, contribution) {
@@ -128,6 +133,14 @@ export function createMockContext<TSettings = unknown>(
     background: {
       every: () => () => {},
       once: () => () => {},
+    },
+    projects: {
+      async list() { return [] },
+    },
+    process: {
+      async execFile() {
+        throw new Error('Native process broker is not configured for this mock context')
+      },
     },
     fetch: globalThis.fetch.bind(globalThis),
     _inspect: {

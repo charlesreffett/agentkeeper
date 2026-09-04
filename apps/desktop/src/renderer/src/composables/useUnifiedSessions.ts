@@ -75,7 +75,7 @@ export function useUnifiedSessions() {
       return {
         localId: s.localId,
         title:
-          s.workItemTitle ??
+          s.workItem?.title ??
           s.title ??
           s.agencyPrompt ??
           (s.initialPrompt.trim() || (s.isDraft ? 'New draft' : '(no messages)')),
@@ -85,8 +85,8 @@ export function useUnifiedSessions() {
         projectPath: s.projectPath,
         projectName,
         projectColor: projectColor(projectName),
-        workItemKey: s.workItemKey,
-        workItemTitle: s.workItemTitle,
+        workItemKey: s.workItem?.externalRef ?? null,
+        workItemTitle: s.workItem?.title ?? null,
         initialPrompt: s.initialPrompt,
         lastActivityAt: s.lastActivityAt,
         lastUserMessageAt: s.lastUserMessageAt,
@@ -103,15 +103,15 @@ export function useUnifiedSessions() {
         const projectName = pathToProjectName(s.projectPath)
         return {
           localId: s.localId,
-          title: s.workItemTitle ?? s.title ?? (s.initialPrompt.trim() || '(no messages)'),
+          title: s.workItem?.title ?? s.title ?? (s.initialPrompt.trim() || '(no messages)'),
           status: s.status,
           source: 'persisted' as const,
           isDraft: false,
           projectPath: s.projectPath,
           projectName,
           projectColor: projectColor(projectName),
-          workItemKey: s.workItemKey,
-          workItemTitle: s.workItemTitle,
+          workItemKey: s.workItem?.externalRef ?? null,
+          workItemTitle: s.workItem?.title ?? null,
           initialPrompt: s.initialPrompt,
           lastActivityAt: s.lastActivityAt,
           lastUserMessageAt: s.lastUserMessageAt,

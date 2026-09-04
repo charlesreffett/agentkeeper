@@ -9,7 +9,12 @@
   },
   "scripts": {
     "dev": "pnpm --filter desktop dev",
-    "build": "pnpm -r --filter './packages/*' build && pnpm --filter desktop build",
+    "build": "pnpm -r --filter './packages/*' build && pnpm build:plugins && pnpm --filter desktop build",
+    "build:plugins": "pnpm verify:plugin-boundaries && pnpm -r --filter './plugins/*' build",
+    "typecheck:plugins": "pnpm verify:plugin-boundaries && pnpm -r --filter './plugins/*' typecheck",
+    "pack:plugins": "pnpm build:plugins && pnpm --filter @agentkeeper/cli build && pnpm --filter @agentkeeper/cli exec node dist/cli.cjs pack --dir ../../plugins/github && pnpm --filter @agentkeeper/cli exec node dist/cli.cjs pack --dir ../../plugins/jira",
+    "verify:plugin-packages": "pnpm build:plugins && node scripts/verify-plugin-packages.mjs",
+    "verify:plugin-boundaries": "node scripts/verify-plugin-boundaries.mjs",
     "typecheck": "pnpm -r typecheck",
     "dist:mac": "pnpm build && pnpm --filter desktop dist:mac",
     "dist:win": "pnpm build && pnpm --filter desktop dist:win",

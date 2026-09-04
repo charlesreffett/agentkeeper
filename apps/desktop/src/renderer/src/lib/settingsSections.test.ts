@@ -9,8 +9,6 @@ describe('Settings information architecture', () => {
       ['/settings/appearance', 'Appearance'],
       ['/settings/plugins', 'Plugins'],
       ['/settings/remote', 'Remote'],
-      ['/settings/github', 'GitHub'],
-      ['/settings/jira', 'Jira'],
     ]))
   })
 })

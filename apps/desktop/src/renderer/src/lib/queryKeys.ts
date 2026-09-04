@@ -9,7 +9,6 @@ export const queryKeys = {
     all: () => ['settings'] as const,
     app: () => ['settings', 'app'] as const,
     secrets: () => ['settings', 'secrets'] as const,
-    github: () => ['settings', 'github'] as const,
   },
   agencies: {
     list: (projectPath?: string | null) => ['agencies', 'list', projectPath ?? null] as const,

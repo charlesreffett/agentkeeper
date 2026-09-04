@@ -18,11 +18,11 @@ const costPerWorkItem = computed(() => data.value?.costPerWorkItem ?? [])
     <div class="flex flex-col gap-1">
       <div
         v-for="item in costPerWorkItem"
-        :key="item.workItemKey"
+        :key="`${item.workItemSourceId}:${item.workItemExternalRef}`"
         class="flex items-center justify-between text-sm"
       >
         <div class="flex items-center gap-2 min-w-0">
-          <span class="font-mono text-xs text-muted-foreground shrink-0">{{ item.workItemKey }}</span>
+          <span class="font-mono text-xs text-muted-foreground shrink-0">{{ item.workItemExternalRef }}</span>
           <span v-if="item.workItemTitle" class="text-foreground truncate">{{ item.workItemTitle }}</span>
         </div>
         <span class="tabular-nums font-medium shrink-0 ml-4">${{ item.totalCostUsd.toFixed(2) }}</span>

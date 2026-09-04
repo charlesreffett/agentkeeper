@@ -70,8 +70,6 @@ function importSessionRegistry(tx: AppDb, userDataPath: string): void {
       initialPrompt: s.initialPrompt ?? '',
       agencyName: s.agencyName ?? null,
       title: s.title ?? null,
-      workItemKey: s.workItemKey ?? null,
-      workItemTitle: s.workItemTitle ?? null,
       status: s.status ?? 'idle',
       startedAt: s.startedAt,
       lastActivityAt: s.lastActivityAt,

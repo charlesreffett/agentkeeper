@@ -11,14 +11,12 @@ import {
   type Attachment,
   type HarnessInfo,
   type HarnessAuthInfo,
-  type CreatePRParams,
   type DayTotal,
   type ProjectDayTotal,
   type DraftRecord,
   type LegacyDayEntry,
   type FsEntry,
   type FsChangedEvent,
-  type GitHubConfig,
   type GitBranchChangedEvent,
   type GitStatusChangedEvent,
   type BranchInfo,
@@ -30,12 +28,10 @@ import {
   type LiveSessionEvent,
   type LiveSessionStats,
   type LiveSessionStatusUpdate,
-  type MergeMethod,
   type AgentKeeperApi,
   type Plan,
   type PlansCreateInput,
   type PlansUpdateInput,
-  type PRFilters,
   type Session,
   type PermissionMode,
   type ModelPricing,
@@ -44,7 +40,6 @@ import {
   type SetModelResult,
   type RemoteSource,
   type ResetRequest,
-  type ReviewEvent,
   type RoleDraft,
   type RoleEffort,
   type RoleScope,
@@ -59,8 +54,6 @@ import {
   type RecentProject,
   type WorkItemCreateParams,
   type WorkItemStatus,
-  type JiraProject,
-  type JiraActivityEntry,
   type PluginRecord,
   type UpdateAvailable,
   type AppUpdateState,
@@ -353,10 +346,6 @@ const api: AgentKeeperApi = {
     list: () => invoke(IPC_CHANNELS.pluginsList) as Promise<PluginRecord[]>,
     pickAkpFile: () =>
       invoke(IPC_CHANNELS.pluginsPickAkpFile) as Promise<string | null>,
-    install: (akpPath?: string) =>
-      invoke(IPC_CHANNELS.pluginsInstall, akpPath) as Promise<void>,
-    installFromUrl: (manifestUrl: string) =>
-      invoke(IPC_CHANNELS.pluginsInstallFromUrl, manifestUrl) as Promise<void>,
     prepareAkpInstall: (opts: { filePath?: string; manifestUrl?: string }) =>
       invoke(IPC_CHANNELS.pluginsPrepareAkpInstall, opts) as Promise<{ manifest: import('@agentkeeper/sdk').PluginManifest; token: string }>,
     confirmAkpInstall: (token: string) =>
@@ -371,59 +360,34 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.pluginsUninstall, pluginId) as Promise<void>,
     enable: (pluginId: string) =>
       invoke(IPC_CHANNELS.pluginsEnable, pluginId) as Promise<void>,
+    approvePermissions: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsApprovePermissions, pluginId) as Promise<void>,
     disable: (pluginId: string) =>
       invoke(IPC_CHANNELS.pluginsDisable, pluginId) as Promise<void>,
     checkUpdates: () =>
       invoke(IPC_CHANNELS.pluginsCheckUpdates) as Promise<UpdateAvailable[]>,
     update: (pluginId: string) =>
-      invoke(IPC_CHANNELS.pluginsUpdate, pluginId) as Promise<void>,
+      invoke(IPC_CHANNELS.pluginsUpdate, pluginId) as Promise<import('../shared/ipc-contract').PluginUpdateResult>,
+    invoke: (pluginId: string, commandId: string, args?: unknown) =>
+      invoke(IPC_CHANNELS.pluginsInvoke, pluginId, commandId, args) as Promise<unknown>,
+    getRendererBundle: (pluginId: string, viewId: string) =>
+      invoke(IPC_CHANNELS.pluginsGetRendererBundle, pluginId, viewId) as Promise<{ script: string }>,
   },
   workItems: {
-    list: () => invoke(IPC_CHANNELS.workItemsList) as Promise<never>,
-    get: (id: string) => invoke(IPC_CHANNELS.workItemsGet, id) as Promise<never>,
-    updateStatus: (id: string, status: WorkItemStatus) =>
-      invoke(IPC_CHANNELS.workItemsUpdateStatus, id, status) as Promise<void>,
-    getTransitions: (id: string) =>
-      invoke(IPC_CHANNELS.workItemsGetTransitions, id) as Promise<IssueTransition[]>,
-    transition: (id: string, name: string) =>
-      invoke(IPC_CHANNELS.workItemsTransition, id, name) as Promise<void>,
-    create: (params: WorkItemCreateParams) =>
-      invoke(IPC_CHANNELS.workItemsCreate, params) as Promise<never>,
-    counts: (boards: string[]) =>
-      invoke(IPC_CHANNELS.workItemsCounts, boards) as Promise<Record<string, number>>,
-  },
-  jira: {
-    listProjects: () => invoke(IPC_CHANNELS.jiraListProjects) as Promise<JiraProject[]>,
-    activityList: (ticketRef: string) => invoke(IPC_CHANNELS.jiraActivityList, ticketRef) as Promise<JiraActivityEntry[]>,
-    activityAdd: (entry: { ticketRef: string; actor: string; message: string }) => invoke(IPC_CHANNELS.jiraActivityAdd, entry) as Promise<JiraActivityEntry>,
+    list: (sourceId?: string) => invoke(IPC_CHANNELS.workItemsList, sourceId) as Promise<never>,
+    get: (reference: { sourceId: string; itemId: string }) => invoke(IPC_CHANNELS.workItemsGet, reference) as Promise<never>,
+    updateStatus: (reference: { sourceId: string; itemId: string }, status: WorkItemStatus) =>
+      invoke(IPC_CHANNELS.workItemsUpdateStatus, reference, status) as Promise<void>,
+    getTransitions: (reference: { sourceId: string; itemId: string }) =>
+      invoke(IPC_CHANNELS.workItemsGetTransitions, reference) as Promise<IssueTransition[]>,
+    transition: (reference: { sourceId: string; itemId: string }, name: string) =>
+      invoke(IPC_CHANNELS.workItemsTransition, reference, name) as Promise<void>,
+    create: (sourceId: string, params: WorkItemCreateParams) =>
+      invoke(IPC_CHANNELS.workItemsCreate, sourceId, params) as Promise<never>,
   },
   remotes: {
     detect: (projectPath: string) =>
       invoke(IPC_CHANNELS.remotesDetect, projectPath) as Promise<RemoteSource[]>,
-  },
-  github: {
-    getConfig: () =>
-      invoke(IPC_CHANNELS.githubConfigGet) as Promise<GitHubConfig>,
-    setConfig: (config: GitHubConfig) =>
-      invoke(IPC_CHANNELS.githubConfigSet, config) as Promise<void>,
-    listPRs: (filters: PRFilters) =>
-      invoke(IPC_CHANNELS.githubListPRs, filters) as Promise<never>,
-    getPR: (repo: string, number: number) =>
-      invoke(IPC_CHANNELS.githubGetPR, repo, number) as Promise<never>,
-    getPRDiff: (repo: string, number: number) =>
-      invoke(IPC_CHANNELS.githubGetPRDiff, repo, number) as Promise<string>,
-    getPRChecks: (repo: string, number: number) =>
-      invoke(IPC_CHANNELS.githubGetPRChecks, repo, number) as Promise<never>,
-    getPRComments: (repo: string, number: number) =>
-      invoke(IPC_CHANNELS.githubGetPRComments, repo, number) as Promise<never>,
-    addComment: (repo: string, number: number, body: string) =>
-      invoke(IPC_CHANNELS.githubAddComment, repo, number, body) as Promise<void>,
-    submitReview: (repo: string, number: number, event: ReviewEvent, body: string) =>
-      invoke(IPC_CHANNELS.githubSubmitReview, repo, number, event, body) as Promise<void>,
-    mergePR: (repo: string, number: number, method: MergeMethod) =>
-      invoke(IPC_CHANNELS.githubMergePR, repo, number, method) as Promise<void>,
-    createPR: (params: CreatePRParams) =>
-      invoke(IPC_CHANNELS.githubCreatePR, params) as Promise<never>,
   },
   dialog: {
     openFiles: () => invoke(IPC_CHANNELS.dialogOpenFiles) as Promise<Attachment[]>,

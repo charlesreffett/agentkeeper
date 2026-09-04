@@ -9,8 +9,8 @@ import { resolve } from 'node:path'
 const WORKSPACE_PKGS = [
   '@agentkeeper/sdk',
   '@agentkeeper/core',
-  '@agentkeeper/plugin-jira',
-  '@agentkeeper/plugin-github',
+  'http-proxy-agent',
+  'https-proxy-agent',
 ]
 
 export default defineConfig({
@@ -20,7 +20,6 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
-          'plugin-bootstrap': resolve(__dirname, '../../packages/sdk/src/bootstrap.ts'),
         },
       },
     },
@@ -29,7 +28,10 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin({ exclude: WORKSPACE_PKGS })],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/preload/index.ts') },
+        input: {
+          index: resolve(__dirname, 'src/preload/index.ts'),
+          'plugin-sandbox': resolve(__dirname, 'src/preload/plugin-sandbox.ts'),
+        },
       },
     },
   },

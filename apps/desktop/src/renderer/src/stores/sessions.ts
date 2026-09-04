@@ -369,6 +369,7 @@ export const useSessionStore = defineStore('sessions', () => {
       agencyPrompt: null,
       title: null,
       model: plain.model ?? null,
+      harnessId: plain.harnessId,
       effort: plain.effort ?? null,
       permissionMode: plain.permissionMode ?? null,
       status: 'starting',
@@ -394,8 +395,7 @@ export const useSessionStore = defineStore('sessions', () => {
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
-      workItemKey: plain.workItemKey ?? null,
-      workItemTitle: plain.workItemTitle ?? null,
+      workItem: plain.workItem ?? null,
       planState: null,
       isDraft: false,
       draftConfig: null,
@@ -520,8 +520,7 @@ export const useSessionStore = defineStore('sessions', () => {
     model?: string | null
     effort?: RoleEffort | null
     permissionMode?: PermissionMode | null
-    workItemKey?: string | null
-    workItemTitle?: string | null
+    workItem?: Session['workItem']
     isEntryPoint?: boolean
     roleId?: string | null
     roleInstanceIndex?: number | null
@@ -554,8 +553,7 @@ export const useSessionStore = defineStore('sessions', () => {
         interruptedAt: null,
         currentTurnStartedAt: null,
         currentTurnEndedAt: null,
-        workItemKey: entry.workItemKey ?? null,
-        workItemTitle: entry.workItemTitle ?? null,
+        workItem: entry.workItem ?? null,
         planState: null,
         isDraft: false,
         draftConfig: null,
@@ -739,8 +737,7 @@ export const useSessionStore = defineStore('sessions', () => {
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
-      workItemKey: null,
-      workItemTitle: null,
+      workItem: null,
       planState: null,
       isDraft: false,
       draftConfig: null,
@@ -805,8 +802,7 @@ export const useSessionStore = defineStore('sessions', () => {
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
-      workItemKey: null,
-      workItemTitle: null,
+      workItem: null,
       planState: null,
       isDraft: false,
       draftConfig: null,
@@ -887,8 +883,7 @@ export const useSessionStore = defineStore('sessions', () => {
       interruptedAt: null,
       currentTurnStartedAt: null,
       currentTurnEndedAt: null,
-      workItemKey: null,
-      workItemTitle: null,
+      workItem: null,
       planState: null,
       isDraft: true,
       draftConfig: {

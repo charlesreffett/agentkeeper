@@ -1,45 +1,20 @@
 import * as fs from 'node:fs'
+import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
 import { app } from 'electron'
 import { PluginManifestSchema, type PluginManifest } from '@agentkeeper/sdk'
 import { PluginHost } from './plugin-host.js'
-import { createPluginProxy, createDenyAllProxy } from './plugin-proxy.js'
 import { getRawSqlite } from './db/index.js'
 import { getPluginEventBus } from './plugins.js'
 import type { WorkItemRegistryFull } from './plugins.js'
+import { requirePluginFile } from './plugin-paths.js'
+import { authoritiesEqual, authorityFromManifest, parseAuthority } from './plugin-authority.js'
+import semver from 'semver'
 
 const activeHosts = new Map<string, PluginHost>()
 // dormantRegistry: activationEvent → manifests not yet activated
 const dormantRegistry = new Map<string, PluginManifest[]>()
 let _workItemRegistry: WorkItemRegistryFull | null = null
-
-export async function scanPluginDirectories(userDataPath: string): Promise<PluginManifest[]> {
-  const dirs = [
-    path.join(userDataPath, 'plugins', 'installed'),
-    path.join(userDataPath, 'plugins', 'dev'),
-  ]
-  const manifests: PluginManifest[] = []
-  for (const dir of dirs) {
-    if (!fs.existsSync(dir)) continue
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue
-      const manifestPath = path.join(dir, entry.name, 'manifest.json')
-      if (!fs.existsSync(manifestPath)) continue
-      try {
-        const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-        const result = PluginManifestSchema.safeParse(raw)
-        if (!result.success) {
-          console.warn(`[plugin-loader] invalid manifest at ${manifestPath}:`, result.error.flatten())
-          continue
-        }
-        manifests.push(result.data)
-      } catch (err) {
-        console.warn(`[plugin-loader] failed to read ${manifestPath}:`, err)
-      }
-    }
-  }
-  return manifests
-}
 
 export function buildDormantRegistry(manifests: PluginManifest[]): void {
   dormantRegistry.clear()
@@ -54,10 +29,30 @@ export function buildDormantRegistry(manifests: PluginManifest[]): void {
 
 export async function spawnPlugin(manifest: PluginManifest, webContents?: Electron.WebContents): Promise<void> {
   const db = getRawSqlite()
-  const row = db.prepare('SELECT enabled FROM plugin_registry WHERE id = ?').get(manifest.id) as { enabled: number } | undefined
-  if (row && row.enabled === 0) {
+  const row = db.prepare(
+    'SELECT version, enabled, manifest, action_required, granted_authority FROM plugin_registry WHERE id = ?',
+  ).get(manifest.id) as {
+    version: string
+    enabled: number
+    manifest: string
+    action_required: number
+    granted_authority: string
+  } | undefined
+  if (!row) {
+    throw new Error(`[plugin-loader] refusing to spawn unregistered plugin: ${manifest.id}`)
+  }
+  if (row.enabled === 0 || row.action_required === 1) {
     console.info(`[plugin-loader] skipping disabled plugin: ${manifest.id}`)
     return
+  }
+  const registered = PluginManifestSchema.safeParse(JSON.parse(row.manifest) as unknown)
+  if (!registered.success || registered.data.id !== manifest.id || row.version !== manifest.version) {
+    throw new Error(`[plugin-loader] manifest does not match the approved registry record: ${manifest.id}`)
+  }
+  const authority = parseAuthority(row.granted_authority)
+  if (!authoritiesEqual(authority, authorityFromManifest(registered.data))) {
+    db.prepare('UPDATE plugin_registry SET enabled = 0, action_required = 1 WHERE id = ?').run(manifest.id)
+    throw new Error(`[plugin-loader] approved authority does not match manifest: ${manifest.id}`)
   }
 
   // Check min_app_version
@@ -73,21 +68,22 @@ export async function spawnPlugin(manifest: PluginManifest, webContents?: Electr
 
   const entryPath = resolveEntryPath(manifest)
 
-  const hasNetwork = manifest.permissions.includes('network')
-  const proxy = hasNetwork
-    ? await createPluginProxy(manifest.id, manifest.network?.hosts ?? [])
-    : createDenyAllProxy(manifest.id)
-
   const bus = getPluginEventBus()
   if (!bus) throw new Error('[plugin-loader] event bus not initialized')
 
+  const entryStat = await fsp.lstat(entryPath)
+  if (!entryStat.isFile() || entryStat.isSymbolicLink() || entryStat.size > 20 * 1024 * 1024) {
+    throw new Error(`[plugin-loader] invalid backend artifact: ${manifest.id}`)
+  }
+  const pluginSource = await fsp.readFile(entryPath, 'utf8')
   const host = new PluginHost(
     manifest,
-    entryPath,
-    proxy.url,
+    pluginSource,
+    authority,
     bus,
     _workItemRegistry!,
     webContents,
+    () => activeHosts.delete(manifest.id),
   )
 
   await host.spawn()
@@ -115,24 +111,16 @@ function resolveEntryPath(manifest: PluginManifest): string {
   const db = getRawSqlite()
   const row = db.prepare('SELECT dev_path, source FROM plugin_registry WHERE id = ?').get(manifest.id) as { dev_path: string | null; source: string } | undefined
   if (row?.dev_path) {
-    return path.join(row.dev_path, manifest.entry)
+    return requirePluginFile(row.dev_path, manifest.entry, 'Plugin entry')
   }
   // Installed: plugins/installed/{id}@{version}/
   const userDataPath = app.getPath('userData')
   const installedDir = path.join(userDataPath, 'plugins', 'installed', `${manifest.id}@${manifest.version}`)
-  return path.join(installedDir, manifest.entry)
+  return requirePluginFile(installedDir, manifest.entry, 'Plugin entry')
 }
 
 function satisfiesMinVersion(appVer: string, minVer: string): boolean {
-  const parse = (v: string) => v.split('.').map(Number)
-  const a = parse(appVer)
-  const b = parse(minVer)
-  for (let i = 0; i < 3; i++) {
-    const av = a[i] ?? 0, bv = b[i] ?? 0
-    if (av > bv) return true
-    if (av < bv) return false
-  }
-  return true
+  return semver.valid(appVer) !== null && semver.valid(minVer) !== null && semver.gte(appVer, minVer)
 }
 
 export async function fireActivationEvent(event: string, webContents?: Electron.WebContents): Promise<void> {
@@ -172,26 +160,27 @@ export async function initPluginLoader(
   webContents?: Electron.WebContents,
 ): Promise<void> {
   _workItemRegistry = workItemRegistry
-  const userDataPath = app.getPath('userData')
-  const manifests = await scanPluginDirectories(userDataPath)
-
-  // Also activate DB-registered plugins with dev_path (bundled and dev-loaded)
   const db = getRawSqlite()
-  const devRows = db.prepare(
-    "SELECT manifest, dev_path FROM plugin_registry WHERE enabled = 1 AND dev_path IS NOT NULL"
-  ).all() as { manifest: string; dev_path: string }[]
+  const rows = db.prepare(
+    'SELECT id, version, manifest FROM plugin_registry WHERE enabled = 1 AND action_required = 0',
+  ).all() as Array<{ id: string; version: string; manifest: string }>
+  const manifests: PluginManifest[] = []
 
-  for (const row of devRows) {
+  // The registry is the consent boundary. Never discover executable packages by
+  // walking writable directories: an orphaned/partially-installed directory or a
+  // manually dropped package must not become executable merely because it exists.
+  for (const row of rows) {
     try {
       const raw = JSON.parse(row.manifest) as unknown
       const result = PluginManifestSchema.safeParse(raw)
-      if (!result.success) continue
-      const m = result.data
-      if (manifests.some(existing => existing.id === m.id)) continue
-      const entryFull = path.join(row.dev_path, m.entry)
-      if (!fs.existsSync(entryFull)) continue
-      manifests.push(m)
-    } catch { /* skip malformed rows */ }
+      if (!result.success || result.data.id !== row.id || result.data.version !== row.version) {
+        console.warn(`[plugin-loader] invalid approved manifest for ${row.id}`)
+        continue
+      }
+      manifests.push(result.data)
+    } catch (error) {
+      console.warn(`[plugin-loader] failed to read approved manifest for ${row.id}:`, error)
+    }
   }
 
   buildDormantRegistry(manifests)

@@ -51,9 +51,7 @@ export interface ActiveSession {
   status: LiveSessionStatus
   startedAt: number
   initialPrompt: string
-  workItemId: string | null
-  workItemKey: string | null
-  workItemTitle: string | null
+  workItem: StartSessionParams['workItem']
   /** Full harness event history for orchestrator routing. */
   events: HarnessEvent[]
   /** Last-known TodoWrite todo list, kept in sync during the session. */
@@ -422,14 +420,14 @@ async function consumeStream(session: ActiveSession): Promise<void> {
     }
     if (session.status !== 'suspended' && session.status !== 'idle') {
       setStatus(session, 'completed')
-      if (session.workItemId && workItemRegistry) {
+      if (session.workItem && workItemRegistry) {
         const branch = session.worktreePath
           ? path.basename(session.worktreePath)
           : path.basename(session.projectPath ?? '')
         const ts = new Date().toISOString()
         workItemRegistry
           .addComment(
-            session.workItemId,
+            session.workItem,
             `🤖 Session completed\n\nBranch: \`${branch}\`\nFinished: ${ts}`,
           )
           .catch(() => {})
@@ -555,8 +553,8 @@ export async function startSession(
   extras: InternalStartExtras = {},
 ): Promise<string> {
   let systemPromptAppend = params.systemPromptAppend
-  if (params.workItemId && workItemRegistry) {
-    const item = await workItemRegistry.get(params.workItemId)
+  if (params.workItem && workItemRegistry) {
+    const item = await workItemRegistry.get(params.workItem)
     if (item) {
       const itemContext = [
         `## Work Item: ${item.title}`,
@@ -629,8 +627,7 @@ export async function startSession(
       agencyId: params.agencyId ?? null,
       agencyScope: params.agencyScope ?? null,
       title: null,
-      workItemKey: params.workItemKey ?? null,
-      workItemTitle: params.workItemTitle ?? null,
+      workItem: params.workItem ?? null,
       status: 'starting',
       startedAt: now,
       lastActivityAt: now,
@@ -727,9 +724,7 @@ export async function startSession(
     status: 'starting',
     startedAt: now,
     initialPrompt: params.initialPrompt,
-    workItemId: params.workItemId ?? null,
-    workItemKey: params.workItemKey ?? null,
-    workItemTitle: params.workItemTitle ?? null,
+    workItem: params.workItem ?? null,
     events: [],
     planState: null,
     idleWaiters: [],
@@ -1032,7 +1027,7 @@ export function listActiveSessions(): Array<{
   status: LiveSessionStatus
   startedAt: number
   model: string | undefined
-  workItemId: string | null
+  workItem: StartSessionParams['workItem']
 }> {
   return Array.from(active.values()).map((s) => ({
     id: s.id,
@@ -1043,7 +1038,7 @@ export function listActiveSessions(): Array<{
     status: s.status,
     startedAt: s.startedAt,
     model: s.model,
-    workItemId: s.workItemId,
+    workItem: s.workItem,
   }))
 }
 

@@ -21,12 +21,14 @@ const emit = defineEmits<{
 }>()
 
 const permissionLabels: Record<string, string> = {
-  workItems: 'Read and create work items (Jira / GitHub Issues)',
+  workItems: 'Read and create work items',
   secrets:   'Store credentials in the OS keychain',
   commands:  'Register slash commands in sessions',
-  sidebar:   'Add entries to the app sidebar',
+  ui:        'Add plugin routes and navigation',
   background:'Run tasks in the background',
   network:   'Make outbound network requests',
+  nativeProcess: 'Execute arbitrary programs with your user permissions',
+  environment: 'Read the environment variables declared below',
 }
 </script>
 
@@ -76,6 +78,11 @@ const permissionLabels: Record<string, string> = {
               {{ host }}
             </li>
           </ul>
+        </div>
+
+        <div v-if="manifest.environment?.variables?.length" class="space-y-1">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Environment variables</p>
+          <code class="text-xs">{{ manifest.environment.variables.join(', ') }}</code>
         </div>
       </div>
 

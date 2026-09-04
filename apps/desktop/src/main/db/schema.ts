@@ -15,7 +15,9 @@ export const sessions = sqliteTable('sessions', {
   agencyId: text('agency_id'),
   agencyScope: text('agency_scope'),
   title: text('title'),
-  workItemKey: text('work_item_key'),
+  workItemSourceId: text('work_item_source_id'),
+  workItemId: text('work_item_id'),
+  workItemExternalRef: text('work_item_external_ref'),
   workItemTitle: text('work_item_title'),
   planState: text('plan_state'),
   status: text('status').notNull().default('idle'),
@@ -109,6 +111,9 @@ export const plans = sqliteTable('plans', {
   projectId: text('project_id').notNull().references(() => projects.path, { onDelete: 'cascade' }),
   sessionId: text('session_id').references(() => sessions.localId, { onDelete: 'set null' }),
   workItemId: text('work_item_id'),
+  workItemSourceId: text('work_item_source_id'),
+  workItemExternalRef: text('work_item_external_ref'),
+  workItemTitle: text('work_item_title'),
   planRef: text('plan_ref'),
   title: text('title').notNull(),
   prompt: text('prompt'),
@@ -140,14 +145,8 @@ export const pluginRegistry = sqliteTable('plugin_registry', {
   source: text('source').notNull(),
   installedAt: integer('installed_at').notNull(),
   devPath: text('dev_path'),
-})
-
-export const jiraTicketActivity = sqliteTable('jira_ticket_activity', {
-  id: text('id').primaryKey(),
-  ticketRef: text('ticket_ref').notNull(),
-  actor: text('actor').notNull(),
-  message: text('message').notNull(),
-  createdAt: integer('created_at').notNull(),
+  grantedAuthority: text('granted_authority').notNull().default('{"permissions":[],"networkHosts":[],"environmentVariables":[]}'),
+  actionRequired: integer('action_required').notNull().default(0),
 })
 
 export const planSteps = sqliteTable('plan_steps', {

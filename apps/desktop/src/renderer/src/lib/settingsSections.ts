@@ -13,8 +13,6 @@ export const settingsSections: readonly SettingsSection[] = [
   { path: '/settings/appearance', label: 'Appearance', icon: 'Palette', group: 'Settings' },
   { path: '/settings/plugins', label: 'Plugins', icon: 'Puzzle', group: 'Settings' },
   { path: '/settings/remote', label: 'Remote', icon: 'Radio', group: 'Settings' },
-  { path: '/settings/github', label: 'GitHub', icon: 'GitPullRequest', group: 'Integrations' },
-  { path: '/settings/jira', label: 'Jira', icon: 'Layers', group: 'Integrations' },
   { path: '/settings/mcp', label: 'MCP Servers', icon: 'Plug', group: 'Integrations' },
   { path: '/settings/updates', label: 'Updates', icon: 'Download', group: 'System' },
   { path: '/settings/data', label: 'Data & Reset', icon: 'RotateCcw', group: 'System' },

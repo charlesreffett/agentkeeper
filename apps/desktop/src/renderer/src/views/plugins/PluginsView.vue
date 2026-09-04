@@ -2,6 +2,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { queryKeys } from '@/lib/queryKeys'
+import { toast } from 'vue-sonner'
 import type { PluginRecord, UpdateAvailable } from '@shared/ipc-contract'
 import type { PluginManifest } from '@agentkeeper/sdk'
 import { Button } from '@/components/ui/button'
@@ -77,7 +78,25 @@ function onMutationError(err: unknown) {
 const { mutate: doEnable }    = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.enable(id),    onSuccess: invalidate, onError: onMutationError })
 const { mutate: doDisable }   = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.disable(id),   onSuccess: invalidate, onError: onMutationError })
 const { mutate: doUninstall } = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.uninstall(id), onSuccess: invalidate, onError: onMutationError })
-const { mutate: doUpdate }    = useMutation({ mutationFn: (id: string) => window.agentkeeper.plugins.update(id),    onSuccess: invalidate, onError: onMutationError })
+const { mutate: doUpdate }    = useMutation({
+  mutationFn: (id: string) => window.agentkeeper.plugins.update(id),
+  onSuccess: (result) => {
+    invalidate()
+    if (result.actionRequired) {
+      toast.warning('Plugin updated and disabled', { description: 'Its requested access changed. Review the new permissions to continue using it.' })
+    }
+  },
+  onError: onMutationError,
+})
+const { mutate: doApprovePermissions } = useMutation({
+  mutationFn: (id: string) => window.agentkeeper.plugins.approvePermissions(id),
+  onSuccess: () => {
+    reviewPermissionsPlugin.value = null
+    toast.success('Plugin permissions approved')
+    invalidate()
+  },
+  onError: onMutationError,
+})
 
 // ── Enable / Disable toggle ───────────────────────────────────────────────────
 
@@ -89,7 +108,7 @@ const localEnabled = reactive<Record<string, boolean>>({})
 watch(plugins, (list) => {
   const liveIds = new Set(list?.map(p => p.id) ?? [])
   for (const p of list ?? []) {
-    if (!(p.id in localEnabled)) localEnabled[p.id] = p.enabled
+    if (!(p.id in localEnabled) || p.actionRequired) localEnabled[p.id] = p.enabled
   }
   for (const id of Object.keys(localEnabled)) {
     if (!liveIds.has(id)) delete localEnabled[id]
@@ -125,12 +144,14 @@ const canContinue = computed(() =>
 )
 
 const permissionLabels: Record<string, string> = {
-  workItems:  'Read and create work items (Jira / GitHub Issues)',
+  workItems:  'Read and create work items',
   secrets:    'Store credentials in the OS keychain',
   commands:   'Register slash commands in sessions',
-  sidebar:    'Add entries to the app sidebar',
+  ui:         'Add plugin routes and navigation',
   background: 'Run tasks in the background',
   network:    'Make outbound network requests',
+  nativeProcess: 'Execute arbitrary programs with your user permissions',
+  environment: 'Read declared environment variables',
 }
 
 function resetInstallDialog() {
@@ -258,6 +279,18 @@ function confirmUpdate() {
   }
   confirmUpdateId.value = null
 }
+
+const reviewPermissionsPlugin = ref<PluginRecord | null>(null)
+
+const addedAuthority = computed(() => {
+  const plugin = reviewPermissionsPlugin.value
+  if (!plugin) return { permissions: [], networkHosts: [], environmentVariables: [] }
+  return {
+    permissions: plugin.manifest.permissions.filter(value => !plugin.grantedAuthority.permissions.includes(value)),
+    networkHosts: (plugin.manifest.network?.hosts ?? []).filter(value => !plugin.grantedAuthority.networkHosts.includes(value)),
+    environmentVariables: (plugin.manifest.environment?.variables ?? []).filter(value => !plugin.grantedAuthority.environmentVariables.includes(value)),
+  }
+})
 
 // ── Settings sheet ────────────────────────────────────────────────────────────
 
@@ -432,8 +465,8 @@ function openExternal(url: string) {
         v-else-if="!plugins || plugins.length === 0"
         class="text-sm text-muted-foreground"
       >
-        No plugins installed. Click <strong>Install from GitHub</strong> to add a plugin, or
-        <strong>Load dev plugin</strong> to point at a local directory during development.
+        No plugins installed. Click <strong>Install from AKP</strong> to add a packaged plugin, or
+        <strong>Load unpacked</strong> to point at a local directory during development.
       </div>
 
       <ul v-else class="divide-y divide-border/50">
@@ -474,6 +507,11 @@ function openExternal(url: string) {
                 :title="plugin.status === 'unhealthy' ? (plugin.unhealthyReason ?? plugin.status) : plugin.status"
               >{{ plugin.status }}</span>
               <button
+                v-if="plugin.actionRequired"
+                class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-500 hover:bg-amber-500/30 transition-colors"
+                @click="reviewPermissionsPlugin = plugin"
+              >Action required</button>
+              <button
                 v-if="pendingUpdates.has(plugin.id)"
                 class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
                 @click="promptUpdate(plugin)"
@@ -504,6 +542,7 @@ function openExternal(url: string) {
             <Switch
               v-model="localEnabled[plugin.id]"
               class="data-[state=checked]:bg-amber-500"
+              :disabled="plugin.actionRequired"
             />
 
             <!-- More actions dropdown -->
@@ -531,8 +570,10 @@ function openExternal(url: string) {
                   Settings
                 </DropdownMenuItem>
                 <DropdownMenuSeparator v-if="plugin.manifest.homepage_url || plugin.manifest.settings_schema" />
-                <DropdownMenuItem @click="localEnabled[plugin.id] = !localEnabled[plugin.id]">
-                  {{ localEnabled[plugin.id] ? 'Disable' : 'Enable' }}
+                <DropdownMenuItem
+                  @click="plugin.actionRequired ? (reviewPermissionsPlugin = plugin) : (localEnabled[plugin.id] = !localEnabled[plugin.id])"
+                >
+                  {{ plugin.actionRequired ? 'Review permissions…' : (localEnabled[plugin.id] ? 'Disable' : 'Enable') }}
                 </DropdownMenuItem>
                 <template v-if="plugin.source !== 'bundled'">
                   <DropdownMenuSeparator />
@@ -588,6 +629,49 @@ function openExternal(url: string) {
         <AlertDialogFooter>
           <AlertDialogCancel @click="confirmUpdateId = null">Cancel</AlertDialogCancel>
           <AlertDialogAction @click="confirmUpdate">Update</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- Permission changes installed by an update require explicit approval. -->
+    <AlertDialog
+      :open="reviewPermissionsPlugin !== null"
+      @update:open="(open) => { if (!open) reviewPermissionsPlugin = null }"
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Review changed plugin access</AlertDialogTitle>
+          <AlertDialogDescription>
+            <template v-if="reviewPermissionsPlugin">
+              <strong>{{ reviewPermissionsPlugin.name }}</strong> was updated but remains disabled until you approve its new access.
+            </template>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div class="space-y-3 text-sm">
+          <div v-if="addedAuthority.permissions.length">
+            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">New permissions</p>
+            <ul class="space-y-1">
+              <li v-for="permission in addedAuthority.permissions" :key="permission" class="flex gap-2">
+                <span class="text-amber-500">⚠</span>
+                <span>{{ permissionLabels[permission] ?? permission }}</span>
+              </li>
+            </ul>
+          </div>
+          <div v-if="addedAuthority.networkHosts.length">
+            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">New network origins</p>
+            <code v-for="host in addedAuthority.networkHosts" :key="host" class="block text-xs">{{ host }}</code>
+          </div>
+          <div v-if="addedAuthority.environmentVariables.length">
+            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">New environment variables</p>
+            <code class="text-xs">{{ addedAuthority.environmentVariables.join(', ') }}</code>
+          </div>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel @click="reviewPermissionsPlugin = null">Keep disabled</AlertDialogCancel>
+          <AlertDialogAction
+            v-if="reviewPermissionsPlugin"
+            @click="doApprovePermissions(reviewPermissionsPlugin.id)"
+          >Approve and enable</AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
