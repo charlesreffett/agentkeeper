@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { settingsStore } from '../settings'
 
@@ -17,6 +18,32 @@ export interface BinConfig {
 
 const CANDIDATE_EXTENSIONS = process.platform === 'win32' ? ['', '.exe', '.cmd', '.bat'] : ['']
 
+/** GUI apps on macOS inherit launchd's minimal PATH rather than the user's
+ * interactive-shell PATH. Include the conventional per-user CLI locations so
+ * a preview/packaged build sees the same harness installs as the dev build. */
+export function executableSearchDirs(
+  envPath = process.env.PATH ?? '',
+  home = os.homedir(),
+  platform = process.platform,
+): string[] {
+  const pathDirs = envPath.split(path.delimiter).filter(Boolean)
+  if (platform === 'win32') return [...new Set(pathDirs)]
+
+  const userDirs = [
+    path.join(home, '.local', 'bin'),
+    path.join(home, '.opencode', 'bin'),
+    path.join(home, '.grok', 'bin'),
+    path.join(home, '.cargo', 'bin'),
+    path.join(home, '.npm-global', 'bin'),
+    ...(platform === 'darwin' ? [path.join(home, 'Library', 'pnpm')] : []),
+  ]
+  const systemDirs = platform === 'darwin'
+    ? ['/opt/homebrew/bin', '/usr/local/bin']
+    : ['/usr/local/bin']
+
+  return [...new Set([...pathDirs, ...userDirs, ...systemDirs])]
+}
+
 function isExecutable(p: string): boolean {
   try {
     fs.accessSync(p, fs.constants.X_OK)
@@ -31,7 +58,7 @@ function which(bin: string): string | null {
   if (bin.includes('/') || bin.includes('\\')) {
     return isExecutable(bin) ? bin : null
   }
-  for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
+  for (const dir of executableSearchDirs()) {
     for (const ext of CANDIDATE_EXTENSIONS) {
       const candidate = path.join(dir, bin + ext)
       if (isExecutable(candidate)) return candidate

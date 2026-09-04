@@ -50,6 +50,14 @@ describe('Settings navigation structure', () => {
     expect(settings).toContain('<EffortPicker')
   })
 
+  it('exposes a per-harness binary path override', () => {
+    const settings = source('views/settings/ModelsSettingsView.vue')
+    expect(settings).toContain('binaryPathFor(harness.id)')
+    expect(settings).toContain('setBinaryPath(harness.id')
+    expect(settings).toContain('Binary executable')
+    expect(settings).toContain('harnessBins')
+  })
+
   it('keeps the light sidebar active surface distinct from its background', () => {
     const styles = source('style.css')
     const lightTheme = styles.slice(styles.indexOf(':root'), styles.indexOf('.dark'))

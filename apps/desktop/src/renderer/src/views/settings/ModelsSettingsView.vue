@@ -18,7 +18,7 @@ const { data: harnesses } = useHarnessList()
 const { data: harnessAuth } = useHarnessAuth()
 const setActiveHarness = useSetActiveHarness()
 
-const draft = ref<Pick<AppSettings, 'defaultModel' | 'defaultEffort' | 'harnessId'> | null>(null)
+const draft = ref<Pick<AppSettings, 'defaultModel' | 'defaultEffort' | 'harnessId' | 'harnessBins'> | null>(null)
 const baseline = ref<typeof draft.value>(null)
 const configValues = ref<Record<string, string | boolean>>({})
 const configBaseline = ref<Record<string, string | boolean>>({})
@@ -33,12 +33,25 @@ watch(storedSettings, (value) => {
     defaultModel: value.defaultModel,
     defaultEffort: ROLE_EFFORT_VALUES.includes(value.defaultEffort) ? value.defaultEffort : 'medium',
     harnessId: value.harnessId,
+    harnessBins: { ...value.harnessBins },
   }
-  draft.value = { ...next }
-  baseline.value = { ...next }
+  draft.value = { ...next, harnessBins: { ...next.harnessBins } }
+  baseline.value = { ...next, harnessBins: { ...next.harnessBins } }
 }, { immediate: true })
 
 const activeHarness = computed(() => harnesses.value?.find(item => item.id === draft.value?.harnessId))
+
+function binaryPathFor(harnessId: string): string {
+  return draft.value?.harnessBins?.[harnessId] ?? ''
+}
+
+function setBinaryPath(harnessId: string, value: string): void {
+  if (!draft.value) return
+  const harnessBins = { ...draft.value.harnessBins }
+  if (value) harnessBins[harnessId] = value
+  else delete harnessBins[harnessId]
+  draft.value.harnessBins = harnessBins
+}
 
 watch(() => draft.value?.harnessId, async (id) => {
   if (!id) return
@@ -87,6 +100,11 @@ async function save() {
   if (!draft.value || !isDirty.value) return
   saving.value = true
   try {
+    const harnessBins = Object.fromEntries(
+      Object.entries(draft.value.harnessBins ?? {})
+        .map(([id, value]) => [id, value.trim()])
+        .filter(([, value]) => value),
+    )
     const harnessId = draft.value.harnessId
     if (harnessId) {
       await window.agentkeeper.harness.setConfiguration(harnessId, configValues.value)
@@ -95,8 +113,9 @@ async function save() {
       }
       await setActiveHarness.mutateAsync(harnessId)
     }
-    await saveSettings({ ...draft.value })
-    baseline.value = { ...draft.value }
+    await saveSettings({ ...draft.value, harnessBins })
+    draft.value.harnessBins = { ...harnessBins }
+    baseline.value = { ...draft.value, harnessBins: { ...harnessBins } }
     configBaseline.value = { ...configValues.value }
     secretInputs.value = {}
     toast.success('Models and harnesses saved')
@@ -106,7 +125,7 @@ async function save() {
 }
 
 function discard() {
-  if (baseline.value) draft.value = { ...baseline.value }
+  if (baseline.value) draft.value = { ...baseline.value, harnessBins: { ...baseline.value.harnessBins } }
   configValues.value = { ...configBaseline.value }
   secretInputs.value = {}
 }
@@ -142,10 +161,16 @@ useSettingsLeavePrompt(isDirty, save)
       <section v-if="harnesses?.length" class="space-y-3" aria-labelledby="harnesses-heading">
         <h2 id="harnesses-heading" class="text-sm font-semibold">Available harnesses</h2>
         <div class="divide-y rounded-lg border">
-          <div v-for="harness in harnesses" :key="harness.id" class="flex items-center gap-3 px-4 py-3">
-            <span class="size-2 shrink-0 rounded-full" :class="!harness.available || ['unauthenticated', 'expired'].includes(authFor(harness.id)?.status ?? '') ? 'bg-destructive' : authFor(harness.id)?.status === 'unknown' ? 'bg-amber-500' : 'bg-emerald-500'" aria-hidden="true" />
-            <div class="min-w-0 flex-1"><p class="text-sm font-medium">{{ harness.name }}</p><p class="mt-0.5 text-xs text-muted-foreground">{{ harness.available ? (authFor(harness.id)?.detail ?? 'Available') : (harness.unavailableReason ?? 'Unavailable') }}</p></div>
-            <Button v-if="harness.available && harness.authentication?.login" size="sm" variant="outline" :disabled="authenticatingId !== null || authFor(harness.id)?.status === 'authenticated'" @click="authenticate(harness.id)">{{ authenticatingId === harness.id ? 'Authenticating…' : authFor(harness.id)?.status === 'authenticated' ? 'Authenticated' : (harness.authentication.login.label ?? 'Authenticate') }}</Button>
+          <div v-for="harness in harnesses" :key="harness.id" class="space-y-3 px-4 py-3">
+            <div class="flex items-center gap-3">
+              <span class="size-2 shrink-0 rounded-full" :class="!harness.available || ['unauthenticated', 'expired'].includes(authFor(harness.id)?.status ?? '') ? 'bg-destructive' : authFor(harness.id)?.status === 'unknown' ? 'bg-amber-500' : 'bg-emerald-500'" aria-hidden="true" />
+              <div class="min-w-0 flex-1"><p class="text-sm font-medium">{{ harness.name }}</p><p class="mt-0.5 text-xs text-muted-foreground">{{ harness.available ? (authFor(harness.id)?.detail ?? 'Available') : (harness.unavailableReason ?? 'Unavailable') }}</p></div>
+              <Button v-if="harness.available && harness.authentication?.login" size="sm" variant="outline" :disabled="authenticatingId !== null || authFor(harness.id)?.status === 'authenticated'" @click="authenticate(harness.id)">{{ authenticatingId === harness.id ? 'Authenticating…' : authFor(harness.id)?.status === 'authenticated' ? 'Authenticated' : (harness.authentication.login.label ?? 'Authenticate') }}</Button>
+            </div>
+            <div class="grid gap-1.5 pl-5 sm:grid-cols-[minmax(10rem,1fr)_minmax(16rem,22rem)] sm:items-center">
+              <label :for="`harness-binary-${harness.id}`" class="text-xs text-muted-foreground">Binary executable <span class="sr-only">for {{ harness.name }}</span></label>
+              <input :id="`harness-binary-${harness.id}`" :value="binaryPathFor(harness.id)" type="text" autocomplete="off" :placeholder="`Auto-detect ${harness.name}`" class="w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" @input="setBinaryPath(harness.id, ($event.target as HTMLInputElement).value)">
+            </div>
           </div>
         </div>
       </section>
@@ -153,7 +178,7 @@ useSettingsLeavePrompt(isDirty, save)
       <section v-if="activeHarness?.configuration?.fields.length" class="space-y-3" aria-labelledby="configuration-heading">
         <div><h2 id="configuration-heading" class="text-sm font-semibold">{{ activeHarness.name }} configuration</h2><p class="mt-1 text-xs text-muted-foreground">Harness-specific values and credentials.</p></div>
         <div class="space-y-4 rounded-lg border p-4">
-          <div v-for="field in activeHarness.configuration.fields" :key="field.id" class="space-y-1.5">
+          <div v-for="field in activeHarness.configuration?.fields ?? []" :key="field.id" class="space-y-1.5">
             <label :for="`harness-${field.id}`" class="text-xs font-medium">{{ field.label }}</label>
             <p v-if="field.description" class="text-xs text-muted-foreground">{{ field.description }}</p>
             <select v-if="field.type === 'select'" :id="`harness-${field.id}`" v-model="configValues[field.id]" class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><option v-for="choice in field.choices" :key="choice.value" :value="choice.value">{{ choice.label }}</option></select>
