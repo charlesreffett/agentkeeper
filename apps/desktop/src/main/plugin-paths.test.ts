@@ -39,5 +39,17 @@ describe('plugin paths', () => {
     expect(() => validatePluginArchiveEntries(['manifest.json', '..\\outside'])).toThrow('unsafe path')
     expect(() => validatePluginArchiveEntries(['/absolute'])).toThrow('unsafe path')
   })
-})
 
+  it('rejects archive paths that collide on common target filesystems', () => {
+    expect(() => validatePluginArchiveEntries(['manifest.json', 'MANIFEST.JSON']))
+      .toThrow('duplicate paths')
+
+    // NFC and NFD spellings are different ZIP entry names but the same filename
+    // on Unicode-normalizing filesystems such as the default macOS filesystem.
+    expect(() => validatePluginArchiveEntries(['caf\u00e9.js', 'cafe\u0301.js']))
+      .toThrow('duplicate paths')
+
+    expect(() => validatePluginArchiveEntries(['dist/', 'dist']))
+      .toThrow('duplicate paths')
+  })
+})

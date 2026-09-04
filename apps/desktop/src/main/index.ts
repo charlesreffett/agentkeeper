@@ -12,7 +12,7 @@ app.name = 'AgentKeeper'
 import path from 'node:path'
 import * as net from 'node:net'
 import * as fsp from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { registerIpcHandlers, wirePluginEventRelay } from './ipc'
 import { warmAvailableModels } from './models'
 import { warmCapabilities } from './capabilities'
@@ -31,6 +31,8 @@ import { runLegacyImport } from './db/legacy-import'
 import { pruneOrphanedDrafts } from './drafts'
 import { stopAllWatchers, removeSubscriber } from './watcher.js'
 import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
+import { isTrustedRendererNavigation, normalizeExternalUrl } from './navigation-policy'
+import { RENDERER_SECURITY_WEB_PREFERENCES } from './renderer-security-policy'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const devUserDataPath = process.env['AGENTKEEPER_USER_DATA_DIR']
@@ -42,6 +44,37 @@ const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
 
 let cliServer: net.Server | null = null
+const externalPromptWindows = new Set<number>()
+const externalPromptCooldowns = new Map<number, number>()
+const EXTERNAL_PROMPT_COOLDOWN_MS = 10_000
+
+async function confirmOpenExternal(win: BrowserWindow, requestedUrl: string): Promise<void> {
+  const target = normalizeExternalUrl(requestedUrl)
+  const now = Date.now()
+  if (!target || win.isDestroyed() || externalPromptWindows.has(win.id)
+    || now < (externalPromptCooldowns.get(win.id) ?? 0)) return
+
+  externalPromptWindows.add(win.id)
+  externalPromptCooldowns.set(win.id, now + EXTERNAL_PROMPT_COOLDOWN_MS)
+  try {
+    const parsed = new URL(target)
+    const result = await dialog.showMessageBox(win, {
+      type: 'question',
+      buttons: ['Cancel', 'Open in browser'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+      title: 'Open external link?',
+      message: `Open ${parsed.hostname} in your browser?`,
+      detail: target,
+    })
+    if (result.response === 1) await shell.openExternal(target)
+  } catch (error) {
+    console.warn('[navigation] failed to open external URL:', error)
+  } finally {
+    externalPromptWindows.delete(win.id)
+  }
+}
 
 async function startCliSocket(): Promise<void> {
   const userDataPath = app.getPath('userData')
@@ -84,6 +117,9 @@ async function startCliSocket(): Promise<void> {
 }
 
 function createWindow(): BrowserWindow {
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
+  const rendererEntryUrl = devUrl ?? packagedRendererUrl
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -96,9 +132,7 @@ function createWindow(): BrowserWindow {
       : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.mjs'),
-      sandbox: false,
-      contextIsolation: true,
-      nodeIntegration: false,
+      ...RENDERER_SECURITY_WEB_PREFERENCES,
     },
   })
 
@@ -111,18 +145,33 @@ function createWindow(): BrowserWindow {
   })
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    void confirmOpenExternal(win, url)
     return { action: 'deny' }
   })
 
   win.webContents.on('will-navigate', (event, url) => {
-    if (!url.startsWith('file://') && !url.startsWith('http://localhost')) {
-      event.preventDefault()
-      shell.openExternal(url)
-    }
+    if (isTrustedRendererNavigation(url, rendererEntryUrl)) return
+    event.preventDefault()
+    void confirmOpenExternal(win, url)
   })
 
-  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  win.webContents.on('will-redirect', (event, url) => {
+    if (isTrustedRendererNavigation(url, rendererEntryUrl)) return
+    event.preventDefault()
+    void confirmOpenExternal(win, url)
+  })
+
+  // Plugin views live in sandboxed srcdoc frames. A frame can normally
+  // navigate itself even without allow-top-navigation, which would bypass its
+  // document CSP and could become a network beacon. Keep every child frame on
+  // its host-provided srcdoc/about:blank document.
+  win.webContents.on('will-frame-navigate', (details) => {
+    if (details.isMainFrame || details.url === 'about:srcdoc' || details.url === 'about:blank') return
+    details.preventDefault()
+  })
+
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault())
+
   if (devUrl) {
     win.loadURL(devUrl)
   } else {
@@ -213,17 +262,19 @@ app.whenReady().then(async () => {
   pruneLegacyBundledPlugins()
   const registry = new WorkItemRegistryImpl()
   setWorkItemRegistry(registry)
-  registerIpcHandlers(registry)
   initHarnessDefault(settingsStore.get().harnessId)
   warmAvailableModels()
   warmCapabilities()
   syncMobileServer(settingsStore.get())
   const win = createWindow()
+  registerIpcHandlers(registry, win.webContents)
   wirePluginEventRelay(win)
   await activatePlugins(registry, win.webContents)
   initializeAppUpdater()
   setWebContentsOnActiveHosts(win.webContents)
   win.webContents.on('destroyed', () => {
+    externalPromptWindows.delete(win.id)
+    externalPromptCooldowns.delete(win.id)
     removeSubscriber(win.webContents.id)
   })
   await startCliSocket()

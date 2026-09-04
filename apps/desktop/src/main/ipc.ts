@@ -40,8 +40,7 @@ import {
   confirmAkpInstall,
   disablePlugin,
   enablePlugin,
-  installPlugin,
-  installPluginFromUrl,
+  approvePluginPermissions,
   listPlugins,
   loadDevPlugin,
   prepareAkpInstall,
@@ -115,7 +114,12 @@ async function pickProject(): Promise<RecentProject | null> {
   return project
 }
 
-export function registerIpcHandlers(registry: WorkItemRegistryFull) {
+export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebContents: Electron.WebContents) {
+  const assertTrustedMainRenderer = (event: Electron.IpcMainInvokeEvent): void => {
+    if (event.sender !== mainWebContents || event.senderFrame !== mainWebContents.mainFrame) {
+      throw new Error('Unauthorized plugin IPC sender')
+    }
+  }
   ipcMain.handle(IPC_CHANNELS.appUpdatesGetState, () => getAppUpdateState())
   ipcMain.handle(IPC_CHANNELS.appUpdatesCheck, () => checkForAppUpdate())
   ipcMain.handle(IPC_CHANNELS.appUpdatesDownload, () => downloadAppUpdate())
@@ -277,7 +281,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   ipcMain.handle(
     IPC_CHANNELS.pluginsGetRendererBundle,
-    (_event, pluginId: string, viewId: string) => getPluginRendererBundle(pluginId, viewId),
+    (event, pluginId: string, viewId: string) => { assertTrustedMainRenderer(event); return getPluginRendererBundle(pluginId, viewId) },
   )
 
   // Sessions — live. Every handler normalizes its error to a plain message
@@ -698,12 +702,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   // Plugin config
-  ipcMain.handle(IPC_CHANNELS.pluginsConfigGet, (_event, pluginId: string) =>
-    getPluginConfig(pluginId, getRawSqlite()),
+  ipcMain.handle(IPC_CHANNELS.pluginsConfigGet, (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
+    return getPluginConfig(pluginId, getRawSqlite())
+  },
   )
   ipcMain.handle(
     IPC_CHANNELS.pluginsConfigSet,
-    async (_event, pluginId: string, config: unknown) => {
+    async (event, pluginId: string, config: unknown) => {
+      assertTrustedMainRenderer(event)
       try {
         return await setPluginConfig(pluginId, config, getRawSqlite())
       } catch (err) {
@@ -714,7 +721,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
   )
 
   // Plugin management
-  ipcMain.handle(IPC_CHANNELS.pluginsList, () => {
+  ipcMain.handle(IPC_CHANNELS.pluginsList, (event) => {
+    assertTrustedMainRenderer(event)
     const rows = listPlugins()
     return rows.map((row) => ({
       id: row.id,
@@ -724,10 +732,13 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
       source: row.source as PluginSource,
       status: getActiveHost(row.id) ? 'active' : (row.enabled === 1 && row.source === 'bundled' ? 'active' : 'inactive'),
       manifest: JSON.parse(row.manifest),
+      actionRequired: row.action_required === 1,
+      grantedAuthority: JSON.parse(row.granted_authority),
     }))
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsPickAkpFile, async (): Promise<string | null> => {
+  ipcMain.handle(IPC_CHANNELS.pluginsPickAkpFile, async (event): Promise<string | null> => {
+    assertTrustedMainRenderer(event)
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const result = win
       ? await dialog.showOpenDialog(win, {
@@ -741,40 +752,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsInstall, async (_event, akpPath?: string): Promise<void> => {
-    try {
-      let filePath = akpPath
-      if (!filePath) {
-        const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
-        const result = win
-          ? await dialog.showOpenDialog(win, {
-              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
-              properties: ['openFile'],
-            })
-          : await dialog.showOpenDialog({
-              filters: [{ name: 'AgentKeeper Plugin', extensions: ['akp'] }],
-              properties: ['openFile'],
-            })
-        if (result.canceled || !result.filePaths[0]) return
-        filePath = result.filePaths[0]
-      }
-      await installPlugin(filePath)
-    } catch (err) {
-      console.error('[ipc] plugins:install failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-
-  ipcMain.handle(IPC_CHANNELS.pluginsInstallFromUrl, async (_event, manifestUrl: string) => {
-    try {
-      await installPluginFromUrl(manifestUrl)
-    } catch (err) {
-      console.error('[ipc] plugins:installFromUrl failed:', err)
-      throw new Error(err instanceof Error ? err.message : String(err))
-    }
-  })
-
-  ipcMain.handle(IPC_CHANNELS.pluginsPrepareAkpInstall, async (_event, opts: { filePath?: string; manifestUrl?: string }) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsPrepareAkpInstall, async (event, opts: { filePath?: string; manifestUrl?: string }) => {
+    assertTrustedMainRenderer(event)
     try {
       return await prepareAkpInstall(opts)
     } catch (err) {
@@ -783,8 +762,16 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsConfirmAkpInstall, async (_event, token: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsConfirmAkpInstall, async (event, token: string) => {
+    assertTrustedMainRenderer(event)
     try {
+      const confirmation = await dialog.showMessageBox(BrowserWindow.fromWebContents(mainWebContents)!, {
+        type: 'warning', buttons: ['Cancel', 'Install'], defaultId: 0, cancelId: 0,
+        title: 'Install untrusted plugin?',
+        message: 'Plugins are unsigned. Confirm the exact package shown in AgentKeeper before installing.',
+        detail: 'The nativeProcess permission breaks the plugin sandbox and can use your account’s file and network access.',
+      })
+      if (confirmation.response !== 1) throw new Error('Plugin installation cancelled')
       await confirmAkpInstall(token)
     } catch (err) {
       console.error('[ipc] plugins:confirmAkpInstall failed:', err)
@@ -792,11 +779,14 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsCancelAkpInstall, (_event, token: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsCancelAkpInstall, (event, token: string) => {
+    assertTrustedMainRenderer(event)
     cancelAkpInstall(token)
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (_event, dirPath?: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (event, dirPath?: string) => {
+    assertTrustedMainRenderer(event)
+    if (app.isPackaged) throw new Error('Development plugin loading is disabled in packaged builds')
     try {
       let resolvedPath = dirPath
       if (!resolvedPath) {
@@ -814,7 +804,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsUnloadDev, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsUnloadDev, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await unloadDevPlugin(pluginId)
     } catch (err) {
@@ -823,7 +814,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsUninstall, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsUninstall, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await uninstallPlugin(pluginId)
     } catch (err) {
@@ -832,7 +824,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsEnable, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsEnable, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await enablePlugin(pluginId)
     } catch (err) {
@@ -841,7 +834,18 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsDisable, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsApprovePermissions, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
+    try {
+      await approvePluginPermissions(pluginId)
+    } catch (err) {
+      console.error('[ipc] plugins:approvePermissions failed:', err)
+      throw new Error(err instanceof Error ? err.message : String(err))
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsDisable, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       await disablePlugin(pluginId)
     } catch (err) {
@@ -850,7 +854,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsCheckUpdates, async () => {
+  ipcMain.handle(IPC_CHANNELS.pluginsCheckUpdates, async (event) => {
+    assertTrustedMainRenderer(event)
     try {
       const updates = await checkForUpdates()
       return updates.map(({ pluginId, currentVersion, availableVersion, releaseNotes }) => ({
@@ -865,12 +870,13 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.pluginsUpdate, async (_event, pluginId: string) => {
+  ipcMain.handle(IPC_CHANNELS.pluginsUpdate, async (event, pluginId: string) => {
+    assertTrustedMainRenderer(event)
     try {
       const updates = await checkForUpdates()
       const entry = updates.find((u) => u.pluginId === pluginId)
       if (!entry) throw new Error(`No update available for plugin ${pluginId}`)
-      await updatePlugin(pluginId, entry.release)
+      return await updatePlugin(pluginId, entry.release)
     } catch (err) {
       console.error('[ipc] plugins:update failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))
@@ -879,7 +885,8 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull) {
 
   ipcMain.handle(
     IPC_CHANNELS.pluginsInvoke,
-    async (_event, pluginId: string, commandId: string, args?: unknown) => {
+    async (event, pluginId: string, commandId: string, args?: unknown) => {
+      assertTrustedMainRenderer(event)
       const host = getActiveHost(pluginId)
       if (!host) throw new Error('Provider not available')
       return host.invokeCommand(commandId, args)
@@ -1518,6 +1525,10 @@ export function wirePluginEventRelay(win: BrowserWindow): void {
   const events: (keyof EventMap)[] = [
     'plugin.healthy',
     'plugin.unhealthy',
+    'plugin.activated',
+    'plugin.deactivated',
+    'plugin.updated',
+    'plugin.uninstalled',
     'task.selected',
     'job.started',
     'job.completed',

@@ -3,7 +3,7 @@
 
 import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemReference, WorkItemStatus } from '@agentkeeper/sdk'
 export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemReference, WorkItemStatus }
-import type { PluginManifest } from '@agentkeeper/sdk'
+import type { PluginManifest, PluginPermission } from '@agentkeeper/sdk'
 import type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor } from '@agentkeeper/core'
 export type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor, SessionControlSelection, SessionControlValue } from '@agentkeeper/core'
 
@@ -816,6 +816,12 @@ export interface LegacyDayEntry {
 export type PluginSource = 'bundled' | 'local' | 'dev'
 export type PluginStatus = 'active' | 'inactive' | 'unhealthy'
 
+export interface PluginAuthoritySnapshot {
+  permissions: PluginPermission[]
+  networkHosts: string[]
+  environmentVariables: string[]
+}
+
 export interface PluginRecord {
   id: string
   name: string
@@ -825,6 +831,8 @@ export interface PluginRecord {
   status: PluginStatus
   unhealthyReason?: string
   manifest: PluginManifest
+  actionRequired: boolean
+  grantedAuthority: PluginAuthoritySnapshot
 }
 
 export interface UpdateAvailable {
@@ -832,6 +840,11 @@ export interface UpdateAvailable {
   currentVersion: string
   availableVersion: string
   releaseNotes?: string
+}
+
+export interface PluginUpdateResult {
+  actionRequired: boolean
+  addedAuthority: PluginAuthoritySnapshot
 }
 
 export type AppUpdateStatus =
@@ -1006,8 +1019,6 @@ export interface AgentKeeperApi {
     onUiContribution: (handler: (data: { pluginId: string; slot: string; contribution: unknown }) => void) => () => void
     list: () => Promise<PluginRecord[]>
     pickAkpFile: () => Promise<string | null>
-    install: (akpPath?: string) => Promise<void>
-    installFromUrl: (manifestUrl: string) => Promise<void>
     prepareAkpInstall: (opts: { filePath?: string; manifestUrl?: string }) => Promise<{ manifest: PluginManifest; token: string }>
     confirmAkpInstall: (token: string) => Promise<void>
     cancelAkpInstall: (token: string) => Promise<void>
@@ -1015,9 +1026,10 @@ export interface AgentKeeperApi {
     unloadDev: (pluginId: string) => Promise<void>
     uninstall: (pluginId: string) => Promise<void>
     enable: (pluginId: string) => Promise<void>
+    approvePermissions: (pluginId: string) => Promise<void>
     disable: (pluginId: string) => Promise<void>
     checkUpdates: () => Promise<UpdateAvailable[]>
-    update: (pluginId: string) => Promise<void>
+    update: (pluginId: string) => Promise<PluginUpdateResult>
     invoke: (pluginId: string, commandId: string, args?: unknown) => Promise<unknown>
     getRendererBundle: (pluginId: string, viewId: string) => Promise<{ script: string }>
   }
@@ -1219,8 +1231,6 @@ export const IPC_CHANNELS = {
   pluginEvent: 'plugin:event',
   pluginsList: 'plugins:list',
   pluginsPickAkpFile: 'plugins:pickAkpFile',
-  pluginsInstall: 'plugins:install',
-  pluginsInstallFromUrl: 'plugins:installFromUrl',
   pluginsPrepareAkpInstall: 'plugins:prepareAkpInstall',
   pluginsConfirmAkpInstall: 'plugins:confirmAkpInstall',
   pluginsCancelAkpInstall: 'plugins:cancelAkpInstall',
@@ -1228,6 +1238,7 @@ export const IPC_CHANNELS = {
   pluginsUnloadDev: 'plugins:unloadDev',
   pluginsUninstall: 'plugins:uninstall',
   pluginsEnable: 'plugins:enable',
+  pluginsApprovePermissions: 'plugins:approvePermissions',
   pluginsDisable: 'plugins:disable',
   pluginsCheckUpdates: 'plugins:checkUpdates',
   pluginsUpdate: 'plugins:update',

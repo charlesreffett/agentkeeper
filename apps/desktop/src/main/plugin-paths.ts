@@ -27,16 +27,30 @@ export function requirePluginFile(root: string, relativePath: string, label: str
 }
 
 export function validatePluginArchiveEntries(entries: readonly string[]): void {
+  const canonicalEntries = new Map<string, string>()
   for (const entry of entries) {
     const normalized = entry.replace(/\/$/, '')
     if (!normalized) continue
     if (
       normalized.startsWith('/') ||
+      /^[a-z]:/i.test(normalized) ||
+      normalized.includes('\0') ||
       normalized.includes('\\') ||
-      normalized.split('/').some(part => part === '..' || part === '.')
+      normalized.split('/').some(part => part === '' || part === '..' || part === '.')
     ) {
       throw new Error(`Plugin archive contains an unsafe path: ${entry}`)
     }
+
+    // The installed plugin directory may live on a case-insensitive filesystem
+    // (the default on macOS and Windows). Unicode-equivalent and case-equivalent
+    // names therefore target the same file even if ZIP treats them as distinct.
+    // Reject them before extraction so the reviewed file cannot be overwritten by
+    // a later colliding entry.
+    const canonical = normalized.normalize('NFC').toLowerCase()
+    const previous = canonicalEntries.get(canonical)
+    if (previous !== undefined) {
+      throw new Error(`Plugin archive contains duplicate paths: ${previous} and ${entry}`)
+    }
+    canonicalEntries.set(canonical, entry)
   }
 }
-

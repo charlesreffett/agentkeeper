@@ -9,6 +9,7 @@ import {
   getPRDiff,
   listPRs,
   mergePR,
+  setProcessBroker,
   submitReview,
 } from './github-cli.js'
 import { GitHubWorkItemSource } from './github-source.js'
@@ -54,6 +55,7 @@ function requireRepo(repo: unknown): string {
 
 const githubPlugin: Plugin = {
   async activate(ctx) {
+    setProcessBroker(ctx.process)
     pluginCtx = ctx
     ctx.commands.register({
       id: 'github.projects.list',

@@ -145,6 +145,8 @@ export const pluginRegistry = sqliteTable('plugin_registry', {
   source: text('source').notNull(),
   installedAt: integer('installed_at').notNull(),
   devPath: text('dev_path'),
+  grantedAuthority: text('granted_authority').notNull().default('{"permissions":[],"networkHosts":[],"environmentVariables":[]}'),
+  actionRequired: integer('action_required').notNull().default(0),
 })
 
 export const planSteps = sqliteTable('plan_steps', {

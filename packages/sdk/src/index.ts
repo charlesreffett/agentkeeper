@@ -110,7 +110,24 @@ export interface PluginContext<TSettings = unknown> {
   commands: CommandRegistry
   background: BackgroundWork
   projects: ProjectRegistry
+  process: NativeProcessApi
   fetch(url: string | URL, init?: RequestInit): Promise<Response>
+}
+
+export interface NativeProcessResult {
+  stdout: string
+  stderr: string
+}
+
+export interface NativeProcessExecOptions {
+  cwd?: string
+  env?: Record<string, string>
+  timeoutMs?: number
+}
+
+export interface NativeProcessApi {
+  /** Execute a host-approved CLI without granting the plugin direct process access. */
+  execFile(file: string, args?: string[], options?: NativeProcessExecOptions): Promise<NativeProcessResult>
 }
 
 export interface EnvironmentApi {

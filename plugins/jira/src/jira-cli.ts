@@ -1,6 +1,4 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
-import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
+import type { IssueTransition, PluginContext, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemStatus } from '@agentkeeper/sdk'
 
 // Jira statusCategory.key (platform constant) → SDK StatusCategory. Deterministic across
 // orgs/boards; the only reliable color source since status names are arbitrary.
@@ -27,11 +25,16 @@ const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
 }
 
 let jiraApiToken = ''
-const execFileAsync = (file: string, args: string[]) =>
-  promisify(execFile)(file, args, {
-    timeout: 10_000,
-    env: jiraApiToken ? { ...process.env, JIRA_API_TOKEN: jiraApiToken } : process.env,
+type ProcessBroker = PluginContext['process']
+let processBroker: ProcessBroker | null = null
+export function setProcessBroker(value: ProcessBroker): void { processBroker = value }
+const execFileAsync = (file: string, args: string[]) => {
+  if (!processBroker) throw new Error('Native process broker is not initialized')
+  return processBroker.execFile(file, args, {
+    timeoutMs: 10_000,
+    ...(jiraApiToken ? { env: { JIRA_API_TOKEN: jiraApiToken } } : {}),
   })
+}
 let jiraExecutable = 'jira'
 export function setJiraCliPath(value?: string): void { jiraExecutable = value?.trim() || 'jira' }
 export function setJiraApiToken(value?: string): void { jiraApiToken = value ?? '' }

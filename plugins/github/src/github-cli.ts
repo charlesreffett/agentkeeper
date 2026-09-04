@@ -1,5 +1,4 @@
-import { execFile } from 'node:child_process'
-import { promisify } from 'node:util'
+import type { PluginContext } from '@agentkeeper/sdk'
 import type {
   CheckRun,
   CheckState,
@@ -19,8 +18,17 @@ import type {
   ReviewEvent,
 } from './types.js'
 
-const execFileAsync = (file: string, args: string[]) =>
-  promisify(execFile)(file, args, { timeout: 10_000 })
+type ProcessBroker = PluginContext['process']
+let processBroker: ProcessBroker | null = null
+
+export function setProcessBroker(value: ProcessBroker): void {
+  processBroker = value
+}
+
+const execFileAsync = (file: string, args: string[]) => {
+  if (!processBroker) throw new Error('Native process broker is not initialized')
+  return processBroker.execFile(file, args, { timeoutMs: 10_000 })
+}
 
 export async function checkCliPresent(): Promise<boolean> {
   try {

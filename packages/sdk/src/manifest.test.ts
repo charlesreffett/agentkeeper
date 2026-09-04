@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PluginManifestSchema, UpdateManifestSchema } from './manifest'
+import { isNetworkOriginAllowed, PluginManifestSchema, UpdateManifestSchema } from './manifest'
 
 describe('plugin manifests', () => {
   it('accepts project-aware UI contributions', () => {
@@ -60,6 +60,51 @@ describe('plugin manifests', () => {
         sha256: 'a'.repeat(64),
       }],
     }).releases).toHaveLength(1)
+  })
+
+  it('requires HTTPS for update feeds and release packages', () => {
+    const base = {
+      schema_version: 1 as const,
+      id: 'example',
+      name: 'Example',
+      version: '1.0.0',
+      entry: 'dist/index.js',
+      permissions: [],
+    }
+    expect(PluginManifestSchema.safeParse({ ...base, update_url: 'http://example.com/feed.json' }).success).toBe(false)
+    expect(UpdateManifestSchema.safeParse({
+      id: 'example',
+      releases: [{ version: '1.1.0', url: 'http://example.com/plugin.akp', sha256: 'a'.repeat(64) }],
+    }).success).toBe(false)
+  })
+
+  it('requires explicit canonical origin grants for network access', () => {
+    const base = {
+      schema_version: 1 as const,
+      id: 'example',
+      name: 'Example',
+      version: '1.0.0',
+      entry: 'dist/index.js',
+    }
+    expect(PluginManifestSchema.safeParse({
+      ...base,
+      permissions: ['network'],
+      network: { hosts: ['https://api.example.com', 'https://*.example.org:8443'] },
+    }).success).toBe(true)
+    expect(PluginManifestSchema.safeParse({ ...base, permissions: ['network'] }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({ ...base, permissions: [], network: { hosts: ['https://example.com'] } }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({ ...base, permissions: ['network'], network: { hosts: ['example.com'] } }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({ ...base, permissions: ['network'], network: { hosts: ['http://example.com'] } }).success).toBe(false)
+    expect(PluginManifestSchema.safeParse({ ...base, permissions: ['network'], network: { hosts: ['http://localhost:3000'] } }).success).toBe(true)
+  })
+
+  it('matches network grants by scheme, hostname, and port', () => {
+    const patterns = ['https://*.example.com', 'http://localhost:3000']
+    expect(isNetworkOriginAllowed(patterns, 'https://api.example.com/resource')).toBe(true)
+    expect(isNetworkOriginAllowed(patterns, 'https://example.com/resource')).toBe(true)
+    expect(isNetworkOriginAllowed(patterns, 'https://api.example.com:8443/resource')).toBe(false)
+    expect(isNetworkOriginAllowed(patterns, 'http://api.example.com/resource')).toBe(false)
+    expect(isNetworkOriginAllowed(patterns, 'http://localhost:3000/resource')).toBe(true)
   })
 
   it('accepts the high-risk native process permission', () => {

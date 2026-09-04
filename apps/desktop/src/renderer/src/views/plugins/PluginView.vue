@@ -4,19 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import type { PluginRecord, WorkItem } from '@shared/ipc-contract'
 import WorkItemSessionModal from './WorkItemSessionModal.vue'
 import { useSessionStore } from '@/stores/sessions'
-
-type BridgeRequest = {
-  channel: 'agentkeeper-plugin'
-  id?: string
-  type: 'ready' | 'invoke' | 'navigate' | 'openExternal' | 'startSession' | 'workItemSessions' | 'openSession'
-  command?: string
-  args?: unknown
-  path?: string
-  url?: string
-  itemId?: string
-  projectPath?: string
-  sessionId?: string
-}
+import {
+  PLUGIN_IFRAME_CSP,
+  normalizeRequestedExternalUrl,
+  parsePluginBridgeRequest,
+  resolveDeclaredPluginRoute,
+} from './plugin-view-policy'
 
 const route = useRoute()
 const router = useRouter()
@@ -30,6 +23,9 @@ const sessionItem = ref<WorkItem | null>(null)
 const sessionProjectPath = ref('')
 const sessionModalOpen = ref(false)
 let loadGeneration = 0
+let bridgeToken = crypto.randomUUID()
+let loadedViewId = ''
+let cleanupPluginEvents: (() => void) | null = null
 
 const pluginId = computed(() => String(route.params.pluginId ?? ''))
 const pluginPath = computed(() => {
@@ -47,11 +43,15 @@ function scriptDataUrl(source: string): string {
   return `data:text/javascript;base64,${btoa(binary)}`
 }
 
-function buildDocument(script: string, viewId: string, providerId: string, path: string): string {
+function buildDocument(script: string, viewId: string, providerId: string, path: string, token: string): string {
   const initial = JSON.stringify({
     pluginId: providerId,
     viewId,
     path,
+    token,
+    // data:/file: documents have opaque origins and require a wildcard. In
+    // development the parent is HTTP(S), so outbound messages can be scoped.
+    hostTargetOrigin: ['http:', 'https:'].includes(window.location.protocol) ? window.location.origin : '*',
     colorScheme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
   }).replaceAll('<', '\\u003c')
   const bridge = `
@@ -59,7 +59,10 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
       const initial = ${initial};
       const pending = new Map();
       const routeListeners = new Set();
-      const send = (message) => parent.postMessage({ channel: 'agentkeeper-plugin', ...message }, '*');
+      const send = (message) => parent.postMessage(
+        { channel: 'agentkeeper-plugin', token: initial.token, ...message },
+        initial.hostTargetOrigin,
+      );
       window.agentkeeperPlugin = Object.freeze({
         pluginId: initial.pluginId,
         viewId: initial.viewId,
@@ -82,7 +85,7 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
       });
       addEventListener('message', (event) => {
         const message = event.data;
-        if (!message || message.channel !== 'agentkeeper-host') return;
+        if (event.source !== parent || !message || message.channel !== 'agentkeeper-host' || message.token !== initial.token) return;
         if (message.type === 'response' && message.id) {
           const request = pending.get(message.id);
           if (!request) return;
@@ -106,7 +109,8 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src data:; style-src 'unsafe-inline'; img-src data: https:; font-src data:">
+  <meta http-equiv="Content-Security-Policy" content="${PLUGIN_IFRAME_CSP}">
+  <meta http-equiv="x-dns-prefetch-control" content="off">
   <style>html,body,#app{height:100%;margin:0}body{font:13px system-ui,sans-serif;color:#1f2937;background:#fff}.dark body{color:#e5e7eb;background:#111827}*{box-sizing:border-box}button,input,select,textarea{font:inherit}</style>
 </head>
 <body><div id="app"></div>
@@ -115,29 +119,66 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
 </body></html>`
 }
 
+function revokeView(reason = 'Provider not available'): void {
+  loadGeneration += 1
+  bridgeToken = crypto.randomUUID()
+  loadedViewId = ''
+  plugin.value = null
+  loading.value = false
+  unavailable.value = true
+  detail.value = reason
+  sessionModalOpen.value = false
+  sessionItem.value = null
+  if (frame.value) {
+    frame.value.srcdoc = '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'">'
+  }
+}
+
+function postToPlugin(message: Record<string, unknown>, token = bridgeToken): void {
+  if (token !== bridgeToken) return
+  // A sandboxed srcdoc has an opaque origin, so '*' is required in this
+  // direction. The unguessable, per-document token and source checks scope it.
+  frame.value?.contentWindow?.postMessage({
+    channel: 'agentkeeper-host',
+    token,
+    ...message,
+  }, '*')
+}
+
 async function load(): Promise<void> {
   const generation = ++loadGeneration
   const providerId = pluginId.value
-  const path = pluginPath.value
+  const token = crypto.randomUUID()
+  bridgeToken = token
+  loadedViewId = ''
+  plugin.value = null
   loading.value = true
   unavailable.value = false
   detail.value = ''
+  if (frame.value) frame.value.srcdoc = '<!doctype html><meta http-equiv="Content-Security-Policy" content="default-src \'none\'">'
   await nextTick()
   try {
     const plugins = await window.agentkeeper.plugins.list()
-    if (generation !== loadGeneration) return
+    if (generation !== loadGeneration || token !== bridgeToken) return
     const found = plugins.find((candidate) => candidate.id === providerId && candidate.enabled)
     if (!found) throw new Error('Provider not available')
+    if (!found.manifest.permissions.includes('ui')) throw new Error('Provider does not have UI permission')
     plugin.value = found
-    const routeContribution = found.manifest.contributes?.routes.find(
-      (candidate) => path === candidate.path || path.startsWith(`${candidate.path}/`),
+    const routeContribution = resolveDeclaredPluginRoute(
+      pluginPath.value,
+      found.manifest.contributes?.routes ?? [],
     )
     if (!routeContribution) throw new Error('Provider view not available')
     const bundle = await window.agentkeeper.plugins.getRendererBundle(found.id, routeContribution.view)
-    if (generation !== loadGeneration) return
-    if (frame.value) frame.value.srcdoc = buildDocument(bundle.script, routeContribution.view, providerId, path)
+    if (generation !== loadGeneration || token !== bridgeToken) return
+    loadedViewId = routeContribution.view
+    if (frame.value) {
+      frame.value.srcdoc = buildDocument(bundle.script, routeContribution.view, providerId, routeContribution.path, token)
+    }
   } catch (error) {
-    if (generation !== loadGeneration) return
+    if (generation !== loadGeneration || token !== bridgeToken) return
+    loadedViewId = ''
+    plugin.value = null
     unavailable.value = true
     detail.value = error instanceof Error ? error.message : String(error)
   } finally {
@@ -145,38 +186,44 @@ async function load(): Promise<void> {
   }
 }
 
-async function onMessage(event: MessageEvent<BridgeRequest>): Promise<void> {
+async function onMessage(event: MessageEvent<unknown>): Promise<void> {
   if (event.source !== frame.value?.contentWindow) return
-  const message = event.data
-  if (!message || message.channel !== 'agentkeeper-plugin') return
+  // srcdoc without allow-same-origin is intentionally assigned an opaque
+  // origin. Source + a rotated capability token authenticate this document.
+  if (event.origin !== 'null') return
+  const requestToken = bridgeToken
+  const message = parsePluginBridgeRequest(event.data, requestToken)
+  if (!message) return
   if (message.type === 'ready') {
-    frame.value?.contentWindow?.postMessage({
-      channel: 'agentkeeper-host',
+    postToPlugin({
       type: 'route.changed',
       path: pluginPath.value,
-    }, '*')
+    }, requestToken)
     return
   }
-  if (message.type === 'navigate' && message.path) {
-    const safePath = message.path.replace(/^\/+/, '')
-    await router.push(`/plugin/${encodeURIComponent(pluginId.value)}/${safePath}`)
+  if (message.type === 'navigate') {
+    const declared = resolveDeclaredPluginRoute(message.path, plugin.value?.manifest.contributes?.routes ?? [])
+    if (!declared) return
+    await router.push(`/plugin/${encodeURIComponent(pluginId.value)}/${declared.path}`)
     return
   }
-  if (message.type === 'openExternal' && message.url) {
-    const target = new URL(message.url)
-    if (!['https:', 'http:'].includes(target.protocol)) return
-    window.open(target.href, '_blank')
+  if (message.type === 'openExternal') {
+    const target = normalizeRequestedExternalUrl(message.url)
+    if (!target) return
+    // The main process performs the authoritative URL check and asks for an
+    // explicit confirmation before passing the URL to the operating system.
+    window.open(target, '_blank', 'noopener,noreferrer')
     return
   }
-  if (message.type === 'startSession' && message.itemId) {
+  if (message.type === 'startSession') {
     const item = await window.agentkeeper.workItems.get({ sourceId: pluginId.value, itemId: message.itemId })
-    if (!item) return
+    if (!item || requestToken !== bridgeToken) return
     sessionItem.value = item
     sessionProjectPath.value = message.projectPath ?? ''
     sessionModalOpen.value = true
     return
   }
-  if (message.type === 'workItemSessions' && message.id) {
+  if (message.type === 'workItemSessions') {
     try {
       const projects = await window.agentkeeper.projects.list()
       const persisted = (await Promise.all([null, ...projects.map(project => project.path)].map(path => window.agentkeeper.sessions.listPersisted(path)))).flat()
@@ -185,45 +232,64 @@ async function onMessage(event: MessageEvent<BridgeRequest>): Promise<void> {
         .filter((session, index, all) => all.findIndex(candidate => candidate.localId === session.localId) === index)
         .filter(session => session.workItem?.sourceId === pluginId.value && (!message.itemId || session.workItem.itemId === message.itemId))
         .map(session => ({ id: session.localId, itemId: session.workItem!.itemId, status: session.status, title: session.title, lastActivityAt: session.lastActivityAt }))
-      frame.value?.contentWindow?.postMessage({ channel: 'agentkeeper-host', type: 'response', id: message.id, result: sessions }, '*')
+      postToPlugin({ type: 'response', id: message.id, result: sessions }, requestToken)
     } catch (error) {
-      frame.value?.contentWindow?.postMessage({ channel: 'agentkeeper-host', type: 'response', id: message.id, error: error instanceof Error ? error.message : String(error) }, '*')
+      postToPlugin({ type: 'response', id: message.id, error: error instanceof Error ? error.message : String(error) }, requestToken)
     }
     return
   }
-  if (message.type === 'openSession' && message.sessionId) {
+  if (message.type === 'openSession') {
     const session = sessionStore.sessions[message.sessionId] ?? await window.agentkeeper.sessions.getByLocalId(message.sessionId)
-    if (session?.workItem?.sourceId === pluginId.value) await router.push(`/sessions/${message.sessionId}`)
+    if (requestToken === bridgeToken && session?.workItem?.sourceId === pluginId.value) {
+      await router.push(`/sessions/${encodeURIComponent(message.sessionId)}`)
+    }
     return
   }
-  if (message.type === 'invoke' && message.id && message.command) {
+  if (message.type === 'invoke') {
     try {
       const result = await window.agentkeeper.plugins.invoke(pluginId.value, message.command, message.args)
-      frame.value?.contentWindow?.postMessage({ channel: 'agentkeeper-host', type: 'response', id: message.id, result }, '*')
+      postToPlugin({ type: 'response', id: message.id, result }, requestToken)
     } catch (error) {
-      frame.value?.contentWindow?.postMessage({
-        channel: 'agentkeeper-host',
+      postToPlugin({
         type: 'response',
         id: message.id,
         error: error instanceof Error ? error.message : String(error),
-      }, '*')
+      }, requestToken)
     }
   }
 }
 
 onMounted(() => {
   window.addEventListener('message', onMessage)
+  cleanupPluginEvents = window.agentkeeper.plugins.onEvent((event, payload) => {
+    const lifecycle = payload as { pluginId?: string }
+    if (lifecycle?.pluginId !== pluginId.value) return
+    if (event === 'plugin.activated' || event === 'plugin.updated') void load()
+    else if (event === 'plugin.deactivated' || event === 'plugin.uninstalled' || event === 'plugin.unhealthy') {
+      revokeView(event === 'plugin.unhealthy' ? 'Provider stopped unexpectedly' : 'Provider not available')
+    }
+  })
   void load()
 })
-onBeforeUnmount(() => window.removeEventListener('message', onMessage))
+onBeforeUnmount(() => {
+  window.removeEventListener('message', onMessage)
+  cleanupPluginEvents?.()
+  cleanupPluginEvents = null
+  revokeView()
+})
 
 watch([pluginId, pluginPath], ([nextId], [previousId]) => {
   if (nextId !== previousId) void load()
-  else frame.value?.contentWindow?.postMessage({
-    channel: 'agentkeeper-host',
-    type: 'route.changed',
-    path: pluginPath.value,
-  }, '*')
+  else {
+    const declared = resolveDeclaredPluginRoute(pluginPath.value, plugin.value?.manifest.contributes?.routes ?? [])
+    if (!declared) {
+      revokeView('Provider view not available')
+    } else if (declared.view !== loadedViewId) {
+      void load()
+    } else {
+      postToPlugin({ type: 'route.changed', path: declared.path })
+    }
+  }
 })
 </script>
 
@@ -243,6 +309,8 @@ watch([pluginId, pluginPath], ([nextId], [previousId]) => {
       ref="frame"
       class="block size-full border-0"
       sandbox="allow-scripts"
+      referrerpolicy="no-referrer"
+      allow=""
       title="Plugin view"
     />
     <WorkItemSessionModal

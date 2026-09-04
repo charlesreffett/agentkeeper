@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
-import { checkCliPresent, countIssues, listProjects, setJiraApiToken, setJiraCliPath } from './jira-cli.js'
+import { checkCliPresent, countIssues, listProjects, setJiraApiToken, setJiraCliPath, setProcessBroker } from './jira-cli.js'
 import { JiraWorkItemSource } from './jira-source.js'
 
 export { listProjects }
@@ -42,6 +42,7 @@ async function startJira(ctx: PluginContext<JiraSettings>): Promise<void> {
 
 const jiraPlugin: Plugin<JiraSettings> = {
   async activate(ctx: PluginContext<JiraSettings>) {
+    setProcessBroker(ctx.process)
     pluginCtx = ctx
     setJiraCliPath(ctx.config.cliPath)
     setJiraApiToken((await ctx.secrets.get('apiToken')) ?? await ctx.environment.get('JIRA_API_TOKEN'))

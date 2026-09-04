@@ -137,6 +137,11 @@ export function createMockContext<TSettings = unknown>(
     projects: {
       async list() { return [] },
     },
+    process: {
+      async execFile() {
+        throw new Error('Native process broker is not configured for this mock context')
+      },
+    },
     fetch: globalThis.fetch.bind(globalThis),
     _inspect: {
       uiContributions,

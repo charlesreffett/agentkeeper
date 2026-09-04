@@ -346,10 +346,6 @@ const api: AgentKeeperApi = {
     list: () => invoke(IPC_CHANNELS.pluginsList) as Promise<PluginRecord[]>,
     pickAkpFile: () =>
       invoke(IPC_CHANNELS.pluginsPickAkpFile) as Promise<string | null>,
-    install: (akpPath?: string) =>
-      invoke(IPC_CHANNELS.pluginsInstall, akpPath) as Promise<void>,
-    installFromUrl: (manifestUrl: string) =>
-      invoke(IPC_CHANNELS.pluginsInstallFromUrl, manifestUrl) as Promise<void>,
     prepareAkpInstall: (opts: { filePath?: string; manifestUrl?: string }) =>
       invoke(IPC_CHANNELS.pluginsPrepareAkpInstall, opts) as Promise<{ manifest: import('@agentkeeper/sdk').PluginManifest; token: string }>,
     confirmAkpInstall: (token: string) =>
@@ -364,12 +360,14 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.pluginsUninstall, pluginId) as Promise<void>,
     enable: (pluginId: string) =>
       invoke(IPC_CHANNELS.pluginsEnable, pluginId) as Promise<void>,
+    approvePermissions: (pluginId: string) =>
+      invoke(IPC_CHANNELS.pluginsApprovePermissions, pluginId) as Promise<void>,
     disable: (pluginId: string) =>
       invoke(IPC_CHANNELS.pluginsDisable, pluginId) as Promise<void>,
     checkUpdates: () =>
       invoke(IPC_CHANNELS.pluginsCheckUpdates) as Promise<UpdateAvailable[]>,
     update: (pluginId: string) =>
-      invoke(IPC_CHANNELS.pluginsUpdate, pluginId) as Promise<void>,
+      invoke(IPC_CHANNELS.pluginsUpdate, pluginId) as Promise<import('../shared/ipc-contract').PluginUpdateResult>,
     invoke: (pluginId: string, commandId: string, args?: unknown) =>
       invoke(IPC_CHANNELS.pluginsInvoke, pluginId, commandId, args) as Promise<unknown>,
     getRendererBundle: (pluginId: string, viewId: string) =>
