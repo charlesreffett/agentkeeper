@@ -85,7 +85,7 @@ export class SandboxedPluginProcess extends EventEmitter {
       callback({ cancel: !['data:', 'blob:'].includes(protocol) })
     })
 
-    const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'preload', 'plugin-sandbox.mjs')
+    const preload = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'preload', 'plugin-sandbox.cjs')
     const win = new BrowserWindow({
       show: false,
       skipTaskbar: true,
