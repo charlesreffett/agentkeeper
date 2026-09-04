@@ -131,7 +131,7 @@ function createWindow(): BrowserWindow {
       ? { titleBarStyle: 'hiddenInset' as const }
       : {}),
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.mjs'),
+      preload: path.join(__dirname, '../preload/index.cjs'),
       ...RENDERER_SECURITY_WEB_PREFERENCES,
     },
   })

@@ -32,6 +32,14 @@ export default defineConfig({
           index: resolve(__dirname, 'src/preload/index.ts'),
           'plugin-sandbox': resolve(__dirname, 'src/preload/plugin-sandbox.ts'),
         },
+        // Sandboxed Electron preload scripts are loaded by a restricted
+        // CommonJS runtime.  Emitting ESM here produces an .mjs file that is
+        // parsed as a classic script and fails on its first `import`, leaving
+        // the renderer without the contextBridge API.
+        output: {
+          format: 'cjs',
+          entryFileNames: '[name].cjs',
+        },
       },
     },
   },
