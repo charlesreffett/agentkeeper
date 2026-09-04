@@ -80,6 +80,55 @@ function cryptoRandomId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+const LOCAL_INITIAL_USER_PREFIX = 'local-initial-user:'
+
+function eventText(event: TranscriptEvent): string {
+  return event.content
+    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .map(block => block.text)
+    .join('\n')
+}
+
+/** Guarantee that a successfully accepted opening prompt is visible even when
+ * the harness does not echo its initial user event back to the renderer. */
+function ensureInitialUserEvent(
+  session: LiveSession,
+  agentLocalId: string,
+  prompt: string,
+  attachments: Attachment[] = [],
+): void {
+  const agentEvents = session.agentEvents[agentLocalId] ?? (session.agentEvents[agentLocalId] = [])
+  if (agentEvents.some(event => event.role === 'user' && eventText(event) === prompt)) return
+
+  const event: TranscriptEvent = {
+    uuid: `${LOCAL_INITIAL_USER_PREFIX}${cryptoRandomId()}`,
+    parentUuid: null,
+    timestamp: new Date().toISOString(),
+    kind: 'user',
+    role: 'user',
+    isMeta: false,
+    isSidechain: false,
+    model: null,
+    content: [
+      ...(prompt ? [{ type: 'text' as const, text: prompt }] : []),
+      ...attachments
+        .filter(attachment => attachment.mimeType.startsWith('image/'))
+        .map(attachment => ({
+          type: 'image' as const,
+          source: {
+            type: 'base64',
+            media_type: attachment.mimeType,
+            data: attachment.content,
+          },
+        })),
+    ],
+    parentToolUseId: null,
+    systemSubtype: null,
+  }
+  agentEvents.unshift(event)
+  session.events.unshift(event)
+}
+
 async function loadDraft(localId: string): Promise<{ text: string; attachments: Attachment[] }> {
   try {
     return await window.agentkeeper.drafts.get(localId)
@@ -414,24 +463,28 @@ export const useSessionStore = defineStore('sessions', () => {
     try {
       const { branch: _branch, roleName: _roleName, ...startArgs } = plain
       await window.agentkeeper.sessions.start({ ...startArgs, localId })
+      ensureInitialUserEvent(sessions[localId]!, localId, plain.initialPrompt, plain.initialAttachments)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       sessions[localId]!.status = 'error'
       sessions[localId]!.error = message
+      throw err
     }
     return localId
   }
 
   async function send(id: string, text: string, attachments?: Attachment[]): Promise<void> {
     const s = sessions[id]
-    if (!s) return
+    if (!s) throw new Error(`Session ${id} not found`)
     try {
       await window.agentkeeper.sessions.sendInput(id, text, attachments)
+      s.error = null
       s.interruptedAt = null
       s.lastActivityAt = Date.now()
       s.lastUserMessageAt = Date.now()
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err)
+      throw err
     }
   }
 
@@ -991,6 +1044,7 @@ export const useSessionStore = defineStore('sessions', () => {
         ...(draft.harnessId ? { harnessId: draft.harnessId } : {}),
       })
       delete sessions[localId]
+      void window.agentkeeper.drafts.clear(localId)
       for (const s of instance.sessions) {
         registerExternal({
           localId: s.localId,
@@ -1006,6 +1060,11 @@ export const useSessionStore = defineStore('sessions', () => {
           model: s.model ?? draft.model,
           isEntryPoint: s.isEntryPoint,
         })
+      }
+      const agencySession = sessions[instance.instanceId]
+      const entryAgent = agencySession?.agents.find(agent => agent.isEntryPoint)
+      if (agencySession && entryAgent) {
+        ensureInitialUserEvent(agencySession, entryAgent.localId, trimmedPrompt, attachments)
       }
       // Sync agent statuses from DB — broadcasts may arrive before registerExternal runs
       void window.agentkeeper.sessions.getAgents(instance.instanceId).then((agentList) => {
@@ -1040,6 +1099,25 @@ export const useSessionStore = defineStore('sessions', () => {
     }
 
     const role = cfg.roleId ? (ctx.roles.find((r) => r.id === cfg.roleId) ?? null) : null
+
+    // Starting a session emits status/transcript events before its IPC promise
+    // resolves. Keep enough draft state to roll the promotion back if that
+    // promise rejects, so an immediate launch error remains retryable.
+    const previous = {
+      isDraft: draft.isDraft,
+      draftConfig: draft.draftConfig,
+      worktreePath: draft.worktreePath,
+      branch: draft.branch,
+      initialPrompt: draft.initialPrompt,
+      status: draft.status,
+      lastActivityAt: draft.lastActivityAt,
+      error: draft.error,
+      agents: [...draft.agents],
+      events: [...draft.events],
+      agentEvents: Object.fromEntries(
+        Object.entries(draft.agentEvents).map(([id, events]) => [id, [...events]]),
+      ),
+    }
 
     draft.isDraft = false
     draft.draftConfig = null
@@ -1092,9 +1170,22 @@ export const useSessionStore = defineStore('sessions', () => {
 
     try {
       await window.agentkeeper.sessions.start(plainParams(startArgs))
+      draft.error = null
+      ensureInitialUserEvent(draft, soloAgent.localId, trimmedPrompt, attachments)
     } catch (err) {
-      draft.status = 'error'
-      draft.error = err instanceof Error ? err.message : String(err)
+      draft.isDraft = previous.isDraft
+      draft.draftConfig = previous.draftConfig
+      draft.worktreePath = previous.worktreePath
+      draft.branch = previous.branch
+      draft.initialPrompt = previous.initialPrompt
+      draft.status = previous.status
+      draft.lastActivityAt = previous.lastActivityAt
+      draft.error = previous.error
+      draft.agents.splice(0, draft.agents.length, ...previous.agents)
+      draft.events.splice(0, draft.events.length, ...previous.events)
+      for (const id of Object.keys(draft.agentEvents)) delete draft.agentEvents[id]
+      Object.assign(draft.agentEvents, previous.agentEvents)
+      throw err
     }
     return localId
   }
@@ -1319,6 +1410,23 @@ export const useSessionStore = defineStore('sessions', () => {
     if (s) {
       if (!s.agentEvents[agentKey]) s.agentEvents[agentKey] = []
       const agentEvts = s.agentEvents[agentKey]!
+
+      // If the initial broadcast arrived after promoteDraft's IPC promise, swap
+      // it for the local fallback instead of rendering the opening prompt twice.
+      if (evt.role === 'user') {
+        const localInitialIdx = agentEvts.findIndex(event =>
+          event.uuid.startsWith(LOCAL_INITIAL_USER_PREFIX) && eventText(event) === eventText(evt),
+        )
+        if (localInitialIdx >= 0) {
+          const localInitial = agentEvts[localInitialIdx]!
+          agentEvts.splice(localInitialIdx, 1, evt)
+          const globalIdx = s.events.indexOf(localInitial)
+          if (globalIdx >= 0) s.events.splice(globalIdx, 1, evt)
+          s.lastActivityAt = Date.now()
+          return
+        }
+      }
+
       const partialIdx = streamingPartials[agentKey]
       if (partialIdx !== undefined && evt.role === 'assistant') {
         agentEvts.splice(partialIdx, 1, evt)

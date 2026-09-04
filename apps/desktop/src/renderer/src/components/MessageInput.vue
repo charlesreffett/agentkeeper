@@ -20,11 +20,15 @@ const props = defineProps<{
   agencyName?: string | null
 }>()
 
-const emit = defineEmits<{ send: [text: string, attachments: Attachment[]]; stop: [] }>()
+const emit = defineEmits<{
+  send: [text: string, attachments: Attachment[], settle: (successful: boolean) => void]
+  stop: []
+}>()
 
 const text = ref('')
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const attachments = ref<Attachment[]>([])
+const sending = ref(false)
 const lightboxOpen = ref(false)
 const lightboxIndex = ref(0)
 
@@ -66,8 +70,32 @@ function autosize() {
 
 async function send() {
   const v = text.value.trim()
-  if ((!v && attachments.value.length === 0) || props.disabled) return
-  emit('send', v, attachments.value.map(toRaw))
+  if ((!v && attachments.value.length === 0) || props.disabled || sending.value) return
+  const sentAttachments = attachments.value.map(toRaw)
+  sending.value = true
+  emit('send', v, sentAttachments, (successful) => {
+    if (successful) void clearIfMatches(v, sentAttachments)
+    sending.value = false
+  })
+}
+
+/**
+ * Clear the payload that was just delivered, but only if the composer still
+ * contains that exact payload. The parent calls this after its async send has
+ * succeeded; keeping the comparison here also avoids erasing anything the user
+ * typed while a follow-up message was in flight.
+ */
+async function clearIfMatches(sentText: string, sentAttachments: Attachment[]) {
+  const sameAttachments =
+    attachments.value.length === sentAttachments.length &&
+    attachments.value.every((attachment, index) => {
+      const sent = sentAttachments[index]
+      return sent != null &&
+        attachment.name === sent.name &&
+        attachment.mimeType === sent.mimeType &&
+        attachment.content === sent.content
+    })
+  if (text.value.trim() !== sentText || !sameAttachments) return
   text.value = ''
   attachments.value = []
   await nextTick()
@@ -197,6 +225,7 @@ defineExpose({
   setText: (v: string) => { text.value = v },
   getAttachments: () => attachments.value.map(toRaw),
   setAttachments: (v: Attachment[]) => { attachments.value = v },
+  clearIfMatches,
 })
 </script>
 
@@ -296,7 +325,7 @@ defineExpose({
                 v-else
                 class="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:pointer-events-none"
                 title="Send"
-                :disabled="disabled || (!text.trim() && attachments.length === 0)"
+                :disabled="disabled || sending || (!text.trim() && attachments.length === 0)"
                 @mousedown.prevent
                 @click="send"
               >

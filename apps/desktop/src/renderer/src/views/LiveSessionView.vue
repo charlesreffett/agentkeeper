@@ -270,9 +270,16 @@ watch(() => props.liveId, () => {
   rewriteError.value = null
 })
 
-async function onSend(text: string, attachments: Attachment[]) {
+async function onSend(
+  text: string,
+  attachments: Attachment[],
+  settle: (successful: boolean) => void,
+) {
   if (isDraft.value) {
-    if (promoting.value || (!text.trim() && attachments.length === 0)) return
+    if (promoting.value || (!text.trim() && attachments.length === 0)) {
+      settle(false)
+      return
+    }
     promoting.value = true
     promoteError.value = null
     try {
@@ -281,18 +288,28 @@ async function onSend(text: string, attachments: Attachment[]) {
         window.agentkeeper.agencies.list(session.value!.projectPath),
       ])
       const focusedId = await store.promoteDraft(props.liveId, text, { roles, agencies }, attachments)
+      store.setDraftMessage(props.liveId, '')
+      settle(true)
       if (focusedId && focusedId !== props.liveId) {
         void router.replace(`/sessions/${focusedId}`)
       }
     } catch (e) {
       promoteError.value = e instanceof Error ? e.message : String(e)
+      settle(false)
     } finally {
       promoting.value = false
     }
     return
   }
-  store.setDraftMessage(props.liveId, '')
-  void store.send(props.liveId, text, attachments)
+  try {
+    await store.send(props.liveId, text, attachments)
+    store.setDraftMessage(props.liveId, '')
+    settle(true)
+  } catch {
+    // The store surfaces the error in the session UI. Leave the composer
+    // untouched so the user can retry the exact message.
+    settle(false)
+  }
 }
 
 async function onStop() {
