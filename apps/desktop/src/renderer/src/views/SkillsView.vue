@@ -43,11 +43,11 @@ const message = ref<string | null>(null)
 const view = ref<'skill' | 'install' | 'create'>('skill')
 const selectedId = ref<string | null>(null)
 const selectedSkill = computed(() =>
-  selectedId.value ? skills.value.find((s) => `${s.scope}:${s.id}` === selectedId.value) ?? null : null,
+  selectedId.value ? skills.value.find((s) => `${s.scope}:${s.path}` === selectedId.value) ?? null : null,
 )
 
 function selectSkill(skill: Skill) {
-  selectedId.value = `${skill.scope}:${skill.id}`
+  selectedId.value = `${skill.scope}:${skill.path}`
   view.value = 'skill'
 }
 
@@ -261,9 +261,20 @@ async function remove(skill: Skill) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove skill "${skill.name}" (${skill.scope})?`)) return
   try {
-    await window.agentkeeper.skills.remove({ ...skill })
+    await window.agentkeeper.skills.remove(projectPath.value, { ...skill, locations: [...skill.locations], harnessIds: [...skill.harnessIds] })
     await refresh()
-    if (selectedId.value === `${skill.scope}:${skill.id}`) selectedId.value = null
+    if (selectedId.value === `${skill.scope}:${skill.path}`) selectedId.value = null
+  } catch (e) {
+    message.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+async function adopt(skill: Skill) {
+  message.value = null
+  try {
+    await window.agentkeeper.skills.adopt(projectPath.value, { ...skill, locations: [...skill.locations], harnessIds: [...skill.harnessIds] })
+    await refresh()
+    selectedId.value = null
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   }
@@ -314,18 +325,15 @@ onMounted(async () => {
           v-else-if="skills.length === 0"
           class="p-4 text-sm text-muted-foreground leading-relaxed"
         >
-          No skills installed. They live in
-          <code class="font-mono text-foreground">.claude/skills/</code>
-          (project) or
-          <code class="font-mono text-foreground">~/.claude/skills/</code>
-          (global).
+          No skills installed. AgentKeeper-managed skills live in
+          <code class="font-mono text-foreground">.agents/skills/</code>.
         </div>
         <ul v-else>
           <li
             v-for="skill in skills"
-            :key="`${skill.scope}:${skill.id}`"
+            :key="`${skill.scope}:${skill.path}`"
             class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
-            :class="selectedId === `${skill.scope}:${skill.id}` ? 'bg-accent' : ''"
+            :class="selectedId === `${skill.scope}:${skill.path}` ? 'bg-accent' : ''"
             @click="selectSkill(skill)"
           >
             <div class="text-sm font-medium truncate">{{ skill.name }}</div>
@@ -339,6 +347,8 @@ onMounted(async () => {
                 {{ skill.scope }}
               </span>
               <span class="text-muted-foreground font-mono truncate">{{ skill.id }}</span>
+              <span v-if="skill.managed" class="text-primary">managed</span>
+              <span v-if="skill.conflict" class="text-destructive">conflict</span>
             </div>
           </li>
         </ul>
@@ -362,8 +372,24 @@ onMounted(async () => {
               {{ selectedSkill.description }}
             </p>
             <div class="text-xs text-muted-foreground font-mono mt-1">{{ selectedSkill.id }}</div>
+            <div class="text-xs text-muted-foreground mt-2">
+              Registered for: {{ selectedSkill.harnessIds.join(', ') || 'canonical store only' }}
+            </div>
+            <div v-if="selectedSkill.conflict" class="text-xs text-destructive mt-1">
+              Another harness-specific skill uses this ID. AgentKeeper has preserved both versions.
+            </div>
           </div>
           <div class="flex items-center gap-1 shrink-0">
+            <Button
+              v-if="!selectedSkill.managed"
+              variant="secondary"
+              size="sm"
+              class="text-xs"
+              :disabled="selectedSkill.conflict"
+              @click="adopt(selectedSkill)"
+            >
+              Make available everywhere
+            </Button>
             <Button
               variant="ghost"
               size="sm"

@@ -4,6 +4,24 @@ import path from 'node:path'
 import { settingsStore } from '../settings'
 import { harnessSecrets } from '../secrets'
 
+/** Resolve a configured path field with the same precedence used for harness
+ * subprocess environments: saved settings, process environment, fallback. */
+export function resolveHarnessPath(
+  adapter: HarnessAdapter,
+  fieldId: string,
+  fallback: string,
+): string {
+  const field = adapter.configuration?.fields.find((candidate) => candidate.id === fieldId)
+  const saved = settingsStore.get().harnessConfig?.[adapter.id]?.[fieldId]
+  const envName = field && 'env' in field ? field.env : undefined
+  const raw = typeof saved === 'string' && saved
+    ? saved
+    : envName && process.env[envName]
+      ? process.env[envName]!
+      : fallback
+  return raw.startsWith('~') ? path.join(os.homedir(), raw.slice(1)) : path.resolve(raw)
+}
+
 export async function resolveHarnessEnvironment(
   adapter: HarnessAdapter,
   extra?: Record<string, string>,

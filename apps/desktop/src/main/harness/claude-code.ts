@@ -6,7 +6,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailability, HarnessCapabilities, HarnessCLIOptions, HarnessEvent, HarnessModelInfo, HarnessSessionOptions } from '@agentkeeper/core'
 import { sanitizeCustomModel } from '@agentkeeper/core'
 import { resolveClaudeAuth, harnessSecrets } from '../secrets'
-import { resolveHarnessEnvironment } from './configuration'
+import { resolveHarnessEnvironment, resolveHarnessPath } from './configuration'
 import { resolveBin, type BinConfig } from './bin'
 import { isMissingBinary } from './diagnostics'
 
@@ -248,11 +248,12 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     return path.join(os.homedir(), '.claude', 'commands')
   }
 
-  getSkillsDir(scope: 'project' | 'global', projectPath?: string): string {
+  getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
     if (scope === 'project') {
-      return path.join(projectPath!, '.claude', 'skills')
+      return [{ path: path.join(projectPath!, '.claude', 'skills'), kind: 'native' as const }]
     }
-    return path.join(os.homedir(), '.claude', 'skills')
+    const configRoot = resolveHarnessPath(this, 'configDir', path.join(os.homedir(), '.claude'))
+    return [{ path: path.join(configRoot, 'skills'), kind: 'native' as const }]
   }
 
   getPluginsDir(): string {

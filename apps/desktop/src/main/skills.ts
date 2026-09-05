@@ -3,10 +3,14 @@ import path from 'node:path'
 import os from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { randomUUID } from 'node:crypto'
 import type { Skill, SkillPreview } from '../shared/ipc-contract'
-import { getHarness } from './harness/index'
+import { getHarness, harnessRegistry } from './harness/index'
 
 const execFileAsync = promisify(execFile)
+// The skills CLI's hidden universal target uses `.agents/skills` for both
+// project and global installs. Harness-specific targets diverge globally.
+const MANAGED_SKILLS_INSTALL_AGENT = 'universal'
 
 function parseFrontmatter(source: string): {
   name: string
@@ -182,40 +186,179 @@ function parsePreviewOutput(raw: string): SkillPreview[] {
   return previews
 }
 
+function canonicalSkillsDir(scope: 'project' | 'global', projectPath: string): string {
+  return scope === 'project'
+    ? path.join(projectPath, '.agents', 'skills')
+    : path.join(os.homedir(), '.agents', 'skills')
+}
+
+function isWithin(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate))
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
+}
+
+type SkillRoot = { path: string; harnessIds: Set<string> }
+
+function skillRoots(scope: 'project' | 'global', projectPath: string): SkillRoot[] {
+  const roots = new Map<string, SkillRoot>()
+  const canonical = canonicalSkillsDir(scope, projectPath)
+  for (const harness of harnessRegistry.list()) {
+    if (!harness.capabilities.skills) continue
+    for (const location of harness.getSkillLocations(scope, projectPath)) {
+      const normalized = path.resolve(location.path)
+      const existing = roots.get(normalized) ?? {
+        path: normalized,
+        harnessIds: new Set<string>(),
+      }
+      existing.harnessIds.add(harness.id)
+      roots.set(normalized, existing)
+    }
+  }
+  // The canonical store remains manageable even when no installed adapter is
+  // currently available.
+  if (!roots.has(path.resolve(canonical))) {
+    roots.set(path.resolve(canonical), {
+      path: path.resolve(canonical), harnessIds: new Set(),
+    })
+  }
+  return [...roots.values()]
+}
+
+const availabilityCache = new Map<string, { expires: number; available: boolean }>()
+const availabilityInflight = new Map<string, Promise<boolean>>()
+
+async function skillHarnessAvailable(harness: ReturnType<typeof harnessRegistry.list>[number]): Promise<boolean> {
+  const cached = availabilityCache.get(harness.id)
+  if (cached && cached.expires > Date.now()) return cached.available
+  const pending = availabilityInflight.get(harness.id)
+  if (pending) return pending
+  const probe = (async () => {
+    let available = false
+    try { available = (await harness.probeAvailability()).available } catch { /* unavailable */ }
+    availabilityCache.set(harness.id, { available, expires: Date.now() + 30_000 })
+    return available
+  })()
+  availabilityInflight.set(harness.id, probe)
+  try { return await probe } finally { availabilityInflight.delete(harness.id) }
+}
+
+async function installedSkillHarnesses() {
+  return (await Promise.all(harnessRegistry.list().map(async (harness) => {
+    if (!harness.capabilities.skills) return null
+    return await skillHarnessAvailable(harness) ? harness : null
+  }))).filter((harness): harness is NonNullable<typeof harness> => harness !== null)
+}
+
+export type SkillLinkResult = { path: string; status: 'created' | 'linked' | 'conflict' }
+
+/** Link one canonical skill into native roots for installed harnesses that do
+ * not discover `.agents/skills` at this scope. Existing entries are never
+ * replaced. Exported for filesystem-level tests. */
+export async function reconcileSkillLinks(
+  canonicalSkillDir: string,
+  nativeTargets: string[],
+): Promise<SkillLinkResult[]> {
+  const results: SkillLinkResult[] = []
+  const physicalCanonical = await fs.realpath(canonicalSkillDir)
+  for (const root of new Set(nativeTargets.map((target) => path.resolve(target)))) {
+    const destination = path.join(root, path.basename(canonicalSkillDir))
+    try {
+      const resolved = await fs.realpath(destination)
+      results.push({ path: destination, status: path.resolve(resolved) === path.resolve(physicalCanonical) ? 'linked' : 'conflict' })
+      continue
+    } catch {
+      // Missing and broken links are distinguished below with lstat.
+    }
+    try {
+      await fs.lstat(destination)
+      results.push({ path: destination, status: 'conflict' })
+      continue
+    } catch { /* absent */ }
+    await fs.mkdir(root, { recursive: true })
+    const target = process.platform === 'win32'
+      ? path.resolve(canonicalSkillDir)
+      : path.relative(root, canonicalSkillDir)
+    try {
+      await fs.symlink(target, destination, process.platform === 'win32' ? 'junction' : 'dir')
+      results.push({ path: destination, status: 'created' })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      results.push({ path: destination, status: 'conflict' })
+    }
+  }
+  return results
+}
+
+async function reconcileCanonicalScope(scope: 'project' | 'global', projectPath: string): Promise<void> {
+  const canonicalRoot = canonicalSkillsDir(scope, projectPath)
+  let entries: string[]
+  try { entries = await fs.readdir(canonicalRoot) } catch { return }
+  const harnesses = await installedSkillHarnesses()
+  const targets = new Set<string>()
+  for (const harness of harnesses) {
+    const locations = harness.getSkillLocations(scope, projectPath)
+    if (locations.some((location) => location.canonical || path.resolve(location.path) === path.resolve(canonicalRoot))) continue
+    const native = locations.find((location) => location.kind === 'native')
+    if (native) targets.add(native.path)
+  }
+  await Promise.all(entries.map(async (entry) => {
+    const skillDir = path.join(canonicalRoot, entry)
+    try {
+      if (!(await fs.stat(skillDir)).isDirectory()) return
+      await fs.access(path.join(skillDir, 'SKILL.md'))
+    } catch { return /* skip malformed entries */ }
+    await reconcileSkillLinks(skillDir, [...targets])
+  }))
+}
+
 async function listScope(
   scope: 'project' | 'global',
   projectPath: string,
 ): Promise<Skill[]> {
-  const dir =
-    getHarness().getSkillsDir(scope, projectPath)
-  let entries: string[]
-  try {
-    entries = await fs.readdir(dir)
-  } catch {
-    return []
-  }
-  const results: Skill[] = []
-  for (const entry of entries) {
-    const skillDir = path.join(dir, entry)
-    const skillFile = path.join(skillDir, 'SKILL.md')
-    try {
-      const stat = await fs.stat(skillDir)
-      if (!stat.isDirectory()) continue
-      const content = await fs.readFile(skillFile, 'utf8')
-      const { name, description, body } = parseFrontmatter(content)
-      results.push({
-        id: entry,
-        scope,
-        path: skillDir,
-        name: name || entry,
-        description,
-        body,
-      })
-    } catch {
-      // skip missing/unreadable skill dirs
+  await reconcileCanonicalScope(scope, projectPath)
+  const canonicalRoot = canonicalSkillsDir(scope, projectPath)
+  const physicalCanonicalRoot = await fs.realpath(canonicalRoot).catch(() => path.resolve(canonicalRoot))
+  const byPhysicalPath = new Map<string, Skill>()
+  for (const root of skillRoots(scope, projectPath)) {
+    let entries: string[]
+    try { entries = await fs.readdir(root.path) } catch { continue }
+    for (const entry of entries) {
+      const registeredDir = path.join(root.path, entry)
+      try {
+        if (!(await fs.stat(registeredDir)).isDirectory()) continue
+        const physicalDir = await fs.realpath(registeredDir)
+        const content = await fs.readFile(path.join(physicalDir, 'SKILL.md'), 'utf8')
+        const { name, description, body } = parseFrontmatter(content)
+        const key = path.resolve(physicalDir)
+        const existing = byPhysicalPath.get(key)
+        if (existing) {
+          if (!existing.locations.includes(registeredDir)) existing.locations.push(registeredDir)
+          existing.harnessIds = [...new Set([...existing.harnessIds, ...root.harnessIds])].sort()
+          continue
+        }
+        byPhysicalPath.set(key, {
+          id: entry,
+          scope,
+          ...(scope === 'project' ? { projectPath } : {}),
+          path: key,
+          locations: [registeredDir],
+          harnessIds: [...root.harnessIds].sort(),
+          managed: isWithin(physicalCanonicalRoot, key),
+          conflict: false,
+          name: name || entry,
+          description,
+          body,
+        })
+      } catch {
+        // Skip malformed, missing, or broken skill entries.
+      }
     }
   }
-  return results
+  const results = [...byPhysicalPath.values()]
+  const counts = new Map<string, number>()
+  for (const skill of results) counts.set(skill.id, (counts.get(skill.id) ?? 0) + 1)
+  for (const skill of results) skill.conflict = (counts.get(skill.id) ?? 0) > 1
+  return results.sort((a, b) => a.id.localeCompare(b.id) || a.path.localeCompare(b.path))
 }
 
 export async function listSkills(projectPath: string): Promise<Skill[]> {
@@ -346,7 +489,7 @@ export async function previewSkills(
   const { source: cleanSource, skillFilter } = parseSourceInput(source)
   const resolvedSource = await resolveGithubShaUrl(cleanSource)
   const { stdout } = await runSkills(
-    ['add', resolvedSource, '-a', getHarness().id, '-l', '-y'],
+    ['add', resolvedSource, '-a', MANAGED_SKILLS_INSTALL_AGENT, '-l', '-y'],
     projectPath,
   )
   let previews = parsePreviewOutput(stdout)
@@ -373,7 +516,9 @@ export async function installSkill(
     ...(skillIds ?? []),
     ...skillFilter.filter((f) => !(skillIds ?? []).includes(f)),
   ]
-  const args: string[] = ['add', resolvedSource, '-a', getHarness().id, '-y']
+  // The universal target writes to the shared `.agents/skills` store at both
+  // scopes. AgentKeeper creates the minimal compatibility links afterward.
+  const args: string[] = ['add', resolvedSource, '-a', MANAGED_SKILLS_INSTALL_AGENT, '-y']
   if (scope === 'global') args.push('-g')
   if (mergedIds.length > 0) {
     for (const id of mergedIds) {
@@ -391,10 +536,90 @@ export async function installSkill(
     args,
   })
   await runSkills(args, cwd)
+  await reconcileCanonicalScope(scope, projectPath)
 }
 
-export async function removeSkill(skill: Skill): Promise<void> {
-  await fs.rm(skill.path, { recursive: true, force: true })
+export async function removeSkill(projectPath: string, skill: Skill): Promise<void> {
+  const owningProject = skill.scope === 'project' ? skill.projectPath ?? projectPath : projectPath
+  if (skill.scope === 'project' && !owningProject) throw new Error('The skill’s owning project is unknown.')
+  const current = await listSkills(owningProject)
+  const found = current.find((candidate) => candidate.scope === skill.scope && candidate.path === path.resolve(skill.path))
+  if (!found) throw new Error('Skill is no longer installed.')
+  const allowedRoots = skillRoots(found.scope, owningProject).map((root) => root.path)
+  const locations = [...found.locations].sort((a, b) => Number(a === found.path) - Number(b === found.path))
+  for (const location of locations) {
+    if (!allowedRoots.some((root) => isWithin(root, location))) throw new Error('Refusing to remove a skill outside registered skill directories.')
+    await fs.rm(location, { recursive: true, force: true })
+  }
+}
+
+/** Move an existing harness-specific skill into the canonical store and leave
+ * a compatibility link in its original location. A recoverable backup is kept
+ * outside all harness discovery roots. */
+export async function adoptSkill(
+  projectPath: string,
+  skill: Skill,
+  backupBasePath: string,
+): Promise<void> {
+  const owningProject = skill.scope === 'project' ? skill.projectPath ?? projectPath : projectPath
+  if (skill.scope === 'project' && !owningProject) throw new Error('The skill’s owning project is unknown.')
+  const current = await listSkills(owningProject)
+  const found = current.find((candidate) => candidate.scope === skill.scope && candidate.path === path.resolve(skill.path))
+  if (!found) throw new Error('Skill is no longer installed.')
+  if (found.managed) return
+  if (found.conflict) throw new Error('Resolve the same-name skill conflict before making this skill available everywhere.')
+
+  const roots = skillRoots(found.scope, owningProject).map((root) => root.path)
+  let source: string | undefined
+  for (const location of found.locations) {
+    try {
+      const stat = await fs.lstat(location)
+      if (stat.isDirectory() && path.resolve(await fs.realpath(location)) === found.path) {
+        source = location
+        break
+      }
+    } catch { /* stale registration */ }
+  }
+  if (!source || !roots.some((root) => isWithin(root, source))) {
+    throw new Error('This skill is linked from outside a registered skill directory and cannot be adopted safely.')
+  }
+  const canonicalRoot = canonicalSkillsDir(found.scope, owningProject)
+  const destination = path.join(canonicalRoot, found.id)
+  try {
+    await fs.lstat(destination)
+    throw new Error(`A canonical skill named '${found.id}' already exists.`)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+
+  const token = `${Date.now()}-${randomUUID()}`
+  const staging = path.join(canonicalRoot, `.agentkeeper-${token}.tmp`)
+  const backupRoot = path.join(backupBasePath, 'skill-backups', found.scope, token)
+  const backup = path.join(backupRoot, found.id)
+  await fs.mkdir(canonicalRoot, { recursive: true })
+  try {
+    await fs.cp(source, staging, { recursive: true, errorOnExist: true })
+    await fs.rename(staging, destination)
+  } catch (error) {
+    await fs.rm(staging, { recursive: true, force: true }).catch(() => {})
+    throw error
+  }
+  let sourceMoved = false
+  try {
+    await fs.mkdir(backupRoot, { recursive: true })
+    await fs.rename(source, backup)
+    sourceMoved = true
+    const result = await reconcileSkillLinks(destination, [path.dirname(source)])
+    if (result[0]?.status === 'conflict') throw new Error(`Could not link the canonical skill at '${source}'.`)
+    await reconcileCanonicalScope(found.scope, owningProject)
+  } catch (error) {
+    if (sourceMoved) {
+      await fs.rm(source, { recursive: true, force: true }).catch(() => {})
+      await fs.rename(backup, source).catch(() => {})
+    }
+    await fs.rm(destination, { recursive: true, force: true }).catch(() => {})
+    throw error
+  }
 }
 
 const SKILL_GENERATION_SYSTEM = `You generate agent skill files. Output ONLY the skill markdown starting with \`---\`. No explanation, no code fences, no prose before or after.
@@ -407,7 +632,7 @@ description: <one-line description of what this skill does>
 
 # Title
 
-Instructions to Claude...`
+Instructions to the agent...`
 
 function validateGeneratedSkill(raw: string): string {
   const text = stripAnsi(raw).trim()
@@ -439,12 +664,19 @@ export async function saveSkill(
   scope: 'project' | 'global',
   content: string,
 ): Promise<Skill> {
-  const dir = getHarness().getSkillsDir(scope, projectPath)
-  if (!dir) throw new Error(`The '${getHarness().name}' harness has no skills directory.`)
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+    throw new Error('Skill ID must use lowercase letters, numbers, and single hyphens.')
+  }
+  const dir = canonicalSkillsDir(scope, projectPath)
   const skillDir = path.join(dir, id)
   const skillFile = path.join(skillDir, 'SKILL.md')
   await fs.mkdir(skillDir, { recursive: true })
   await fs.writeFile(skillFile, content.trimEnd() + '\n', 'utf8')
+  await reconcileCanonicalScope(scope, projectPath)
   const { name, description, body } = parseFrontmatter(content)
-  return { id, scope, path: skillDir, name: name || id, description, body }
+  return {
+    id, scope, ...(scope === 'project' ? { projectPath } : {}), path: skillDir,
+    locations: [skillDir], harnessIds: [], managed: true,
+    conflict: false, name: name || id, description, body,
+  }
 }

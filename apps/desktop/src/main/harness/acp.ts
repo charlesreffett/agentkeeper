@@ -173,7 +173,41 @@ export class AcpHarnessAdapter implements HarnessAdapter {
   }
   getSessionsRoot() { return path.join(os.homedir(), `.${this.id}`, 'sessions') }
   getCommandsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.agents', 'commands') : path.join(os.homedir(), '.agents', 'commands') }
-  getSkillsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.agents', 'skills') : path.join(os.homedir(), '.agents', 'skills') }
+  getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
+    const canonical = scope === 'project'
+      ? path.join(projectPath!, '.agents', 'skills')
+      : path.join(os.homedir(), '.agents', 'skills')
+    if (this.id === 'cursor') {
+      const native = scope === 'project'
+        ? path.join(projectPath!, '.cursor', 'skills')
+        : path.join(os.homedir(), '.cursor', 'skills')
+      return [
+        { path: native, kind: 'native' as const },
+        { path: canonical, kind: 'compatible' as const, canonical: true },
+        { path: scope === 'project' ? path.join(projectPath!, '.claude', 'skills') : path.join(os.homedir(), '.claude', 'skills'), kind: 'compatible' as const },
+        { path: scope === 'project' ? path.join(projectPath!, '.codex', 'skills') : path.join(os.homedir(), '.codex', 'skills'), kind: 'compatible' as const },
+      ]
+    }
+    if (this.id === 'grok') {
+      const grokRoot = process.env['GROK_HOME'] || path.join(os.homedir(), '.grok')
+      const native = scope === 'project'
+        ? path.join(projectPath!, '.grok', 'skills')
+        : path.join(grokRoot, 'skills')
+      // Grok reads ~/.agents/skills globally, but project .agents/skills still
+      // needs a per-skill link in its native root.
+      return scope === 'global'
+        ? [
+            { path: native, kind: 'native' as const },
+            { path: canonical, kind: 'compatible' as const, canonical: true },
+            { path: path.join(os.homedir(), '.claude', 'skills'), kind: 'compatible' as const },
+          ]
+        : [
+            { path: native, kind: 'native' as const },
+            { path: path.join(projectPath!, '.claude', 'skills'), kind: 'compatible' as const },
+          ]
+    }
+    return [{ path: canonical, kind: 'native' as const, canonical: true }]
+  }
   getPluginsDir() { return path.join(os.homedir(), `.${this.id}`, 'plugins') }
   getSettingsPath() { return path.join(os.homedir(), `.${this.id}`, 'config.json') }
   encodeCwd(cwd: string) { return cwd.replaceAll('/', '-') }

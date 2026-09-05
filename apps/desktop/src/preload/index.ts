@@ -266,8 +266,10 @@ const api: AgentKeeperApi = {
         scope,
         skillIds,
       ) as Promise<void>,
-    remove: (skill: Skill) =>
-      invoke(IPC_CHANNELS.skillsRemove, skill) as Promise<void>,
+    remove: (projectPath: string, skill: Skill) =>
+      invoke(IPC_CHANNELS.skillsRemove, projectPath, skill) as Promise<void>,
+    adopt: (projectPath: string, skill: Skill) =>
+      invoke(IPC_CHANNELS.skillsAdopt, projectPath, skill) as Promise<void>,
     preview: (projectPath: string, source: string): Promise<SkillPreview[]> =>
       invoke(IPC_CHANNELS.skillsPreview, projectPath, source) as Promise<
         SkillPreview[]
