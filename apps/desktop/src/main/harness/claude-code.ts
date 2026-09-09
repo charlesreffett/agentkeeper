@@ -145,12 +145,18 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     }
 
     const model = this.sanitizedModel(options.model)
+    // The SDK forwards an aborted `abortController` to node's child_process
+    // abort listener, which emits an unhandled `error` on the claude subprocess
+    // (surfaces as an Electron "uncaught exception" dialog on interrupt). Hand
+    // the SDK a private controller we never trip; teardown goes through
+    // q.interrupt()/q.close() below, which SIGTERM/SIGKILL the child cleanly.
+    const sdkAbort = new AbortController()
     const sdkOptions: Parameters<typeof query>[0]['options'] = {
       cwd: options.cwd,
       ...(model ? { model } : {}),
       ...(options.effort ? { effort: options.effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
       ...(options.resume ? { resume: options.resume } : {}),
-      abortController: options.abortController,
+      abortController: sdkAbort,
       env: childEnv,
       permissionMode: (options.permissionMode ?? 'bypassPermissions') as 'bypassPermissions',
       settingSources: (options.settingSources ?? ['user', 'project']) as ['user', 'project'],
