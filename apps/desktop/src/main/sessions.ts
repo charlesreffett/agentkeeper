@@ -4,6 +4,7 @@ import path from 'node:path'
 import readline from 'node:readline'
 import { getHarness } from './harness/index'
 import { readOpenCodeTranscript } from './harness/opencode-transcript'
+import { readCodexTranscript } from './harness/codex-transcript'
 import { isGeneralProject } from '../shared/ipc-contract'
 import type {
   ContentBlock,
@@ -380,6 +381,9 @@ export async function readSession(
   // per-message JSON tree, so read it through its own reader.
   if (harnessId === 'opencode') {
     return readOpenCodeTranscript(projectPath, sessionId)
+  }
+  if (harnessId === 'codex') {
+    return readCodexTranscript(claudeProjectsRoot(harnessId), projectPath, sessionId)
   }
   const filePath = path.join(projectDir(projectPath, harnessId), `${sessionId}.jsonl`)
   let stat: fs.Stats
