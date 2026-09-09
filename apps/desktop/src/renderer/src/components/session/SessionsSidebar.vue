@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch, type Directive } from 'vue'
-import { ChevronDown, ChevronRight, Folder, FolderOpen, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from '@/components/icons/app-icons'
+import { ChevronDown, ChevronRight, Folder, FolderOpen, ListTodo, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from '@/components/icons/app-icons'
 import { TreeItem, TreeRoot } from 'reka-ui'
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine'
 import { draggable, dropTargetForElements, monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter'
@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import EditProjectDialog from '@/components/project/EditProjectDialog.vue'
 import ProjectHoverTooltip from '@/components/project/ProjectHoverTooltip.vue'
+import SessionManagerDialog from '@/components/session/SessionManagerDialog.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { useUnifiedSessions, type UnifiedSession } from '@/composables/useUnifiedSessions'
 import { formatRelativeTime } from '@/lib/format'
@@ -59,6 +60,7 @@ const projectToRemove = ref<RecentProject | null>(null)
 const actionMenuPath = ref<string | null>(null)
 const isRemovingProject = ref(false)
 const isDeletingSession = ref(false)
+const sessionManagerOpen = ref(false)
 const restoredExpandedProjects = readExpandedProjects()
 const expandedProjects = ref<string[]>(restoredExpandedProjects ?? [])
 let projectExpansionHydrated = false
@@ -384,10 +386,20 @@ function handleProjectDragEnd() {
   </div>
 
   <div v-else class="w-[260px] shrink-0 flex flex-col border-r border-border overflow-hidden bg-background">
-    <div class="p-2 shrink-0 border-b border-border">
-      <Button class="w-full gap-1.5" @click="handleNew()">
+    <div class="flex gap-2 p-2 shrink-0 border-b border-border">
+      <Button class="min-w-0 flex-1 gap-1.5" @click="handleNew()">
         <Plus class="size-3.5" />
         New session
+      </Button>
+      <Button
+        variant="outline"
+        size="icon"
+        class="shrink-0"
+        title="Manage sessions"
+        aria-label="Manage sessions"
+        @click="sessionManagerOpen = true"
+      >
+        <ListTodo class="size-4" />
       </Button>
     </div>
 
@@ -565,6 +577,11 @@ function handleProjectDragEnd() {
     :project="projectToEdit"
     @update:open="(open) => { if (!open) projectToEdit = null }"
     @saved="projectToEdit = null"
+  />
+
+  <SessionManagerDialog
+    v-model:open="sessionManagerOpen"
+    :active-id="activeId"
   />
 
   <AlertDialog :open="projectToRemove !== null" @update:open="(open) => { if (!open && !isRemovingProject) projectToRemove = null }">
