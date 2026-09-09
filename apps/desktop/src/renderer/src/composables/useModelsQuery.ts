@@ -49,6 +49,13 @@ function syntheticOption(value: string): ModelOption {
   return { value, label: humanizeModelId(value), shortLabel: toShortLabel(value) }
 }
 
+/** Find a catalog row by either its selectable alias or the concrete model id
+ * the harness reports on assistant messages. */
+export function findModelOption(models: ModelOption[], value?: string | null): ModelOption | undefined {
+  if (!value) return undefined
+  return models.find((model) => model.value === value || model.resolvedModel === value)
+}
+
 export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>) {
   const queryClient = useQueryClient()
   const id = () => toValue(harnessId)
@@ -98,7 +105,8 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
    *  when it has one — so the picker highlights a real row instead of a phantom
    *  "unavailable" entry. Genuinely unknown ids (no default) pass through. */
   function effectiveValueFor(selected?: string | null): string {
-    if (selected && models.value.some((o) => o.value === selected)) return selected
+    const matched = findModelOption(models.value, selected)
+    if (matched) return matched.value
     return defaultValue.value || selected || SESSION_DEFAULT_VALUE
   }
 
@@ -125,7 +133,7 @@ export function useModelsQuery(harnessId?: MaybeRefOrGetter<string | undefined>)
   function resolvedLabelFor(value?: string | null): string {
     const opts = models.value
     const eff = effectiveValueFor(value)
-    const m = eff ? opts.find((o) => o.value === eff) : opts.find((o) => o.isDefault)
+    const m = eff ? findModelOption(opts, eff) : opts.find((o) => o.isDefault)
     if (m?.resolvedModel) return prettyModelId(m.resolvedModel)
     if (m) return m.label
     if (eff) return prettyModelId(eff)
