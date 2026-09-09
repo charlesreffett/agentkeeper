@@ -39,13 +39,10 @@ const label = computed(() => `${props.active ? 'Working' : 'Worked'}${elapsed.va
 </script>
 
 <template>
-  <section
-    class="transition-[border-color,margin] duration-150 ease-out"
-    :class="expanded ? 'border-b-0 mb-0' : 'border-b border-border/50 mb-[15px]'"
-  >
+  <section class="mb-[15px]">
     <button
       type="button"
-      class="w-full cursor-pointer select-none flex items-center gap-2 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+      class="w-full cursor-pointer select-none flex items-center gap-2 border-b border-border/50 py-1.5 text-sm text-muted-foreground hover:text-foreground"
       :aria-expanded="expanded"
       @click="expanded = !expanded"
     >
