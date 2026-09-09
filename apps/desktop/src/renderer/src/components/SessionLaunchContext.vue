@@ -47,7 +47,13 @@ watch(branchOpen, (open) => {
   if (open) { branchQuery.value = ''; void refetch(); void nextTick(() => branchSearch.value?.focus()) }
 })
 watch([() => props.projectPath, currentBranch], () => {
-  if (props.projectPath && !props.branch && currentBranch.value?.name) emit('initialize:branch', currentBranch.value.name)
+  const activeBranch = currentBranch.value?.name
+  if (props.projectPath && activeBranch && props.branch !== activeBranch) {
+    // The parent accepts this only while the draft branch is untouched, so an
+    // explicit base-branch selection remains stable while default drafts track
+    // external checkouts.
+    emit('initialize:branch', activeBranch)
+  }
 }, { immediate: true })
 
 function chooseProject(value: string) {

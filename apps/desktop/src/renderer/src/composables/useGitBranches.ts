@@ -1,4 +1,4 @@
-import { computed, unref, type MaybeRef } from 'vue'
+import { computed, onScopeDispose, unref, watch, type MaybeRef } from 'vue'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/vue-query'
 import { toast } from 'vue-sonner'
 import { queryKeys } from '@/lib/queryKeys'
@@ -41,6 +41,41 @@ export function useGitBranches(projectPath: MaybeRef<string | null | undefined>)
     if (!path.value) return
     void queryClient.invalidateQueries({ queryKey: queryKeys.git.branches(path.value) })
   }
+
+  // Keep branch data current when HEAD is changed outside this composable
+  // (for example from the terminal or another branch switcher). The main
+  // process watcher is refcounted, so multiple consumers can safely watch the
+  // same working copy.
+  let watchedPath: string | null = null
+  let watcherUpdate = Promise.resolve()
+  const unsubscribeBranchChanged = window.agentkeeper.git.onBranchChanged((event) => {
+    if (event.projectPath === path.value) invalidate()
+  })
+
+  watch(
+    [path, isRepo],
+    ([nextPath, nextIsRepo]) => {
+      const desiredPath = nextIsRepo ? nextPath : null
+      watcherUpdate = watcherUpdate.then(async () => {
+        if (watchedPath === desiredPath) return
+        if (watchedPath) await window.agentkeeper.fs.watchStop(watchedPath)
+        watchedPath = null
+        if (desiredPath) {
+          await window.agentkeeper.fs.watchStart(desiredPath)
+          watchedPath = desiredPath
+        }
+      })
+    },
+    { immediate: true },
+  )
+
+  onScopeDispose(() => {
+    unsubscribeBranchChanged()
+    watcherUpdate = watcherUpdate.then(async () => {
+      if (watchedPath) await window.agentkeeper.fs.watchStop(watchedPath)
+      watchedPath = null
+    })
+  })
 
   const switchMutation = useMutation({
     mutationFn: ({ name, opts }: { name: string; opts?: SwitchBranchOptions }): Promise<SwitchResult> =>
