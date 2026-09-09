@@ -276,6 +276,11 @@ export async function switchBranch(
   opts?: SwitchBranchOptions,
 ): Promise<SwitchResult> {
   try {
+    // Drafts remember a branch selection, including the branch already checked
+    // out in the project. Starting such a draft is not a branch switch, so it
+    // must not be rejected merely because that same checkout has tracked edits.
+    if ((await getBranch(projectPath)) === name) return { ok: true }
+
     if (!opts?.allowDirty && (await hasTrackedChanges(projectPath))) {
       // Soft-reject: AgentKeeper's own gate, git untouched. Force = retry with
       // allowDirty; the switch itself always carries changes, never discards.
