@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatContextWindow } from './useModelsQuery'
+import { findModelOption, formatContextWindow, type ModelOption } from './useModelsQuery'
 import { resolveModelSelectionState } from './useHarnessCapabilities'
 
 describe('model catalog presentation', () => {
@@ -16,5 +16,16 @@ describe('model catalog presentation', () => {
     })
     expect(resolveModelSelectionState('idle', false, 'idle')).toEqual({ enabled: true })
     expect(resolveModelSelectionState('draft-only', true, 'running')).toEqual({ enabled: true })
+  })
+
+  it('matches transcript model ids against a catalog row resolved model', () => {
+    const models: ModelOption[] = [{
+      value: 'haiku',
+      label: 'Haiku 4.5',
+      shortLabel: 'haiku',
+      resolvedModel: 'claude-haiku-4-5-20251001',
+    }]
+
+    expect(findModelOption(models, 'claude-haiku-4-5-20251001')?.label).toBe('Haiku 4.5')
   })
 })

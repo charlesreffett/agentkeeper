@@ -7,6 +7,7 @@ import { getHarness } from './harness/index'
 import { getCapabilities } from './capabilities'
 import { validateCustomModel } from './models'
 import { modelSelectionRejection } from './model-mutability'
+import { withSessionModel } from './session-event-model'
 import type { HarnessEvent } from '@agentkeeper/core'
 import * as costLedger from './cost-ledger'
 import { truncateSessionJsonl, restoreSessionJsonl } from './sessions'
@@ -255,8 +256,10 @@ function clearBackgroundPark(session: ActiveSession): void {
 async function consumeStream(session: ActiveSession): Promise<void> {
   let restartScheduled = false
   try {
-    for await (const msg of session.stream) {
+    for await (const harnessEvent of session.stream) {
       if (session.interrupted) break
+
+      const msg = withSessionModel(harnessEvent, session.model)
 
       session.events.push(msg)
 
@@ -783,6 +786,7 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
       worktreePath: persistedSession.worktreePath ?? undefined,
       initialPrompt: persistedSession.initialPrompt,
       model: persistedSession.model ?? undefined,
+      harnessId: persistedSession.harnessId,
       effort: persistedSession.effort ?? undefined,
       permissionMode: (persistedSession.permissionMode as PermissionMode) ?? undefined,
       resumeSdkSessionId: agent.sdkSessionId,
@@ -873,6 +877,7 @@ export async function resumeSession(localId: string): Promise<string> {
     worktreePath: persistedSession.worktreePath ?? undefined,
     initialPrompt: persistedSession.initialPrompt,
     model: persistedSession.model ?? undefined,
+    harnessId: persistedSession.harnessId,
     effort: persistedSession.effort ?? undefined,
     permissionMode: (persistedSession.permissionMode as PermissionMode) ?? undefined,
     agencyName: persistedSession.agencyName ?? undefined,
@@ -971,6 +976,7 @@ async function restartIdle(
       worktreePath: persistedSession.worktreePath ?? undefined,
       initialPrompt: persistedSession.initialPrompt,
       model: newModel,
+      harnessId: persistedSession.harnessId,
       effort: newEffort,
       permissionMode: newPermissionMode,
       resumeSdkSessionId: agent?.sdkSessionId ?? undefined,
