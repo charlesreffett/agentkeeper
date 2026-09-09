@@ -20,6 +20,11 @@ export async function* jsonLines(stream: NodeJS.ReadableStream): AsyncIterable<u
 }
 
 export function waitForExit(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return child.exitCode === 0
+      ? Promise.resolve()
+      : Promise.reject(new Error(`Harness exited with ${child.signalCode ? `signal ${child.signalCode}` : `code ${child.exitCode}`}`))
+  }
   return new Promise((resolve, reject) => {
     child.once('error', reject)
     child.once('exit', (code, signal) => {
