@@ -53,6 +53,7 @@ import { getActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index'
 import { detectGithubRepo, recentProjectsStore } from './store'
 import { commit, createBranch, detectRemoteSources, getBranch, getStatus, isGitRepo, listBranches, pull, push, stageFiles, switchBranch, switchBranchCreate, unstageFiles } from './git'
+import { liveSessionBlocksBranchSwitch } from './session-branch-policy'
 import { suggestCommits } from './git-ai'
 import { listSessions, readSession, deleteHistoricalSession, deleteAllHistoricalSessions } from './sessions'
 import { interruptSession, terminateSession, resumeSession, sendInput, startSession, setModel, setEffort, setPermissionMode, isSessionActive, reconnectSessionMcp, setDefaultMcpFactoryResolver, editAndRerun, undoEditAndRerun } from './agent'
@@ -1169,9 +1170,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
   })
 
   // Enforced here (not only in the renderer) — the mobile companion and future
-  // callers hit the same channel. Switching HEAD under a running agent corrupts
-  // its pinned-branch assumptions. Path comparison, not project identity:
-  // sessions in worktree dirs have their own HEAD and must not block.
+  // callers hit the same channel. Changing HEAD under a running agent corrupts
+  // its pinned-branch assumptions, but re-selecting the current branch is a
+  // no-op and must allow multiple sessions to share that checkout. Path
+  // comparison, not project identity: linked worktrees have independent HEADs.
   function hasLiveSessionAt(projectPath: string): boolean {
     const LIVE = new Set(['running', 'starting', 'blocked'])
     return sessionRegistry
@@ -1181,8 +1183,13 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
 
   ipcMain.handle(
     IPC_CHANNELS.gitSwitchBranch,
-    (_event, projectPath: string, name: string, opts?: SwitchBranchOptions): Promise<SwitchResult> | SwitchResult => {
-      if (hasLiveSessionAt(projectPath)) return { ok: false, blocked: 'live-session' }
+    async (_event, projectPath: string, name: string, opts?: SwitchBranchOptions): Promise<SwitchResult> => {
+      const blocked = liveSessionBlocksBranchSwitch(
+        hasLiveSessionAt(projectPath),
+        await getBranch(projectPath),
+        name,
+      )
+      if (blocked) return { ok: false, blocked: 'live-session' }
       return switchBranch(projectPath, name, opts)
     },
   )
