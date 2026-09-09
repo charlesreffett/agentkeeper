@@ -9,8 +9,6 @@ import {
 } from '@/components/icons/app-icons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import Transcript from '@/components/transcript/Transcript.vue'
-import VerbosityFilter from '@/components/transcript/VerbosityFilter.vue'
-import SessionStatusBar from '@/components/transcript/SessionStatusBar.vue'
 import MessageInput from '@/components/MessageInput.vue'
 import ExecutionTargetPicker from '@/components/ExecutionTargetPicker.vue'
 import SessionLaunchContext from '@/components/SessionLaunchContext.vue'
@@ -22,13 +20,6 @@ import type { ScopeOption } from '@/composables/usePageScope'
 import { useSessionStore } from '@/stores/sessions'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
 import { projectColor } from '@/lib/projectColor'
-import {
-  DEFAULT_VERBOSITY_STATE,
-  MODE_DEFAULTS,
-  passesEventFilter,
-  type VerbosityState,
-  hiddenCount as computeHiddenCount,
-} from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { defaultModelFor, rememberModel } from '@/composables/useModelMemory'
 import { resolveModelSelectionState, useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
@@ -328,7 +319,7 @@ async function onEditSubmit(uuid: string, newText: string, attachments: Attachme
       agentLocalId,
       sessionLocalId: props.liveId,
       events: removed,
-      count: removed.filter((e) => passesEventFilter(e, verbosityState.value)).length,
+      count: removed.length,
       timerId: setTimeout(() => { undoBuf.value = null }, 10_000),
     }
   } catch (e) {
@@ -362,7 +353,7 @@ async function onRegenerate(assistantEventUuid: string) {
       agentLocalId,
       sessionLocalId: props.liveId,
       events: removed,
-      count: removed.filter((e) => passesEventFilter(e, verbosityState.value)).length,
+      count: removed.length,
       timerId: setTimeout(() => { undoBuf.value = null }, 10_000),
     }
   } catch (e) {
@@ -644,21 +635,6 @@ async function changeInteractionMode(value: string) {
   await changePermissionMode(mode === 'plan' ? 'plan' : 'bypassPermissions')
 }
 
-// ─── Verbosity filter ────────────────────────────────────────────────────────
-
-const verbosityState = ref<VerbosityState>({
-  mode: DEFAULT_VERBOSITY_STATE.mode,
-  toggles: { ...DEFAULT_VERBOSITY_STATE.toggles },
-})
-
-const totalHiddenCount = computed(() =>
-  computeHiddenCount(agentEvents.value, verbosityState.value)
-)
-
-function onShowAll() {
-  verbosityState.value = { mode: 'verbose', toggles: { ...MODE_DEFAULTS.verbose } }
-}
-
 // ─── Side panel collapse (persisted via localStorage) ────────────────────────
 
 const PANEL_KEY = 'agentkeeper.ui.panels'
@@ -686,21 +662,6 @@ function setRightCollapsed(v: boolean) {
   rightCollapsed.value = v
   writePanelCollapsed('right', v)
 }
-
-const currentTool = computed((): { name: string; input: unknown } | null => {
-  const s = session.value
-  if (!s || (s.status !== 'running' && s.status !== 'starting')) return null
-  const evts = agentEvents.value
-  for (let i = evts.length - 1; i >= 0; i--) {
-    const evt = evts[i]
-    if (!evt) continue
-    for (let j = evt.content.length - 1; j >= 0; j--) {
-      const block = evt.content[j]
-      if (block?.type === 'tool_use') return { name: block.name, input: block.input }
-    }
-  }
-  return null
-})
 
 const streamingEventUuid = computed((): string | undefined => {
   const s = session.value
@@ -830,18 +791,6 @@ const streamingEventUuid = computed((): string | undefined => {
         </template>
       </div>
 
-      <!-- Verbosity filter toolbar — only for live sessions -->
-      <div
-        v-if="!isDraft"
-        class="border-b border-border/50 px-4 py-1.5 shrink-0 flex items-center justify-between"
-      >
-        <VerbosityFilter
-          :model-value="verbosityState"
-          :hidden-count="totalHiddenCount"
-          @update:model-value="verbosityState = $event"
-        />
-      </div>
-
       <!-- Transcript area -->
       <div class="flex-1 relative min-h-0">
         <div class="h-full flex flex-col overflow-hidden">
@@ -869,11 +818,12 @@ const streamingEventUuid = computed((): string | undefined => {
             :role-name="rootSession?.agents.find(a => a.localId === selectedAgentLocalId)?.roleName ?? null"
             :harness-id="sessionHarnessId"
             :assistant-name="assistantName"
-            :verbosity-state="verbosityState"
             :streaming-event-uuid="streamingEventUuid"
             :can-rewrite="!isDraft"
+            :active="session.status === 'running' || session.status === 'starting'"
+            :turn-started-at="turnStartedAt"
+            :turn-ended-at="turnEndedAt"
             class="flex-1 min-h-0"
-            @show-all="onShowAll"
             @edit-submit="onEditSubmit"
             @regenerate="onRegenerate"
             @scroll="onTranscriptScroll"
@@ -911,15 +861,6 @@ const streamingEventUuid = computed((): string | undefined => {
           </button>
         </Transition>
       </div>
-
-      <!-- Processing status bar -->
-      <SessionStatusBar
-        v-if="!isDraft"
-        :status="session.status"
-        :current-tool="currentTool"
-        :turn-started-at="turnStartedAt"
-        :turn-ended-at="turnEndedAt"
-      />
 
       <!-- Message input -->
       <MessageInput

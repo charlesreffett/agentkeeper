@@ -454,10 +454,20 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
             const text = (part['text'] as string) ?? ''
             yield {
               type: 'assistant',
+              uuid: `${messageID}:${String(part['id'] ?? 'text')}`,
               message: {
                 role: 'assistant',
                 content: [{ type: 'text', text }],
               },
+            }
+          } else if (partType === 'reasoning') {
+            const text = (part['text'] as string) ?? ''
+            if (text.trim()) {
+              yield {
+                type: 'assistant',
+                uuid: `${messageID}:${String(part['id'] ?? 'reasoning')}`,
+                message: { role: 'assistant', content: [{ type: 'thinking', thinking: text }] },
+              }
             }
           } else if (partType === 'tool') {
             const toolState = part['state'] as Record<string, unknown> | undefined
@@ -467,6 +477,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
             if (toolState?.['status'] === 'pending' || toolState?.['status'] === 'running') {
               yield {
                 type: 'assistant',
+                uuid: callID,
                 message: {
                   role: 'assistant',
                   content: [{
@@ -480,6 +491,7 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
             } else if (toolState?.['status'] === 'completed' || toolState?.['status'] === 'error') {
               yield {
                 type: 'assistant',
+                uuid: callID,
                 message: {
                   role: 'assistant',
                   content: [{

@@ -9,12 +9,10 @@ import UnknownBlock from './UnknownBlock.vue'
 import { CornerDownRight, Info, Pencil, Plus, RefreshCw } from '@/components/icons/app-icons'
 import { formatTimestamp } from '@/lib/format'
 import { computed, ref, toRaw } from 'vue'
-import { type VerbosityState, DEFAULT_VERBOSITY_STATE, isBlockVisible } from '@/lib/verbosity'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 
 const props = defineProps<{
   event: TranscriptEvent
-  verbosityState?: VerbosityState
   /** Display name for the agent that produced this event. Used for sub-agent progress events. */
   agentName?: string | null
   /** Harness the session runs on — scopes model-label resolution to the right
@@ -35,8 +33,6 @@ const emit = defineEmits<{
 }>()
 
 const { resolvedLabelFor } = useModelsQuery(() => props.harnessId ?? undefined)
-
-const state = computed(() => props.verbosityState ?? DEFAULT_VERBOSITY_STATE)
 
 const isToolResultOnly = computed(
   () =>
@@ -81,7 +77,7 @@ type BlockGroup =
 const groupedContent = computed((): BlockGroup[] => {
   const groups: BlockGroup[] = []
   props.event.content.forEach((block, idx) => {
-    if (!isBlockVisible(block, state.value)) return
+    if ((block.type === 'text' && !block.text.trim()) || (block.type === 'thinking' && !block.thinking.trim())) return
     if (block.type === 'image') {
       const last = groups[groups.length - 1]
       if (last?.kind === 'images') {
@@ -102,13 +98,6 @@ function blockExtraProps(block: ContentBlock): Record<string, unknown> {
   }
   return {}
 }
-
-const hiddenToolUseCount = computed(
-  () =>
-    props.event.content.filter(
-      (b) => b.type === 'tool_use' && !isBlockVisible(b, state.value),
-    ).length,
-)
 
 function blockComponent(block: ContentBlock) {
   switch (block.type) {
@@ -412,13 +401,6 @@ function onEditKeydown(e: KeyboardEvent) {
             v-bind="blockExtraProps(group.block)"
           />
         </template>
-        <!-- Hidden tool call hint -->
-        <div
-          v-if="hiddenToolUseCount > 0"
-          class="text-xs text-muted-foreground/40 font-mono select-none"
-        >
-          · {{ hiddenToolUseCount }} tool {{ hiddenToolUseCount === 1 ? 'call' : 'calls' }} ·
-        </div>
       </div>
     </div>
   </article>

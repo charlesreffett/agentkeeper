@@ -17,7 +17,7 @@ import type {
   TranscriptEvent,
 } from '@shared/ipc-contract'
 import { isGeneralProject } from '@shared/ipc-contract'
-import { sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
+import { harnessStreamToTranscriptEvent, sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
 import { playNotificationSound } from '@/lib/notificationSound'
 import { queryClient } from '@/lib/queryClient'
 import { queryKeys } from '@/lib/queryKeys'
@@ -1271,6 +1271,22 @@ export const useSessionStore = defineStore('sessions', () => {
       const event = raw['event'] as Record<string, unknown> | undefined
       if (!event) return
 
+      const providerEvent = harnessStreamToTranscriptEvent(raw)
+      if (providerEvent) {
+        const existing = agentEvts.findIndex((entry) => entry.uuid === providerEvent.uuid)
+        if (existing >= 0) {
+          const previous = agentEvts[existing]!
+          agentEvts.splice(existing, 1, providerEvent)
+          const globalIndex = s.events.indexOf(previous)
+          if (globalIndex >= 0) s.events.splice(globalIndex, 1, providerEvent)
+        } else {
+          agentEvts.push(providerEvent)
+          s.events.push(providerEvent)
+        }
+        s.lastActivityAt = Date.now()
+        return
+      }
+
       switch (event['type']) {
         case 'message_start': {
           const partial: TranscriptEvent = {
@@ -1365,8 +1381,9 @@ export const useSessionStore = defineStore('sessions', () => {
     }
 
     // ── Complete message path ───────────────────────────────────────────────
-    let evt = sdkMessageToTranscriptEvent(payload.message)
-    if (!evt) return
+    const normalizedEvent = sdkMessageToTranscriptEvent(payload.message)
+    if (!normalizedEvent) return
+    let evt: TranscriptEvent = normalizedEvent
 
     // Reclassify non-human user messages so they don't render as "you" bubbles.
     // Two cases:
@@ -1436,8 +1453,23 @@ export const useSessionStore = defineStore('sessions', () => {
         else s.events.push(evt)
         delete streamingPartials[agentKey]
       } else {
+        const existingIdx = agentEvts.findIndex((entry) => entry.uuid === evt.uuid)
+        if (existingIdx >= 0) {
+          const previous = agentEvts[existingIdx]!
+          // Snapshot-based harnesses reuse an id as a tool advances from
+          // running to completed. Preserve the original tool input when the
+          // completion snapshot contains only its result.
+          if (evt.content.every((block) => block.type === 'tool_result')) {
+            const uses = previous.content.filter((block) => block.type === 'tool_use')
+            if (uses.length) evt = { ...evt, content: [...uses, ...evt.content] }
+          }
+          agentEvts.splice(existingIdx, 1, evt)
+          const globalIdx = s.events.indexOf(previous)
+          if (globalIdx >= 0) s.events.splice(globalIdx, 1, evt)
+        } else {
         agentEvts.push(evt)
         s.events.push(evt)
+        }
       }
       s.lastActivityAt = Date.now()
       if (evt.role === 'assistant') {
