@@ -5,6 +5,7 @@ import type { ContentBlock } from '@shared/ipc-contract'
 
 const props = defineProps<{
   block: Extract<ContentBlock, { type: 'tool_use' }>
+  status?: 'running' | 'success' | 'error'
 }>()
 
 const inputJson = computed(() => {
@@ -52,8 +53,10 @@ const preview = computed(() => {
       >
         ({{ preview }})
       </span>
-      <!-- Status dot — always green; tool calls that errored surface via ToolResultBlock -->
-      <span class="ml-auto size-2 rounded-full bg-emerald-500 shrink-0 opacity-80" />
+      <span
+        class="ml-auto size-2 rounded-full shrink-0 opacity-80"
+        :class="status === 'running' ? 'bg-amber-400 animate-pulse' : status === 'error' ? 'bg-destructive' : 'bg-emerald-500'"
+      />
     </summary>
     <!-- Expanded: full input JSON -->
     <pre

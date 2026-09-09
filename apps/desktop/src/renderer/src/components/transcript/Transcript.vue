@@ -3,76 +3,42 @@ import { computed, provide, ref } from 'vue'
 import { VList, type VListHandle } from 'virtua/vue'
 import type { Attachment, ContentBlock, TranscriptEvent } from '@shared/ipc-contract'
 import TranscriptEventView from './TranscriptEvent.vue'
+import TurnActivityGroup from './TurnActivityGroup.vue'
 import ImageLightbox from '@/components/ImageLightbox.vue'
-import {
-  type VerbosityState,
-  DEFAULT_VERBOSITY_STATE,
-  isBlockVisible,
-  passesEventFilter,
-  hiddenToolCount,
-} from '@/lib/verbosity'
+import { groupTranscript } from '@/lib/transcriptGrouping'
 
 
 
 const props = defineProps<{
   events: TranscriptEvent[]
-  verbosityState?: VerbosityState
   roleName?: string | null
   harnessId?: string | null
   assistantName?: string | null
   streamingEventUuid?: string
   canRewrite?: boolean
+  active?: boolean
+  turnStartedAt?: number | null
+  turnEndedAt?: number | null
 }>()
 
 const emit = defineEmits<{
-  'show-all': []
   'edit-submit': [uuid: string, newText: string, attachments: Attachment[]]
   'regenerate': [uuid: string]
   'scroll': [offset: number]
 }>()
 
-const state = computed(() => props.verbosityState ?? DEFAULT_VERBOSITY_STATE)
-
 const hoverRewriteUuid = ref<string | null>(null)
-
-type RenderItem =
-  | { type: 'event'; event: TranscriptEvent }
-  | { type: 'gap'; count: number }
-
-const renderItems = computed((): RenderItem[] => {
-  const items: RenderItem[] = []
-  let pendingGap = 0
-
-  for (const event of props.events) {
-    if (!passesEventFilter(event, state.value)) continue
-
-    const hasVisibleBlock = event.content.some((b) => isBlockVisible(b, state.value))
-
-    if (!hasVisibleBlock) {
-      pendingGap += hiddenToolCount(event.content, state.value)
-      continue
-    }
-
-    if (pendingGap > 0) {
-      items.push({ type: 'gap', count: pendingGap })
-      pendingGap = 0
-    }
-
-    items.push({ type: 'event', event })
-  }
-
-  return items
-})
+const renderItems = computed(() => groupTranscript(props.events, props.active))
 
 // Index of the hovered event in renderItems (for doomed calculation).
 const doomedFromIndex = computed(() => {
   if (!hoverRewriteUuid.value) return -1
-  return renderItems.value.findIndex(
-    (item) => item.type === 'event' && item.event.uuid === hoverRewriteUuid.value,
+  return renderItems.value.findIndex((item) =>
+    item.type === 'event'
+      ? item.event.uuid === hoverRewriteUuid.value
+      : item.turn.finalEvent?.uuid === hoverRewriteUuid.value,
   )
 })
-
-const hasVisibleContent = computed(() => renderItems.value.length > 0)
 
 function imageBlockSrc(block: ContentBlock & { type: 'image' }): string | null {
   const source = block.source as Record<string, unknown> | undefined
@@ -149,20 +115,9 @@ defineExpose({
             index === renderItems.length - 1 ? 'pb-6' : '',
           ]"
         >
-          <div
-            v-if="item.type === 'gap'"
-            class="flex items-center gap-2 text-xs text-muted-foreground/50 select-none py-0.5"
-          >
-            <span class="flex-1 border-t border-border/25" />
-            <span class="font-mono">
-              {{ item.count }} tool {{ item.count === 1 ? 'call' : 'calls' }}
-            </span>
-            <span class="flex-1 border-t border-border/25" />
-          </div>
           <TranscriptEventView
-            v-else
+            v-if="item.type === 'event'"
             :event="item.event"
-            :verbosity-state="state"
             :agent-name="roleName ?? undefined"
             :harness-id="harnessId"
             :assistant-name="assistantName"
@@ -173,25 +128,31 @@ defineExpose({
             @edit-submit="(uuid, newText, attachments) => emit('edit-submit', uuid, newText, attachments)"
             @regenerate="(uuid) => emit('regenerate', uuid)"
           />
+          <template v-else>
+            <TurnActivityGroup
+              :turn="item.turn"
+              :active="active && index === renderItems.length - 1"
+              :live-started-at="index === renderItems.length - 1 ? turnStartedAt : null"
+              :live-ended-at="index === renderItems.length - 1 ? turnEndedAt : null"
+              :streaming="active && index === renderItems.length - 1"
+            />
+            <TranscriptEventView
+              v-if="item.turn.finalEvent"
+              :event="item.turn.finalEvent"
+              :agent-name="roleName ?? undefined"
+              :harness-id="harnessId"
+              :assistant-name="assistantName"
+              :streaming="item.turn.finalEvent.uuid === streamingEventUuid"
+              :is-doomed="doomedFromIndex >= 0 && index > doomedFromIndex"
+              :can-rewrite="canRewrite"
+              @hover-rewrite="hoverRewriteUuid = $event"
+              @edit-submit="(uuid, newText, attachments) => emit('edit-submit', uuid, newText, attachments)"
+              @regenerate="(uuid) => emit('regenerate', uuid)"
+            />
+          </template>
         </div>
       </template>
     </VList>
-
-    <!-- Empty state: events exist but all hidden by current verbosity -->
-    <div
-      v-if="!hasVisibleContent && events.length > 0"
-      class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center"
-    >
-      <p class="text-sm text-muted-foreground">
-        All messages are hidden by current verbosity.
-      </p>
-      <button
-        class="text-xs text-muted-foreground/60 hover:text-foreground border border-border/40 hover:border-border rounded px-3 py-1 transition-colors"
-        @click="emit('show-all')"
-      >
-        Show all
-      </button>
-    </div>
   </div>
 
   <ImageLightbox
