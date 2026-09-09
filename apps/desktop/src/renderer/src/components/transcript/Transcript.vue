@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, ref } from 'vue'
+import { computed, provide, ref, useAttrs } from 'vue'
 import { VList, type VListHandle } from 'virtua/vue'
 import type { Attachment, ContentBlock, TranscriptEvent } from '@shared/ipc-contract'
 import TranscriptEventView from './TranscriptEvent.vue'
@@ -7,8 +7,9 @@ import TurnActivityGroup from './TurnActivityGroup.vue'
 import ImageLightbox from '@/components/ImageLightbox.vue'
 import { groupTranscript } from '@/lib/transcriptGrouping'
 
+defineOptions({ inheritAttrs: false })
 
-
+const attrs = useAttrs()
 const props = defineProps<{
   events: TranscriptEvent[]
   roleName?: string | null
@@ -99,7 +100,7 @@ defineExpose({
 </script>
 
 <template>
-  <div class="h-full relative">
+  <div v-bind="attrs" class="h-full relative">
     <!-- Virtual list — always rendered so scroll metrics are available when Transcript is mounted -->
     <VList
       ref="listRef"
