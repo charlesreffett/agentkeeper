@@ -35,6 +35,24 @@ describe('harness activity normalization', () => {
     expect(events.map((event) => event?.content[0]?.type)).toEqual(['thinking', 'tool_use', 'tool_use', 'tool_use'])
   })
 
+  it('preserves each Codex file-change operation and path', () => {
+    const event = harnessStreamToTranscriptEvent({
+      provider: 'codex',
+      event: { type: 'item.completed', item: { id: 'change', type: 'file_change', status: 'completed', changes: [
+        { path: 'created.txt', kind: 'add' },
+        { path: 'edited.txt', kind: 'update' },
+        { path: 'deleted.txt', kind: 'delete' },
+      ] } },
+    })
+    const uses = event?.content.filter((block) => block.type === 'tool_use') ?? []
+    expect(uses.map((block) => block.name)).toEqual(['Create', 'Edit', 'Delete'])
+    expect(uses.map((block) => block.input)).toEqual([
+      expect.objectContaining({ file_path: 'created.txt' }),
+      expect.objectContaining({ file_path: 'edited.txt' }),
+      expect.objectContaining({ file_path: 'deleted.txt' }),
+    ])
+  })
+
   for (const provider of ['cursor', 'grok']) {
     it(`normalizes ${provider} ACP thought and tool updates`, () => {
       const thought = harnessStreamToTranscriptEvent({ provider, event: { params: { update: {

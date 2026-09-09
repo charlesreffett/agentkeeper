@@ -46,7 +46,7 @@ function isHumanUser(event: TranscriptEvent): boolean {
 
 function categoryFor(name: string): ActivityCategory {
   const normalized = name.toLowerCase()
-  if (/^(read|write|edit|multiedit|notebookedit|apply_patch)$/.test(normalized)) return 'files'
+  if (/^(read|write|create|delete|edit|multiedit|notebookedit|apply_patch)$/.test(normalized)) return 'files'
   if (/^(bash|shell|exec|exec_command|command|terminal)/.test(normalized)) return 'commands'
   if (/^(grep|glob|find|search|websearch|webfetch)/.test(normalized)) return 'searches'
   if (/agent|subagent|send_message|sendmessage|delegate/.test(normalized)) return 'agents'
@@ -165,14 +165,59 @@ export function groupTranscript(events: TranscriptEvent[], active = false): Tran
 }
 
 export function activityGroupLabel(group: ActivityGroup): string {
-  const count = group.items.length
+  const descriptions = group.items.map(describeActivity)
+  if (descriptions.length === 1) return descriptions[0]!.label
+
+  const actions = new Map<string, { verb: string; noun: string; count: number }>()
+  for (const description of descriptions) {
+    const key = `${description.pluralVerb}:${description.pluralNoun}`
+    const current = actions.get(key)
+    actions.set(key, { verb: description.pluralVerb, noun: description.pluralNoun, count: (current?.count ?? 0) + 1 })
+  }
+  if (actions.size === 1) {
+    const { verb, noun, count } = [...actions.values()][0]!
+    return `${verb} ${count} ${noun}`
+  }
+  return [...actions.values()]
+    .map(({ verb, noun, count }, index) => `${index === 0 ? verb : verb.toLowerCase()} ${count} ${count === 1 ? noun.replace(/s$/, '') : noun}`)
+    .join(', ')
+}
+
+function inputValue(block: Extract<ContentBlock, { type: 'tool_use' }>, keys: string[]): string | null {
+  if (!block.input || typeof block.input !== 'object' || Array.isArray(block.input)) return null
+  const input = block.input as Record<string, unknown>
+  for (const key of keys) if (typeof input[key] === 'string' && input[key]) return input[key] as string
+  return null
+}
+
+interface ActivityDescription { label: string; pluralVerb: string; pluralNoun: string }
+
+function describeActivity(item: ActivityItem): ActivityDescription {
+  if (item.block.type !== 'tool_use') return genericDescription(item.category)
+  const name = item.block.name.toLowerCase().replace(/[_-]/g, '')
+  const file = inputValue(item.block, ['file_path', 'filePath', 'path'])
+  const command = inputValue(item.block, ['command', 'cmd'])
+  const query = inputValue(item.block, ['pattern', 'query'])
+
+  if (name === 'read') return { label: `Read${file ? ` ${file}` : ' 1 file'}`, pluralVerb: 'Read', pluralNoun: 'files' }
+  if (name === 'create') return { label: `Created${file ? ` ${file}` : ' 1 file'}`, pluralVerb: 'Created', pluralNoun: 'files' }
+  if (name === 'write') return { label: `Wrote${file ? ` ${file}` : ' 1 file'}`, pluralVerb: 'Wrote', pluralNoun: 'files' }
+  if (/^(edit|multiedit|notebookedit|applypatch)$/.test(name)) return { label: `Edited${file ? ` ${file}` : ' 1 file'}`, pluralVerb: 'Edited', pluralNoun: 'files' }
+  if (name === 'delete' || name === 'remove') return { label: `Deleted${file ? ` ${file}` : ' 1 file'}`, pluralVerb: 'Deleted', pluralNoun: 'files' }
+  if (/^(bash|shell|exec|execcommand|command|terminal)/.test(name)) return { label: `Ran${command ? ` ${command}` : ' 1 command'}`, pluralVerb: 'Ran', pluralNoun: 'commands' }
+  if (/^(grep|search|websearch|webfetch)$/.test(name)) return { label: `Searched${query ? ` for ${query}` : ''}`, pluralVerb: 'Performed', pluralNoun: 'searches' }
+  if (/^(glob|find)$/.test(name)) return { label: `Found${query ? ` ${query}` : ' files'}`, pluralVerb: 'Found', pluralNoun: 'files' }
+  return genericDescription(item.category)
+}
+
+function genericDescription(category: ActivityCategory): ActivityDescription {
   const noun: Record<ActivityCategory, [string, string]> = {
     files: ['file', 'files'], commands: ['command', 'commands'], searches: ['search', 'searches'],
     agents: ['sub-agent action', 'sub-agent actions'], system: ['system event', 'system events'], tools: ['tool', 'tools'],
   }
-  const [one, many] = noun[group.category]
+  const [one, many] = noun[category]
   const verb: Record<ActivityCategory, string> = {
-    files: 'Read or changed', commands: 'Ran', searches: 'Performed', agents: 'Ran', system: 'Received', tools: 'Used',
+    files: 'Changed', commands: 'Ran', searches: 'Performed', agents: 'Ran', system: 'Received', tools: 'Used',
   }
-  return `${verb[group.category]} ${count} ${count === 1 ? one : many}`
+  return { label: `${verb[category]} 1 ${one}`, pluralVerb: verb[category], pluralNoun: many }
 }

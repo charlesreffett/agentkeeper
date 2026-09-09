@@ -137,8 +137,27 @@ export function harnessStreamToTranscriptEvent(raw: unknown): TranscriptEvent | 
       ], { uuid: id })
     }
     if (itemType === 'file_change') {
+      const changes = Array.isArray(item['changes']) ? item['changes'] : []
+      if (changes.length) {
+        const blocks: ContentBlock[] = []
+        changes.forEach((rawChange, index) => {
+          const change = retiresObject(rawChange) ? rawChange : { path: String(rawChange) }
+          const changeId = `${id}:${index}`
+          const kind = String(change['kind'] ?? change['type'] ?? '').toLowerCase()
+          const name = /^(add|added|create|created)$/.test(kind)
+            ? 'Create'
+            : /^(delete|deleted|remove|removed)$/.test(kind)
+              ? 'Delete'
+              : 'Edit'
+          blocks.push(
+            { type: 'tool_use', id: changeId, name, input: { file_path: change['path'] ?? change['file_path'] ?? '', change } },
+            { type: 'tool_result', tool_use_id: changeId, content: item['status'] ?? 'completed' },
+          )
+        })
+        return eventFromBlocks(blocks, { uuid: id })
+      }
       return eventFromBlocks([
-        { type: 'tool_use', id, name: 'Edit', input: item['changes'] ?? item },
+        { type: 'tool_use', id, name: 'Edit', input: item },
         { type: 'tool_result', tool_use_id: id, content: item['status'] ?? 'completed' },
       ], { uuid: id })
     }
