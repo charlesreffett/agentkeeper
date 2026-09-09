@@ -47,7 +47,20 @@ export class CodexHarnessAdapter implements HarnessAdapter {
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
     const env = await resolveHarnessEnvironment(this, options.env)
-    const child = spawnHarnessProcess(this.bin(), this.args(prompt, options), { cwd: options.cwd, env, signal: options.abortController?.signal })
+    const turnPrompt = await promptForTurn(prompt, options.messageQueue)
+    const child = spawnHarnessProcess(this.bin(), this.args(turnPrompt, options), { cwd: options.cwd, env, signal: options.abortController?.signal })
+    // A prompt is always supplied as an argument. Closing stdin prevents the
+    // CLI from silently waiting for input if the prompt is empty or rejected.
+    child.stdin.end()
+    let stderr = ''
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk: string) => { stderr += chunk })
+    // Attach exit listeners before reading stdout: short-lived failures can
+    // otherwise exit before waitForExit subscribes and leave the UI hanging.
+    const exit = waitForExit(child).then(
+      () => ({ error: null as Error | null }),
+      (error: unknown) => ({ error: error instanceof Error ? error : new Error(String(error)) }),
+    )
     let sessionId: string | undefined
     let finalText = ''
     for await (const raw of jsonLines(child.stdout)) {
@@ -62,7 +75,11 @@ export class CodexHarnessAdapter implements HarnessAdapter {
         yield { type: 'stream_event', provider: 'codex', event: raw }
       }
     }
-    await waitForExit(child)
+    const outcome = await exit
+    if (outcome.error) {
+      const detail = stderr.trim()
+      throw new Error(detail ? `${outcome.error.message}: ${detail}` : outcome.error.message)
+    }
     yield { type: 'result', subtype: 'success', session_id: sessionId, result: finalText }
   }
 
@@ -112,4 +129,32 @@ export class CodexHarnessAdapter implements HarnessAdapter {
     try { await this.runCLI(['--version']); return { available: true } }
     catch (error) { return { available: false, reason: error instanceof Error ? error.message : String(error) } }
   }
+}
+
+/** AgentKeeper feeds live-session turns through messageQueue. Codex exec is
+ * one-shot, so consume exactly one queued user message for this process; a
+ * later turn is resumed in a fresh process by the session layer. */
+export async function promptForTurn(
+  fallback: string,
+  messageQueue?: HarnessSessionOptions['messageQueue'],
+): Promise<string> {
+  if (!messageQueue) return fallback
+  for await (const message of messageQueue) {
+    return extractText(message.message?.content)
+  }
+  return fallback
+}
+
+export function extractText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content
+    .flatMap((block) => {
+      if (!block || typeof block !== 'object') return []
+      const value = block as Record<string, unknown>
+      return value['type'] === 'text' && typeof value['text'] === 'string'
+        ? [value['text']]
+        : []
+    })
+    .join('\n')
 }
