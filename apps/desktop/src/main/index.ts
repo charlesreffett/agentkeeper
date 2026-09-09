@@ -43,6 +43,35 @@ if (!app.isPackaged && devUserDataPath) {
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
 
+// Interrupting a session tears down the claude subprocess mid-flight; the Agent
+// SDK and node's child_process abort plumbing can surface a stray "operation
+// aborted" AbortError that no local try/catch is positioned to catch. It is
+// benign — swallow it. Registering any uncaughtException handler suppresses
+// Electron's built-in crash dialog, so this one has to reproduce that dialog
+// for every error that isn't a benign abort.
+function isBenignAbort(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError'
+}
+process.on('uncaughtException', (err) => {
+  if (isBenignAbort(err)) {
+    console.warn('[main] ignored benign AbortError:', err.message)
+    return
+  }
+  console.error('[main] uncaughtException:', err)
+  dialog.showErrorBox(
+    'A JavaScript error occurred in the main process',
+    err?.stack ?? String(err),
+  )
+  app.exit(1)
+})
+process.on('unhandledRejection', (reason) => {
+  if (isBenignAbort(reason)) {
+    console.warn('[main] ignored benign AbortError rejection:', (reason as Error).message)
+    return
+  }
+  throw reason
+})
+
 let cliServer: net.Server | null = null
 const externalPromptWindows = new Set<number>()
 const externalPromptCooldowns = new Map<number, number>()
