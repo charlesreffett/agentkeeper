@@ -6,7 +6,7 @@ import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailabilit
 import { sanitizeCustomModel } from '@agentkeeper/core'
 import { resolveBin, type BinConfig } from './bin'
 import { jsonLines, spawnHarnessProcess, waitForExit } from './cli-process'
-import { resolveHarnessEnvironment } from './configuration'
+import { resolveHarnessEnvironment, resolveHarnessPath } from './configuration'
 
 const execFileAsync = promisify(execFile)
 const CODEX_BIN: BinConfig = { harnessId: 'codex', fallbackBins: ['codex'], envVar: 'CODEX_BIN' }
@@ -86,7 +86,19 @@ export class CodexHarnessAdapter implements HarnessAdapter {
 
   getSessionsRoot() { return path.join(os.homedir(), '.codex', 'sessions') }
   getCommandsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.codex', 'prompts') : path.join(os.homedir(), '.codex', 'prompts') }
-  getSkillsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.agents', 'skills') : path.join(os.homedir(), '.codex', 'skills') }
+  getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
+    const canonical = scope === 'project'
+      ? path.join(projectPath!, '.agents', 'skills')
+      : path.join(os.homedir(), '.agents', 'skills')
+    if (scope === 'project') {
+      return [{ path: canonical, kind: 'native' as const, canonical: true }]
+    }
+    const codexRoot = resolveHarnessPath(this, 'home', path.join(os.homedir(), '.codex'))
+    return [
+      { path: canonical, kind: 'native' as const, canonical: true },
+      { path: path.join(codexRoot, 'skills'), kind: 'compatible' as const },
+    ]
+  }
   getPluginsDir() { return path.join(os.homedir(), '.codex', 'plugins') }
   getSettingsPath() { return path.join(os.homedir(), '.codex', 'config.toml') }
   encodeCwd(cwd: string) { return cwd.replaceAll('/', '-') }

@@ -350,7 +350,18 @@ export interface SkillPreview {
 export interface Skill {
   id: string
   scope: 'project' | 'global'
+  /** Owning project for project-scoped skills, including in the All view. */
+  projectPath?: string
+  /** Stable physical identity. Symlinked registrations share one record. */
   path: string
+  /** Every on-disk registration that resolves to this skill. */
+  locations: string[]
+  /** Harnesses that discover at least one of the registrations. */
+  harnessIds: string[]
+  /** True when the physical skill lives in AgentKeeper's canonical store. */
+  managed: boolean
+  /** Another physical skill with this id exists at the same scope. */
+  conflict: boolean
   name: string
   description: string
   body: string
@@ -975,7 +986,8 @@ export interface AgentKeeperApi {
       scope: 'project' | 'global',
       skillIds?: string[],
     ) => Promise<void>
-    remove: (skill: Skill) => Promise<void>
+    remove: (projectPath: string, skill: Skill) => Promise<void>
+    adopt: (projectPath: string, skill: Skill) => Promise<void>
     preview: (projectPath: string, source: string) => Promise<SkillPreview[]>
     generate: (prompt: string) => Promise<string>
     save: (
@@ -1209,6 +1221,7 @@ export const IPC_CHANNELS = {
   skillsList: 'skills:list',
   skillsInstall: 'skills:install',
   skillsRemove: 'skills:remove',
+  skillsAdopt: 'skills:adopt',
   skillsPreview: 'skills:preview',
   skillsGenerate: 'skills:generate',
   skillsSave: 'skills:save',

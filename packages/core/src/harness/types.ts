@@ -167,6 +167,16 @@ export interface HarnessCapabilities {
   customModels: boolean
 }
 
+export interface HarnessSkillLocation {
+  /** Directory containing one subdirectory per skill. */
+  path: string
+  /** Native locations are suitable compatibility-link targets. Compatible
+   *  locations are read by the harness but owned by another convention. */
+  kind: 'native' | 'compatible'
+  /** True when this location is AgentKeeper's shared `.agents/skills` store. */
+  canonical?: boolean
+}
+
 export type HarnessEvent =
   | { type: 'user'; message: { role: 'user'; content: unknown }; uuid?: string; session_id?: string }
   | { type: 'assistant'; message: { role: 'assistant'; content: unknown; model?: string }; uuid?: string; session_id?: string }
@@ -200,7 +210,8 @@ export interface HarnessAdapter {
   getSupportedModels(): Promise<HarnessModelInfo[]>
   getSessionsRoot(): string
   getCommandsDir(scope: 'project' | 'global', projectPath?: string): string
-  getSkillsDir(scope: 'project' | 'global', projectPath?: string): string
+  /** Every skill root this harness discovers, in native-first order. */
+  getSkillLocations(scope: 'project' | 'global', projectPath?: string): HarnessSkillLocation[]
   getPluginsDir(): string
   getSettingsPath(): string
   runCLI(args: string[], options?: HarnessCLIOptions): Promise<string>

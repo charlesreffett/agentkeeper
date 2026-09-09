@@ -64,7 +64,7 @@ import { deleteAgency, listAgencies, saveAgency } from './agencies'
 import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, startAgency, createProjectMcp, createOrchestratorMcp } from './orchestrator'
 import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
-import { generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
+import { adoptSkill, generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
 import { getPerformanceSummary } from './performance'
@@ -601,11 +601,22 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
   )
   ipcMain.handle(
     IPC_CHANNELS.skillsRemove,
-    async (_event, skill: Skill) => {
+    async (_event, projectPath: string, skill: Skill) => {
       try {
-        return await removeSkill(skill)
+        return await removeSkill(projectPath, skill)
       } catch (err) {
         console.error('[ipc] skills:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.skillsAdopt,
+    async (_event, projectPath: string, skill: Skill) => {
+      try {
+        return await adoptSkill(projectPath, skill, app.getPath('userData'))
+      } catch (err) {
+        console.error('[ipc] skills:adopt failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },

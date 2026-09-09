@@ -620,15 +620,18 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     return path.join(os.homedir(), '.config', 'opencode', 'commands')
   }
 
-  getSkillsDir(scope: 'project' | 'global', projectPath?: string): string {
-    // The agent-compatible dir (`npx skills -a opencode` installs here) is the
-    // canonical surface — opencode discovers `.agents/skills/<name>/SKILL.md`
-    // alongside its native `.opencode`/`.config/opencode` locations, and the
-    // skills manager stays consistent between install and list.
-    if (scope === 'project') {
-      return path.join(projectPath!, '.agents', 'skills')
-    }
-    return path.join(os.homedir(), '.agents', 'skills')
+  getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
+    // OpenCode discovers both its native root and the shared Agent Skills root.
+    if (scope === 'project') return [
+      { path: path.join(projectPath!, '.opencode', 'skills'), kind: 'native' as const },
+      { path: path.join(projectPath!, '.agents', 'skills'), kind: 'compatible' as const, canonical: true },
+      { path: path.join(projectPath!, '.claude', 'skills'), kind: 'compatible' as const },
+    ]
+    return [
+      { path: path.join(os.homedir(), '.config', 'opencode', 'skills'), kind: 'native' as const },
+      { path: path.join(os.homedir(), '.agents', 'skills'), kind: 'compatible' as const, canonical: true },
+      { path: path.join(os.homedir(), '.claude', 'skills'), kind: 'compatible' as const },
+    ]
   }
 
   getPluginsDir(): string {
