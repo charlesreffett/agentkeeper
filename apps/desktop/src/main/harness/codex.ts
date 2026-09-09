@@ -101,7 +101,7 @@ export class CodexHarnessAdapter implements HarnessAdapter {
     ]
   }
 
-  getSessionsRoot() { return path.join(os.homedir(), '.codex', 'sessions') }
+  getSessionsRoot() { return path.join(resolveHarnessPath(this, 'home', path.join(os.homedir(), '.codex')), 'sessions') }
   getCommandsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.codex', 'prompts') : path.join(os.homedir(), '.codex', 'prompts') }
   getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
     const canonical = scope === 'project'
