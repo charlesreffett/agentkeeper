@@ -5,6 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Checkbox } from '@/components/ui/checkbox'
 import { useGitBranches } from '@/composables/useGitBranches'
 import type { ScopeOption } from '@/composables/usePageScope'
+import { activeBranchToInitialize } from '@/components/session/draftBranch'
 
 const props = defineProps<{
   projectPath: string | null
@@ -47,8 +48,12 @@ watch(branchOpen, (open) => {
   if (open) { branchQuery.value = ''; void refetch(); void nextTick(() => branchSearch.value?.focus()) }
 })
 watch([() => props.projectPath, currentBranch], () => {
-  const activeBranch = currentBranch.value?.name
-  if (props.projectPath && activeBranch && props.branch !== activeBranch) {
+  const activeBranch = activeBranchToInitialize(
+    props.projectPath,
+    props.branch,
+    currentBranch.value?.name,
+  )
+  if (activeBranch) {
     // The parent accepts this only while the draft branch is untouched, so an
     // explicit base-branch selection remains stable while default drafts track
     // external checkouts.
