@@ -22,6 +22,17 @@ archive. Renderer output is a browser bundle loaded in a sandboxed iframe. The p
 rejects entry paths that escape the plugin directory or refer to files that are not
 included in the archive.
 
+Plugin backend builds bundle runtime helpers imported from `@agentkeeper/sdk`; the
+installed artifact does not load the SDK package from AgentKeeper. The sandbox
+bootstrap and host bridge are application-owned and are injected by the host rather
+than bundled by plugins.
+
+SDK releases track the AgentKeeper application contract. Plugins use the manifest's
+`min_app_version` as their single compatibility declaration and set it to the first
+AgentKeeper release that provides every SDK API they use. The host applies this field
+when selecting updates and before activation. A separate SDK-version manifest field
+would duplicate that contract.
+
 The built-in examples live in `plugins/github` and `plugins/jira`. They import the
 host contract only from `@agentkeeper/sdk`; plugins must never import desktop or core
 implementation files.
