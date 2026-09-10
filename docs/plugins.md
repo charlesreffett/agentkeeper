@@ -26,11 +26,12 @@ The built-in examples live in `plugins/github` and `plugins/jira`. They import t
 host contract only from `@agentkeeper/sdk`; plugins must never import desktop or core
 implementation files.
 
-Plugin processes run with Node's permission model enabled. They may load their own
-compiled code and the host bootstrap, but receive no general filesystem write access.
-Persistent data must use `ctx.storage`, credentials must use `ctx.secrets`, and
-project discovery must use `ctx.projects`. Network access is granted only to plugins
-declaring `network` and is routed through the host's allowlisting proxy.
+Plugin backends run in a hidden, sandboxed Chromium renderer and Web Worker with Node
+integration disabled. They receive capabilities through a narrow host protocol and
+have no direct Node.js or filesystem API. Persistent data must use `ctx.storage`,
+credentials must use `ctx.secrets`, and project discovery must use `ctx.projects`.
+Network access is granted only to plugins declaring `network` and is routed through
+the host's allowlisting broker.
 
 Plugins may request selected host environment variables by declaring the
 `environment` permission and listing exact uppercase variable names in
@@ -45,6 +46,10 @@ this grants arbitrary user-level process execution and is shown as a high-risk
 permission during install. Programs launched under that permission execute with the
 user's filesystem access, so `nativeProcess` subsumes filesystem isolation in
 practice.
+
+See [Plugin trust and isolation](plugins/security.md) for the supported installation
+sources, permission lifecycle, update integrity checks, renderer guarantees, and the
+limits of the current isolation model.
 
 ## Commands
 
