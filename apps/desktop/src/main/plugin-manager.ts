@@ -6,7 +6,7 @@ import * as crypto from 'node:crypto'
 import { watch, type FSWatcher } from 'node:fs'
 import { app } from 'electron'
 import keytar from 'keytar'
-import { PluginManifestSchema, UpdateManifestSchema } from '@agentkeeper/sdk'
+import { PluginManifestSchema, satisfiesMinimumAppVersion, UpdateManifestSchema } from '@agentkeeper/sdk'
 import type { PluginManifest, PluginPermission, UpdateRelease } from '@agentkeeper/sdk'
 import { spawnPlugin, activatePlugin, spawnAndActivate, getActiveHost, removeActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index.js'
@@ -207,10 +207,6 @@ function semverGt(a: string, b: string): boolean {
   return comparePluginVersions(a.replace(/^v/, ''), b.replace(/^v/, '')) > 0
 }
 
-function satisfiesMin(appVer: string, minVer: string): boolean {
-  return !semverGt(minVer, appVer)
-}
-
 // ---- main API ----
 
 async function installStagedPlugin(staged: StagedArchive, expectedRelease?: PluginReleaseIdentity): Promise<void> {
@@ -339,7 +335,7 @@ export async function checkForUpdates(): Promise<UpdateAvailable[]> {
       const data = UpdateManifestSchema.safeParse(await res.json())
       if (!data.success || data.data.id !== row.id) return
       const candidates = data.data.releases
-        .filter(r => semverGt(r.version, row.version) && (!r.min_app_version || satisfiesMin(appVer, r.min_app_version)))
+        .filter(r => semverGt(r.version, row.version) && satisfiesMinimumAppVersion(appVer, r.min_app_version))
         .sort((a, b) => semverGt(a.version, b.version) ? -1 : 1)
       const best = candidates[0]
       if (best) {
@@ -519,7 +515,7 @@ export async function prepareAkpInstall(opts: { filePath?: string; manifestUrl?:
     if (!data.success) throw new Error('URL did not return a valid plugin update manifest')
     const appVer = app.getVersion()
     const release = data.data.releases
-      .filter(r => !r.min_app_version || satisfiesMin(appVer, r.min_app_version))
+      .filter(r => satisfiesMinimumAppVersion(appVer, r.min_app_version))
       .sort((a, b) => (semverGt(a.version, b.version) ? -1 : 1))[0]
     if (!release) throw new Error('No compatible release found in update manifest')
     expectedRelease = { id: data.data.id, version: release.version }

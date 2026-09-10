@@ -2,14 +2,13 @@ import * as fs from 'node:fs'
 import * as fsp from 'node:fs/promises'
 import * as path from 'node:path'
 import { app } from 'electron'
-import { PluginManifestSchema, type PluginManifest } from '@agentkeeper/sdk'
+import { PluginManifestSchema, satisfiesMinimumAppVersion, type PluginManifest } from '@agentkeeper/sdk'
 import { PluginHost } from './plugin-host.js'
 import { getRawSqlite } from './db/index.js'
 import { getPluginEventBus } from './plugins.js'
 import type { WorkItemRegistryFull } from './plugins.js'
 import { requirePluginFile } from './plugin-paths.js'
 import { authoritiesEqual, authorityFromManifest, parseAuthority } from './plugin-authority.js'
-import semver from 'semver'
 
 const activeHosts = new Map<string, PluginHost>()
 // dormantRegistry: activationEvent → manifests not yet activated
@@ -58,7 +57,7 @@ export async function spawnPlugin(manifest: PluginManifest, webContents?: Electr
   // Check min_app_version
   if (manifest.min_app_version) {
     const appVer = app.getVersion()
-    if (!satisfiesMinVersion(appVer, manifest.min_app_version)) {
+    if (!satisfiesMinimumAppVersion(appVer, manifest.min_app_version)) {
       console.warn(`[plugin-loader] plugin ${manifest.id} requires app >= ${manifest.min_app_version}, got ${appVer}`)
       const bus = getPluginEventBus()
       bus?.emit('plugin.unhealthy', { pluginId: manifest.id, reason: `Requires app >= ${manifest.min_app_version}` })
@@ -117,10 +116,6 @@ function resolveEntryPath(manifest: PluginManifest): string {
   const userDataPath = app.getPath('userData')
   const installedDir = path.join(userDataPath, 'plugins', 'installed', `${manifest.id}@${manifest.version}`)
   return requirePluginFile(installedDir, manifest.entry, 'Plugin entry')
-}
-
-function satisfiesMinVersion(appVer: string, minVer: string): boolean {
-  return semver.valid(appVer) !== null && semver.valid(minVer) !== null && semver.gte(appVer, minVer)
 }
 
 export async function fireActivationEvent(event: string, webContents?: Electron.WebContents): Promise<void> {

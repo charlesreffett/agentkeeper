@@ -208,6 +208,14 @@ export const PluginManifestSchema = z.object({
 
 export type PluginManifest = z.infer<typeof PluginManifestSchema>
 
+/** Whether an AgentKeeper host version satisfies a plugin or release minimum. */
+export function satisfiesMinimumAppVersion(appVersion: string, minimumAppVersion?: string): boolean {
+  if (!minimumAppVersion) return true
+  return semver.valid(appVersion) !== null
+    && semver.valid(minimumAppVersion) !== null
+    && semver.gte(appVersion, minimumAppVersion)
+}
+
 const UpdateReleaseSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/),
   url: HttpsUrlSchema,

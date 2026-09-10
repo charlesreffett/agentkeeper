@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { isNetworkOriginAllowed, PluginManifestSchema, UpdateManifestSchema } from './manifest'
+import { isNetworkOriginAllowed, PluginManifestSchema, satisfiesMinimumAppVersion, UpdateManifestSchema } from './manifest'
 
 describe('plugin manifests', () => {
+  it('uses min_app_version as the host compatibility contract', () => {
+    expect(satisfiesMinimumAppVersion('1.4.0')).toBe(true)
+    expect(satisfiesMinimumAppVersion('1.4.0', '1.3.0')).toBe(true)
+    expect(satisfiesMinimumAppVersion('1.4.0', '1.4.0')).toBe(true)
+    expect(satisfiesMinimumAppVersion('1.4.0', '1.5.0')).toBe(false)
+    expect(satisfiesMinimumAppVersion('development', '1.0.0')).toBe(false)
+  })
+
   it('accepts project-aware UI contributions', () => {
     const result = PluginManifestSchema.parse({
       schema_version: 1,
