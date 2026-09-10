@@ -68,7 +68,7 @@ export const costEntries = sqliteTable('cost_entries', {
 export const projects = sqliteTable('projects', {
   path: text('path').primaryKey(),
   name: text('name').notNull(),
-  repo: text('repo'),
+  remotes: text('remotes').notNull().default('[]'),
   lastOpenedAt: integer('last_opened_at').notNull(),
   sortOrder: integer('sort_order').notNull().default(0),
 })

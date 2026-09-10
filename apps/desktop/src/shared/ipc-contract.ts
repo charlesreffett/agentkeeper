@@ -41,12 +41,20 @@ export interface RemoteSource {
   url: string
 }
 
+/** Provider-neutral metadata persisted for a project's configured Git remote. */
+export interface ProjectRemote {
+  name: string
+  url: string
+  provider?: string
+  repository?: string
+}
+
 // ─── Projects ───────────────────────────────────────────────────────────────
 
 export interface RecentProject {
   path: string
   name: string
-  repo: string | null
+  remotes: ProjectRemote[]
   lastOpenedAt: number
 }
 

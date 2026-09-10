@@ -28,6 +28,11 @@ interface LegacySession {
 import type { CostEntry } from '../cost-ledger'
 import type { RecentProject } from '../../shared/ipc-contract'
 
+interface LegacyRecentProject extends Omit<RecentProject, 'remotes'> {
+  repo?: string | null
+  remotes?: RecentProject['remotes']
+}
+
 const FLAG = 'jsonFilesImported'
 
 export function runLegacyImport(userDataPath: string): void {
@@ -99,7 +104,7 @@ function importCostLedger(tx: AppDb, userDataPath: string): void {
 
 function importRecentProjects(tx: AppDb, userDataPath: string): void {
   const p = path.join(userDataPath, 'recent-projects.json')
-  let raw: { projects?: RecentProject[]; focusedProjectPath?: string | null }
+  let raw: { projects?: LegacyRecentProject[]; focusedProjectPath?: string | null }
   try {
     const parsed = JSON.parse(fs.readFileSync(p, 'utf8'))
     raw = Array.isArray(parsed) ? { projects: parsed } : parsed
@@ -109,7 +114,12 @@ function importRecentProjects(tx: AppDb, userDataPath: string): void {
     tx.insert(projects).values({
       path: proj.path,
       name: proj.name,
-      repo: proj.repo ?? null,
+      remotes: JSON.stringify(proj.remotes ?? (proj.repo ? [{
+        name: 'origin',
+        url: `https://github.com/${proj.repo}`,
+        provider: 'github',
+        repository: proj.repo,
+      }] : [])),
       lastOpenedAt: proj.lastOpenedAt,
     }).onConflictDoNothing().run()
   }
