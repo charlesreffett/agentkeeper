@@ -33,12 +33,14 @@ const props = defineProps<{ collapsed: boolean; activeId: string }>()
 defineEmits<{ collapse: []; expand: [] }>()
 
 type SessionNode = { type: 'session'; key: string; session: UnifiedSession }
+type ShowMoreNode = { type: 'show-more'; key: string; projectPath: string }
 type EmptyNode = { type: 'empty'; key: string }
-type ProjectNode = { type: 'project'; key: string; path: string; name: string; registered: boolean; children: SessionNode[] }
+type ProjectNode = { type: 'project'; key: string; path: string; name: string; registered: boolean; sessionCount: number; children: (SessionNode | ShowMoreNode)[] }
 type SectionNode = { type: 'section'; key: string; name: string; children: ProjectNode[] }
-type TreeNode = SectionNode | ProjectNode | SessionNode | EmptyNode
+type TreeNode = SectionNode | ProjectNode | SessionNode | ShowMoreNode | EmptyNode
 
 const EXPANDED_PROJECTS_STORAGE_KEY = 'agentkeeper:sessions-sidebar:expanded-projects'
+const PROJECT_SESSION_BATCH_SIZE = 5
 
 function readExpandedProjects(): string[] | null {
   try {
@@ -63,6 +65,7 @@ const isDeletingSession = ref(false)
 const sessionManagerOpen = ref(false)
 const restoredExpandedProjects = readExpandedProjects()
 const expandedProjects = ref<string[]>(restoredExpandedProjects ?? [])
+const visibleProjectSessionCounts = ref<Record<string, number>>({})
 let projectExpansionHydrated = false
 const draggedProjectPath = ref<string | null>(null)
 const dropTarget = ref<{ path: string; position: 'before' | 'after' } | null>(null)
@@ -86,25 +89,34 @@ const projectNodes = computed<ProjectNode[]>(() => {
   }
 
   const knownPaths = new Set(projects.value.map((project) => project.path))
-  const nodes = projects.value.map((project) => ({
-    type: 'project' as const,
-    key: `project:${project.path}`,
-    path: project.path,
-    name: project.name,
-    registered: true,
-    children: (sessionsByPath.get(project.path) ?? []).map(toSessionNode),
-  }))
-
-  for (const [path, sessions] of sessionsByPath) {
-    if (knownPaths.has(path)) continue
-    nodes.push({
+  const toProjectNode = (path: string, name: string, registered: boolean, sessions: UnifiedSession[]): ProjectNode => {
+    const visibleCount = visibleProjectSessionCounts.value[path] ?? PROJECT_SESSION_BATCH_SIZE
+    const visibleSessions = sessions.slice(0, visibleCount).map(toSessionNode)
+    return {
       type: 'project',
       key: `project:${path}`,
       path,
-      name: sessions[0]?.projectName || path.split('/').at(-1) || path,
-      registered: false,
-      children: sessions.map(toSessionNode),
-    })
+      name,
+      registered,
+      sessionCount: sessions.length,
+      children: sessions.length > visibleCount
+        ? [...visibleSessions, { type: 'show-more', key: `show-more:${path}`, projectPath: path }]
+        : visibleSessions,
+    }
+  }
+
+  const nodes = projects.value.map((project) =>
+    toProjectNode(project.path, project.name, true, sessionsByPath.get(project.path) ?? []),
+  )
+
+  for (const [path, sessions] of sessionsByPath) {
+    if (knownPaths.has(path)) continue
+    nodes.push(toProjectNode(
+      path,
+      sessions[0]?.projectName || path.split('/').at(-1) || path,
+      false,
+      sessions,
+    ))
   }
   return nodes
 })
@@ -133,12 +145,23 @@ watch(projectNodes, (nodes, previous) => {
   if (added.length) expandedProjects.value = [...new Set(['section:projects', ...expandedProjects.value, ...added])]
 }, { immediate: true })
 
-watch(expandedProjects, (keys) => {
+watch(expandedProjects, (keys, previousKeys) => {
   try {
     localStorage.setItem(EXPANDED_PROJECTS_STORAGE_KEY, JSON.stringify(keys))
   } catch {
     // Expansion persistence is optional when storage is unavailable.
   }
+
+  if (!previousKeys) return
+  const expanded = new Set(keys)
+  const collapsedPaths = previousKeys
+    .filter((key) => key.startsWith('project:') && !expanded.has(key))
+    .map((key) => key.slice('project:'.length))
+  if (!collapsedPaths.length) return
+
+  const nextCounts = { ...visibleProjectSessionCounts.value }
+  for (const path of collapsedPaths) delete nextCounts[path]
+  visibleProjectSessionCounts.value = nextCounts
 })
 
 const recentSessions = computed(() => sortedSessions.value.filter((session) => !session.projectPath))
@@ -149,6 +172,13 @@ function treeChildren(node: TreeNode): TreeNode[] | undefined {
     return node.children.length ? node.children : [{ type: 'empty', key: `empty:${node.path}` }]
   }
   return undefined
+}
+
+function showMoreProjectSessions(projectPath: string) {
+  visibleProjectSessionCounts.value = {
+    ...visibleProjectSessionCounts.value,
+    [projectPath]: (visibleProjectSessionCounts.value[projectPath] ?? PROJECT_SESSION_BATCH_SIZE) + PROJECT_SESSION_BATCH_SIZE,
+  }
 }
 
 function statusDotVariant(status: LiveSessionStatus | 'inactive'): StatusDotVariants['variant'] {
@@ -432,7 +462,7 @@ function handleProjectDragEnd() {
             <ProjectHoverTooltip
               v-else-if="item.value.type === 'project'"
               :project="item.value"
-              :session-count="item.value.children.length"
+              :session-count="item.value.sessionCount"
               :disabled="actionMenuPath === item.value.path"
             >
               <template #trigger>
@@ -519,6 +549,14 @@ function handleProjectDragEnd() {
                 <Trash2 class="size-3.5" />
               </button>
             </div>
+
+            <button
+              v-else-if="item.value.type === 'show-more'"
+              class="ml-5 inline-flex h-[30px] items-center rounded-md px-2 text-xs font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+              @click.stop="showMoreProjectSessions(item.value.projectPath)"
+            >
+              Show more
+            </button>
 
             <div
               v-else
