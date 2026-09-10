@@ -508,10 +508,10 @@ function handleProjectDragEnd() {
               >
                 <StatusDot :variant="statusDotVariant(item.value.session.status)" />
                 <span class="min-w-0 flex-1 truncate text-sm">{{ item.value.session.title }}</span>
-                <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60 group-hover:invisible group-focus-within:invisible">{{ formatRelativeTime(item.value.session.lastActivityAt) }}</span>
+                <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60 group-hover:invisible">{{ formatRelativeTime(item.value.session.lastActivityAt) }}</span>
               </button>
               <button
-                class="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-background/80 hover:text-destructive group-hover:flex group-focus-within:flex"
+                class="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-background/80 hover:text-destructive group-hover:flex"
                 :aria-label="`Delete ${item.value.session.title}`"
                 :title="`Delete ${item.value.session.title}`"
                 @click.stop="sessionToDelete = item.value.session"
@@ -555,10 +555,10 @@ function handleProjectDragEnd() {
           >
             <StatusDot :variant="statusDotVariant(session.status)" />
             <span class="min-w-0 flex-1 truncate text-sm">{{ session.title }}</span>
-            <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60 group-hover:invisible group-focus-within:invisible">{{ formatRelativeTime(session.lastActivityAt) }}</span>
+            <span class="shrink-0 text-[10px] tabular-nums text-muted-foreground/60 group-hover:invisible">{{ formatRelativeTime(session.lastActivityAt) }}</span>
           </button>
           <button
-            class="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-background/80 hover:text-destructive group-hover:flex group-focus-within:flex"
+            class="absolute right-1 top-1/2 hidden size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-background/80 hover:text-destructive group-hover:flex"
             :aria-label="`Delete ${session.title}`"
             :title="`Delete ${session.title}`"
             @click.stop="sessionToDelete = session"
