@@ -172,7 +172,8 @@ export class AcpHarnessAdapter implements HarnessAdapter {
     } finally { child.kill() }
   }
   getSessionsRoot() { return path.join(os.homedir(), `.${this.id}`, 'sessions') }
-  getCommandsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.agents', 'commands') : path.join(os.homedir(), '.agents', 'commands') }
+  // Cursor and Grok expose no verified native command registration contract.
+  getCommandLocations(_scope: 'project' | 'global', _projectPath?: string) { return [] }
   getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
     const canonical = scope === 'project'
       ? path.join(projectPath!, '.agents', 'skills')

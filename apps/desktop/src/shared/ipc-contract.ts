@@ -381,7 +381,13 @@ export interface SlashCommand {
   id: string
   /** 'plugin' = read-only; contributed by an installed Claude Code plugin. */
   scope: 'project' | 'global' | 'plugin'
+  projectPath?: string
   path: string
+  locations: string[]
+  harnessIds: string[]
+  shared: boolean
+  conflict: boolean
+  representation?: 'markdown' | 'generated'
   name: string
   body: string
   /** Human-readable plugin name when scope === 'plugin'. */
@@ -1017,9 +1023,11 @@ export interface AgentKeeperApi {
       projectPath: string,
       id: string,
       body: string,
+      existing?: SlashCommand,
     ) => Promise<SlashCommand>
-    remove: (cmd: SlashCommand) => Promise<void>
-    /** Fires when Claude Code plugin files change on disk (install/uninstall). */
+    remove: (projectPath: string, cmd: SlashCommand) => Promise<void>
+    adopt: (projectPath: string, cmd: SlashCommand) => Promise<void>
+    /** Fires when command registrations or plugin contributions change. */
     onChanged: (callback: () => void) => () => void
   }
   settings: {
@@ -1243,6 +1251,7 @@ export const IPC_CHANNELS = {
   commandsGenerate: 'commands:generate',
   commandsSave: 'commands:save',
   commandsRemove: 'commands:remove',
+  commandsAdopt: 'commands:adopt',
   commandsChanged: 'commands:changed',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',

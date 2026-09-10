@@ -4,6 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
 import { watch as fsWatch } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { randomBytes, randomUUID } from 'node:crypto'
 import {
   IPC_CHANNELS,
@@ -68,7 +69,7 @@ import { generateAndPersistSessionTitle, isAgencyRuntimeActive, resumeAgency, st
 import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { adoptSkill, generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
-import { listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
+import { adoptCommand, listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
 import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
 import { getPerformanceSummary } from './performance'
 import { harnessRegistry, getHarness } from './harness/index'
@@ -681,9 +682,10 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
       projectPath: string,
       id: string,
       body: string,
+      existing?: SlashCommand,
     ) => {
       try {
-        const result = await saveCommand(scope, projectPath, id, body)
+        const result = await saveCommand(scope, projectPath, id, body, existing)
         broadcastCommandsChanged()
         return result
       } catch (err) {
@@ -694,12 +696,24 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
   )
   ipcMain.handle(
     IPC_CHANNELS.commandsRemove,
-    async (_event, cmd: SlashCommand) => {
+    async (_event, projectPath: string, cmd: SlashCommand) => {
       try {
-        await removeCommand(cmd)
+        await removeCommand(projectPath, cmd)
         broadcastCommandsChanged()
       } catch (err) {
         console.error('[ipc] commands:remove failed:', err)
+        throw new Error(err instanceof Error ? err.message : String(err))
+      }
+    },
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.commandsAdopt,
+    async (_event, projectPath: string, cmd: SlashCommand) => {
+      try {
+        await adoptCommand(projectPath, cmd, app.getPath('userData'))
+        broadcastCommandsChanged()
+      } catch (err) {
+        console.error('[ipc] commands:adopt failed:', err)
         throw new Error(err instanceof Error ? err.message : String(err))
       }
     },
@@ -1550,10 +1564,18 @@ function broadcastCommandsChanged(): void {
  * without requiring an app restart.
  */
 function startHarnessPluginWatcher(): void {
-  const targets = [
+  const projectPaths = recentProjectsStore.list().map(project => project.path)
+  const targets = new Set<string>([
     path.join(getHarness().getPluginsDir(), 'installed_plugins.json'),
     getHarness().getSettingsPath(),
-  ]
+    path.join(os.homedir(), '.agents', 'commands'),
+    ...projectPaths.map(project => path.join(project, '.agents', 'commands')),
+  ])
+  for (const harness of harnessRegistry.list()) {
+    if (!harness.capabilities.commands) continue
+    for (const location of harness.getCommandLocations('global')) targets.add(location.path)
+    for (const project of projectPaths) for (const location of harness.getCommandLocations('project', project)) targets.add(location.path)
+  }
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -1562,9 +1584,11 @@ function startHarnessPluginWatcher(): void {
     debounceTimer = setTimeout(broadcastCommandsChanged, 200)
   }
 
-  for (const target of targets) {
+  for (const desired of targets) {
+    let target = desired
+    while (!existsSync(target) && path.dirname(target) !== target) target = path.dirname(target)
     try {
-      fsWatch(target, schedulebroadcast)
+      fsWatch(target, { recursive: existsSync(desired) && desired === target }, schedulebroadcast)
     } catch {
       // File may not exist yet (e.g. no plugins installed); ignore.
     }

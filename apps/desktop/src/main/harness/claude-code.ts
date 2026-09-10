@@ -247,11 +247,11 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
     return path.join(os.homedir(), '.claude', 'projects')
   }
 
-  getCommandsDir(scope: 'project' | 'global', projectPath?: string): string {
-    if (scope === 'project') {
-      return path.join(projectPath!, '.claude', 'commands')
-    }
-    return path.join(os.homedir(), '.claude', 'commands')
+  getCommandLocations(scope: 'project' | 'global', projectPath?: string) {
+    const root = scope === 'project'
+      ? path.join(projectPath!, '.claude')
+      : resolveHarnessPath(this, 'configDir', path.join(os.homedir(), '.claude'))
+    return [{ path: path.join(root, 'commands'), kind: 'native' as const, representation: 'markdown' as const }]
   }
 
   getSkillLocations(scope: 'project' | 'global', projectPath?: string) {

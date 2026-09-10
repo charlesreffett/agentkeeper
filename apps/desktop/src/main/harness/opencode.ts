@@ -623,13 +623,14 @@ export class OpenCodeHarnessAdapter implements HarnessAdapter {
     return path.join(os.homedir(), '.local', 'share', 'opencode', 'storage')
   }
 
-  getCommandsDir(scope: 'project' | 'global', projectPath?: string): string {
+  getCommandLocations(scope: 'project' | 'global', projectPath?: string) {
     // Markdown command files opencode discovers: `.opencode/commands/*.md`
     // (project) and `~/.config/opencode/commands/*.md` (global).
     if (scope === 'project') {
-      return path.join(projectPath!, '.opencode', 'commands')
+      return [{ path: path.join(projectPath!, '.opencode', 'commands'), kind: 'native' as const, representation: 'markdown' as const }]
     }
-    return path.join(os.homedir(), '.config', 'opencode', 'commands')
+    const configRoot = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')
+    return [{ path: path.join(configRoot, 'opencode', 'commands'), kind: 'native' as const, representation: 'markdown' as const }]
   }
 
   getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
