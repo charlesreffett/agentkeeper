@@ -76,6 +76,9 @@ registers the view IDs named by `renderer.views`; the desktop maps them through 
 generic plugin route. Provider-specific pages must not be added to the desktop router
 or compiled as host Vue components.
 
+See [Plugin UI contribution contract](plugins/ui-contributions.md) for the
+namespace rules, lifecycle model, and rationale for manifest-owned surfaces.
+
 The iframe receives `window.agentkeeperPlugin`, which provides:
 
 - `getRoute()` and `onRouteChanged()` for plugin-local routing
