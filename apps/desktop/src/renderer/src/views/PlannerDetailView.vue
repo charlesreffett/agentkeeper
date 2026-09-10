@@ -30,6 +30,7 @@ import { useAgenciesQuery } from '@/composables/useAgenciesQuery'
 import { useSessionStore } from '@/stores/sessions'
 import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
+import { PROVIDER_UNAVAILABLE_LABEL, useProviderWorkItems } from '@/composables/useProviderWorkItems'
 import { projectColor } from '@/lib/projectColor'
 import type { Plan, PlanStep, PlanStepStatus, Session } from '@shared/ipc-contract'
 import type { AgencyScope } from '@shared/ipc-contract'
@@ -52,6 +53,10 @@ const agenciesUnsupported = computed(() => !agenciesCapable())
 
 const planId = computed(() => route.params.id as string)
 const plan = ref<Plan | null>(null)
+const { stateFor: providerStateFor } = useProviderWorkItems(computed(() =>
+  plan.value?.workItem ? [plan.value.workItem] : [],
+))
+const providerWorkItemState = computed(() => providerStateFor(plan.value?.workItem))
 const planProjectPath = ref<string | null>(null)
 const agencyProjectPath = computed(() => planProjectPath.value ?? '')
 const { agencies } = useAgenciesQuery(agencyProjectPath)
@@ -879,12 +884,25 @@ Guidelines:
             <div class="px-4 py-3">
               <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-2">Tickets</p>
               <router-link
-                v-if="plan.workItem && workItemPath"
+                v-if="plan.workItem && workItemPath && providerWorkItemState?.status === 'available'"
                 :to="workItemPath"
                 class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background hover:bg-muted/60 transition-colors"
               >
                 {{ plan.workItem.externalRef }}
+                <span class="ml-1 text-muted-foreground">
+                  {{ providerWorkItemState.item.statusLabel ?? providerWorkItemState.item.status }}
+                </span>
               </router-link>
+              <div v-else-if="plan.workItem && providerWorkItemState?.status === 'unavailable'">
+                <span class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground">
+                  {{ plan.workItem.externalRef }}
+                </span>
+                <p class="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">{{ PROVIDER_UNAVAILABLE_LABEL }}</p>
+              </div>
+              <span
+                v-else-if="plan.workItem"
+                class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground"
+              >{{ plan.workItem.externalRef }}</span>
               <span v-else class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground">—</span>
             </div>
 
