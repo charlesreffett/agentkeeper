@@ -9,7 +9,7 @@ describe('plugin browser sandbox', () => {
     expect(PLUGIN_SANDBOX_CSP).toContain("img-src 'none'")
     expect(PLUGIN_SANDBOX_CSP).toContain("frame-src 'none'")
     expect(PLUGIN_SANDBOX_CSP).toContain("form-action 'none'")
-    expect(PLUGIN_SANDBOX_CSP).toContain("webrtc 'block'")
+    expect(PLUGIN_SANDBOX_CSP).not.toContain('webrtc')
   })
 
   it('keeps plugin source out of the trusted launcher document', () => {

@@ -4,15 +4,13 @@
   "name": "Jira",
   "version": "0.1.0",
   "entry": "dist/index.js",
-  "description": "Jira work items via the jira CLI",
+  "description": "Jira work items via the Atlassian REST API",
   "author": "AgentKeeper",
   "license": "MIT",
   "update_url": "https://github.com/agentkeeper-ai/agentkeeper/releases/download/plugin-jira-feed/jira-update-manifest.json",
   "activation_events": ["onStartup"],
-  "permissions": ["workItems", "secrets", "commands", "ui", "background", "projects", "nativeProcess", "environment"],
-  "environment": {
-    "variables": ["JIRA_API_TOKEN", "JIRA_CONFIG_FILE"]
-  },
+  "permissions": ["workItems", "secrets", "commands", "ui", "background", "projects", "network"],
+  "network": { "hosts": ["https://*.atlassian.net"] },
   "renderer": {
     "entry": "dist/renderer.js",
     "views": ["jira-board", "jira-work-item", "jira-settings"]
@@ -38,10 +36,15 @@
         "title": "Project Key",
         "description": "Default Jira project key (e.g. MYPROJ)"
       },
-      "cliPath": {
+      "email": {
         "type": "string",
-        "title": "CLI Path",
-        "description": "Path to jira CLI binary (leave blank to use PATH)"
+        "title": "Account email",
+        "description": "Email address associated with the Atlassian API token"
+      },
+      "instanceUrl": {
+        "type": "string",
+        "title": "Jira site URL",
+        "description": "For example https://your-company.atlassian.net"
       }
     }
   }

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
-import { checkCliPresent, countIssues, listProjects, setJiraApiToken, setJiraCliPath, setProcessBroker } from './jira-cli.js'
+import { checkConnection, configureJiraApi, countIssues, jiraCredentialsPresent, listProjects, testConnectionWith } from './jira-cli.js'
 import { JiraWorkItemProvider } from './jira-provider.js'
 
 export { listProjects }
@@ -16,7 +16,8 @@ const JiraSettingsSchema = z
     projectKey: z.string().optional(),
     projectMappings: z.array(ProjectMappingSchema).optional().default([]),
     projectKeys: z.array(z.string()).optional().default([]),
-    cliPath: z.string().optional(),
+    email: z.string().optional(),
+    instanceUrl: z.string().optional(),
   })
   .default({})
 
@@ -42,10 +43,8 @@ async function startJira(ctx: PluginContext<JiraSettings>): Promise<void> {
 
 const jiraPlugin: Plugin<JiraSettings> = {
   async activate(ctx: PluginContext<JiraSettings>) {
-    setProcessBroker(ctx.process)
     pluginCtx = ctx
-    setJiraCliPath(ctx.config.cliPath)
-    setJiraApiToken((await ctx.secrets.get('apiToken')) ?? await ctx.environment.get('JIRA_API_TOKEN'))
+    configureJiraApi({ fetch: ctx.fetch, email: ctx.config.email, instanceUrl: ctx.config.instanceUrl, apiToken: await ctx.secrets.get('apiToken') })
     ctx.commands.register({
       id: 'jira.workItems.list',
       label: 'List Jira work items',
@@ -56,16 +55,15 @@ const jiraPlugin: Plugin<JiraSettings> = {
       label: 'Get Jira project selection',
       handler: async () => {
         const storedApiToken = await ctx.secrets.get('apiToken')
-        const environmentApiToken = await ctx.environment.get('JIRA_API_TOKEN')
         let projects: Awaited<ReturnType<typeof listProjects>> = []
         let projectError = ''
         try {
           projects = await listProjects()
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error)
-          projectError = /needs a Jira API token|JIRA_API_TOKEN/i.test(message)
-            ? 'Jira CLI authentication failed. Set a Jira API token below or provide JIRA_API_TOKEN in the host environment.'
-            : 'Jira CLI could not list projects. Check the CLI path and authentication.'
+          projectError = /API token|Jira site URL|email/i.test(message)
+            ? 'Jira authentication failed. Check the site URL, email, and API token below.'
+            : 'Jira could not list projects. Check the connection settings.'
         }
         return {
           projects,
@@ -75,12 +73,9 @@ const jiraPlugin: Plugin<JiraSettings> = {
             ? ctx.config.projectKeys
             : (ctx.config.projectMappings ?? []).map(mapping => mapping.jiraProjectKey),
           projectMappings: ctx.config.projectMappings ?? [],
-          cliPath: ctx.config.cliPath ?? '',
-          apiTokenSource: storedApiToken
-            ? 'keychain'
-            : environmentApiToken
-              ? 'environment'
-              : 'none',
+          email: ctx.config.email ?? '',
+          instanceUrl: ctx.config.instanceUrl ?? '',
+          apiTokenSource: storedApiToken ? 'keychain' : 'none',
         }
       },
     })
@@ -88,29 +83,66 @@ const jiraPlugin: Plugin<JiraSettings> = {
       id: 'jira.settings.selectProjects',
       label: 'Select Jira projects',
       handler: async (args) => {
-        const input = args as { keys?: unknown; cliPath?: unknown; projectMappings?: unknown; apiToken?: unknown }
+        const input = args as { keys?: unknown; projectMappings?: unknown }
         const keys = input?.keys
         if (!Array.isArray(keys) || !keys.every(key => typeof key === 'string')) throw new Error('Invalid project selection')
         const projectKeys = [...new Set(keys)] as string[]
-        const cliPath = typeof input.cliPath === 'string' ? input.cliPath.trim() : ctx.config.cliPath ?? ''
         const projectMappings = ProjectMappingSchema.array().parse(input.projectMappings ?? [])
-        const apiToken = typeof input.apiToken === 'string' ? input.apiToken.trim() : ''
         const knownPaths = new Set((await ctx.projects.list()).map(project => project.path))
         if (projectMappings.some(mapping => !projectKeys.includes(mapping.jiraProjectKey) || !knownPaths.has(mapping.projectPath))) throw new Error('Invalid AgentKeeper project mapping')
         await ctx.storage.set('projectKeys', projectKeys)
-        await ctx.storage.set('cliPath', cliPath)
         await ctx.storage.set('projectMappings', projectMappings)
-        if (apiToken) await ctx.secrets.set('apiToken', apiToken)
         ctx.config.projectKeys = projectKeys
-        ctx.config.cliPath = cliPath
         ctx.config.projectMappings = projectMappings
-        setJiraCliPath(cliPath)
-        if (apiToken) setJiraApiToken(apiToken)
         cancelPolling?.()
         cancelPolling = null
         ctx.workItems.unregister('jira')
         await startJira(ctx)
         return { selectedKeys: projectKeys }
+      },
+    })
+    ctx.commands.register({
+      id: 'jira.settings.testConnection',
+      label: 'Test Jira connection',
+      handler: async (args) => {
+        const input = (args ?? {}) as { email?: unknown; instanceUrl?: unknown; apiToken?: unknown }
+        const email = typeof input.email === 'string' ? input.email.trim() : ctx.config.email?.trim() ?? ''
+        const instanceUrl = typeof input.instanceUrl === 'string'
+          ? input.instanceUrl.trim().replace(/\/+$/, '')
+          : ctx.config.instanceUrl?.trim().replace(/\/+$/, '') ?? ''
+        const apiToken = typeof input.apiToken === 'string' && input.apiToken.trim()
+          ? input.apiToken.trim()
+          : await ctx.secrets.get('apiToken') ?? ''
+        if (!email || !/^https:\/\/[^/]+$/.test(instanceUrl) || !apiToken) {
+          throw new Error('Enter a valid Jira site URL, account email, and API token.')
+        }
+        return testConnectionWith({ fetch: ctx.fetch, email, instanceUrl, apiToken })
+      },
+    })
+    ctx.commands.register({
+      id: 'jira.settings.saveConnection',
+      label: 'Save Jira connection',
+      handler: async (args) => {
+        const input = (args ?? {}) as { email?: unknown; instanceUrl?: unknown; apiToken?: unknown }
+        const email = typeof input.email === 'string' ? input.email.trim() : ''
+        const instanceUrl = typeof input.instanceUrl === 'string' ? input.instanceUrl.trim().replace(/\/+$/, '') : ''
+        const enteredToken = typeof input.apiToken === 'string' ? input.apiToken.trim() : ''
+        const apiToken = enteredToken || (await ctx.secrets.get('apiToken') ?? '')
+        if (!email || !/^https:\/\/[^/]+$/.test(instanceUrl) || !apiToken) {
+          throw new Error('Enter a valid Jira site URL, account email, and API token.')
+        }
+        await ctx.storage.set('email', email)
+        await ctx.storage.set('instanceUrl', instanceUrl)
+        if (enteredToken) await ctx.secrets.set('apiToken', enteredToken)
+        ctx.config.email = email
+        ctx.config.instanceUrl = instanceUrl
+        configureJiraApi({ fetch: ctx.fetch, email, instanceUrl, apiToken })
+        cancelPolling?.()
+        cancelPolling = null
+        ctx.workItems.unregister('jira')
+        await startJira(ctx)
+        ctx.events.emit('plugin.healthy', { pluginId: 'jira' })
+        return { saved: true }
       },
     })
     ctx.commands.register({
@@ -181,20 +213,9 @@ const jiraPlugin: Plugin<JiraSettings> = {
         return Object.fromEntries(entries.filter((entry): entry is [string, number] => entry[1] != null))
       },
     })
-    const cliFound = await checkCliPresent()
-
-    if (!cliFound) {
-      ctx.logger.warn('jira CLI not found, retrying every 15s')
-      ctx.events.emit('plugin.unhealthy', { pluginId: 'jira', reason: 'cli_missing' })
-
-      cancelPolling = ctx.background.every(15_000, async () => {
-        if (await checkCliPresent()) {
-          cancelPolling?.()
-          cancelPolling = null
-          await startJira(ctx)
-          ctx.events.emit('plugin.healthy', { pluginId: 'jira' })
-        }
-      })
+    if (!jiraCredentialsPresent() || !await checkConnection()) {
+      ctx.logger.warn('Jira credentials are missing or invalid')
+      ctx.events.emit('plugin.unhealthy', { pluginId: 'jira', reason: 'auth' })
       return
     }
 
@@ -202,7 +223,8 @@ const jiraPlugin: Plugin<JiraSettings> = {
 
     ctx.events.on('settings.changed', async ({ pluginId, config }) => {
       if (pluginId !== 'jira') return
-      setJiraCliPath((config as JiraSettings).cliPath)
+      const next = config as JiraSettings
+      configureJiraApi({ fetch: ctx.fetch, email: next.email, instanceUrl: next.instanceUrl, apiToken: await ctx.secrets.get('apiToken') })
       cancelPolling?.()
       cancelPolling = null
       ctx.workItems.unregister('jira')
