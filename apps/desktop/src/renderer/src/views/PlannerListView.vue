@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { useRouter } from 'vue-router'
-import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from '@/components/icons/app-icons'
+import { Filter as FilterIcon, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPlay, Pause, RefreshCw, Archive, X } from '@/components/icons/app-icons'
 import NewPlanModal from '@/components/planner/NewPlanModal.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
@@ -253,7 +253,7 @@ function projectNameForPlan(plan: PlanWithProject): string {
         <button
           class="w-full flex items-center justify-center gap-1.5 text-sm px-3 py-2 rounded-md border border-border hover:bg-muted/60 transition-colors"
         >
-          <Filter :size="14" />
+          <FilterIcon :size="14" />
           Filter
         </button>
       </div>

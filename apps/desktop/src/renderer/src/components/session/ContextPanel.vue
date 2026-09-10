@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ChevronLeft, ChevronRight, Circle, CircleCheckBig, CornerDownRight, FileCode2, GitBranch, Layers, ListTodo, Loader2, Play, Tag, User2 } from '@/components/icons/app-icons'
+import { ChevronLeft, ChevronRight, Circle as CircleIcon, CircleCheckBig, CornerDownRight, FileCode2, GitBranch, Layers, ListTodo, Loader2, Play, Tag, User2 } from '@/components/icons/app-icons'
 import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { formatRelativeTime } from '@/lib/format'
@@ -562,7 +562,7 @@ async function reconnectMcp() {
               :class="[planStepStatusClass(step.status), step.status === 'running' ? 'animate-pulse' : '']"
             >
               <CircleCheckBig v-if="step.status === 'complete'" class="size-3" />
-              <Circle v-else class="size-3" />
+              <CircleIcon v-else class="size-3" />
             </span>
             <span
               class="flex-1 truncate leading-snug"
