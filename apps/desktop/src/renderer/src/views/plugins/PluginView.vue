@@ -25,6 +25,8 @@ const sessionModalOpen = ref(false)
 let loadGeneration = 0
 let bridgeToken = crypto.randomUUID()
 let loadedViewId = ''
+let readyToken = ''
+let readyTimer: ReturnType<typeof setTimeout> | null = null
 let cleanupPluginEvents: (() => void) | null = null
 
 const pluginId = computed(() => String(route.params.pluginId ?? ''))
@@ -82,6 +84,7 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
         },
         openSession(sessionId) { send({ type: 'openSession', sessionId }); },
         onRouteChanged(listener) { routeListeners.add(listener); return () => routeListeners.delete(listener); },
+        __signalReady() { send({ type: 'ready' }); },
       });
       addEventListener('message', (event) => {
         const message = event.data;
@@ -98,11 +101,12 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
           for (const listener of routeListeners) listener(message.path);
         }
       });
-      send({ type: 'ready' });
     })();
   `
-  const bridgeUrl = scriptDataUrl(bridge)
-  const pluginUrl = scriptDataUrl(script)
+  // A single data: script preserves execution order. With separate bridge and
+  // plugin scripts Chromium can finish the bridge document, emit `ready`, and
+  // leave the plugin bundle pending until a later frame navigation.
+  const runtimeUrl = scriptDataUrl(`${bridge}\n${script}\nwindow.agentkeeperPlugin.__signalReady();`)
   const scriptClose = '<' + '/script>'
   return `<!doctype html>
 <html class="${document.documentElement.classList.contains('dark') ? 'dark' : ''}">
@@ -114,14 +118,16 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
   <style>html,body,#app{height:100%;margin:0}body{font:13px system-ui,sans-serif;color:#1f2937;background:#fff}.dark body{color:#e5e7eb;background:#111827}*{box-sizing:border-box}button,input,select,textarea{font:inherit}</style>
 </head>
 <body><div id="app"></div>
-<script src="${bridgeUrl}">${scriptClose}
-<script src="${pluginUrl}">${scriptClose}
+<script src="${runtimeUrl}">${scriptClose}
 </body></html>`
 }
 
 function revokeView(reason = 'Provider not available'): void {
+  if (readyTimer) clearTimeout(readyTimer)
+  readyTimer = null
   loadGeneration += 1
   bridgeToken = crypto.randomUUID()
+  readyToken = ''
   loadedViewId = ''
   plugin.value = null
   loading.value = false
@@ -145,11 +151,14 @@ function postToPlugin(message: Record<string, unknown>, token = bridgeToken): vo
   }, '*')
 }
 
-async function load(): Promise<void> {
+async function load(attempt = 0): Promise<void> {
+  if (readyTimer) clearTimeout(readyTimer)
+  readyTimer = null
   const generation = ++loadGeneration
   const providerId = pluginId.value
   const token = crypto.randomUUID()
   bridgeToken = token
+  readyToken = ''
   loadedViewId = ''
   plugin.value = null
   loading.value = true
@@ -174,6 +183,16 @@ async function load(): Promise<void> {
     loadedViewId = routeContribution.view
     if (frame.value) {
       frame.value.srcdoc = buildDocument(bundle.script, routeContribution.view, providerId, routeContribution.path, token)
+      readyTimer = setTimeout(() => {
+        if (generation !== loadGeneration || token !== bridgeToken || readyToken === token) return
+        readyTimer = null
+        if (attempt < 2) void load(attempt + 1)
+        else {
+          loading.value = false
+          unavailable.value = true
+          detail.value = 'Provider view did not finish loading. Retry to load it again.'
+        }
+      }, 1_000)
     }
   } catch (error) {
     if (generation !== loadGeneration || token !== bridgeToken) return
@@ -181,8 +200,6 @@ async function load(): Promise<void> {
     plugin.value = null
     unavailable.value = true
     detail.value = error instanceof Error ? error.message : String(error)
-  } finally {
-    if (generation === loadGeneration) loading.value = false
   }
 }
 
@@ -195,6 +212,10 @@ async function onMessage(event: MessageEvent<unknown>): Promise<void> {
   const message = parsePluginBridgeRequest(event.data, requestToken)
   if (!message) return
   if (message.type === 'ready') {
+    readyToken = requestToken
+    if (readyTimer) clearTimeout(readyTimer)
+    readyTimer = null
+    loading.value = false
     postToPlugin({
       type: 'route.changed',
       path: pluginPath.value,
@@ -265,8 +286,11 @@ onMounted(() => {
     const lifecycle = payload as { pluginId?: string }
     if (lifecycle?.pluginId !== pluginId.value) return
     if (event === 'plugin.activated' || event === 'plugin.updated') void load()
-    else if (event === 'plugin.deactivated' || event === 'plugin.uninstalled' || event === 'plugin.unhealthy') {
-      revokeView(event === 'plugin.unhealthy' ? 'Provider stopped unexpectedly' : 'Provider not available')
+    // An unhealthy plugin is still active and its renderer may contain the
+    // settings needed to repair authentication. Only tear the capability-
+    // scoped frame down when the plugin actually stops being available.
+    else if (event === 'plugin.deactivated' || event === 'plugin.uninstalled') {
+      revokeView('Provider not available')
     }
   })
   void load()
@@ -300,7 +324,7 @@ watch([pluginId, pluginPath], ([nextId], [previousId]) => {
       <div class="max-w-sm text-center">
         <h1 class="text-base font-semibold">Provider not available</h1>
         <p v-if="detail && detail !== 'Provider not available'" class="mt-2 text-sm text-muted-foreground">{{ detail }}</p>
-        <button class="mt-4 text-sm text-primary hover:underline" @click="load">Retry</button>
+        <button class="mt-4 text-sm text-primary hover:underline" @click="load()">Retry</button>
       </div>
     </div>
     <iframe

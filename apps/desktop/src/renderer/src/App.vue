@@ -85,7 +85,9 @@ onMounted(async () => {
   })
 
   cleanupPluginLifecycle = window.agentkeeper.plugins.onEvent((event, payload) => {
-    if (event !== 'plugin.deactivated' && event !== 'plugin.uninstalled' && event !== 'plugin.unhealthy') return
+    // Keep contributions (especially Settings) mounted while unhealthy so a
+    // user can repair missing or invalid plugin credentials.
+    if (event !== 'plugin.deactivated' && event !== 'plugin.uninstalled') return
     const pluginId = (payload as { pluginId?: unknown })?.pluginId
     if (typeof pluginId === 'string') uiStore.revokePlugin(pluginId)
   })

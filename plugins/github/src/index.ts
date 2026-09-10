@@ -1,7 +1,8 @@
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
 import {
   addComment,
-  checkCliPresent,
+  checkConnection,
+  configureGitHubApi,
   createPR,
   getPR,
   getPRChecks,
@@ -9,8 +10,8 @@ import {
   getPRDiff,
   listPRs,
   mergePR,
-  setProcessBroker,
   submitReview,
+  testConnectionWith,
 } from './github-cli.js'
 import { GitHubWorkItemProvider } from './github-provider.js'
 
@@ -55,8 +56,27 @@ function requireRepo(repo: unknown): string {
 
 const githubPlugin: Plugin = {
   async activate(ctx) {
-    setProcessBroker(ctx.process)
     pluginCtx = ctx
+    configureGitHubApi(ctx.fetch, await ctx.secrets.get('accessToken'))
+    ctx.commands.register({ id: 'github.settings.get', label: 'Get GitHub connection settings', handler: async () => ({ connected: Boolean(await ctx.secrets.get('accessToken')) }) })
+    ctx.commands.register({ id: 'github.settings.test', label: 'Test GitHub access token', handler: async (args) => {
+      const entered = String((args as { token?: unknown })?.token ?? '').trim()
+      const token = entered || (await ctx.secrets.get('accessToken') ?? '')
+      return testConnectionWith(ctx.fetch, token)
+    } })
+    ctx.commands.register({ id: 'github.settings.save', label: 'Save GitHub access token', handler: async (args) => {
+      const token = String((args as { token?: unknown })?.token ?? '').trim()
+      if (!token) throw new Error('A GitHub access token is required')
+      await ctx.secrets.set('accessToken', token)
+      configureGitHubApi(ctx.fetch, token)
+      await restartWorkItems(ctx)
+      ctx.events.emit('plugin.healthy', { pluginId: 'github' })
+      return { connected: true }
+    } })
+    ctx.commands.register({ id: 'github.settings.removeToken', label: 'Remove saved GitHub token', handler: async () => {
+      await ctx.secrets.delete('accessToken'); configureGitHubApi(ctx.fetch); cancelPolling?.(); cancelPolling = null; ctx.workItems.unregister('github'); activeSource = null
+      ctx.events.emit('plugin.unhealthy', { pluginId: 'github', reason: 'auth' })
+    } })
     ctx.commands.register({
       id: 'github.projects.list',
       label: 'List AgentKeeper projects with GitHub repositories',
@@ -80,16 +100,9 @@ const githubPlugin: Plugin = {
     ctx.commands.register({ id: 'github.pulls.create', label: 'Create GitHub pull request', handler: (args) => { const input = args as Parameters<typeof createPR>[1] & { repo?: string }; return createPR(requireRepo(input.repo), input) } })
     ctx.commands.register({ id: 'github.workItems.get', label: 'Get GitHub issue', handler: (args) => activeSource?.get(String((args as { itemId?: unknown })?.itemId ?? '')) })
 
-    if (!await checkCliPresent()) {
-      ctx.logger.warn('gh CLI not found, retrying every 15s')
-      ctx.events.emit('plugin.unhealthy', { pluginId: 'github', reason: 'cli_missing' })
-      cancelPolling = ctx.background.every(15_000, async () => {
-        if (await checkCliPresent()) {
-          cancelPolling?.(); cancelPolling = null
-          await restartWorkItems(ctx)
-          ctx.events.emit('plugin.healthy', { pluginId: 'github' })
-        }
-      })
+    if (!await checkConnection()) {
+      ctx.logger.warn('GitHub access token is missing or invalid')
+      ctx.events.emit('plugin.unhealthy', { pluginId: 'github', reason: 'auth' })
       return
     }
     await restartWorkItems(ctx)

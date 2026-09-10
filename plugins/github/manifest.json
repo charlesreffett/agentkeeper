@@ -4,28 +4,16 @@
   "name": "GitHub",
   "version": "0.2.0",
   "entry": "dist/index.js",
-  "description": "GitHub work items via the gh CLI",
+  "description": "GitHub work items via the GitHub REST API",
   "author": "AgentKeeper",
   "license": "MIT",
   "update_url": "https://github.com/agentkeeper-ai/agentkeeper/releases/download/plugin-github-feed/github-update-manifest.json",
-  "activation_events": [
-    "onStartup"
-  ],
-  "permissions": [
-    "workItems",
-    "secrets",
-    "commands",
-    "ui",
-    "background",
-    "projects",
-    "nativeProcess"
-  ],
+  "activation_events": ["onStartup"],
+  "permissions": ["workItems", "secrets", "commands", "ui", "background", "projects", "network"],
+  "network": { "hosts": ["https://api.github.com"] },
   "renderer": {
     "entry": "dist/renderer.js",
-    "views": [
-      "github-pulls",
-      "github-work-item"
-    ]
+    "views": ["github-pulls", "github-work-item", "github-settings"]
   },
   "contributes": {
     "navigation": [
@@ -37,17 +25,13 @@
         "order": 20
       }
     ],
+    "settings": [
+      { "id": "github-settings", "label": "GitHub", "icon": "Github", "route": "settings", "group": "Integrations" }
+    ],
     "routes": [
-      {
-        "id": "pulls",
-        "path": "pulls",
-        "view": "github-pulls"
-      },
-      {
-        "id": "work-items",
-        "path": "work-items",
-        "view": "github-work-item"
-      }
+      { "id": "pulls", "path": "pulls", "view": "github-pulls" },
+      { "id": "work-items", "path": "work-items", "view": "github-work-item" },
+      { "id": "settings", "path": "settings", "view": "github-settings" }
     ]
   }
 }

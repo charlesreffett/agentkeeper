@@ -4,7 +4,7 @@ import { marked } from 'marked'
 type PluginApi = { getRoute(): string; invoke<T>(command: string, args?: unknown): Promise<T>; navigate(path: string): void; openExternal(url: string): void; startSession(itemId: string, projectPath?: string): void; getWorkItemSessions(itemId?: string): Promise<WorkItemSession[]>; openSession(sessionId: string): void; onRouteChanged(listener: (path: string) => void): () => void }
 type WorkItem = { id: string; externalRef: string; title: string; body: string; status: string; statusLabel?: string; assignee?: string; reporter?: string; priority?: string; issueType?: string; storyPoints?: number; parentRef?: string; customFields?: Record<string, string> }
 type JiraProject = { key: string; name: string }
-type JiraSettingsData = { projects: JiraProject[]; projectError: string; agentProjects: Array<{ path: string; name: string }>; selectedKeys: string[]; projectMappings: Array<{ jiraProjectKey: string; projectPath: string }>; cliPath: string; apiTokenSource: 'keychain' | 'environment' | 'none' }
+type JiraSettingsData = { projects: JiraProject[]; projectError: string; agentProjects: Array<{ path: string; name: string }>; selectedKeys: string[]; projectMappings: Array<{ jiraProjectKey: string; projectPath: string }>; email: string; instanceUrl: string; apiTokenSource: 'keychain' | 'none' }
 type WorkItemSession = { id: string; itemId: string; status: string; title?: string | null; lastActivityAt: number }
 type IssueTransition = { name: string; toStatus: string; toStatusLabel: string }
 declare global { interface Window { agentkeeperPlugin: PluginApi } }
@@ -33,7 +33,7 @@ document.head.append(style)
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] { const node = document.createElement(tag); if (className) node.className = className; if (text !== undefined) node.textContent = text; return node }
 function projectOf(item: WorkItem): string { return item.externalRef.match(/^[A-Z][A-Z0-9_]*/)?.[0] ?? '' }
-function showError(): void { root.replaceChildren(el('div', 'error', 'Provider not available')) }
+function showError(error?: unknown): void { root.replaceChildren(el('div', 'error', error instanceof Error ? error.message : 'Provider not available')) }
 function markdownBody(markdown: string): HTMLDivElement { const body = el('div', 'markdown-body'); body.innerHTML = DOMPurify.sanitize(marked.parse(markdown, { async: false, gfm: true }) as string, { USE_PROFILES: { html: true }, FORBID_TAGS: ['style', 'iframe', 'object', 'embed', 'form'], FORBID_ATTR: ['style'] }); for (const link of body.querySelectorAll<HTMLAnchorElement>('a[href]')) { try { const url = new URL(link.href); if (!['https:', 'http:'].includes(url.protocol)) throw new Error(); link.addEventListener('click', event => { event.preventDefault(); api.openExternal(url.href) }) } catch { link.removeAttribute('href') } }; return body }
 
 function projectButton(project: JiraProject, count: number, redraw: () => void): HTMLButtonElement {
@@ -56,7 +56,7 @@ async function renderBoard(): Promise<void> {
     const loadedCounts = Object.fromEntries(projects.map((project) => [project.key, items.filter((item) => projectOf(item) === project.key).length]))
     const counts = await api.invoke<Record<string, number>>('jira.boards.count', { keys: projects.map((project) => project.key) }).catch(() => loadedCounts)
     draw(items, projects, { ...loadedCounts, ...counts }, sessions)
-  } catch { showError() }
+  } catch (error) { showError(error) }
 }
 
 function draw(items: WorkItem[], projects: JiraProject[], counts: Record<string, number>, sessions: WorkItemSession[]): void {
@@ -126,9 +126,9 @@ async function renderItem(itemId: string): Promise<void> {
     header.append(back, actions); detail.append(header, el('div', 'key', item.externalRef), el('h1', '', item.title)); const meta = el('div', 'meta'); meta.append(el('span', 'badge', item.statusLabel ?? item.status), el('span', 'priority', item.priority ?? 'No priority'), el('span', 'muted', item.assignee ?? 'Unassigned')); if (item.issueType) meta.append(el('span', 'muted', item.issueType)); if (item.storyPoints != null) meta.append(el('span', 'muted', `${item.storyPoints} points`)); if (item.parentRef) meta.append(el('span', 'key', `Parent ${item.parentRef}`)); detail.append(meta)
     const description = el('section', 'panel'); description.append(el('div', 'eyebrow', 'Description'), markdownBody(item.body || '*No description.*')); detail.append(description)
     for (const [name, value] of Object.entries(item.customFields ?? {})) { const field = el('section', 'panel'); field.append(el('div', 'eyebrow', name), markdownBody(value)); detail.append(field) }
-    const transitionPanel = el('section', 'panel'); transitionPanel.append(el('div', 'eyebrow', 'Status transitions')); const transitionList = el('div', 'transition-list'); if (!transitions.length) transitionList.append(el('span', 'muted', 'No transitions available.')); for (const transition of transitions) { const button = el('button', 'secondary', transition.toStatusLabel); button.title = transition.name; button.addEventListener('click', async () => { button.disabled = true; button.textContent = 'Moving…'; try { await api.invoke('jira.workItems.transition', { itemId, name: transition.name }); void renderItem(itemId) } catch { showError() } }); transitionList.append(button) }; transitionPanel.append(transitionList); detail.append(transitionPanel)
+    const transitionPanel = el('section', 'panel'); transitionPanel.append(el('div', 'eyebrow', 'Status transitions')); const transitionList = el('div', 'transition-list'); if (!transitions.length) transitionList.append(el('span', 'muted', 'No transitions available.')); for (const transition of transitions) { const button = el('button', 'secondary', transition.toStatusLabel); button.title = transition.name; button.addEventListener('click', async () => { button.disabled = true; button.textContent = 'Moving…'; try { await api.invoke('jira.workItems.transition', { itemId, name: transition.name }); void renderItem(itemId) } catch (error) { showError(error) } }); transitionList.append(button) }; transitionPanel.append(transitionList); detail.append(transitionPanel)
     const commentPanel = el('section', 'panel'), comment = el('textarea', 'field'); comment.rows = 4; comment.placeholder = 'Add a comment…'; const commentActions = el('div', 'form-actions'), commentStatus = el('span', 'meta'), submit = el('button', 'save', 'Comment'); submit.addEventListener('click', async () => { if (!comment.value.trim()) return; submit.disabled = true; commentStatus.textContent = 'Posting…'; try { await api.invoke('jira.workItems.addComment', { itemId, body: comment.value }); comment.value = ''; commentStatus.textContent = 'Comment posted.' } catch (error) { commentStatus.textContent = error instanceof Error ? error.message : String(error) } finally { submit.disabled = false } }); commentActions.append(commentStatus, submit); commentPanel.append(el('div', 'eyebrow', 'Comment'), comment, commentActions); detail.append(commentPanel); root.replaceChildren(detail)
-  } catch { showError() }
+  } catch (error) { showError(error) }
 }
 
 async function renderSettings(): Promise<void> {
@@ -138,7 +138,8 @@ async function renderSettings(): Promise<void> {
     let draft = new Set(data.selectedKeys)
     const draftMappings = new Map(data.projectMappings.map(mapping => [mapping.jiraProjectKey, mapping.projectPath]))
     let filter = ''
-    let cliPath = data.cliPath
+    let email = data.email
+    let instanceUrl = data.instanceUrl
     let apiToken = ''
     let saving = false
 
@@ -151,12 +152,18 @@ async function renderSettings(): Promise<void> {
       save.disabled = saving
       save.addEventListener('click', async () => {
         saving = true; drawSettings()
-        try { await api.invoke('jira.settings.selectProjects', { keys: [...draft], cliPath, apiToken, projectMappings: [...draftMappings].filter(([key, path]) => draft.has(key) && path).map(([jiraProjectKey, projectPath]) => ({ jiraProjectKey, projectPath })) }); saving = false; apiToken = ''; drawSettings('Plugin settings saved. Reload this page to refresh Jira projects.') }
+        try { await api.invoke('jira.settings.selectProjects', { keys: [...draft], projectMappings: [...draftMappings].filter(([key, path]) => draft.has(key) && path).map(([jiraProjectKey, projectPath]) => ({ jiraProjectKey, projectPath })) }); saving = false; drawSettings('Project selection saved.') }
         catch (error) { saving = false; drawSettings(error instanceof Error ? error.message : String(error)) }
       })
       bar.append(summary, search, save); page.append(bar)
-      const cliLabel = el('label', 'settings-copy', 'Jira CLI path'), cliInput = el('input', 'field'); cliInput.placeholder = 'jira (use PATH)'; cliInput.value = cliPath; cliInput.addEventListener('input', () => { cliPath = cliInput.value }); cliLabel.append(cliInput); page.append(cliLabel)
-      const tokenLabel = el('label', 'settings-copy', 'Jira API token'), tokenInput = el('input', 'field'); tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.placeholder = data.apiTokenSource === 'keychain' ? 'Using token stored in OS keychain' : data.apiTokenSource === 'environment' ? 'Using JIRA_API_TOKEN from host environment' : 'Required by Jira CLI'; tokenInput.value = apiToken; tokenInput.addEventListener('input', () => { apiToken = tokenInput.value }); tokenLabel.append(tokenInput); page.append(tokenLabel)
+      const urlLabel = el('label', 'settings-copy', 'Jira site URL'), urlInput = el('input', 'field'); urlInput.type = 'url'; urlInput.placeholder = 'https://your-company.atlassian.net'; urlInput.value = instanceUrl; urlInput.addEventListener('input', () => { instanceUrl = urlInput.value }); urlLabel.append(urlInput); page.append(urlLabel)
+      const emailLabel = el('label', 'settings-copy', 'Atlassian account email'), emailInput = el('input', 'field'); emailInput.type = 'email'; emailInput.autocomplete = 'email'; emailInput.value = email; emailInput.addEventListener('input', () => { email = emailInput.value }); emailLabel.append(emailInput); page.append(emailLabel)
+      const tokenLabel = el('label', 'settings-copy', 'Jira API token'), tokenInput = el('input', 'field'); tokenInput.type = 'password'; tokenInput.autocomplete = 'off'; tokenInput.placeholder = data.apiTokenSource === 'keychain' ? 'Using token stored in OS keychain' : 'Create one at id.atlassian.net/manage/api-tokens'; tokenInput.value = apiToken; tokenInput.addEventListener('input', () => { apiToken = tokenInput.value }); tokenLabel.append(tokenInput); page.append(tokenLabel)
+      const createToken = el('button', 'action', 'Create an Atlassian API token ↗'); createToken.type = 'button'; createToken.addEventListener('click', () => api.openExternal('https://id.atlassian.com/manage-profile/security/api-tokens')); page.append(createToken)
+      const connectionActions = el('div', 'form-actions'), test = el('button', 'action', 'Test connection'), saveConnection = el('button', 'save', 'Save connection'); connectionActions.style.justifyContent = 'space-between'
+      test.type = 'button'; test.addEventListener('click', async () => { test.disabled = true; try { const user = await api.invoke<{ displayName: string }>('jira.settings.testConnection', { email, instanceUrl, apiToken }); data.projects = await api.invoke<JiraProject[]>('jira.projects.list').catch(() => data.projects); data.projectError = ''; drawSettings(`Connected as ${user.displayName}.`) } catch (error) { drawSettings(error instanceof Error ? error.message : String(error)) } })
+      saveConnection.type = 'button'; saveConnection.addEventListener('click', async () => { saveConnection.disabled = true; try { await api.invoke('jira.settings.saveConnection', { email, instanceUrl, apiToken }); apiToken = ''; data.instanceUrl = instanceUrl; data.email = email; data.apiTokenSource = 'keychain'; drawSettings('Connection settings saved.') } catch (error) { drawSettings(error instanceof Error ? error.message : String(error)) } })
+      connectionActions.append(test, saveConnection); page.append(connectionActions)
       if (data.projectError) page.append(el('p', 'error', data.projectError))
       if (message) page.append(el('p', 'notice', message))
       const list = el('div', 'project-list')
@@ -173,7 +180,7 @@ async function renderSettings(): Promise<void> {
       page.append(list); root.replaceChildren(page)
     }
     drawSettings()
-  } catch { showError() }
+  } catch (error) { showError(error) }
 }
 
 function render(path: string): void { const match = /^work-items\/(.+)$/.exec(path); if (match) void renderItem(decodeURIComponent(match[1]!)); else if (path === 'settings') void renderSettings(); else void renderBoard() }

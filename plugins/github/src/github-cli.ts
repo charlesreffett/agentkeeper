@@ -18,25 +18,63 @@ import type {
   ReviewEvent,
 } from './types.js'
 
-type ProcessBroker = PluginContext['process']
-let processBroker: ProcessBroker | null = null
+let githubFetch: PluginContext['fetch'] | null = null
+let githubToken = ''
 
-export function setProcessBroker(value: ProcessBroker): void {
-  processBroker = value
+export function configureGitHubApi(fetch: PluginContext['fetch'], token?: string): void {
+  githubFetch = fetch
+  githubToken = token?.trim() ?? ''
 }
 
-const execFileAsync = (file: string, args: string[]) => {
-  if (!processBroker) throw new Error('Native process broker is not initialized')
-  return processBroker.execFile(file, args, { timeoutMs: 10_000 })
+export function githubCredentialsPresent(): boolean {
+  return Boolean(githubFetch && githubToken)
 }
 
-export async function checkCliPresent(): Promise<boolean> {
+async function githubRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (!githubCredentialsPresent()) throw new Error('Add a GitHub access token in GitHub settings.')
+  const response = await githubFetch!(`https://api.github.com${path}`, {
+    ...init,
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${githubToken}`,
+      'x-github-api-version': '2022-11-28',
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500)
+    throw new Error(`GitHub API ${response.status}: ${detail || response.statusText}`)
+  }
+  if (response.status === 204) return undefined as T
+  return response.json() as Promise<T>
+}
+
+export async function checkConnection(): Promise<boolean> {
   try {
-    await execFileAsync('gh', ['--version'])
+    await githubRequest('/user')
     return true
   } catch {
     return false
   }
+}
+
+export async function testConnectionWith(fetch: PluginContext['fetch'], token: string): Promise<{ login: string }> {
+  const normalized = token.trim()
+  if (!normalized) throw new Error('Enter a GitHub access token.')
+  const response = await fetch('https://api.github.com/user', {
+    headers: {
+      accept: 'application/vnd.github+json',
+      authorization: `Bearer ${normalized}`,
+      'x-github-api-version': '2022-11-28',
+    },
+  })
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500)
+    throw new Error(`GitHub API ${response.status}: ${detail || response.statusText}`)
+  }
+  const user = await response.json() as { login?: string }
+  return { login: user.login ?? 'GitHub user' }
 }
 
 function splitRepo(repo: string): { owner: string; repoName: string } {
@@ -173,49 +211,53 @@ export async function listIssues(
   repo: string,
   state: 'open' | 'closed' | 'all' = 'open',
 ): Promise<GHIssue[]> {
-  const args = [
-    'issue', 'list',
-    '--repo', repo,
-    '--state', state,
-    '--json', 'number,title,body,state,author,assignees,labels,url,createdAt,updatedAt',
-    '--limit', '200',
-  ]
-  const { stdout } = await execFileAsync('gh', args)
-  return JSON.parse(stdout.trim()) as GHIssue[]
+  const { owner, repoName } = splitRepo(repo)
+  const query = new URLSearchParams({ state, per_page: '100' })
+  const rows = await githubRequest<Array<Record<string, unknown>>>(`/repos/${owner}/${repoName}/issues?${query}`)
+  return rows.filter(row => !row.pull_request).map(mapRestIssue)
 }
 
 export async function getIssue(repo: string, number: number): Promise<GHIssue> {
-  const { stdout } = await execFileAsync('gh', [
-    'issue', 'view', String(number),
-    '--repo', repo,
-    '--json', 'number,title,body,state,author,assignees,labels,url,createdAt,updatedAt',
-  ])
-  return JSON.parse(stdout.trim()) as GHIssue
+  const { owner, repoName } = splitRepo(repo)
+  return mapRestIssue(await githubRequest<Record<string, unknown>>(`/repos/${owner}/${repoName}/issues/${number}`))
 }
 
 export async function closeIssue(repo: string, number: number): Promise<void> {
-  await execFileAsync('gh', ['issue', 'close', String(number), '--repo', repo])
+  await updateIssueState(repo, number, 'closed')
 }
 
 export async function reopenIssue(repo: string, number: number): Promise<void> {
-  await execFileAsync('gh', ['issue', 'reopen', String(number), '--repo', repo])
+  await updateIssueState(repo, number, 'open')
+}
+
+function mapRestIssue(row: Record<string, unknown>): GHIssue {
+  const user = row.user as { login?: string } | null
+  return {
+    number: Number(row.number), title: String(row.title ?? ''), body: String(row.body ?? ''),
+    state: String(row.state ?? 'open').toUpperCase(), author: { login: user?.login ?? '' },
+    assignees: ((row.assignees as Array<{ login?: string }> | undefined) ?? []).map(value => ({ login: value.login ?? '' })),
+    labels: ((row.labels as Array<{ name?: string }> | undefined) ?? []).map(value => ({ name: value.name ?? '' })),
+    url: String(row.html_url ?? ''), createdAt: String(row.created_at ?? ''), updatedAt: String(row.updated_at ?? ''),
+  }
+}
+
+async function updateIssueState(repo: string, number: number, state: 'open' | 'closed'): Promise<void> {
+  const { owner, repoName } = splitRepo(repo)
+  await githubRequest(`/repos/${owner}/${repoName}/issues/${number}`, { method: 'PATCH', body: JSON.stringify({ state }) })
 }
 
 // ─── PRs — list + detail ─────────────────────────────────────────────────────
 
 export async function listPRs(repo: string, filters: PRFilters): Promise<PRSummary[]> {
-  const args = ['pr', 'list', '--repo', repo, '--json', PR_SUMMARY_FIELDS, '--limit', '100']
+  const { owner, repoName } = splitRepo(repo)
+  const query = new URLSearchParams({ state: filters.state === 'merged' ? 'closed' : filters.state ?? 'open', per_page: '100' })
+  const rows = await githubRequest<Array<Record<string, unknown>>>(`/repos/${owner}/${repoName}/pulls?${query}`)
+  let results = rows.map(row => mapRestPR(row, repo))
 
-  const state = filters.state ?? 'open'
-  args.push('--state', state)
-
-  if (filters.author) args.push('--author', filters.author)
-  if (filters.assignee) args.push('--assignee', filters.assignee)
-  if (filters.label) args.push('--label', filters.label)
-  if (filters.search) args.push('--search', filters.search)
-
-  const { stdout } = await execFileAsync('gh', args)
-  let results = (JSON.parse(stdout.trim()) as RawGHPR[]).map((r) => mapToPRSummary(r, repo))
+  if (filters.state === 'merged') results = results.filter(pr => pr.state === 'merged')
+  if (filters.author) results = results.filter(pr => pr.author === filters.author)
+  if (filters.label) results = results.filter(pr => pr.labels.includes(filters.label!))
+  if (filters.search) results = results.filter(pr => `${pr.title} ${pr.number}`.toLowerCase().includes(filters.search!.toLowerCase()))
 
   if (filters.checksState) {
     results = results.filter((pr) => pr.checksState === filters.checksState)
@@ -225,40 +267,45 @@ export async function listPRs(repo: string, filters: PRFilters): Promise<PRSumma
 }
 
 export async function getPR(repo: string, number: number): Promise<PRDetail> {
-  const [prOut, issueComments, reviewComments] = await Promise.all([
-    execFileAsync('gh', [
-      'pr', 'view', String(number),
-      '--repo', repo,
-      '--json', PR_DETAIL_FIELDS,
-    ]),
+  const { owner, repoName } = splitRepo(repo)
+  const [row, issueComments, reviewComments, reviews] = await Promise.all([
+    githubRequest<Record<string, unknown>>(`/repos/${owner}/${repoName}/pulls/${number}`),
     fetchAPIComments(repo, number, 'issues'),
     fetchAPIComments(repo, number, 'pulls'),
+    githubRequest<Array<Record<string, unknown>>>(`/repos/${owner}/${repoName}/pulls/${number}/reviews`),
   ])
-
-  const raw = JSON.parse(prOut.stdout.trim()) as RawGHPR
 
   const allComments: PRComment[] = [
     ...issueComments.map((c) => mapAPIComment(c)),
     ...reviewComments.map((c) => mapAPIComment(c)),
   ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
 
-  const validMergeable = ['MERGEABLE', 'CONFLICTING', 'UNKNOWN'] as const
-  type Mergeable = (typeof validMergeable)[number]
-  const mergeable: Mergeable =
-    raw.mergeable && validMergeable.includes(raw.mergeable as Mergeable)
-      ? (raw.mergeable as Mergeable)
-      : 'UNKNOWN'
-
   return {
-    ...mapToPRSummary(raw, repo),
-    body: raw.body ?? '',
-    additions: raw.additions ?? 0,
-    deletions: raw.deletions ?? 0,
-    changedFiles: raw.changedFiles ?? 0,
-    mergeable,
+    ...mapRestPR(row, repo),
+    body: String(row.body ?? ''), additions: Number(row.additions ?? 0), deletions: Number(row.deletions ?? 0), changedFiles: Number(row.changed_files ?? 0),
+    mergeable: row.mergeable === true ? 'MERGEABLE' : row.mergeable === false ? 'CONFLICTING' : 'UNKNOWN',
     comments: allComments,
-    reviews: (raw.reviews ?? []).map(mapReview),
+    reviews: reviews.map(mapRestReview),
   }
+}
+
+function mapRestPR(row: Record<string, unknown>, repo: string): PRSummary {
+  const user = row.user as { login?: string } | null
+  const head = row.head as { ref?: string } | null
+  const base = row.base as { ref?: string } | null
+  return {
+    number: Number(row.number), title: String(row.title ?? ''),
+    state: row.merged_at ? 'merged' : String(row.state ?? 'open') === 'closed' ? 'closed' : 'open',
+    isDraft: Boolean(row.draft), author: user?.login ?? '', headRef: head?.ref ?? '', baseRef: base?.ref ?? '',
+    reviewDecision: null, checksState: null, updatedAt: String(row.updated_at ?? ''), url: String(row.html_url ?? ''),
+    labels: ((row.labels as Array<{ name?: string }> | undefined) ?? []).map(label => label.name ?? ''), repo,
+  }
+}
+
+function mapRestReview(row: Record<string, unknown>): PRReview {
+  const user = row.user as { login?: string } | null
+  const state = String(row.state ?? 'COMMENTED') as PRReview['state']
+  return { id: Number(row.id), author: user?.login ?? '', state, body: String(row.body ?? ''), submittedAt: String(row.submitted_at ?? '') }
 }
 
 async function fetchAPIComments(
@@ -267,10 +314,9 @@ async function fetchAPIComments(
   kind: 'issues' | 'pulls',
 ): Promise<RawAPIComment[]> {
   const { owner, repoName } = splitRepo(repo)
-  const endpoint = `repos/${owner}/${repoName}/${kind}/${number}/comments?per_page=100`
+  const endpoint = `/repos/${owner}/${repoName}/${kind}/${number}/comments?per_page=100`
   try {
-    const { stdout } = await execFileAsync('gh', ['api', endpoint])
-    return JSON.parse(stdout.trim()) as RawAPIComment[]
+    return await githubRequest<RawAPIComment[]>(endpoint)
   } catch {
     return []
   }
@@ -279,20 +325,18 @@ async function fetchAPIComments(
 // ─── PR content ───────────────────────────────────────────────────────────────
 
 export async function getPRDiff(repo: string, number: number): Promise<string> {
-  const { stdout } = await execFileAsync('gh', [
-    'pr', 'diff', String(number), '--repo', repo,
-  ])
-  return stdout
+  const { owner, repoName } = splitRepo(repo)
+  if (!githubCredentialsPresent()) throw new Error('Add a GitHub access token in GitHub settings.')
+  const response = await githubFetch!(`https://api.github.com/repos/${owner}/${repoName}/pulls/${number}`, { headers: { accept: 'application/vnd.github.diff', authorization: `Bearer ${githubToken}`, 'x-github-api-version': '2022-11-28' } })
+  if (!response.ok) throw new Error(`GitHub API ${response.status}: ${await response.text()}`)
+  return response.text()
 }
 
 export async function getPRChecks(repo: string, number: number): Promise<CheckRun[]> {
-  const { stdout } = await execFileAsync('gh', [
-    'pr', 'view', String(number),
-    '--repo', repo,
-    '--json', 'statusCheckRollup',
-  ])
-  const { statusCheckRollup } = JSON.parse(stdout.trim()) as { statusCheckRollup: RawCheckItem[] }
-  return (statusCheckRollup ?? []).map(mapCheckItem)
+  const { owner, repoName } = splitRepo(repo)
+  const pr = await githubRequest<{ head: { sha: string } }>(`/repos/${owner}/${repoName}/pulls/${number}`)
+  const result = await githubRequest<{ check_runs: Array<{ name: string; status: string; conclusion: string | null; details_url?: string }> }>(`/repos/${owner}/${repoName}/commits/${pr.head.sha}/check-runs?per_page=100`)
+  return result.check_runs.map(check => mapCheckItem({ __typename: 'CheckRun', name: check.name, status: check.status, conclusion: check.conclusion ?? undefined, detailsUrl: check.details_url }))
 }
 
 export async function getPRComments(repo: string, number: number): Promise<PRComment[]> {
@@ -309,7 +353,8 @@ export async function getPRComments(repo: string, number: number): Promise<PRCom
 // ─── PR actions ───────────────────────────────────────────────────────────────
 
 export async function addComment(repo: string, number: number, body: string): Promise<void> {
-  await execFileAsync('gh', ['pr', 'comment', String(number), '--repo', repo, '--body', body])
+  const { owner, repoName } = splitRepo(repo)
+  await githubRequest(`/repos/${owner}/${repoName}/issues/${number}/comments`, { method: 'POST', body: JSON.stringify({ body }) })
 }
 
 export async function submitReview(
@@ -318,15 +363,8 @@ export async function submitReview(
   event: ReviewEvent,
   body: string,
 ): Promise<void> {
-  const flag =
-    event === 'APPROVE'
-      ? '--approve'
-      : event === 'REQUEST_CHANGES'
-        ? '--request-changes'
-        : '--comment'
-  const args = ['pr', 'review', String(number), '--repo', repo, flag]
-  if (body) args.push('--body', body)
-  await execFileAsync('gh', args)
+  const { owner, repoName } = splitRepo(repo)
+  await githubRequest(`/repos/${owner}/${repoName}/pulls/${number}/reviews`, { method: 'POST', body: JSON.stringify({ event, body }) })
 }
 
 export async function mergePR(
@@ -334,31 +372,12 @@ export async function mergePR(
   number: number,
   method: MergeMethod,
 ): Promise<void> {
-  const flag = method === 'squash' ? '--squash' : method === 'rebase' ? '--rebase' : '--merge'
-  await execFileAsync('gh', ['pr', 'merge', String(number), '--repo', repo, flag])
+  const { owner, repoName } = splitRepo(repo)
+  await githubRequest(`/repos/${owner}/${repoName}/pulls/${number}/merge`, { method: 'PUT', body: JSON.stringify({ merge_method: method }) })
 }
 
 export async function createPR(repo: string, params: CreatePRParams): Promise<PRSummary> {
-  const args = [
-    'pr', 'create',
-    '--repo', repo,
-    '--title', params.title,
-    '--body', params.body,
-    '--head', params.head,
-    '--base', params.base,
-  ]
-  if (params.draft) args.push('--draft')
-
-  const { stdout } = await execFileAsync('gh', args)
-  // stdout is the PR URL, e.g. https://github.com/owner/repo/pull/123
-  const match = /\/pull\/(\d+)/.exec(stdout.trim())
-  if (!match) throw new Error(`gh pr create: unexpected output: ${stdout.trim()}`)
-  const prNumber = Number(match[1])
-  // Fetch the full PR summary
-  const { stdout: viewOut } = await execFileAsync('gh', [
-    'pr', 'view', String(prNumber),
-    '--repo', repo,
-    '--json', PR_SUMMARY_FIELDS,
-  ])
-  return mapToPRSummary(JSON.parse(viewOut.trim()) as RawGHPR, repo)
+  const { owner, repoName } = splitRepo(repo)
+  const row = await githubRequest<Record<string, unknown>>(`/repos/${owner}/${repoName}/pulls`, { method: 'POST', body: JSON.stringify({ title: params.title, body: params.body, head: params.head, base: params.base, draft: params.draft ?? false }) })
+  return mapRestPR(row, repo)
 }

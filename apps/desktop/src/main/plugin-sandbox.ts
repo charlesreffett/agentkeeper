@@ -9,6 +9,8 @@ const PORT_CHANNEL = 'agentkeeper:plugin-sandbox-port'
 const START_CHANNEL = 'agentkeeper:plugin-sandbox-start'
 const MAX_PLUGIN_ENTRY_BYTES = 20 * 1024 * 1024
 
+// WebRTC is denied by the isolated session permission handlers below. Avoid a
+// non-standard CSP directive that Chromium ignores and reports as an error.
 export const PLUGIN_SANDBOX_CSP = [
   "default-src 'none'",
   "script-src 'unsafe-inline' blob:",
@@ -21,7 +23,6 @@ export const PLUGIN_SANDBOX_CSP = [
   "frame-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
-  "webrtc 'block'",
 ].join('; ')
 
 export function buildPluginSandboxDocument(): string {
