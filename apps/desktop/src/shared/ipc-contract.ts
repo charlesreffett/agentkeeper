@@ -593,6 +593,8 @@ export interface McpServerEntry {
 // ─── Settings & secrets ─────────────────────────────────────────────────────
 
 export interface AppSettings {
+  /** Explicit user consent for loading mutable unpacked plugins. Default false. */
+  pluginDeveloperMode: boolean
   defaultModel: string
   defaultEffort: RoleEffort
   /** When true, new sessions default to creating an isolated git worktree. Default false. */
@@ -852,6 +854,8 @@ export interface PluginRecord {
   manifest: PluginManifest
   actionRequired: boolean
   grantedAuthority: PluginAuthoritySnapshot
+  /** Present only for unpacked development plugins. */
+  devPath?: string
 }
 
 export interface UpdateAvailable {
@@ -1042,7 +1046,9 @@ export interface AgentKeeperApi {
     prepareAkpInstall: (opts: { filePath?: string; manifestUrl?: string }) => Promise<{ manifest: PluginManifest; token: string }>
     confirmAkpInstall: (token: string) => Promise<void>
     cancelAkpInstall: (token: string) => Promise<void>
-    loadDev: (dirPath?: string) => Promise<void>
+    getDeveloperMode: () => Promise<boolean>
+    setDeveloperMode: (enabled: boolean) => Promise<boolean>
+    loadDev: (dirPath?: string) => Promise<{ manifest: PluginManifest; token: string } | null>
     unloadDev: (pluginId: string) => Promise<void>
     uninstall: (pluginId: string) => Promise<void>
     enable: (pluginId: string) => Promise<void>
@@ -1256,6 +1262,8 @@ export const IPC_CHANNELS = {
   pluginsConfirmAkpInstall: 'plugins:confirmAkpInstall',
   pluginsCancelAkpInstall: 'plugins:cancelAkpInstall',
   pluginsLoadDev: 'plugins:loadDev',
+  pluginsDeveloperModeGet: 'plugins:developerMode:get',
+  pluginsDeveloperModeSet: 'plugins:developerMode:set',
   pluginsUnloadDev: 'plugins:unloadDev',
   pluginsUninstall: 'plugins:uninstall',
   pluginsEnable: 'plugins:enable',

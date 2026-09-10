@@ -354,8 +354,10 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.pluginsConfirmAkpInstall, token) as Promise<void>,
     cancelAkpInstall: (token: string) =>
       invoke(IPC_CHANNELS.pluginsCancelAkpInstall, token) as Promise<void>,
+    getDeveloperMode: () => invoke(IPC_CHANNELS.pluginsDeveloperModeGet) as Promise<boolean>,
+    setDeveloperMode: (enabled: boolean) => invoke(IPC_CHANNELS.pluginsDeveloperModeSet, enabled) as Promise<boolean>,
     loadDev: (dirPath?: string) =>
-      invoke(IPC_CHANNELS.pluginsLoadDev, dirPath) as Promise<void>,
+      invoke(IPC_CHANNELS.pluginsLoadDev, dirPath) as Promise<{ manifest: import('@agentkeeper/sdk').PluginManifest; token: string } | null>,
     unloadDev: (pluginId: string) =>
       invoke(IPC_CHANNELS.pluginsUnloadDev, pluginId) as Promise<void>,
     uninstall: (pluginId: string) =>

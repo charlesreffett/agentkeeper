@@ -9,6 +9,7 @@ import { getPluginEventBus } from './plugins.js'
 import type { WorkItemRegistryFull } from './plugins.js'
 import { requirePluginFile } from './plugin-paths.js'
 import { authoritiesEqual, authorityFromManifest, parseAuthority } from './plugin-authority.js'
+import { settingsStore } from './settings.js'
 
 const activeHosts = new Map<string, PluginHost>()
 // dormantRegistry: activationEvent → manifests not yet activated
@@ -157,14 +158,18 @@ export async function initPluginLoader(
   _workItemRegistry = workItemRegistry
   const db = getRawSqlite()
   const rows = db.prepare(
-    'SELECT id, version, manifest FROM plugin_registry WHERE enabled = 1 AND action_required = 0',
-  ).all() as Array<{ id: string; version: string; manifest: string }>
+    'SELECT id, version, manifest, source FROM plugin_registry WHERE enabled = 1 AND action_required = 0',
+  ).all() as Array<{ id: string; version: string; manifest: string; source: string }>
   const manifests: PluginManifest[] = []
 
   // The registry is the consent boundary. Never discover executable packages by
   // walking writable directories: an orphaned/partially-installed directory or a
   // manually dropped package must not become executable merely because it exists.
   for (const row of rows) {
+    if (row.source === 'dev' && !settingsStore.get().pluginDeveloperMode) {
+      db.prepare('UPDATE plugin_registry SET enabled = 0 WHERE id = ?').run(row.id)
+      continue
+    }
     try {
       const raw = JSON.parse(row.manifest) as unknown
       const result = PluginManifestSchema.safeParse(raw)
