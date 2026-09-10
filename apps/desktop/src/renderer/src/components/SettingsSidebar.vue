@@ -37,7 +37,7 @@ const originLabel = computed(() => {
 const pluginSections = computed(() => (plugins.value ?? [])
   .filter(plugin => plugin.enabled)
   .flatMap(plugin => (plugin.manifest.contributes?.settings ?? []).map(page => ({
-    path: `/settings/plugin/${encodeURIComponent(plugin.id)}/${page.route.replace(/^\/+/, '')}`,
+    path: `/plugin/${encodeURIComponent(plugin.id)}/settings/${page.route.replace(/^\/+/, '')}`,
     label: page.label,
     icon: page.icon ?? 'Puzzle',
     group: page.group,

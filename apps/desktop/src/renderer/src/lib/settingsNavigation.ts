@@ -1,4 +1,5 @@
 import type { Router, RouteLocationNormalizedLoaded } from 'vue-router'
+import { isSettingsRoute } from './settingsShell'
 
 export const SETTINGS_FALLBACK = '/sessions'
 export const SETTINGS_ORIGIN_KEY = 'agentkeeper:settings-origin'
@@ -13,7 +14,7 @@ export function isSafeSettingsOrigin(value: unknown): value is SettingsOrigin {
   return typeof fullPath === 'string'
     && fullPath.startsWith('/')
     && !fullPath.startsWith('//')
-    && !/^\/settings(?:\/|\?|#|$)/.test(fullPath)
+    && !isSettingsRoute(fullPath.split(/[?#]/, 1)[0]!)
 }
 
 export function readSettingsOrigin(): SettingsOrigin | null {
@@ -52,7 +53,7 @@ export function openSettings(
   destination = '/settings/general',
 ): Promise<unknown> {
   const existing = readSettingsOrigin()
-  const origin = /^\/settings(?:\/|$)/.test(route.path) ? existing : captureSettingsOrigin(route.fullPath)
+  const origin = isSettingsRoute(route.path) ? existing : captureSettingsOrigin(route.fullPath)
   return router.push({ path: destination, state: origin ? { settingsOrigin: origin.fullPath } : undefined })
 }
 
