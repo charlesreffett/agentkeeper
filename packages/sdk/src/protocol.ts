@@ -130,7 +130,7 @@ const WorkItemLinkSchema = z.object({
   url: requiredString(4_096),
   label: boundedString(1_024).optional(),
 }).strict()
-const CustomFieldsSchema = z.record(boundedString(64 * 1024)).superRefine((fields, context) => {
+const CustomFieldsSchema = z.record(z.string(), boundedString(64 * 1024)).superRefine((fields, context) => {
   if (Object.keys(fields).length > 128) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'Too many custom fields' })
   }
@@ -214,7 +214,7 @@ const PluginToHostMessageSchema = z.discriminatedUnion('type', [
   }).strict().optional() }).strict(),
   z.object({ id: requestId, type: z.literal('nativeProcess.execFile'), file: requiredString(2_048), args: z.array(boundedString(PLUGIN_PROTOCOL_LIMITS.nativeProcessArgumentLength)).max(PLUGIN_PROTOCOL_LIMITS.nativeProcessArgs), options: z.object({
     cwd: boundedString(4_096).optional(),
-    env: z.record(boundedString(32 * 1024)).superRefine((env, context) => {
+    env: z.record(z.string(), boundedString(32 * 1024)).superRefine((env, context) => {
       if (Object.keys(env).length > PLUGIN_PROTOCOL_LIMITS.nativeProcessEnvironmentEntries) {
         context.addIssue({ code: z.ZodIssueCode.custom, message: 'Too many environment entries' })
       }
@@ -224,7 +224,7 @@ const PluginToHostMessageSchema = z.discriminatedUnion('type', [
 ])
 
 const HostToPluginMessageSchema = z.discriminatedUnion('type', [
-  z.object({ id: requestId, type: z.literal('activate'), config: z.record(z.unknown()) }).strict(),
+  z.object({ id: requestId, type: z.literal('activate'), config: z.record(z.string(), z.unknown()) }).strict(),
   z.object({ id: requestId, type: z.literal('deactivate') }).strict(),
   z.object({ id: requestId, type: z.literal('install') }).strict(),
   z.object({ id: requestId, type: z.literal('update'), previousVersion: requiredString(256) }).strict(),
