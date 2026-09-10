@@ -1,6 +1,6 @@
 {
   "name": "@agentkeeper/sdk",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Public plugin contracts and test utilities for AgentKeeper",
   "type": "module",
   "main": "./dist/index.js",

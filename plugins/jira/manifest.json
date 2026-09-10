@@ -2,32 +2,74 @@
   "schema_version": 1,
   "id": "jira",
   "name": "Jira",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "entry": "dist/index.js",
   "description": "Jira work items via the jira CLI",
   "author": "AgentKeeper",
   "license": "MIT",
   "update_url": "https://github.com/agentkeeper-ai/agentkeeper/releases/download/plugin-jira-feed/jira-update-manifest.json",
-  "activation_events": ["onStartup"],
-  "permissions": ["workItems", "secrets", "commands", "ui", "background", "projects", "nativeProcess", "environment"],
+  "activation_events": [
+    "onStartup"
+  ],
+  "permissions": [
+    "workItems",
+    "secrets",
+    "commands",
+    "ui",
+    "background",
+    "projects",
+    "nativeProcess",
+    "environment"
+  ],
   "environment": {
-    "variables": ["JIRA_API_TOKEN", "JIRA_CONFIG_FILE"]
+    "variables": [
+      "JIRA_API_TOKEN",
+      "JIRA_CONFIG_FILE"
+    ]
   },
   "renderer": {
     "entry": "dist/renderer.js",
-    "views": ["jira-board", "jira-work-item", "jira-settings"]
+    "views": [
+      "jira-board",
+      "jira-work-item",
+      "jira-settings"
+    ]
   },
   "contributes": {
     "navigation": [
-      { "id": "jira", "label": "Jira", "icon": "Layers", "route": "board", "order": 10 }
+      {
+        "id": "jira",
+        "label": "Jira",
+        "icon": "Layers",
+        "route": "board",
+        "order": 10
+      }
     ],
     "settings": [
-      { "id": "jira-settings", "label": "Jira", "icon": "Layers", "route": "settings", "group": "Integrations" }
+      {
+        "id": "jira-settings",
+        "label": "Jira",
+        "icon": "Layers",
+        "route": "settings",
+        "group": "Integrations"
+      }
     ],
     "routes": [
-      { "id": "board", "path": "board", "view": "jira-board" },
-      { "id": "work-items", "path": "work-items", "view": "jira-work-item" },
-      { "id": "settings", "path": "settings", "view": "jira-settings" }
+      {
+        "id": "board",
+        "path": "board",
+        "view": "jira-board"
+      },
+      {
+        "id": "work-items",
+        "path": "work-items",
+        "view": "jira-work-item"
+      },
+      {
+        "id": "settings",
+        "path": "settings",
+        "view": "jira-settings"
+      }
     ]
   },
   "settings_schema": {
