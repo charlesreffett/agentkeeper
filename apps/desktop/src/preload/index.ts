@@ -294,6 +294,7 @@ const api: AgentKeeperApi = {
       projectPath: string,
       id: string,
       body: string,
+      existing?: SlashCommand,
     ) =>
       invoke(
         IPC_CHANNELS.commandsSave,
@@ -301,9 +302,12 @@ const api: AgentKeeperApi = {
         projectPath,
         id,
         body,
+        existing,
       ) as Promise<never>,
-    remove: (cmd: SlashCommand) =>
-      invoke(IPC_CHANNELS.commandsRemove, cmd) as Promise<void>,
+    remove: (projectPath: string, cmd: SlashCommand) =>
+      invoke(IPC_CHANNELS.commandsRemove, projectPath, cmd) as Promise<void>,
+    adopt: (projectPath: string, cmd: SlashCommand) =>
+      invoke(IPC_CHANNELS.commandsAdopt, projectPath, cmd) as Promise<void>,
     onChanged: (callback: () => void) =>
       onChannel<void>(IPC_CHANNELS.commandsChanged, callback),
   },

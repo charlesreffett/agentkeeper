@@ -40,7 +40,7 @@ const commands = computed<SlashCommand[]>(() =>
   isAll.value ? allCommands.value ?? [] : commandsDataStore.commands,
 )
 const selectedCommand = computed(() =>
-  selectedId.value ? commands.value.find((c) => `${c.scope}:${c.id}` === selectedId.value) ?? null : null,
+  selectedId.value ? commands.value.find((c) => c.path === selectedId.value) ?? null : null,
 )
 const loading = computed(() => (isAll.value ? allLoading.value : commandsDataStore.loading))
 const selectedId = ref<string | null>(null)
@@ -113,11 +113,11 @@ function beginNew() {
 
 function beginEdit(cmd: SlashCommand) {
   if (cmd.scope === 'plugin') {
-    selectedId.value = `${cmd.scope}:${cmd.id}`
+    selectedId.value = cmd.path
     editing.value = false
     return
   }
-  selectedId.value = `${cmd.scope}:${cmd.id}`
+  selectedId.value = cmd.path
   isNew.value = false
   editing.value = true
   form.value = { id: cmd.id, scope: cmd.scope as 'project' | 'global', body: cmd.body }
@@ -150,6 +150,7 @@ async function save() {
       projectPath.value,
       id,
       form.value.body,
+      isNew.value ? undefined : selectedCommand.value ?? undefined,
     )
     await refresh()
     editing.value = false
@@ -165,12 +166,19 @@ async function remove(cmd: SlashCommand) {
   // eslint-disable-next-line no-alert
   if (!confirm(`Remove command "/${cmd.id}" (${cmd.scope})?`)) return
   try {
-    await window.agentkeeper.commands.remove({ ...cmd })
+    await window.agentkeeper.commands.remove(cmd.projectPath ?? projectPath.value, { ...cmd })
     await refresh()
-    if (selectedId.value === `${cmd.scope}:${cmd.id}`) cancelEdit()
+    if (selectedId.value === cmd.path) cancelEdit()
   } catch (e) {
     message.value = e instanceof Error ? e.message : String(e)
   }
+}
+
+async function adopt(cmd: SlashCommand) {
+  try {
+    await window.agentkeeper.commands.adopt(cmd.projectPath ?? projectPath.value, { ...cmd })
+    await refresh(); selectedId.value = null; editing.value = false
+  } catch (e) { message.value = e instanceof Error ? e.message : String(e) }
 }
 
 watch(
@@ -218,17 +226,17 @@ onMounted(async () => {
           class="p-4 text-sm text-muted-foreground leading-relaxed"
         >
           No commands yet. Create one — they live in
-          <code class="font-mono text-foreground">.claude/commands/</code>
+          <code class="font-mono text-foreground">.agents/commands/</code>
           (project) or
-          <code class="font-mono text-foreground">~/.claude/commands/</code>
+          <code class="font-mono text-foreground">~/.agents/commands/</code>
           (global).
         </div>
         <ul v-else>
           <li
             v-for="cmd in commands"
-            :key="`${cmd.scope}:${cmd.id}`"
+            :key="cmd.path"
             class="border-b border-border/50 px-4 py-3 cursor-pointer transition hover:bg-accent/50"
-            :class="selectedId === `${cmd.scope}:${cmd.id}` ? 'bg-accent' : ''"
+            :class="selectedId === cmd.path ? 'bg-accent' : ''"
             @click="beginEdit(cmd)"
           >
             <div class="text-sm font-medium truncate font-mono">/{{ cmd.id }}</div>
@@ -245,6 +253,8 @@ onMounted(async () => {
                 {{ cmd.scope === 'plugin' ? (cmd.pluginName ?? 'plugin') : cmd.scope }}
               </span>
               <span v-if="cmd.scope === 'plugin'" class="text-muted-foreground">read-only</span>
+              <span v-else-if="cmd.shared" class="text-primary">shared</span>
+              <span v-if="cmd.conflict" class="text-destructive">conflict</span>
             </div>
           </li>
         </ul>
@@ -285,6 +295,12 @@ onMounted(async () => {
               :disabled="!isNew"
               class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:border-ring font-mono disabled:opacity-50"
             />
+          </div>
+
+          <div v-if="selectedCommand && !selectedCommand.shared" class="rounded-md border border-border p-3 text-xs">
+            <div>Harness registrations: {{ selectedCommand.harnessIds.join(', ') || 'AgentKeeper only' }}</div>
+            <Button class="mt-2" size="sm" variant="outline" :disabled="selectedCommand.conflict" @click="adopt(selectedCommand)">Make shared</Button>
+            <p v-if="selectedCommand.conflict" class="mt-1 text-destructive">Resolve the same-ID conflict before sharing.</p>
           </div>
 
           <div v-if="isNew" class="space-y-1.5 border border-border rounded-md p-3 bg-muted/20">
@@ -339,7 +355,7 @@ onMounted(async () => {
               class="text-destructive"
               @click="
                 () => {
-                  const cmd = commands.find((x) => `${x.scope}:${x.id}` === selectedId)
+                  const cmd = commands.find((x) => x.path === selectedId)
                   if (cmd) remove(cmd)
                 }
               "

@@ -79,6 +79,12 @@ struct SlashCommand: Codable, Identifiable {
     let name: String
     let body: String
     let pluginName: String?
+    let projectPath: String?
+    let path: String?
+    let locations: [String]?
+    let harnessIds: [String]?
+    let shared: Bool?
+    let conflict: Bool?
 }
 
 // GET /api/sessions/:id returns the session row spread flat with `agents` added.

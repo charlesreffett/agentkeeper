@@ -177,6 +177,17 @@ export interface HarnessSkillLocation {
   canonical?: boolean
 }
 
+export interface HarnessCommandLocation {
+  /** Directory containing one Markdown file per command. */
+  path: string
+  /** Native is the harness's own command root; compatible is an additional
+   * verified root it also discovers. */
+  kind: 'native' | 'compatible'
+  /** True only for AgentKeeper's authoritative `.agents/commands` store. */
+  canonical?: boolean
+  representation: 'markdown' | 'generated'
+}
+
 export type HarnessEvent =
   | { type: 'user'; message: { role: 'user'; content: unknown }; uuid?: string; session_id?: string }
   | { type: 'assistant'; message: { role: 'assistant'; content: unknown; model?: string }; uuid?: string; session_id?: string }
@@ -209,7 +220,8 @@ export interface HarnessAdapter {
    *  dependent; may spin up a subprocess, so callers should cache. */
   getSupportedModels(): Promise<HarnessModelInfo[]>
   getSessionsRoot(): string
-  getCommandsDir(scope: 'project' | 'global', projectPath?: string): string
+  /** Every verified command root this harness discovers, native-first. */
+  getCommandLocations(scope: 'project' | 'global', projectPath?: string): HarnessCommandLocation[]
   /** Every skill root this harness discovers, in native-first order. */
   getSkillLocations(scope: 'project' | 'global', projectPath?: string): HarnessSkillLocation[]
   getPluginsDir(): string

@@ -102,7 +102,8 @@ export class CodexHarnessAdapter implements HarnessAdapter {
   }
 
   getSessionsRoot() { return path.join(resolveHarnessPath(this, 'home', path.join(os.homedir(), '.codex')), 'sessions') }
-  getCommandsDir(scope: 'project' | 'global', projectPath?: string) { return scope === 'project' ? path.join(projectPath!, '.codex', 'prompts') : path.join(os.homedir(), '.codex', 'prompts') }
+  // Codex custom prompts are not treated as verified native slash commands.
+  getCommandLocations(_scope: 'project' | 'global', _projectPath?: string) { return [] }
   getSkillLocations(scope: 'project' | 'global', projectPath?: string) {
     const canonical = scope === 'project'
       ? path.join(projectPath!, '.agents', 'skills')
