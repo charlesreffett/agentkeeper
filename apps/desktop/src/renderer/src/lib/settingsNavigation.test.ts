@@ -39,6 +39,7 @@ describe('Settings navigation', () => {
   it('accepts only internal, non-Settings return targets', () => {
     expect(isSafeSettingsOrigin({ fullPath: '/github/pr/42?repo=agentkeeper' })).toBe(true)
     expect(isSafeSettingsOrigin({ fullPath: '/settings/github' })).toBe(false)
+    expect(isSafeSettingsOrigin({ fullPath: '/plugin/github/settings/configure' })).toBe(false)
     expect(isSafeSettingsOrigin({ fullPath: '//example.com' })).toBe(false)
     expect(isSafeSettingsOrigin({ fullPath: 'https://example.com' })).toBe(false)
   })

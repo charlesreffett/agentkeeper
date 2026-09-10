@@ -44,9 +44,9 @@ const router = createRouter({
         { path: 'mcp', component: () => import('../views/settings/McpSettingsView.vue') },
         { path: 'updates', component: () => import('../views/settings/UpdatesSettingsView.vue') },
         { path: 'data', component: () => import('../views/settings/DataSettingsView.vue') },
-        { path: 'plugin/:pluginId/:pathMatch(.*)*', component: PluginView },
       ],
     },
+    { path: '/plugin/:pluginId/settings/:pathMatch(.*)*', component: PluginView },
     { path: '/plugin/:pluginId/:pathMatch(.*)*', component: PluginView },
   ],
 })
