@@ -1,3 +1,7 @@
+// Chromium ignores the non-standard `navigate-to` and `webrtc` directives and
+// logs a console error for each. Frame navigation is blocked authoritatively by
+// the main process; network access is denied here and plugin API traffic is
+// mediated by the host bridge.
 export const PLUGIN_IFRAME_CSP = [
   "default-src 'none'",
   "script-src data:",
@@ -11,8 +15,6 @@ export const PLUGIN_IFRAME_CSP = [
   "worker-src 'none'",
   "form-action 'none'",
   "base-uri 'none'",
-  "navigate-to 'none'",
-  "webrtc 'block'",
 ].join('; ')
 
 const MAX_ROUTE_LENGTH = 2_048

@@ -24,21 +24,55 @@ const toStatusDisplayLabel: Record<WorkItemStatus, string> = {
   closed: 'Closed',
 }
 
+let jiraFetch: PluginContext['fetch'] | null = null
+let jiraBaseUrl = ''
+let jiraEmail = ''
 let jiraApiToken = ''
-type ProcessBroker = PluginContext['process']
-let processBroker: ProcessBroker | null = null
-export function setProcessBroker(value: ProcessBroker): void { processBroker = value }
-const execFileAsync = (file: string, args: string[]) => {
-  if (!processBroker) throw new Error('Native process broker is not initialized')
-  return processBroker.execFile(file, args, {
-    timeoutMs: 10_000,
-    ...(jiraApiToken ? { env: { JIRA_API_TOKEN: jiraApiToken } } : {}),
-  })
+
+export function configureJiraApi(options: {
+  fetch: PluginContext['fetch']
+  instanceUrl?: string
+  email?: string
+  apiToken?: string
+}): void {
+  jiraFetch = options.fetch
+  jiraBaseUrl = options.instanceUrl?.trim().replace(/\/+$/, '') ?? ''
+  jiraEmail = options.email?.trim() ?? ''
+  jiraApiToken = options.apiToken?.trim() ?? ''
 }
-let jiraExecutable = 'jira'
-export function setJiraCliPath(value?: string): void { jiraExecutable = value?.trim() || 'jira' }
-export function setJiraApiToken(value?: string): void { jiraApiToken = value ?? '' }
-const runJira = (args: string[]) => execFileAsync(jiraExecutable, args)
+
+export function jiraCredentialsPresent(): boolean {
+  return Boolean(jiraFetch && jiraBaseUrl && jiraEmail && jiraApiToken)
+}
+
+async function jiraRequestWith<T>(credentials: {
+  fetch: PluginContext['fetch']
+  instanceUrl: string
+  email: string
+  apiToken: string
+}, path: string, init: RequestInit = {}): Promise<T> {
+  if (!credentials.instanceUrl || !credentials.email || !credentials.apiToken) throw new Error('Add your Jira site URL, email, and API token in Jira settings.')
+  const response = await credentials.fetch(`${credentials.instanceUrl}${path}`, {
+    ...init,
+    headers: {
+      accept: 'application/json',
+      authorization: `Basic ${btoa(`${credentials.email}:${credentials.apiToken}`)}`,
+      ...(init.body ? { 'content-type': 'application/json' } : {}),
+      ...(init.headers ?? {}),
+    },
+  })
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500)
+    throw new Error(`Jira API ${response.status}: ${detail || response.statusText}`)
+  }
+  if (response.status === 204) return undefined as T
+  return response.json() as Promise<T>
+}
+
+async function jiraRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (!jiraFetch) throw new Error('Add your Jira site URL, email, and API token in Jira settings.')
+  return jiraRequestWith({ fetch: jiraFetch, instanceUrl: jiraBaseUrl, email: jiraEmail, apiToken: jiraApiToken }, path, init)
+}
 
 export interface JiraProject {
   key: string
@@ -46,13 +80,8 @@ export interface JiraProject {
 }
 
 export async function listProjects(): Promise<JiraProject[]> {
-  const { stdout } = await runJira(['project', 'list'])
-  return stdout
-    .split('\n')
-    .slice(1)
-    .map((line) => line.split('\t').map((p) => p.trim()))
-    .filter((parts) => parts[0] && parts[0].length > 0)
-    .map((parts) => ({ key: parts[0]!, name: parts[1] ?? parts[0]! }))
+  const result = await jiraRequest<{ values: JiraProject[] }>('/rest/api/3/project/search?maxResults=100')
+  return result.values
 }
 
 export interface RawJiraIssue {
@@ -80,9 +109,22 @@ export interface RawJiraIssue {
   }
 }
 
-export async function checkCliPresent(): Promise<boolean> {
+export async function testConnection(): Promise<{ displayName: string }> {
+  return jiraRequest<{ displayName: string }>('/rest/api/3/myself')
+}
+
+export async function testConnectionWith(credentials: {
+  fetch: PluginContext['fetch']
+  instanceUrl: string
+  email: string
+  apiToken: string
+}): Promise<{ displayName: string }> {
+  return jiraRequestWith<{ displayName: string }>(credentials, '/rest/api/3/myself')
+}
+
+export async function checkConnection(): Promise<boolean> {
   try {
-    await runJira(['version'])
+    await testConnection()
     return true
   } catch {
     return false
@@ -180,12 +222,14 @@ export async function createIssue(
   projectKey: string,
   params: WorkItemCreateParams,
 ): Promise<RawJiraIssue> {
-  const args = ['issue', 'create', '--project', projectKey, '--summary', params.summary, '--no-input', '--raw']
-  if (params.description) args.push('--description', params.description)
-  if (params.issueType) args.push('--type', params.issueType)
-  if (params.priority) args.push('--priority', params.priority)
-  const { stdout } = await runJira(args)
-  return JSON.parse(stdout.trim()) as RawJiraIssue
+  const fields: Record<string, unknown> = {
+    project: { key: projectKey }, summary: params.summary,
+    issuetype: { name: params.issueType ?? 'Task' },
+  }
+  if (params.description) fields.description = { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: params.description }] }] }
+  if (params.priority) fields.priority = { name: params.priority }
+  const created = await jiraRequest<{ key: string }>('/rest/api/3/issue', { method: 'POST', body: JSON.stringify({ fields }) })
+  return (await getIssue(created.key)) ?? { key: created.key, fields: { summary: params.summary } }
 }
 
 const LIST_PAGE_SIZE = 100
@@ -196,19 +240,25 @@ export async function listIssues(
   { excludeDone = true, maxItems = LIST_MAX_ITEMS }: { excludeDone?: boolean; maxItems?: number } = {},
 ): Promise<RawJiraIssue[]> {
   const all: RawJiraIssue[] = []
-  let from = 0
+  let nextPageToken: string | undefined
 
   while (true) {
     const limit = Math.min(LIST_PAGE_SIZE, maxItems - all.length)
     if (limit <= 0) break
-    const args = ['issue', 'list', '--raw', '--paginate', `${from}:${limit}`]
-    if (projectKey) args.push('--project', projectKey)
-    if (excludeDone) args.push('--jql', 'statusCategory != Done')
-    const { stdout } = await runJira(args)
-    const page = JSON.parse(stdout.trim()) as RawJiraIssue[]
+    const clauses = [projectKey ? `project = "${projectKey.replace(/["\\]/g, '')}"` : '', excludeDone ? 'statusCategory != Done' : ''].filter(Boolean)
+    const result = await jiraRequest<{ issues: RawJiraIssue[]; nextPageToken?: string; isLast?: boolean }>('/rest/api/3/search/jql', {
+      method: 'POST',
+      body: JSON.stringify({
+        jql: clauses.join(' AND '),
+        maxResults: limit,
+        fields: ['*all'],
+        ...(nextPageToken ? { nextPageToken } : {}),
+      }),
+    })
+    const page = result.issues
     all.push(...page)
-    if (page.length < limit) break
-    from += page.length
+    nextPageToken = result.nextPageToken
+    if (result.isLast === true || !nextPageToken || page.length === 0) break
   }
 
   return all
@@ -318,7 +368,10 @@ function isAdfDoc(value: unknown): boolean {
 let fieldMetaCache: Map<string, string> | null = null
 
 export async function getFieldMeta(): Promise<Map<string, string>> {
-  fieldMetaCache ??= new Map()
+  if (!fieldMetaCache) {
+    const fields = await jiraRequest<Array<{ id: string; name: string }>>('/rest/api/3/field')
+    fieldMetaCache = new Map(fields.map(field => [field.id, field.name]))
+  }
   return fieldMetaCache
 }
 
@@ -327,16 +380,19 @@ export async function getFieldMeta(): Promise<Map<string, string>> {
 // Returns null when auth is unavailable or the request fails (callers fall back to the
 // loaded/capped count).
 export async function countIssues(
-  _projectKey?: string,
-  _options: { excludeDone?: boolean } = {},
+  projectKey?: string,
+  options: { excludeDone?: boolean } = {},
 ): Promise<number | null> {
-  return null
+  const clauses = [projectKey ? `project = "${projectKey.replace(/["\\]/g, '')}"` : '', options.excludeDone === false ? '' : 'statusCategory != Done'].filter(Boolean)
+  try {
+    const result = await jiraRequest<{ count: number }>('/rest/api/3/search/approximate-count', { method: 'POST', body: JSON.stringify({ jql: clauses.join(' AND ') }) })
+    return result.count
+  } catch { return null }
 }
 
 export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
   try {
-    const { stdout } = await runJira(['issue', 'view', id, '--raw'])
-    return JSON.parse(stdout.trim()) as RawJiraIssue
+    return await jiraRequest<RawJiraIssue>(`/rest/api/3/issue/${encodeURIComponent(id)}?fields=*all`)
   } catch {
     return undefined
   }
@@ -345,27 +401,18 @@ export async function getIssue(id: string): Promise<RawJiraIssue | undefined> {
 // REST returns each transition's target status (`to.name`), which the CLI probe does NOT —
 // the probe only lists transition NAMES (e.g. "Stop work"), which mapStatus can't resolve,
 // collapsing every option to 'open'. Prefer REST; fall back to the probe when auth is absent.
-export async function getIssueTransitions(id: string): Promise<IssueTransition[]> {
-  try {
-    await runJira(['issue', 'move', id, '__JIRA_TRANSITION_PROBE__'])
-    return []
-  } catch (err: unknown) {
-    const output =
-      (err as { stderr?: string }).stderr ??
-      (err as { message?: string }).message ??
-      ''
-    const match = output.match(/Available states for issue [^:]+:\s*(.+)/)
-    if (!match) return []
-    const stateNames = [...match[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!)
-    return stateNames.map((name) => {
-      const toStatus = mapStatus({ name })
-      return { name, toStatus, toStatusLabel: toStatusDisplayLabel[toStatus] }
-    })
-  }
+type JiraTransition = IssueTransition & { id: string }
+
+export async function getIssueTransitions(id: string): Promise<JiraTransition[]> {
+  const result = await jiraRequest<{ transitions: Array<{ id: string; name: string; to: { name: string; statusCategory?: { name?: string } } }> }>(`/rest/api/3/issue/${encodeURIComponent(id)}/transitions`)
+  return result.transitions.map(transition => ({ id: transition.id, name: transition.name, toStatus: mapStatus(transition.to), toStatusLabel: transition.to.name }))
 }
 
 export async function transitionIssue(id: string, name: string): Promise<void> {
-  await runJira(['issue', 'move', id, name])
+  const transitions = await getIssueTransitions(id)
+  const transition = transitions.find(candidate => candidate.name === name)
+  if (!transition?.id) throw new Error(`Jira transition not available: ${name}`)
+  await jiraRequest(`/rest/api/3/issue/${encodeURIComponent(id)}/transitions`, { method: 'POST', body: JSON.stringify({ transition: { id: transition.id } }) })
 }
 
 export async function updateIssueStatus(id: string, status: WorkItemStatus): Promise<void> {
@@ -417,5 +464,5 @@ export async function updateIssueStatus(id: string, status: WorkItemStatus): Pro
 }
 
 export async function addComment(id: string, body: string): Promise<void> {
-  await runJira(['issue', 'comment', 'add', id, '-b', body])
+  await jiraRequest(`/rest/api/3/issue/${encodeURIComponent(id)}/comment`, { method: 'POST', body: JSON.stringify({ body: { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: body }] }] } }) })
 }

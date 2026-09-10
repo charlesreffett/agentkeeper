@@ -13,6 +13,8 @@ describe('plugin view boundary policy', () => {
     expect(PLUGIN_IFRAME_CSP).toContain("connect-src 'none'")
     expect(PLUGIN_IFRAME_CSP).not.toMatch(/https?:/)
     expect(PLUGIN_IFRAME_CSP).not.toContain('img-src data: https:')
+    expect(PLUGIN_IFRAME_CSP).not.toContain('navigate-to')
+    expect(PLUGIN_IFRAME_CSP).not.toContain('webrtc')
   })
 
   it('canonicalizes safe paths and preserves encoded slash data', () => {
