@@ -14,6 +14,7 @@
     "typecheck:plugins": "pnpm verify:plugin-boundaries && pnpm -r --filter './plugins/*' typecheck",
     "pack:plugins": "pnpm build:plugins && pnpm --filter @agentkeeper/cli build && pnpm --filter @agentkeeper/cli exec node dist/cli.cjs pack --dir ../../plugins/github && pnpm --filter @agentkeeper/cli exec node dist/cli.cjs pack --dir ../../plugins/jira",
     "verify:plugin-packages": "pnpm build:plugins && node scripts/verify-plugin-packages.mjs",
+    "verify:sdk-package": "pnpm --filter @agentkeeper/sdk build && node scripts/verify-sdk-package.mjs",
     "verify:plugin-boundaries": "node scripts/verify-plugin-boundaries.mjs",
     "typecheck": "pnpm -r typecheck",
     "dist:mac": "pnpm build && pnpm --filter desktop dist:mac",
