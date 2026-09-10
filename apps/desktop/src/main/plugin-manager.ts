@@ -14,6 +14,7 @@ import { getPluginEventBus } from './plugins.js'
 import { requirePluginFile, resolvePluginPath, validatePluginArchiveEntries } from './plugin-paths.js'
 import { assertReleaseIdentity, comparePluginVersions, type PluginReleaseIdentity } from './plugin-update-policy.js'
 import { extractPluginArchive, readPluginArchiveFile } from './plugin-archive.js'
+import { settingsStore } from './settings.js'
 
 // ---- helpers ----
 
@@ -490,6 +491,16 @@ type PendingInstall = PendingAkpInstall | PendingDevInstall
 
 const pendingInstalls = new Map<string, PendingInstall>()
 
+export function isPendingDevInstall(token: string): boolean {
+  return pendingInstalls.get(token)?.kind === 'dev'
+}
+
+export function clearPendingDevInstalls(): void {
+  for (const [token, pending] of pendingInstalls) {
+    if (pending.kind === 'dev') pendingInstalls.delete(token)
+  }
+}
+
 export async function prepareAkpInstall(opts: { filePath?: string; manifestUrl?: string }): Promise<{ manifest: PluginManifest; token: string }> {
   if (Boolean(opts.filePath) === Boolean(opts.manifestUrl)) {
     throw new Error('Provide exactly one plugin file or update manifest URL')
@@ -543,6 +554,7 @@ export async function prepareAkpInstall(opts: { filePath?: string; manifestUrl?:
 }
 
 export async function prepareDevPluginInstall(devPath: string): Promise<{ manifest: PluginManifest; token: string }> {
+  if (!settingsStore.get().pluginDeveloperMode) throw new Error('Plugin developer mode is disabled')
   const resolvedPath = path.resolve(devPath)
   const manifestPath = path.join(resolvedPath, 'manifest.json')
   const manifestRaw = JSON.parse(await fsp.readFile(manifestPath, 'utf8')) as unknown
@@ -564,6 +576,10 @@ export async function prepareDevPluginInstall(devPath: string): Promise<{ manife
 export async function confirmAkpInstall(token: string): Promise<void> {
   const pending = pendingInstalls.get(token)
   if (!pending) throw new Error('No pending install found — it may have expired')
+  if (pending.kind === 'dev' && !settingsStore.get().pluginDeveloperMode) {
+    pendingInstalls.delete(token)
+    throw new Error('Plugin developer mode is disabled')
+  }
   pendingInstalls.delete(token)
   try {
     if (Date.now() - pending.createdAt > INSTALL_TOKEN_TTL_MS) {
@@ -650,15 +666,19 @@ export async function uninstallPlugin(pluginId: string): Promise<void> {
 export async function enablePlugin(pluginId: string): Promise<void> {
   const db = getRawSqlite()
   const row = db.prepare(`
-    SELECT manifest, dev_path, granted_authority, action_required
+    SELECT manifest, source, dev_path, granted_authority, action_required
     FROM plugin_registry WHERE id = ?
   `).get(pluginId) as {
     manifest: string
+    source: string
     dev_path: string | null
     granted_authority: string
     action_required: number
   } | undefined
   if (!row) throw new Error(`Plugin ${pluginId} not found`)
+  if (row.source === 'dev' && !settingsStore.get().pluginDeveloperMode) {
+    throw new Error('Plugin developer mode is disabled')
+  }
   if (row.action_required === 1) {
     throw new Error('Plugin permissions changed. Review and approve them before enabling this plugin.')
   }
@@ -733,12 +753,13 @@ export function listPlugins(): Array<{
   enabled: number
   source: string
   manifest: string
+  dev_path: string | null
   action_required: number
   granted_authority: string
 }> {
   const db = getRawSqlite()
   return db.prepare(`
-    SELECT id, name, version, enabled, source, manifest, action_required, granted_authority
+    SELECT id, name, version, enabled, source, manifest, dev_path, action_required, granted_authority
     FROM plugin_registry
   `).all() as Array<{
     id: string
@@ -747,6 +768,7 @@ export function listPlugins(): Array<{
     enabled: number
     source: string
     manifest: string
+    dev_path: string | null
     action_required: number
     granted_authority: string
   }>
@@ -755,6 +777,7 @@ export function listPlugins(): Array<{
 const devWatchers = new Map<string, FSWatcher>()
 
 export async function loadDevPlugin(dirPath: string, approvedAuthority?: PluginAuthority): Promise<void> {
+  if (!settingsStore.get().pluginDeveloperMode) throw new Error('Plugin developer mode is disabled')
   const db = getRawSqlite()
   const manifestPath = path.join(dirPath, 'manifest.json')
   const manifestRaw = JSON.parse(await fsp.readFile(manifestPath, 'utf8'))
@@ -804,6 +827,9 @@ export async function loadDevPlugin(dirPath: string, approvedAuthority?: PluginA
         if (!freshResult.success) { console.error(`[plugin-dev:${manifest.id}] manifest invalid after reload`); return }
         if (JSON.stringify(pluginAuthority(freshResult.data)) !== JSON.stringify(authority)) {
           db.prepare('UPDATE plugin_registry SET enabled = 0, action_required = 1 WHERE id = ?').run(manifest.id)
+          devWatchers.get(manifest.id)?.close()
+          devWatchers.delete(manifest.id)
+          removeActiveHost(manifest.id)
           console.warn(`[plugin-dev:${manifest.id}] authority changed; native review is required`)
           return
         }
@@ -826,6 +852,19 @@ export async function unloadDevPlugin(pluginId: string): Promise<void> {
   const host = getActiveHost(pluginId)
   if (host) await host.deactivate()
   db.prepare('DELETE FROM plugin_registry WHERE id = ?').run(pluginId)
+}
+
+/** Stop unpacked code immediately while retaining its registry metadata and source directory. */
+export async function stopAllDevPlugins(): Promise<void> {
+  clearPendingDevInstalls()
+  const db = getRawSqlite()
+  const rows = db.prepare("SELECT id FROM plugin_registry WHERE source = 'dev'").all() as Array<{ id: string }>
+  for (const { id } of rows) {
+    devWatchers.get(id)?.close()
+    devWatchers.delete(id)
+    await stopPlugin(id)
+  }
+  db.prepare("UPDATE plugin_registry SET enabled = 0 WHERE source = 'dev'").run()
 }
 
 // Call on app quit to clear ephemeral dev rows

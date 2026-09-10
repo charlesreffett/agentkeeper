@@ -41,6 +41,22 @@ import PluginSettingsForm from './PluginSettingsForm.vue'
 withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 
 const queryClient = useQueryClient()
+const developerMode = ref(false)
+const changingDeveloperMode = ref(false)
+
+void window.agentkeeper.plugins.getDeveloperMode().then(value => { developerMode.value = value })
+
+async function setDeveloperMode(enabled: boolean) {
+  changingDeveloperMode.value = true
+  try {
+    developerMode.value = await window.agentkeeper.plugins.setDeveloperMode(enabled)
+    invalidate()
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error))
+  } finally {
+    changingDeveloperMode.value = false
+  }
+}
 
 // ── Queries ──────────────────────────────────────────────────────────────────
 
@@ -236,8 +252,12 @@ async function loadDev() {
   installing.value = true
   installError.value = null
   try {
-    await window.agentkeeper.plugins.loadDev()
-    invalidate()
+    const prepared = await window.agentkeeper.plugins.loadDev()
+    if (!prepared) return
+    pendingManifest.value = prepared.manifest
+    installToken.value = prepared.token
+    installStep.value = 'review'
+    installDialogOpen.value = true
   } catch (e) {
     installError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -343,7 +363,7 @@ function openExternal(url: string) {
       <h1 class="text-lg font-semibold">Plugin Management</h1>
       <p class="text-sm text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</p>
       <div class="flex items-center gap-2 mt-3">
-        <Button size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
+        <Button v-if="developerMode" size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
         <Button size="sm" @click="openInstallDialog">Install from AKP</Button>
         <span v-if="mutationError" class="text-xs text-destructive">{{ mutationError }}</span>
       </div>
@@ -451,9 +471,25 @@ function openExternal(url: string) {
 
     <div class="flex-1 overflow-y-auto min-h-0">
       <div class="max-w-[700px] mx-auto px-6 py-4">
+      <section class="mb-4 rounded-lg border p-4">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-sm font-medium">Plugin developer mode</p>
+            <p class="text-xs text-muted-foreground">Allow reviewed unpacked plugins from local directories.</p>
+          </div>
+          <Switch :model-value="developerMode" :disabled="changingDeveloperMode" @update:model-value="setDeveloperMode" />
+        </div>
+        <div v-if="developerMode" class="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+          Developer mode is enabled. Unpacked files are mutable and unsigned, and may change after review.
+          <ul v-if="plugins?.some(plugin => plugin.source === 'dev' && plugin.enabled && plugin.devPath)" class="mt-2 space-y-1 font-mono">
+            <li v-for="plugin in plugins.filter(item => item.source === 'dev' && item.enabled && item.devPath)" :key="plugin.id">{{ plugin.name }} — {{ plugin.devPath }}</li>
+          </ul>
+          <p v-else class="mt-2">No unpacked plugin directories are active.</p>
+        </div>
+      </section>
       <div v-if="embedded" class="mb-4 flex flex-wrap items-center gap-2">
         <span class="mr-auto text-sm text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</span>
-        <Button size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
+        <Button v-if="developerMode" size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
         <Button size="sm" @click="openInstallDialog">Install from AKP</Button>
         <span v-if="mutationError" class="text-xs text-destructive">{{ mutationError }}</span>
       </div>

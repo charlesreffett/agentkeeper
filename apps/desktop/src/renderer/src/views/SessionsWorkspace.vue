@@ -48,6 +48,7 @@ function setLeftCollapsed(v: boolean) {
 // ── Session loading ──────────────────────────────────────────────────────────
 
 const settings = ref<AppSettings>({
+  pluginDeveloperMode: false,
   defaultModel: 'default',
   defaultEffort: 'medium',
   defaultUseWorktree: false,

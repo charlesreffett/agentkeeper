@@ -42,8 +42,10 @@ import {
   enablePlugin,
   approvePluginPermissions,
   listPlugins,
-  loadDevPlugin,
+  isPendingDevInstall,
   prepareAkpInstall,
+  prepareDevPluginInstall,
+  stopAllDevPlugins,
   uninstallPlugin,
   unloadDevPlugin,
   updatePlugin,
@@ -399,13 +401,16 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
   ipcMain.handle(IPC_CHANNELS.settingsGet, () => settingsStore.get())
   ipcMain.handle(
     IPC_CHANNELS.settingsSet,
-    (_event, partial: Partial<AppSettings>) => {
-      const updated = settingsStore.set(partial)
+    (event, partial: Partial<AppSettings>) => {
+      assertTrustedMainRenderer(event)
+      // Developer mode has a separate native-confirmed authority path.
+      const { pluginDeveloperMode: _ignored, ...safePartial } = partial
+      const updated = settingsStore.set(safePartial)
       syncMobileServer(updated)
-      if (partial.harnessBins || partial.customModels) {
+      if (safePartial.harnessBins || safePartial.customModels) {
         for (const id of new Set([
-          ...Object.keys(partial.harnessBins ?? {}),
-          ...Object.keys(partial.customModels ?? {}),
+          ...Object.keys(safePartial.harnessBins ?? {}),
+          ...Object.keys(safePartial.customModels ?? {}),
         ])) {
           invalidateAvailableModels(id)
           void refreshAvailableModels(id)
@@ -746,6 +751,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
       manifest: JSON.parse(row.manifest),
       actionRequired: row.action_required === 1,
       grantedAuthority: JSON.parse(row.granted_authority),
+      ...(row.dev_path ? { devPath: row.dev_path } : {}),
     }))
   })
 
@@ -777,11 +783,15 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
   ipcMain.handle(IPC_CHANNELS.pluginsConfirmAkpInstall, async (event, token: string) => {
     assertTrustedMainRenderer(event)
     try {
+      const isDev = isPendingDevInstall(token)
+      if (isDev && !settingsStore.get().pluginDeveloperMode) throw new Error('Plugin developer mode is disabled')
       const confirmation = await dialog.showMessageBox(BrowserWindow.fromWebContents(mainWebContents)!, {
         type: 'warning', buttons: ['Cancel', 'Install'], defaultId: 0, cancelId: 0,
-        title: 'Install untrusted plugin?',
-        message: 'Plugins are unsigned. Confirm the exact package shown in AgentKeeper before installing.',
-        detail: 'The nativeProcess permission breaks the plugin sandbox and can use your account’s file and network access.',
+        title: isDev ? 'Load mutable unpacked plugin?' : 'Install untrusted plugin?',
+        message: isDev
+          ? 'Unpacked plugin files are unsigned development inputs and may change after you review them.'
+          : 'Plugins are unsigned. Confirm the exact package shown in AgentKeeper before installing.',
+        detail: 'The plugin still runs within the normal sandbox, permission grants, quotas, and broker enforcement. The nativeProcess permission is a sandbox escape.',
       })
       if (confirmation.response !== 1) throw new Error('Plugin installation cancelled')
       await confirmAkpInstall(token)
@@ -791,6 +801,30 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
     }
   })
 
+  ipcMain.handle(IPC_CHANNELS.pluginsDeveloperModeGet, (event) => {
+    assertTrustedMainRenderer(event)
+    return settingsStore.get().pluginDeveloperMode
+  })
+
+  ipcMain.handle(IPC_CHANNELS.pluginsDeveloperModeSet, async (event, enabled: boolean) => {
+    assertTrustedMainRenderer(event)
+    if (typeof enabled !== 'boolean') throw new Error('Developer mode must be a boolean')
+    if (enabled) {
+      const confirmation = await dialog.showMessageBox(BrowserWindow.fromWebContents(mainWebContents)!, {
+        type: 'warning', buttons: ['Cancel', 'Enable developer mode'], defaultId: 0, cancelId: 0,
+        title: 'Enable plugin developer mode?',
+        message: 'Unpacked plugin files are mutable, unsigned development inputs.',
+        detail: 'Files may change after review. Each initial load and authority change still requires permission review and native confirmation.',
+      })
+      if (confirmation.response !== 1) return false
+      settingsStore.setPluginDeveloperMode(true)
+      return true
+    }
+    settingsStore.setPluginDeveloperMode(false)
+    await stopAllDevPlugins()
+    return false
+  })
+
   ipcMain.handle(IPC_CHANNELS.pluginsCancelAkpInstall, (event, token: string) => {
     assertTrustedMainRenderer(event)
     cancelAkpInstall(token)
@@ -798,7 +832,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
 
   ipcMain.handle(IPC_CHANNELS.pluginsLoadDev, async (event, dirPath?: string) => {
     assertTrustedMainRenderer(event)
-    if (app.isPackaged) throw new Error('Development plugin loading is disabled in packaged builds')
+    if (!settingsStore.get().pluginDeveloperMode) throw new Error('Enable plugin developer mode in Settings before loading unpacked plugins')
     try {
       let resolvedPath = dirPath
       if (!resolvedPath) {
@@ -809,7 +843,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
         if (result.canceled || !result.filePaths[0]) return
         resolvedPath = result.filePaths[0]
       }
-      await loadDevPlugin(resolvedPath)
+      return await prepareDevPluginInstall(resolvedPath)
     } catch (err) {
       console.error('[ipc] plugins:loadDev failed:', err)
       throw new Error(err instanceof Error ? err.message : String(err))

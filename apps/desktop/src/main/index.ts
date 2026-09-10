@@ -21,7 +21,7 @@ import { syncMobileServer, teardownMobileServer } from './mobile-server'
 import { settingsStore } from './settings'
 import { pruneExpiredIfEnabled } from './session-registry'
 import { activatePlugins, pruneLegacyBundledPlugins, WorkItemRegistryImpl } from './plugins'
-import { loadDevPlugin, unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
+import { unloadDevPlugin, clearDevPluginRegistry } from './plugin-manager.js'
 import { setWebContentsOnActiveHosts } from './plugin-loader.js'
 import { setWorkItemRegistry } from './agent'
 import { initPricing } from './pricing'
@@ -122,9 +122,7 @@ async function startCliSocket(): Promise<void> {
       let cmd: { cmd: string; dirPath?: string; pluginId?: string }
       try { cmd = JSON.parse(line) } catch { socket.write(JSON.stringify({ ok: false, error: 'invalid JSON' }) + '\n'); return }
       if (cmd.cmd === 'loadDev' && cmd.dirPath) {
-        loadDevPlugin(cmd.dirPath)
-          .then(() => socket.write(JSON.stringify({ ok: true }) + '\n'))
-          .catch((err: Error) => socket.write(JSON.stringify({ ok: false, error: err.message }) + '\n'))
+        socket.write(JSON.stringify({ ok: false, error: 'Unpacked plugins must be loaded and reviewed in AgentKeeper Settings' }) + '\n')
       } else if (cmd.cmd === 'unloadDev' && cmd.pluginId) {
         unloadDevPlugin(cmd.pluginId)
           .then(() => socket.write(JSON.stringify({ ok: true }) + '\n'))

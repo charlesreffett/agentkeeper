@@ -7,6 +7,7 @@ import {
 } from '../shared/ipc-contract'
 
 const DEFAULTS: AppSettings = {
+  pluginDeveloperMode: false,
   defaultModel: 'default',
   defaultEffort: 'medium',
   defaultUseWorktree: false,
@@ -41,6 +42,9 @@ function read(): AppSettings {
     const raw = fs.readFileSync(filePath(), 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     const merged = { ...DEFAULTS, ...parsed }
+    // Developer mode is enabled only by the dedicated, native-confirmed setter.
+    // Missing or malformed persisted values must never become truthy by coercion.
+    merged.pluginDeveloperMode = parsed.pluginDeveloperMode === true
     // Guard against stale / malformed data on disk (e.g. an older
     // settings.json written before `defaultEffort` existed, or a manual
     // edit). Fall back to the default for any invalid effort value.
@@ -82,5 +86,8 @@ export const settingsStore = {
     const next = { ...read(), ...partial }
     write(next)
     return next
+  },
+  setPluginDeveloperMode(enabled: boolean): AppSettings {
+    return this.set({ pluginDeveloperMode: enabled === true })
   },
 }
