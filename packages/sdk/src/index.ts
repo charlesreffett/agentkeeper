@@ -209,7 +209,7 @@ export interface IssueTransition {
   toStatusCategory?: StatusCategory
 }
 
-export interface WorkItemSource {
+export interface WorkItemProvider {
   id: string
   label: string
   list(): Promise<WorkItem[]>
@@ -222,7 +222,7 @@ export interface WorkItemSource {
 }
 
 export interface WorkItemRegistry {
-  register(source: WorkItemSource): void
+  register(source: WorkItemProvider): void
   unregister(id: string): void
 }
 

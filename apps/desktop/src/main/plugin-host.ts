@@ -12,7 +12,7 @@ import {
   type PluginPermission,
   type PluginToHostMessage,
   type WorkItem,
-  type WorkItemSource,
+  type WorkItemProvider,
 } from '@agentkeeper/sdk'
 import type { WorkItemRegistryFull } from './plugins.js'
 import { getRawSqlite } from './db/index.js'
@@ -85,7 +85,7 @@ export class PluginHost {
   private readyWaiter: ReadyWaiter | null = null
   private stopping = false
   private unhealthyReported = false
-  private readonly workItemOwnership: PluginWorkItemOwnership<WorkItemSource>
+  private readonly workItemOwnership: PluginWorkItemOwnership<WorkItemProvider>
   private readonly nativeBroker: PluginNativeProcessBroker
   private readonly brokerAbort = new AbortController()
   private startupId = ''
@@ -359,15 +359,14 @@ export class PluginHost {
         if (!this.hasPermission('projects')) { this.deny(message.id, 'Missing projects permission'); break }
         void Promise.all(recentProjectsStore.list().map(async (project) => {
           const detected = await detectRemoteSources(project.path)
-          const remotes = detected.map((remote) => ({
-            name: remote.remote,
-            url: remote.url,
-            provider: remote.type,
-            repository: remote.repo,
-          }))
-          if (project.repo && !remotes.some((remote) => remote.provider === 'github' && remote.repository === project.repo)) {
-            remotes.push({ name: 'origin', url: `https://github.com/${project.repo}`, provider: 'github', repository: project.repo })
-          }
+          const remotes = detected.length > 0
+            ? detected.map((remote) => ({
+                name: remote.remote,
+                url: remote.url,
+                provider: remote.type,
+                repository: remote.repo,
+              }))
+            : project.remotes
           return { path: project.path, name: project.name, remotes }
         })).then((projects) => this.respond(message.id, projects), (error: unknown) => this.deny(message.id, errorMessage(error)))
         break
@@ -545,7 +544,7 @@ export class PluginHost {
     }
   }
 
-  private createWorkItemProxy(sourceId: string): WorkItemSource {
+  private createWorkItemProxy(sourceId: string): WorkItemProvider {
     return {
       id: sourceId,
       label: sourceId,

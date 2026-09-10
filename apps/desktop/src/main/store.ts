@@ -1,16 +1,35 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { asc, desc, eq, max } from 'drizzle-orm'
-import type { RecentProject } from '../shared/ipc-contract'
+import type { ProjectRemote, RecentProject } from '../shared/ipc-contract'
 import { detectRemoteSources } from './git'
 import { getDb } from './db/index'
 import { appState, projects } from './db/schema'
 
 const MAX_RECENT = 20
 
-export async function detectGithubRepo(projectPath: string): Promise<string | null> {
+export async function detectProjectRemotes(projectPath: string): Promise<ProjectRemote[]> {
   const sources = await detectRemoteSources(projectPath)
-  return sources.find((s) => s.type === 'github')?.repo ?? null
+  return sources.map((source) => ({
+    name: source.remote,
+    url: source.url,
+    provider: source.type,
+    repository: source.repo,
+  }))
+}
+
+function parseRemotes(value: string): ProjectRemote[] {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((remote): remote is ProjectRemote => Boolean(
+      remote && typeof remote === 'object'
+      && typeof (remote as ProjectRemote).name === 'string'
+      && typeof (remote as ProjectRemote).url === 'string',
+    ))
+  } catch {
+    return []
+  }
 }
 
 export const recentProjectsStore = {
@@ -21,7 +40,7 @@ export const recentProjectsStore = {
       .orderBy(asc(projects.sortOrder))
       .limit(MAX_RECENT)
       .all()
-      .map((r) => ({ path: r.path, name: r.name, repo: r.repo ?? null, lastOpenedAt: r.lastOpenedAt }))
+      .map((r) => ({ path: r.path, name: r.name, remotes: parseRemotes(r.remotes), lastOpenedAt: r.lastOpenedAt }))
   },
   add(project: RecentProject) {
     const db = getDb()
@@ -30,12 +49,12 @@ export const recentProjectsStore = {
     db.insert(projects).values({
       path: project.path,
       name: project.name,
-      repo: project.repo ?? null,
+      remotes: JSON.stringify(project.remotes),
       lastOpenedAt: project.lastOpenedAt,
       sortOrder: existing ? undefined : nextSortOrder,
     }).onConflictDoUpdate({
       target: projects.path,
-      set: { name: project.name, repo: project.repo ?? null, lastOpenedAt: project.lastOpenedAt },
+      set: { name: project.name, remotes: JSON.stringify(project.remotes), lastOpenedAt: project.lastOpenedAt },
     }).run()
 
     // Prune beyond MAX_RECENT (keep the most recent).
@@ -82,12 +101,12 @@ export const recentProjectsStore = {
     db.insert(projects).values({
       path: newPath,
       name: newName,
-      repo: row.repo ?? null,
+      remotes: row.remotes,
       lastOpenedAt: row.lastOpenedAt,
       sortOrder: row.sortOrder,
     }).onConflictDoUpdate({
       target: projects.path,
-      set: { name: newName, repo: row.repo ?? null, lastOpenedAt: row.lastOpenedAt },
+      set: { name: newName, remotes: row.remotes, lastOpenedAt: row.lastOpenedAt },
     }).run()
 
     // Update focused path if it pointed at the renamed project.
@@ -96,7 +115,7 @@ export const recentProjectsStore = {
       db.update(appState).set({ value: newPath }).where(eq(appState.key, 'focusedProjectPath')).run()
     }
 
-    return { path: newPath, name: newName, repo: row.repo ?? null, lastOpenedAt: row.lastOpenedAt }
+    return { path: newPath, name: newName, remotes: parseRemotes(row.remotes), lastOpenedAt: row.lastOpenedAt }
   },
   update(oldPath: string, project: RecentProject): RecentProject {
     const db = getDb()
@@ -112,7 +131,7 @@ export const recentProjectsStore = {
       tx.insert(projects).values({
         path: project.path,
         name: project.name,
-        repo: project.repo ?? null,
+        remotes: JSON.stringify(project.remotes),
         lastOpenedAt: row.lastOpenedAt,
         sortOrder: row.sortOrder,
       }).run()

@@ -12,13 +12,13 @@ import {
   setProcessBroker,
   submitReview,
 } from './github-cli.js'
-import { GitHubWorkItemSource } from './github-source.js'
+import { GitHubWorkItemProvider } from './github-provider.js'
 
 type GitHubProject = { projectPath: string; projectName: string; repo: string }
 
 let cancelPolling: (() => void) | null = null
 let pluginCtx: PluginContext | null = null
-let activeSource: GitHubWorkItemSource | null = null
+let activeSource: GitHubWorkItemProvider | null = null
 let knownRepos = new Set<string>()
 
 async function listGitHubProjects(ctx: PluginContext): Promise<GitHubProject[]> {
@@ -41,7 +41,7 @@ async function restartWorkItems(ctx: PluginContext): Promise<void> {
     ctx.logger.info('github plugin active (no GitHub projects registered)')
     return
   }
-  const source = new GitHubWorkItemSource(repos)
+  const source = new GitHubWorkItemProvider(repos)
   activeSource = source
   ctx.workItems.register(source)
   cancelPolling = ctx.background.every(5 * 60 * 1000, () => source.refresh())

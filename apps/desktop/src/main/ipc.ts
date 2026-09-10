@@ -51,7 +51,7 @@ import {
 } from './plugin-manager.js'
 import { getActiveHost } from './plugin-loader.js'
 import { getRawSqlite } from './db/index'
-import { detectGithubRepo, recentProjectsStore } from './store'
+import { detectProjectRemotes, recentProjectsStore } from './store'
 import { commit, createBranch, detectRemoteSources, getBranch, getStatus, isGitRepo, listBranches, pull, push, stageFiles, switchBranch, switchBranchCreate, unstageFiles } from './git'
 import { liveSessionBlocksBranchSwitch } from './session-branch-policy'
 import { suggestCommits } from './git-ai'
@@ -108,7 +108,7 @@ async function pickProject(): Promise<RecentProject | null> {
   const project: RecentProject = {
     path: projectPath,
     name: path.basename(projectPath),
-    repo: await detectGithubRepo(projectPath),
+    remotes: await detectProjectRemotes(projectPath),
     lastOpenedAt: Date.now(),
   }
   recentProjectsStore.add(project)
@@ -140,12 +140,12 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
   // Projects (registry)
   ipcMain.handle(IPC_CHANNELS.projectsAdd, async (_event, projectPath: string) => {
     try {
-      const repo = await detectGithubRepo(projectPath)
+      const remotes = await detectProjectRemotes(projectPath)
       const existing = recentProjectsStore.list().find((p) => p.path === projectPath)
       const project: RecentProject = {
         path: projectPath,
         name: path.basename(projectPath),
-        repo: existing?.repo ?? repo,
+        remotes: existing?.remotes.length ? existing.remotes : remotes,
         lastOpenedAt: Date.now(),
       }
       recentProjectsStore.add(project)
@@ -190,11 +190,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
       if (!trimmedName) throw new Error('Project name is required')
       const stats = await fs.stat(sourcePath)
       if (!stats.isDirectory()) throw new Error('Source folder must be a directory')
-      const repo = await detectGithubRepo(sourcePath)
+      const remotes = await detectProjectRemotes(sourcePath)
       return recentProjectsStore.update(oldPath, {
         path: sourcePath,
         name: trimmedName,
-        repo,
+        remotes,
         lastOpenedAt: Date.now(),
       })
     } catch (err) {
@@ -223,11 +223,11 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
     }
     await fs.mkdir(projectPath, { recursive: true })
     await fs.mkdir(path.join(projectPath, '.agentkeeper'), { recursive: true })
-    const repo = await detectGithubRepo(projectPath)
+    const remotes = await detectProjectRemotes(projectPath)
     const project: RecentProject = {
       path: projectPath,
       name: params.name,
-      repo,
+      remotes,
       lastOpenedAt: Date.now(),
     }
     recentProjectsStore.add(project)

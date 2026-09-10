@@ -1,7 +1,7 @@
 import type { Schema } from './Schema'
 
 const requiredSchema: Readonly<Record<string, readonly string[]>> = {
-  projects: ['path', 'name', 'repo', 'last_opened_at', 'sort_order'],
+  projects: ['path', 'name', 'remotes', 'last_opened_at', 'sort_order'],
   sessions: ['local_id', 'project_path', 'harness_id', 'initial_prompt', 'status', 'last_activity_at', 'last_user_message_at'],
   agents: ['local_id', 'session_local_id', 'sdk_session_id', 'is_entry_point', 'status'],
   agency_handoffs: ['id', 'agency_instance_id', 'role_id', 'instance_index', 'summary', 'created_at'],

@@ -89,7 +89,7 @@ The iframe receives `window.agentkeeperPlugin`, which provides:
 
 The host owns session creation, project/role/agency selection, worktrees, and session
 navigation. Plugins supply only the work-item ID and an optional suggested registered
-project. Session history is filtered by the plugin's registered work-item source so a
+project. Session history is filtered by the plugin's registered work-item provider so a
 plugin cannot inspect another provider's sessions.
 
 ## Provider capabilities

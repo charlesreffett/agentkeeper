@@ -5,7 +5,7 @@ import type {
   PluginContext,
   UIContribution,
   UISlot,
-  WorkItemSource,
+  WorkItemProvider,
 } from './index'
 
 export interface MockContextOptions<TSettings = unknown> {
@@ -19,7 +19,7 @@ export interface MockContext<TSettings = unknown> extends PluginContext<TSetting
   _inspect: {
     uiContributions: Map<UISlot, UIContribution[]>
     commands: Map<string, CommandDefinition>
-    workItemSources: Map<string, WorkItemSource>
+    workItemProviders: Map<string, WorkItemProvider>
     eventHandlers: Map<keyof EventMap, Set<EventHandler<keyof EventMap>>>
     logs: Array<{ level: string; msg: string; meta?: unknown }>
     emit<K extends keyof EventMap>(event: K, payload: EventMap[K]): void
@@ -37,7 +37,7 @@ export function createMockContext<TSettings = unknown>(
   )
   const uiContributions = new Map<UISlot, UIContribution[]>()
   const commands = new Map<string, CommandDefinition>()
-  const workItemSources = new Map<string, WorkItemSource>()
+  const workItemProviders = new Map<string, WorkItemProvider>()
   const eventHandlers = new Map<
     keyof EventMap,
     Set<EventHandler<keyof EventMap>>
@@ -102,11 +102,11 @@ export function createMockContext<TSettings = unknown>(
       },
     },
     workItems: {
-      register(source: WorkItemSource) {
-        workItemSources.set(source.id, source)
+      register(source: WorkItemProvider) {
+        workItemProviders.set(source.id, source)
       },
       unregister(id: string) {
-        workItemSources.delete(id)
+        workItemProviders.delete(id)
       },
     },
     ui: {
@@ -146,7 +146,7 @@ export function createMockContext<TSettings = unknown>(
     _inspect: {
       uiContributions,
       commands,
-      workItemSources,
+      workItemProviders,
       eventHandlers,
       logs,
       emit<K extends keyof EventMap>(event: K, payload: EventMap[K]) {

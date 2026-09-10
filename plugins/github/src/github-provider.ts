@@ -1,4 +1,4 @@
-import type { WorkItem, WorkItemSource, WorkItemStatus } from '@agentkeeper/sdk'
+import type { WorkItem, WorkItemProvider, WorkItemStatus } from '@agentkeeper/sdk'
 import { closeIssue, getIssue, getPR, listIssues, reopenIssue } from './github-cli.js'
 import type { GHIssue, PRDetail } from './types.js'
 
@@ -37,7 +37,7 @@ function mapPullRequestToWorkItem(pull: PRDetail): WorkItem {
   }
 }
 
-export class GitHubWorkItemSource implements WorkItemSource {
+export class GitHubWorkItemProvider implements WorkItemProvider {
   readonly id = 'github'
   readonly label = 'GitHub'
 

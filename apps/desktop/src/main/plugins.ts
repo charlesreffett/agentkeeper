@@ -12,7 +12,7 @@ import type {
   WorkItemCreateParams,
   WorkItemReference,
   WorkItemRegistry,
-  WorkItemSource,
+  WorkItemProvider,
   WorkItemStatus,
 } from '@agentkeeper/sdk'
 
@@ -27,9 +27,9 @@ export interface WorkItemRegistryFull extends WorkItemRegistry {
 }
 
 export class WorkItemRegistryImpl implements WorkItemRegistryFull {
-  private readonly sources = new Map<string, WorkItemSource>()
+  private readonly sources = new Map<string, WorkItemProvider>()
 
-  register(source: WorkItemSource): void {
+  register(source: WorkItemProvider): void {
     if (this.sources.has(source.id)) {
       throw new Error(`Work-item source '${source.id}' is already registered`)
     }
@@ -80,7 +80,7 @@ export class WorkItemRegistryImpl implements WorkItemRegistryFull {
     return source.create(params)
   }
 
-  private requireSource(sourceId: string): WorkItemSource {
+  private requireSource(sourceId: string): WorkItemProvider {
     const source = this.sources.get(sourceId)
     if (!source) throw new Error('Provider not available')
     return source

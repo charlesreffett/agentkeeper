@@ -1,4 +1,4 @@
-import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemSource, WorkItemStatus } from '@agentkeeper/sdk'
+import type { IssueTransition, WorkItem, WorkItemCreateParams, WorkItemProvider, WorkItemStatus } from '@agentkeeper/sdk'
 import {
   addComment as cliAddComment,
   createIssue,
@@ -11,7 +11,7 @@ import {
   updateIssueStatus,
 } from './jira-cli.js'
 
-export class JiraWorkItemSource implements WorkItemSource {
+export class JiraWorkItemProvider implements WorkItemProvider {
   readonly id = 'jira'
   readonly label = 'Jira'
 
