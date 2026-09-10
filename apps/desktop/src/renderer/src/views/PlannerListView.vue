@@ -6,6 +6,7 @@ import { Filter, Sparkles, Play, Check, Loader2, MoreHorizontal, Eye, MonitorPla
 import NewPlanModal from '@/components/planner/NewPlanModal.vue'
 import ScopeBar from '@/components/ScopeBar.vue'
 import { useProjectsQuery } from '@/composables/useProjectsQuery'
+import { PROVIDER_UNAVAILABLE_LABEL, useProviderWorkItems } from '@/composables/useProviderWorkItems'
 import { usePageScope, SCOPE_ALL } from '@/composables/usePageScope'
 import { projectColor } from '@/lib/projectColor'
 import {
@@ -16,7 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { usePlansStore } from '@/stores/plans'
-import type { Plan, PlanStatus } from '@shared/ipc-contract'
+import type { Plan, PlanStatus, WorkItem } from '@shared/ipc-contract'
 
 type PlanWithProject = Plan & { projectPath?: string }
 
@@ -55,6 +56,13 @@ const plans = computed<PlanWithProject[]>(() =>
     ? (allPlans.value ?? []).filter((p) => p.status !== 'archived')
     : plansStore.plans.filter((p) => p.status !== 'archived'),
 )
+const { stateFor: providerStateFor } = useProviderWorkItems(computed(() =>
+  plans.value.flatMap(plan => plan.workItem ? [plan.workItem] : []),
+))
+function providerItemFor(plan: PlanWithProject): WorkItem | null {
+  const state = providerStateFor(plan.workItem)
+  return state?.status === 'available' ? state.item : null
+}
 
 // The concrete project backing a plan row: its own path in All, the scoped
 // project otherwise. null when the page is scoped to nothing (planner is
@@ -374,13 +382,27 @@ function projectNameForPlan(plan: PlanWithProject): string {
             <!-- Ticket ref -->
             <div>
               <router-link
-                v-if="plan.workItem"
+                v-if="plan.workItem && providerStateFor(plan.workItem)?.status === 'available'"
                 :to="workItemPath(plan)"
                 class="text-xs px-2 py-0.5 rounded-md border border-border font-mono bg-background hover:bg-muted/60 transition-colors"
                 @click.stop
               >
                 {{ plan.workItem.externalRef }}
+                <span class="ml-1 text-muted-foreground">
+                  {{ providerItemFor(plan)?.statusLabel ?? providerItemFor(plan)?.status }}
+                </span>
               </router-link>
+              <span
+                v-else-if="plan.workItem && providerStateFor(plan.workItem)?.status === 'unavailable'"
+                class="inline-flex flex-col text-xs px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground"
+              >
+                <span>{{ plan.workItem.externalRef }}</span>
+                <span class="font-sans text-[10px] text-amber-600 dark:text-amber-400">{{ PROVIDER_UNAVAILABLE_LABEL }}</span>
+              </span>
+              <span
+                v-else-if="plan.workItem"
+                class="text-xs px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground"
+              >{{ plan.workItem.externalRef }}</span>
               <span v-else class="text-xs px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground">—</span>
             </div>
 
