@@ -73,7 +73,7 @@
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "electron": "^41.3.0",
-    "electron-builder": "^26.8.1",
+    "electron-builder": "26.16.1",
     "electron-vite": "^2.3.0",
     "lucide-vue-next": "^0.453.0",
     "postcss": "^8.4.47",
