@@ -6,7 +6,7 @@ function pluginWorkerRuntime(): void {
   const pending = new Map<string, { resolve(value: unknown): void; reject(error: Error): void; timeout: ReturnType<typeof setTimeout> }>()
   const listeners = new Map<string, (payload: unknown) => void | Promise<void>>()
   const taskHandlers = new Map<string, () => void | Promise<void>>()
-  const workItemSources = new Map<string, Record<string, (...args: never[]) => unknown>>()
+  const workItemProviders = new Map<string, Record<string, (...args: never[]) => unknown>>()
   const commandHandlers = new Map<string, (args: unknown) => unknown | Promise<unknown>>()
   let plugin: Record<string, (...args: never[]) => unknown> | null = null
 
@@ -83,11 +83,11 @@ function pluginWorkerRuntime(): void {
 
   const workItems = {
     register(source: Record<string, (...args: never[]) => unknown> & { id: string }): void {
-      workItemSources.set(source.id, source)
+      workItemProviders.set(source.id, source)
       fireToHost({ id: makeId(), type: 'workItems.register', sourceId: source.id })
     },
     unregister(sourceId: string): void {
-      workItemSources.delete(sourceId)
+      workItemProviders.delete(sourceId)
       fireToHost({ id: makeId(), type: 'workItems.unregister', sourceId })
     },
   }
@@ -185,7 +185,7 @@ function pluginWorkerRuntime(): void {
   }
 
   async function invokeSource(method: string, args: unknown[]): Promise<unknown> {
-    const source = workItemSources.values().next().value as Record<string, (...args: never[]) => unknown> | undefined
+    const source = workItemProviders.values().next().value as Record<string, (...args: never[]) => unknown> | undefined
     const handler = source?.[method]
     return handler ? handler.apply(source, args as never[]) : undefined
   }

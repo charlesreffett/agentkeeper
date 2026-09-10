@@ -1,6 +1,6 @@
-export function assertOwnedWorkItemSource(pluginId: string, sourceId: string): void {
+export function assertOwnedWorkItemProvider(pluginId: string, sourceId: string): void {
   if (sourceId !== pluginId) {
-    throw new Error(`Plugin ${pluginId} cannot manage work-item source ${sourceId}`)
+    throw new Error(`Plugin ${pluginId} cannot manage work-item provider ${sourceId}`)
   }
 }
 
@@ -18,13 +18,13 @@ export class PluginWorkItemOwnership<T extends { id: string }> {
   ) {}
 
   register(source: T): void {
-    assertOwnedWorkItemSource(this.pluginId, source.id)
+    assertOwnedWorkItemProvider(this.pluginId, source.id)
     this.registry.register(source)
     this.registered.add(source.id)
   }
 
   unregister(sourceId: string): void {
-    assertOwnedWorkItemSource(this.pluginId, sourceId)
+    assertOwnedWorkItemProvider(this.pluginId, sourceId)
     this.registry.unregister(sourceId)
     this.registered.delete(sourceId)
   }

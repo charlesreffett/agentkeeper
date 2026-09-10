@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Plugin, PluginContext } from '@agentkeeper/sdk'
 import { checkCliPresent, countIssues, listProjects, setJiraApiToken, setJiraCliPath, setProcessBroker } from './jira-cli.js'
-import { JiraWorkItemSource } from './jira-source.js'
+import { JiraWorkItemProvider } from './jira-provider.js'
 
 export { listProjects }
 export type { JiraProject } from './jira-cli'
@@ -24,13 +24,13 @@ type JiraSettings = z.infer<typeof JiraSettingsSchema>
 
 let cancelPolling: (() => void) | null = null
 let pluginCtx: PluginContext<JiraSettings> | null = null
-let activeSource: JiraWorkItemSource | null = null
+let activeSource: JiraWorkItemProvider | null = null
 
 async function startJira(ctx: PluginContext<JiraSettings>): Promise<void> {
   const projectKeys = ctx.config.projectKeys?.length
     ? ctx.config.projectKeys
     : (ctx.config.projectMappings ?? []).map(mapping => mapping.jiraProjectKey)
-  const source = new JiraWorkItemSource(
+  const source = new JiraWorkItemProvider(
     projectKeys,
     ctx.config.projectKey,
   )
@@ -122,7 +122,7 @@ const jiraPlugin: Plugin<JiraSettings> = {
       id: 'jira.workItems.updateStatus',
       label: 'Update Jira work item status',
       handler: (args) => {
-        const input = args as { itemId: string; status: Parameters<JiraWorkItemSource['updateStatus']>[1] }
+        const input = args as { itemId: string; status: Parameters<JiraWorkItemProvider['updateStatus']>[1] }
         return activeSource?.updateStatus(input.itemId, input.status)
       },
     })
