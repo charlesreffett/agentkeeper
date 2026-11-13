@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/charlesreffett/agentkeeper/compare/plugin-jira-v0.2.0...plugin-jira-v0.3.0) (2026-11-13)
+
+
+### Features
+
+* multi harness managed commands ([#104](https://github.com/charlesreffett/agentkeeper/issues/104)) ([be1155b](https://github.com/charlesreffett/agentkeeper/commit/be1155ba0b02868701c269afdb3af2218cc72e0a))
+* remove CLI requirements from work item plugins ([#103](https://github.com/charlesreffett/agentkeeper/issues/103)) ([bea3d0e](https://github.com/charlesreffett/agentkeeper/commit/bea3d0ec600f48f232aec7a0ca619537436460f1))
+
 ## [0.2.0](https://github.com/agentkeeper-ai/agentkeeper/compare/plugin-jira-v0.1.0...plugin-jira-v0.2.0) (2026-09-10)
 
 

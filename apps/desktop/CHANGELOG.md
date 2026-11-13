@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/charlesreffett/agentkeeper/compare/desktop-v0.2.0...desktop-v0.3.0) (2026-11-13)
+
+
+### Features
+
+* add multi-harness managed commands ([#101](https://github.com/charlesreffett/agentkeeper/issues/101)) ([a891c46](https://github.com/charlesreffett/agentkeeper/commit/a891c46639e8951457953ae7379c9edc6341f382))
+* multi harness managed commands ([#104](https://github.com/charlesreffett/agentkeeper/issues/104)) ([be1155b](https://github.com/charlesreffett/agentkeeper/commit/be1155ba0b02868701c269afdb3af2218cc72e0a))
+* remove CLI requirements from work item plugins ([#103](https://github.com/charlesreffett/agentkeeper/issues/103)) ([bea3d0e](https://github.com/charlesreffett/agentkeeper/commit/bea3d0ec600f48f232aec7a0ca619537436460f1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @agentkeeper/core bumped to 0.2.0
+
 ## [0.2.0](https://github.com/agentkeeper-ai/agentkeeper/compare/desktop-v0.1.0...desktop-v0.2.0) (2026-09-10)
 
 

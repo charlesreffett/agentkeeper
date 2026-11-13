@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/charlesreffett/agentkeeper/compare/core-v0.1.0...core-v0.2.0) (2026-11-13)
+
+
+### Features
+
+* add multi-harness managed commands ([#101](https://github.com/charlesreffett/agentkeeper/issues/101)) ([a891c46](https://github.com/charlesreffett/agentkeeper/commit/a891c46639e8951457953ae7379c9edc6341f382))
+* multi harness managed commands ([#104](https://github.com/charlesreffett/agentkeeper/issues/104)) ([be1155b](https://github.com/charlesreffett/agentkeeper/commit/be1155ba0b02868701c269afdb3af2218cc72e0a))
+
 ## [0.1.0](https://github.com/agentkeeper-ai/agentkeeper/compare/core-v0.0.1...core-v0.1.0) (2026-09-10)
 
 
