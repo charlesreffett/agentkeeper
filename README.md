@@ -1,50 +1,80 @@
 # AgentKeeper
 
-Cross-platform Electron desktop app that drives the Claude Agent SDK from a GUI,
-replacing the terminal `claude` workflow. End goal: Jira → worktree → agent team →
-PR → merged, all from the app.
+AgentKeeper is a cross-platform desktop app for running coding agents, managing
+Git worktrees, and coordinating agent teams from one workspace. It supports
+Claude Code, OpenCode, Codex, Cursor, and Grok through a shared harness interface.
+Available models and features depend on the selected harness.
 
-Shipped so far: live sessions, worktrees, roles, agencies with `send_message`,
-monitor grid, GitHub PR views, project registry with focus model, and
-SQLite/Drizzle persistence. An iOS companion app pairs with the desktop over the
-local network.
+- Run live sessions with streaming output, tool activity, and session history.
+- Organize projects and worktrees, configure reusable roles, and coordinate
+  agencies with message routing and a monitor grid.
+- Manage plans, skills, slash commands, and external MCP servers.
+- Install the GitHub and Jira plugins for pull-request and issue workflows.
+- Connect an iOS companion app to the desktop over the local network.
+
+Session and application data are persisted locally with SQLite and Drizzle.
 
 ## Stack
 
 - Electron + Vite + Vue 3 + TypeScript
 - Tailwind + Shadcn-Vue
 - pnpm workspaces
-- `@anthropic-ai/claude-agent-sdk` (spawns a bundled `claude` subprocess)
-- Pinia for renderer state
+- Claude Agent SDK, OpenCode SDK, CLI adapters, and ACP adapters for agent execution
+- Pinia for renderer state and TanStack Vue Query for server state
+- SQLite + Drizzle for local persistence
 - keytar for API-key storage in the OS keychain
 
 ## Prerequisites
 
 - Node.js >= 24
-- pnpm 9 (`corepack enable` will provide the pinned version)
-- Authentication, one of:
-  - A Claude Pro/Max plan via an existing `claude login`, or
-  - An Anthropic Console API key (stored in the OS keychain, never in env)
+- pnpm 11.20.0, pinned in `package.json`
+- Git for project and worktree workflows
+- The executable and authentication required by your chosen agent harness
+
+Claude Code supports an existing authenticated account or an Anthropic Console
+API key stored in the OS keychain. Other harnesses use their own authentication
+flows. Configure authentication and executable overrides in **Settings → Models &
+Harnesses**.
 
 ## Getting started
 
 ```bash
+corepack enable   # enable package-manager shims
 pnpm install      # install all workspace dependencies
 pnpm dev          # start the Electron app in dev mode
 ```
+
+After launch, add a local project and choose a harness and model for a new
+session. Check **Settings → Models & Harnesses** if a harness is unavailable or
+needs authentication.
+
+GitHub and Jira integrations are separately installed `.akp` plugins; a clean
+desktop installation includes the plugin host without these integrations. See
+the [plugin guide](./docs/plugins.md) for installation and local development.
 
 ## Common commands
 
 ```bash
 pnpm dev          # run the desktop app (electron-vite dev server)
-pnpm typecheck    # vue-tsc --noEmit across all workspaces
-pnpm build        # full production build
+pnpm typecheck    # type-check all workspace packages
+pnpm build        # build packages, plugins, and the desktop app
+pnpm --filter desktop test # run desktop tests
 pnpm pack:plugins # build installable GitHub and Jira .akp packages
 pnpm dist:mac     # build a macOS distributable
 pnpm dist:win     # build a Windows distributable
 ```
 
-Run `pnpm typecheck` and `pnpm build` before every commit.
+Plugin validation commands:
+
+```bash
+pnpm verify:plugin-boundaries # check plugin imports and host boundaries
+pnpm verify:plugin-packages   # build and validate plugin artifacts
+pnpm verify:sdk-package       # build and validate the public SDK package
+```
+
+Run `pnpm typecheck` and `pnpm build` before every commit. For signed production
+releases, previews, and updater configuration, see the
+[release guide](./docs/releasing.md).
 
 ## Monorepo layout
 
@@ -55,10 +85,12 @@ apps/desktop/src/preload/   contextBridge — exposes typed `window.agentkeeper`
 apps/desktop/src/renderer/  Vue app (views, components, composables, stores)
 apps/desktop/src/shared/    IPC contract types — pure, no runtime imports
 apps/ios/                   iOS companion app (SwiftUI)
-packages/core/              Session engine / Role-Agency engine
-packages/sdk/               @agentkeeper/sdk — plugin contract (types-only)
-plugins/github/             GitHub plugin (separately installed; PRs via `gh` CLI)
-plugins/jira/               Jira plugin (separately installed; wraps the `jira` CLI)
+packages/core/              Shared harness abstraction and session/event types
+packages/sdk/               @agentkeeper/sdk — plugin contracts and runtime/test helpers
+packages/cli/               akp CLI for plugin development and packaging
+packages/skills/            Bundled agent skills
+plugins/github/             GitHub plugin (separately installed)
+plugins/jira/               Jira plugin (separately installed)
 ```
 
 ## Vocabulary
@@ -85,15 +117,15 @@ and distribution workflow. Key rules:
 ### Commit format
 
 ```
-<scope>: <short imperative subject>
+<type>(<scope>): <short imperative subject>
 
 <body: what changed and why. Call out deferred work or known gaps.>
 ```
 
 ## iOS Companion
 
-Enable via Settings → Mobile tab in the desktop app. Set a secret key and note the
-URL shown. Open `apps/ios/AgentKeeperRemote/AgentKeeperRemote.xcodeproj` in
+Enable remote access via **Settings → Remote** in the desktop app. Generate a
+secret key and note the URL shown. Open `apps/ios/AgentKeeperRemote/AgentKeeperRemote.xcodeproj` in
 Xcode, set your development team, then build and run on a device or simulator. Enter
 the desktop URL + secret key on the iOS Setup screen to pair. Bundle ID:
 `com.agentkeeper.remote`.
