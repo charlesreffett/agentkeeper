@@ -45,7 +45,8 @@ export const DEFAULT_THEMES: ThemeSettings = {
   },
 }
 
-export const DEFAULT_UI_FONT = "InterVariable, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+// Inter Variable is bundled (renderer main.ts); the other names cover a system install.
+export const DEFAULT_UI_FONT = "'Inter Variable', InterVariable, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 export const DEFAULT_CODE_FONT = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
 
 /** Named UI font choices; anything else stored in fonts.ui is a custom stack. */
