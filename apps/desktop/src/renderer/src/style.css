@@ -35,10 +35,8 @@
   }
 }
 
-/* Shiki v4 dual-theme: light color is a direct inline style on spans; dark overrides via CSS var.
-   Surface colors come from theme tokens so code blocks follow the user's background. */
+/* Shiki uses the css-variables theme; token colors come from --shiki-* vars set by the theme engine. */
 .shiki { background-color: var(--code-background) !important; color: var(--code-foreground) !important; font-size: var(--code-font-size); overflow-x: auto; max-width: 100%; }
-.dark .shiki span { color: var(--shiki-dark) !important; }
 
 @layer utilities {
   .content-auto {
@@ -54,4 +52,14 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Outside @layer so it lands after the typography plugin's .prose and .prose-invert rules. */
+.prose {
+  --tw-prose-links: var(--link);
+  --tw-prose-invert-links: var(--link);
+}
+
+::selection {
+  background-color: color-mix(in oklab, var(--brand) 32%, transparent);
 }

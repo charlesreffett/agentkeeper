@@ -170,12 +170,12 @@ export function contrastRatio(a: string, b: string): number {
 const TEXT_CONTRAST = 4.5
 
 /** Walks lightness away from the background until the color reads as body text. */
-function ensureLegible(color: Lab, bg: string): string {
+function ensureLegible(color: Lab, bg: string, min = TEXT_CONTRAST): string {
   const bgL = hexToLab(bg)[0]
   const step = bgL > 0.6 ? -0.01 : 0.01
   let [L, a, b] = color
   let hex = labToHex([L, a, b])
-  for (let i = 0; i < 60 && contrastRatio(hex, bg) < TEXT_CONTRAST; i++) {
+  for (let i = 0; i < 60 && contrastRatio(hex, bg) < min; i++) {
     L = Math.min(1, Math.max(0, L + step))
     hex = labToHex([L, a, b])
   }
@@ -197,7 +197,7 @@ export const THEME_TOKEN_NAMES = [
   'secondary', 'secondary-foreground',
   'muted', 'muted-foreground',
   'accent', 'accent-foreground',
-  'brand', 'brand-foreground',
+  'brand', 'brand-foreground', 'link',
   'destructive', 'destructive-foreground',
   'success', 'success-foreground',
   'warning', 'warning-foreground',
@@ -293,6 +293,7 @@ export function deriveTheme(config: ThemeConfig, variant: ThemeVariant): Resolve
     'accent-foreground': fg,
     brand: config.accent,
     'brand-foreground': onColor(config.accent, WHITE, '#111111'),
+    link: ensureLegible(hexToLab(config.accent), bg),
     destructive,
     'destructive-foreground': onColor(destructive, WHITE, '#111111'),
     success,
@@ -322,6 +323,7 @@ export function deriveTheme(config: ThemeConfig, variant: ThemeVariant): Resolve
 
   const cssVars: Record<string, string> = {}
   for (const name of THEME_TOKEN_NAMES) cssVars[`--${name}`] = colors[name]
+  Object.assign(cssVars, syntaxVars(colors))
   cssVars['--font-sans'] = config.fonts.ui?.trim() || DEFAULT_UI_FONT
   cssVars['--font-mono'] = config.fonts.code?.trim() || DEFAULT_CODE_FONT
   cssVars['--shadow-popover'] = isDark
@@ -332,6 +334,31 @@ export function deriveTheme(config: ThemeConfig, variant: ThemeVariant): Resolve
     : '0 0 0 1px rgb(0 0 0 / 0.05), 0 8px 20px rgb(0 0 0 / 0.08), 0 24px 64px rgb(0 0 0 / 0.18)'
 
   return { variant, colors, cssVars }
+}
+
+/**
+ * Variables read by Shiki's css-variables theme (see renderer comark-config).
+ * Built from the status hues so syntax follows the theme and any status
+ * overrides, then nudged to stay readable on the code background.
+ */
+function syntaxVars(c: Record<ThemeTokenName, string>): Record<string, string> {
+  const codeBg = c['code-background']
+  const on = (hex: string) => ensureLegible(hexToLab(hex), codeBg)
+  return {
+    '--shiki-foreground': c['code-foreground'],
+    '--shiki-background': codeBg,
+    '--shiki-token-keyword': on(c.highlight),
+    '--shiki-token-string': on(c.success),
+    '--shiki-token-string-expression': on(c.success),
+    '--shiki-token-function': on(c.info),
+    '--shiki-token-constant': on(c.warning),
+    '--shiki-token-parameter': on(mixHex(c['code-foreground'], c.destructive, 0.45)),
+    '--shiki-token-comment': on(mixHex(codeBg, c['code-foreground'], 0.55)),
+    '--shiki-token-punctuation': on(mixHex(codeBg, c['code-foreground'], 0.7)),
+    '--shiki-token-link': on(c.link),
+    '--shiki-token-inserted': on(c['diff-added']),
+    '--shiki-token-deleted': on(c['diff-removed']),
+  }
 }
 
 // ---------------------------------------------------------------------------

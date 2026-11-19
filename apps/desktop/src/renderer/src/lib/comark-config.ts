@@ -1,5 +1,5 @@
 import highlight from '@comark/vue/plugins/highlight'
-import type { ThemeRegistration } from 'shiki'
+import { createCssVariablesTheme } from 'shiki/core'
 import CodeBlock from '@/components/transcript/CodeBlock.vue'
 
 export const transcriptComponents = {
@@ -28,12 +28,11 @@ const sanitizeTagsPlugin = {
   },
 }
 
+const tokenTheme = createCssVariablesTheme({ name: 'agentkeeper-tokens', variablePrefix: '--shiki-', fontStyle: true })
+
 export const transcriptPlugins = [
   sanitizeTagsPlugin,
-  highlight({
-    themes: {
-      light: 'material-theme-lighter' as ThemeRegistration,
-      dark: 'material-theme-palenight' as ThemeRegistration,
-    },
-  }),
+  // One theme for both modes: token colors are CSS variables derived from the
+  // user's theme (shared/theme.ts syntaxVars), so they follow live edits.
+  highlight({ themes: { light: tokenTheme, dark: tokenTheme } }),
 ]
