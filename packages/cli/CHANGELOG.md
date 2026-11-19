@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.1](https://github.com/charlesreffett/agentkeeper/compare/cli-v0.2.0...cli-v0.2.1) (2026-11-19)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @agentkeeper/sdk bumped to 0.2.0
+
 ## [0.2.0](https://github.com/agentkeeper-ai/agentkeeper/compare/cli-v0.1.0...cli-v0.2.0) (2026-09-10)
 
 
