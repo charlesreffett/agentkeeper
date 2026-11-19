@@ -409,6 +409,12 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
 
   server.on('close', () => clearInterval(heartbeat))
 
+  // A listen failure (e.g. another AgentKeeper instance holds the port) must not
+  // surface as an uncaught exception — that pops Electron's fatal error dialog.
+  server.on('error', (error) => {
+    console.error(`[mobile-server] failed on port ${port}:`, error)
+    if (_server === server) { _server = null; _serverPort = 0 }
+  })
   server.listen(port, () => console.log(`[mobile-server] listening on port ${port}`))
   return server
 }

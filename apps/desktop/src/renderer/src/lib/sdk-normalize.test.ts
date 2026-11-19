@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { harnessStreamToTranscriptEvent, sdkMessageToTranscriptEvent } from './sdk-normalize'
+import { harnessStreamToTranscriptEvent, mergeThinkingChunk, sdkMessageToTranscriptEvent } from './sdk-normalize'
 
 describe('harness activity normalization', () => {
   it('preserves Claude thinking and tool blocks', () => {
@@ -65,4 +65,19 @@ describe('harness activity normalization', () => {
       expect(tool?.content.map((block) => block.type)).toEqual(['tool_use', 'tool_result'])
     })
   }
+
+  it('folds consecutive ACP thought chunks into one thinking block', () => {
+    const chunk = (text: string) => harnessStreamToTranscriptEvent({ provider: 'cursor', event: { params: { update: {
+      sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text },
+    } } } })!
+    const first = chunk('The')
+    expect(mergeThinkingChunk('cursor', first, chunk(' user'))).toBe(true)
+    expect(mergeThinkingChunk('cursor', first, chunk(' is testing'))).toBe(true)
+    expect(first.content).toEqual([{ type: 'thinking', thinking: 'The user is testing' }])
+  })
+
+  it('does not fold Codex reasoning items, which arrive complete', () => {
+    const reasoning = (text: string) => harnessStreamToTranscriptEvent({ provider: 'codex', event: { type: 'item.completed', item: { id: text, type: 'reasoning', text } } })!
+    expect(mergeThinkingChunk('codex', reasoning('one'), reasoning('two'))).toBe(false)
+  })
 })

@@ -8,6 +8,7 @@ import type { HarnessAdapter, HarnessAuth, HarnessAuthDetail, HarnessAvailabilit
 import { sanitizeCustomModel } from '@agentkeeper/core'
 import { resolveBin, type BinConfig } from './bin'
 import { spawnHarnessProcess } from './cli-process'
+import { promptForTurn } from './codex'
 
 const execFileAsync = promisify(execFile)
 
@@ -123,35 +124,49 @@ export class AcpHarnessAdapter implements HarnessAdapter {
   }
 
   async *runSession(prompt: string, options: HarnessSessionOptions): AsyncIterable<HarnessEvent> {
+    // Live sessions pass an empty prompt and deliver the user turn through
+    // messageQueue; read it before spawning so an idle resume doesn't hold a process.
+    const turnPrompt = await promptForTurn(prompt, options.messageQueue)
     const { child, connection } = await this.connect(options.cwd, options.env, options.abortController?.signal)
-    const setup = await connection.request(options.resume ? 'session/load' : 'session/new', options.resume
-      ? { sessionId: options.resume, cwd: options.cwd, mcpServers: [] }
-      : { cwd: options.cwd, mcpServers: [] }) as Record<string, unknown>
-    const sessionId = String(setup.sessionId)
-    const model = options.model && sanitizeCustomModel(options.model)
-    if (model && model !== 'default') await connection.request('session/set_model', { sessionId, modelId: model })
-    yield { type: 'system', subtype: 'init', session_id: sessionId }
-    const text = options.systemPrompt ? `${options.systemPrompt}\n\n${prompt}` : prompt
-    const completion = connection.request('session/prompt', { sessionId, prompt: [{ type: 'text', text }] })
-    let done = false
-    void completion.finally(() => { done = true; connection.pushUpdate({ method: '__done' }) })
-    let finalText = ''
-    while (!done || connection.updates.length) {
-      const message = await connection.takeUpdate()
-      if (message.method === '__done') continue
-      const update = message.params?.update as Record<string, unknown> | undefined
-      if (message.method === 'session/update' && update?.sessionUpdate === 'agent_message_chunk') {
-        const content = update.content as { type?: string; text?: string } | undefined
-        if (content?.text) {
-          finalText += content.text
-          yield { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: content.text } }, session_id: sessionId }
-        }
-      } else yield { type: 'stream_event', provider: this.id, event: message }
+    try {
+      const setup = await connection.request(options.resume ? 'session/load' : 'session/new', options.resume
+        ? { sessionId: options.resume, cwd: options.cwd, mcpServers: [] }
+        : { cwd: options.cwd, mcpServers: [] }) as Record<string, unknown>
+      // session/load answers without a sessionId and replays the prior
+      // conversation as session/update notifications before responding. That
+      // history is already in the transcript, so drop it.
+      if (options.resume) connection.updates.length = 0
+      const sessionId = options.resume ?? (typeof setup.sessionId === 'string' ? setup.sessionId : undefined)
+      if (!sessionId) throw new Error(`${this.name} did not return a session id`)
+      const model = options.model && sanitizeCustomModel(options.model)
+      if (model && model !== 'default') await connection.request('session/set_model', { sessionId, modelId: model })
+      yield { type: 'system', subtype: 'init', session_id: sessionId }
+      const text = options.systemPrompt ? `${options.systemPrompt}\n\n${turnPrompt}` : turnPrompt
+      const completion = connection.request('session/prompt', { sessionId, prompt: [{ type: 'text', text }] })
+      let done = false
+      // `.finally()` would re-reject on a derived promise nobody awaits, turning an
+      // ACP error into an uncaught exception that kills the main process.
+      const finish = () => { done = true; connection.pushUpdate({ method: '__done' }) }
+      completion.then(finish, finish)
+      let finalText = ''
+      while (!done || connection.updates.length) {
+        const message = await connection.takeUpdate()
+        if (message.method === '__done') continue
+        const update = message.params?.update as Record<string, unknown> | undefined
+        if (message.method === 'session/update' && update?.sessionUpdate === 'agent_message_chunk') {
+          const content = update.content as { type?: string; text?: string } | undefined
+          if (content?.text) {
+            finalText += content.text
+            yield { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: content.text } }, session_id: sessionId }
+          }
+        } else yield { type: 'stream_event', provider: this.id, event: message }
+      }
+      await completion
+      yield { type: 'assistant', session_id: sessionId, message: { role: 'assistant', content: [{ type: 'text', text: finalText }], model: options.model } }
+      yield { type: 'result', subtype: 'success', session_id: sessionId, result: finalText }
+    } finally {
+      child.kill()
     }
-    await completion
-    yield { type: 'assistant', session_id: sessionId, message: { role: 'assistant', content: [{ type: 'text', text: finalText }], model: options.model } }
-    yield { type: 'result', subtype: 'success', session_id: sessionId, result: finalText }
-    child.kill()
   }
 
   async runPrompt(prompt: string, options: HarnessSessionOptions) {
