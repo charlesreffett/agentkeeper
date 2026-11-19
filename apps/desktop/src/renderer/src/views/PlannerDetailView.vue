@@ -275,28 +275,28 @@ function fmtEst(total: number): string {
 // ── Step visuals ─────────────────────────────────────────────────────────────
 
 function modelDotClass(model: string): string {
-  if (model.includes('haiku')) return 'bg-green-500'
-  if (model.includes('opus')) return 'bg-purple-500'
-  if (model.includes('sonnet')) return 'bg-blue-500'
+  if (model.includes('haiku')) return 'bg-success'
+  if (model.includes('opus')) return 'bg-highlight'
+  if (model.includes('sonnet')) return 'bg-info'
   return 'bg-muted-foreground'
 }
 
 function stepCircleClass(step: PlanStep): string {
   switch (step.status) {
-    case 'complete':    return 'bg-green-500 border-green-500 text-white'
-    case 'running':     return 'bg-background border-green-500 text-green-500'
-    case 'failed':      return 'bg-destructive border-destructive text-white'
+    case 'complete':    return 'bg-success border-success text-success-foreground'
+    case 'running':     return 'bg-background border-success text-success'
+    case 'failed':      return 'bg-destructive border-destructive text-destructive-foreground'
     case 'skipped':     return 'bg-muted border-muted text-muted-foreground'
-    case 'replanning':  return 'bg-amber-500 border-amber-500 text-white'
+    case 'replanning':  return 'bg-warning border-warning text-warning-foreground'
     default:            return 'bg-background border-border text-muted-foreground'
   }
 }
 
 function connectorClass(step: PlanStep): string {
   switch (step.status) {
-    case 'complete':   return 'bg-green-500'
-    case 'running':    return 'bg-green-500/40'
-    case 'replanning': return 'bg-amber-500/40'
+    case 'complete':   return 'bg-success'
+    case 'running':    return 'bg-success/40'
+    case 'replanning': return 'bg-warning/40'
     default:           return 'bg-border'
   }
 }
@@ -853,15 +853,15 @@ Guidelines:
               <span
                 class="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full font-medium"
                 :class="{
-                  'bg-green-500/15 text-green-600 dark:text-green-400': plan.status === 'running',
+                  'bg-success/15 text-success': plan.status === 'running',
                   'border border-border text-muted-foreground': plan.status === 'planned',
-                  'bg-amber-500/15 text-amber-600 dark:text-amber-400': plan.status === 'drafting',
-                  'bg-purple-500/10 text-purple-600 dark:text-purple-400': plan.status === 'complete',
+                  'bg-warning/15 text-warning': plan.status === 'drafting',
+                  'bg-highlight/10 text-highlight': plan.status === 'complete',
                 }"
               >
                 <span
                   v-if="plan.status === 'running'"
-                  class="size-1.5 rounded-full bg-green-500 animate-pulse"
+                  class="size-1.5 rounded-full bg-success animate-pulse"
                 />
                 {{
                   plan.status === 'planned' ? 'Idle' :
@@ -897,7 +897,7 @@ Guidelines:
                 <span class="text-sm px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground">
                   {{ plan.workItem.externalRef }}
                 </span>
-                <p class="mt-1.5 text-[11px] text-amber-600 dark:text-amber-400">{{ PROVIDER_UNAVAILABLE_LABEL }}</p>
+                <p class="mt-1.5 text-[11px] text-warning">{{ PROVIDER_UNAVAILABLE_LABEL }}</p>
               </div>
               <span
                 v-else-if="plan.workItem"
@@ -930,7 +930,7 @@ Guidelines:
                 <div class="w-full h-1.5 rounded-full bg-muted overflow-hidden min-w-[80px]">
                   <div
                     class="h-full rounded-full transition-all"
-                    :class="plan.status === 'complete' ? 'bg-purple-500' : 'bg-green-500'"
+                    :class="plan.status === 'complete' ? 'bg-highlight' : 'bg-success'"
                     :style="{ width: `${progressPercent}%` }"
                   />
                 </div>
@@ -998,7 +998,7 @@ Guidelines:
                 <div class="relative flex items-center justify-center shrink-0">
                   <span
                     v-if="step.status === 'running'"
-                    class="absolute inset-0 rounded-full bg-green-500/25 animate-ping"
+                    class="absolute inset-0 rounded-full bg-success/25 animate-ping"
                   />
                   <div
                     class="size-7 rounded-full border-2 flex items-center justify-center text-xs font-semibold z-10"
@@ -1021,10 +1021,10 @@ Guidelines:
                   <!-- Approval gate indicator on the line leading into a gated step -->
                   <div
                     v-if="plan.steps[index + 1]?.requiresApproval"
-                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-4 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center"
+                    class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 size-4 rounded-full bg-warning/20 border border-warning/40 flex items-center justify-center"
                     title="Approval gate — plan pauses here"
                   >
-                    <Shield :size="8" class="text-amber-500" />
+                    <Shield :size="8" class="text-warning" />
                   </div>
                 </div>
               </div>
@@ -1052,7 +1052,7 @@ Guidelines:
                   <!-- Running / skipped badges -->
                   <span
                     v-if="step.status === 'running'"
-                    class="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20"
+                    class="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-success/10 text-success border border-success/20"
                   >
                     running…
                   </span>
@@ -1069,7 +1069,7 @@ Guidelines:
                     <button
                       class="size-6 flex items-center justify-center rounded transition-colors"
                       :class="step.requiresApproval
-                        ? 'text-amber-500 hover:bg-amber-500/20'
+                        ? 'text-warning hover:bg-warning/20'
                         : 'text-muted-foreground/30 hover:text-muted-foreground hover:bg-muted/60'"
                       :title="step.requiresApproval ? 'Remove approval gate' : 'Add approval gate — plan pauses after this step'"
                       @click="toggleApproval(index).catch((e: unknown) => console.error('[PlannerDetailView] toggleApproval failed:', e))"
@@ -1163,21 +1163,21 @@ Guidelines:
                   </template>
                   <span
                     v-if="step.parallel"
-                    class="ml-0.5 px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 text-[10px] flex items-center gap-1"
+                    class="ml-0.5 px-1.5 py-0.5 rounded bg-info/10 text-info text-[10px] flex items-center gap-1"
                   >
                     <GitBranch :size="9" />
                     parallel
                   </span>
                   <span
                     v-if="step.requiresApproval"
-                    class="ml-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] flex items-center gap-1"
+                    class="ml-0.5 px-1.5 py-0.5 rounded bg-warning/10 text-warning text-[10px] flex items-center gap-1"
                   >
                     <Shield :size="9" />
                     gate
                   </span>
                   <span
                     v-if="step.context"
-                    class="ml-0.5 text-amber-500/70"
+                    class="ml-0.5 text-warning/70"
                     title="Has attached context"
                   >
                     <MessageSquare :size="10" />
@@ -1247,7 +1247,7 @@ Guidelines:
                   <!-- Context injection (shown when set or actively editing) -->
                   <div v-if="editingContext === index || step.context">
                     <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1 flex items-center gap-1.5">
-                      <MessageSquare :size="10" class="text-amber-500" />
+                      <MessageSquare :size="10" class="text-warning" />
                       Additional Context
                     </p>
                     <textarea
@@ -1255,7 +1255,7 @@ Guidelines:
                       v-model="contextValue"
                       rows="3"
                       placeholder="Notes for Claude when executing this step — e.g. existing patterns, gotchas, relevant files…"
-                      class="w-full text-sm bg-background border border-amber-500/30 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-amber-500/50 resize-none"
+                      class="w-full text-sm bg-background border border-warning/30 rounded px-2 py-1.5 outline-none focus:ring-1 focus:ring-warning/50 resize-none"
                       @keydown.escape.prevent="editingContext = null"
                       @blur="void saveContext(index)"
                       @click.stop

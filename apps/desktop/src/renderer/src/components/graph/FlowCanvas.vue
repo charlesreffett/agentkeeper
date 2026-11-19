@@ -90,9 +90,7 @@ const emit = defineEmits<{
 
 const layoutStore = useLayoutStore()
 
-const patternColor = computed(() =>
-  layoutStore.theme === 'dark' ? '#27272a' : '#d4cfc8'
-)
+const patternColor = computed(() => layoutStore.colors.border)
 
 // updateEdge / addEdges are needed for edge-reconnection UX:
 // updateEdge() applies the new connection to Vue Flow's internal state immediately

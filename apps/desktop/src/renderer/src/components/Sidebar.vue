@@ -147,7 +147,7 @@ function openAppSettings() {
                     />
                     <span
                       v-if="item.unhealthy"
-                      class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-amber-500"
+                      class="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-warning"
                     />
                   </span>
                 </span>

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_THEMES, contrastRatio, deriveTheme } from '@shared/theme'
 
 const source = (path: string) => readFileSync(resolve(__dirname, '..', path), 'utf8')
 
@@ -59,9 +60,7 @@ describe('Settings navigation structure', () => {
   })
 
   it('keeps the light sidebar active surface distinct from its background', () => {
-    const styles = source('style.css')
-    const lightTheme = styles.slice(styles.indexOf(':root'), styles.indexOf('.dark'))
-    expect(lightTheme).toContain('--sidebar-background: oklch(0.976 0.005 95)')
-    expect(lightTheme).toContain('--sidebar-accent: oklch(0.925 0.009 81)')
+    const { colors } = deriveTheme(DEFAULT_THEMES.light, 'light')
+    expect(contrastRatio(colors['sidebar-accent'], colors['sidebar-background'])).toBeGreaterThan(1.1)
   })
 })

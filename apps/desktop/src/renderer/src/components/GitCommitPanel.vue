@@ -262,7 +262,7 @@ const activeGroupCount = computed(() =>
         v-for="group in groups.filter(g => activeFiles(g).length > 0)"
         :key="groups.indexOf(group)"
         class="flex items-center gap-2 text-xs"
-        :class="group.committed ? 'text-green-400' : groups.indexOf(group) === committingIndex ? 'text-foreground' : 'text-muted-foreground/40'"
+        :class="group.committed ? 'text-success' : groups.indexOf(group) === committingIndex ? 'text-foreground' : 'text-muted-foreground/40'"
       >
         <!-- Done checkmark -->
         <svg v-if="group.committed" class="size-3.5 shrink-0" viewBox="0 0 16 16" fill="none">
@@ -311,7 +311,7 @@ const activeGroupCount = computed(() =>
       </div>
 
       <!-- Push success -->
-      <div v-if="pushOutput && !pushError" class="rounded-md bg-green-500/10 border border-green-500/20 px-3 py-2 text-[11px] font-mono text-green-400 whitespace-pre-wrap break-all">
+      <div v-if="pushOutput && !pushError" class="rounded-md bg-success/10 border border-success/20 px-3 py-2 text-[11px] font-mono text-success whitespace-pre-wrap break-all">
         {{ pushOutput || 'Pushed ✓' }}
       </div>
     </div>

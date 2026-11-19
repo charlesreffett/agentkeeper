@@ -4,6 +4,7 @@
 import type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemReference, WorkItemStatus } from '@agentkeeper/sdk'
 export type { IssueTransition, StatusCategory, WorkItem, WorkItemCreateParams, WorkItemReference, WorkItemStatus }
 import type { PluginManifest, PluginPermission } from '@agentkeeper/sdk'
+import type { ThemePreference, ThemeSettings } from './theme'
 import type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor } from '@agentkeeper/core'
 export type { HarnessCapabilities, HarnessConfigurationDescriptor, HarnessAuthenticationDescriptor, SessionControlDescriptor, SessionControlSelection, SessionControlValue } from '@agentkeeper/core'
 
@@ -613,7 +614,9 @@ export interface AppSettings {
   sessionExpiryEnabled: boolean
   /** Days of inactivity before a persisted session is auto-pruned, when sessionExpiryEnabled. null = never expire. */
   sessionExpiryDays: number | null
-  theme: 'system' | 'light' | 'dark'
+  theme: ThemePreference
+  /** Seed colors, contrast, and fonts per variant; tokens are derived in shared/theme.ts. */
+  themes: ThemeSettings
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
   notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
   /** User-configured external MCP servers available to sessions. */

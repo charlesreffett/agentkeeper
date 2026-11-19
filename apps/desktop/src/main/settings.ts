@@ -5,6 +5,7 @@ import {
   ROLE_EFFORT_VALUES,
   type AppSettings,
 } from '../shared/ipc-contract'
+import { DEFAULT_THEMES, normalizeThemeSettings } from '../shared/theme'
 
 const DEFAULTS: AppSettings = {
   pluginDeveloperMode: false,
@@ -16,6 +17,7 @@ const DEFAULTS: AppSettings = {
   sessionExpiryEnabled: false,
   sessionExpiryDays: 14,
   theme: 'dark',
+  themes: DEFAULT_THEMES,
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],
@@ -57,6 +59,7 @@ function read(): AppSettings {
     if (!THEME_VALUES.includes(merged.theme)) {
       merged.theme = DEFAULTS.theme
     }
+    merged.themes = normalizeThemeSettings(parsed.themes)
     if (!NOTIFICATIONS_VALUES.includes(merged.notifications)) {
       merged.notifications = DEFAULTS.notifications
     }
@@ -84,6 +87,7 @@ export const settingsStore = {
   },
   set(partial: Partial<AppSettings>): AppSettings {
     const next = { ...read(), ...partial }
+    if (partial.themes) next.themes = normalizeThemeSettings(partial.themes)
     write(next)
     return next
   },

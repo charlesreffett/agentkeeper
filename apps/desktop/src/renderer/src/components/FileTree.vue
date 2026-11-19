@@ -20,9 +20,9 @@ const entries = ref<Entry[]>([])
 const refreshKey = ref(0)
 const statusMap = ref<Record<string, string>>({})
 
-const COLOR_DELETED  = 'text-red-600 dark:text-red-400'
-const COLOR_MODIFIED = 'text-amber-600 dark:text-amber-400'
-const COLOR_ADDED    = 'text-green-700 dark:text-green-400'
+const COLOR_DELETED  = 'text-diff-removed'
+const COLOR_MODIFIED = 'text-warning'
+const COLOR_ADDED    = 'text-diff-added'
 
 const STATUS_PRIORITY: Record<string, number> = {
   [COLOR_DELETED]:  3,

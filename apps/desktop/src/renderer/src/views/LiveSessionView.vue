@@ -413,10 +413,10 @@ const statusDotClass = computed(() => {
   switch (rootSession.value?.status) {
     case 'running':
     case 'starting':
-      return 'bg-emerald-500 animate-pulse'
+      return 'bg-success animate-pulse'
     case 'idle':
     case 'suspended':
-      return 'bg-amber-500'
+      return 'bg-warning'
     case 'completed':
     case 'inactive':
       return 'bg-muted-foreground'

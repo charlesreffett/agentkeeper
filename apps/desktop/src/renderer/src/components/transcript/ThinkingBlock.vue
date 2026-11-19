@@ -12,9 +12,9 @@ defineProps<{
 <template>
   <div
     v-if="block.thinking.trim()"
-    class="border-l-2 border-amber-400/50 pl-3 py-0.5 space-y-1.5"
+    class="border-l-2 border-warning/50 pl-3 py-0.5 space-y-1.5"
   >
-    <div class="flex items-center gap-1 text-[10px] font-semibold tracking-widest uppercase text-amber-500/80 select-none">
+    <div class="flex items-center gap-1 text-[10px] font-semibold tracking-widest uppercase text-warning/80 select-none">
       <span>✧</span>
       <span>Thinking</span>
     </div>

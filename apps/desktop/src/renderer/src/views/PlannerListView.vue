@@ -173,13 +173,13 @@ function planRef(plan: Plan, index: number): string {
 // ── Status visuals ───────────────────────────────────────────────────────────
 
 function rowClass(status: PlanStatus): string {
-  if (status === 'drafting') return 'bg-amber-50/40 dark:bg-amber-500/5'
+  if (status === 'drafting') return 'bg-warning/5'
   return ''
 }
 
 function progressBarClass(status: PlanStatus): string {
-  if (status === 'complete') return 'bg-purple-500'
-  if (status === 'running') return 'bg-green-500'
+  if (status === 'complete') return 'bg-highlight'
+  if (status === 'running') return 'bg-success'
   return 'bg-muted-foreground/30'
 }
 
@@ -279,14 +279,14 @@ function projectNameForPlan(plan: PlanWithProject): string {
           <div class="rounded-lg border border-border px-4 py-3">
             <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1">Running</p>
             <div class="flex items-baseline gap-1.5">
-              <span class="text-3xl font-bold text-green-500">{{ stats.running }}</span>
+              <span class="text-3xl font-bold text-success">{{ stats.running }}</span>
               <span class="text-sm text-muted-foreground">in flight</span>
             </div>
           </div>
           <div class="rounded-lg border border-border px-4 py-3">
             <p class="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase mb-1">Drafting</p>
             <div class="flex items-baseline gap-1.5">
-              <span class="text-3xl font-bold text-amber-500">{{ stats.drafting }}</span>
+              <span class="text-3xl font-bold text-warning">{{ stats.drafting }}</span>
               <span class="text-sm text-muted-foreground">being written</span>
             </div>
           </div>
@@ -338,10 +338,10 @@ function projectNameForPlan(plan: PlanWithProject): string {
               <!-- Status icon -->
               <div class="shrink-0 size-8 rounded-full flex items-center justify-center"
                 :class="{
-                  'bg-green-500 text-white': plan.status === 'running',
+                  'bg-success text-success-foreground': plan.status === 'running',
                   'bg-muted text-muted-foreground': plan.status === 'planned',
-                  'bg-purple-500 text-white': plan.status === 'complete',
-                  'border-2 border-dashed border-amber-400 text-amber-400': plan.status === 'drafting',
+                  'bg-highlight text-highlight-foreground': plan.status === 'complete',
+                  'border-2 border-dashed border-warning text-warning': plan.status === 'drafting',
                 }"
               >
                 <Loader2 v-if="plan.status === 'drafting'" :size="14" class="animate-spin" />
@@ -397,7 +397,7 @@ function projectNameForPlan(plan: PlanWithProject): string {
                 class="inline-flex flex-col text-xs px-2 py-0.5 rounded-md border border-border font-mono bg-background text-muted-foreground"
               >
                 <span>{{ plan.workItem.externalRef }}</span>
-                <span class="font-sans text-[10px] text-amber-600 dark:text-amber-400">{{ PROVIDER_UNAVAILABLE_LABEL }}</span>
+                <span class="font-sans text-[10px] text-warning">{{ PROVIDER_UNAVAILABLE_LABEL }}</span>
               </span>
               <span
                 v-else-if="plan.workItem"

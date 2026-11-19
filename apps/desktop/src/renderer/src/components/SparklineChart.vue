@@ -3,14 +3,13 @@ import { computed, getCurrentInstance } from 'vue'
 
 interface Props {
   data: number[]
-  color?: string
+  color: string
   height?: number
   width?: number
   hoveredIndex?: number | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  color: '#6366f1',
   height: 40,
   width: 120,
   hoveredIndex: null,

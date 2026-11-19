@@ -9,6 +9,7 @@ import { useSessionStore } from '@/stores/sessions'
 import { useUnifiedSessions } from '@/composables/useUnifiedSessions'
 import { defaultModelFor } from '@/composables/useModelMemory'
 import { type AppSettings } from '@shared/ipc-contract'
+import { DEFAULT_THEMES } from '@shared/theme'
 
 const route = useRoute()
 const router = useRouter()
@@ -57,6 +58,7 @@ const settings = ref<AppSettings>({
   sessionExpiryEnabled: false,
   sessionExpiryDays: 14,
   theme: 'dark',
+  themes: DEFAULT_THEMES,
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],

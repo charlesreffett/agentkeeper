@@ -34,7 +34,7 @@
         <span class="text-xs text-muted-foreground">{{ selectedRows.length }} selected</span>
         <span
           v-if="selectedRows.length > 0 && entryCount === 0"
-          class="text-[10px] text-amber-400"
+          class="text-[10px] text-warning"
         >
           Mark ≥1 entry ★
         </span>
@@ -48,7 +48,7 @@
           <button
             type="button"
             class="text-base leading-none transition-colors"
-            :class="r.isEntry ? 'text-amber-400' : 'text-muted-foreground hover:text-amber-400'"
+            :class="r.isEntry ? 'text-warning' : 'text-muted-foreground hover:text-warning'"
             :title="r.isEntry ? 'Entry point — click to unmark' : 'Mark as entry point'"
             @click="toggleEntry(r.id)"
           >
@@ -58,7 +58,7 @@
           <span class="text-[11px] text-muted-foreground truncate flex-1">{{ r.name }}</span>
           <button
             type="button"
-            class="text-xs text-muted-foreground hover:text-red-400"
+            class="text-xs text-muted-foreground hover:text-destructive"
             title="Remove"
             @click="remove(r.id)"
           >

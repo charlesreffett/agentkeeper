@@ -26,7 +26,7 @@ async function copy() {
       :aria-label="copied ? 'Copied' : 'Copy code'"
       @click="copy"
     >
-      <Check v-if="copied" class="size-3.5 text-green-500" />
+      <Check v-if="copied" class="size-3.5 text-success" />
       <Copy v-else class="size-3.5" />
     </button>
     <pre ref="preRef" v-bind="$attrs"><slot /></pre>

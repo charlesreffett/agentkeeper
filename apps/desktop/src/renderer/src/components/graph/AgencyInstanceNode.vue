@@ -25,7 +25,7 @@
 
     <!-- Entry badge -->
     <div v-if="data.isEntryPoint" class="mt-0.5">
-      <span class="text-[9px] font-medium px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+      <span class="text-[9px] font-medium px-1 py-0.5 rounded bg-warning/20 text-warning border border-warning/30">
         entry
       </span>
     </div>
@@ -88,7 +88,7 @@ const hovered = computed(() => {
   const on = (arr?: string[]) => !!id && !!arr?.includes(id)
   return { top: on(he?.top), right: on(he?.right), bottom: on(he?.bottom), left: on(he?.left) }
 })
-const hoverColor = computed(() => (layoutStore.theme === 'dark' ? '#ffffff' : '#000000'))
+const hoverColor = computed(() => layoutStore.colors.foreground)
 
 // Dot = darker solid disc (connection point). Bridge = connection line color
 // (accent), flipping to the edge's theme hover color on hover.

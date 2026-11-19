@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu, dialog } from 'electron'
+import { app, BrowserWindow, shell, Menu, dialog, nativeTheme } from 'electron'
 // DEV ONLY: enable CDP for agent-browser testing. NODE_ENV is commonly unset in
 // packaged apps, so use Electron's packaged-state flag as the source of truth.
 // The port remains overridable so concurrent development instances can run.
@@ -33,6 +33,7 @@ import { stopAllWatchers, removeSubscriber } from './watcher.js'
 import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
 import { isTrustedRendererNavigation, normalizeExternalUrl } from './navigation-policy'
 import { RENDERER_SECURITY_WEB_PREFERENCES } from './renderer-security-policy'
+import { resolveThemeVariant } from '../shared/theme'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const devUserDataPath = process.env['AGENTKEEPER_USER_DATA_DIR']
@@ -143,6 +144,13 @@ async function startCliSocket(): Promise<void> {
   cliServer = server
 }
 
+// Matches the renderer's first paint so light themes don't flash a dark frame.
+function initialWindowBackground(): string {
+  const { theme, themes } = settingsStore.get()
+  const variant = resolveThemeVariant(theme, nativeTheme.shouldUseDarkColors)
+  return themes[variant].background
+}
+
 function createWindow(): BrowserWindow {
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
@@ -153,7 +161,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#0a0a0b',
+    backgroundColor: initialWindowBackground(),
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const }
       : {}),

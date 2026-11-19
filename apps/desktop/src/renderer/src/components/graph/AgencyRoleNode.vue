@@ -43,11 +43,11 @@
           >{{ data.multiplicityLabel }}</span>
           <span
             v-if="data.isEntryPoint"
-            class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/25 shrink-0"
+            class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-info/15 text-info border border-info/25 shrink-0"
           >entry</span>
           <span
             v-if="data.anyToAny"
-            class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 shrink-0"
+            class="text-[10px] font-medium px-1.5 py-0.5 rounded bg-success/20 text-success border border-success/30 shrink-0"
           >open</span>
         </div>
         <div class="text-[10px] font-mono text-muted-foreground truncate">{{ data.roleId ?? data.label }}</div>
@@ -139,7 +139,7 @@ const hovered = computed(() => {
   const on = (arr?: string[]) => !!id && !!arr?.includes(id)
   return { top: on(he?.top), right: on(he?.right), bottom: on(he?.bottom), left: on(he?.left) }
 })
-const hoverColor = computed(() => (layoutStore.theme === 'dark' ? '#ffffff' : '#000000'))
+const hoverColor = computed(() => layoutStore.colors.foreground)
 
 // The dot is a darker solid disc (the connection point). The bridge stub matches
 // the connection line's color (accent, the gradient endpoint) so line and stub

@@ -69,7 +69,7 @@ const emit = defineEmits<{
       <Pencil
         v-if="draftMessage"
         :size="11"
-        class="text-amber-500 shrink-0"
+        class="text-warning shrink-0"
         title="Has unsent message"
       />
       <div class="text-sm font-medium truncate leading-snug flex-1 min-w-0">

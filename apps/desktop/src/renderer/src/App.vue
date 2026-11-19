@@ -49,7 +49,7 @@ async function confirmOpenFileInstall() {
 
 onMounted(async () => {
   const settings = await window.agentkeeper.settings.get()
-  layoutStore.initTheme(settings.theme ?? 'dark')
+  layoutStore.initTheme(settings.theme ?? 'dark', settings.themes)
 
   // Global handler: install .akp files opened via Finder or second-instance argv
   cleanupOpenFile = window.agentkeeper.plugins.onOpenFile(async (filePath) => {
@@ -103,7 +103,7 @@ onUnmounted(() => {
 
 <template>
   <AppLayout />
-  <Toaster :theme="layoutStore.theme" />
+  <Toaster :theme="layoutStore.resolvedTheme" />
   <PluginInstallModal
     v-if="openFileManifest"
     :open="true"

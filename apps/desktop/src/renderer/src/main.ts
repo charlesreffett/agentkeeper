@@ -4,8 +4,12 @@ import { VueQueryPlugin } from '@tanstack/vue-query'
 import { queryClient } from './lib/queryClient'
 import router from './router'
 import App from './App.vue'
+import { applyCachedTheme, applyThemeToDocument } from './lib/theme'
+import { DEFAULT_THEMES, deriveTheme } from '@shared/theme'
 import './style.css'
 import 'vue-sonner/style.css'
+
+if (!applyCachedTheme()) applyThemeToDocument(deriveTheme(DEFAULT_THEMES.dark, 'dark'))
 
 const app = createApp(App)
 app.use(createPinia())

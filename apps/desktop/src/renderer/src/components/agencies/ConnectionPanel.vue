@@ -30,7 +30,7 @@
       </button>
 
       <button
-        class="w-full text-xs bg-red-600/20 hover:bg-red-600/40 text-red-400 hover:text-red-300 border border-red-600/30 rounded px-3 py-1.5 transition-colors text-left"
+        class="w-full text-xs bg-destructive/20 hover:bg-destructive/40 text-destructive hover:text-destructive/80 border border-destructive/30 rounded px-3 py-1.5 transition-colors text-left"
         @click="emit('remove')"
       >
         Remove connection

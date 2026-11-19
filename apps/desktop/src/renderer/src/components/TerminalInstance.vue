@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { useTerminalStore } from '@/stores/terminalStore'
 import { useSessionStore } from '@/stores/sessions'
+import { useLayoutStore } from '@/stores/layout'
 import { isGeneralProject } from '@shared/ipc-contract'
 import type { TerminalTab } from '@/stores/terminalStore'
 
@@ -12,6 +13,22 @@ const props = defineProps<{ tab: TerminalTab; active: boolean }>()
 
 const terminalStore = useTerminalStore()
 const sessionStore = useSessionStore()
+const layoutStore = useLayoutStore()
+
+function terminalTheme() {
+  const c = layoutStore.colors
+  return {
+    background: c['code-background'],
+    foreground: c['code-foreground'],
+    cursor: c['code-foreground'],
+    cursorAccent: c['code-background'],
+    selectionBackground: c.accent,
+  }
+}
+
+function terminalFont(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim() || 'monospace'
+}
 
 const container = ref<HTMLDivElement | null>(null)
 
@@ -36,9 +53,9 @@ function wireListeners(id: string): void {
 
 onMounted(async () => {
   xterm = new Terminal({
-    theme: { background: '#18181b' },
+    theme: terminalTheme(),
     fontSize: 13,
-    fontFamily: 'monospace',
+    fontFamily: terminalFont(),
     cursorBlink: true,
   })
   fitAddon = new FitAddon()
@@ -68,6 +85,12 @@ onMounted(async () => {
   }
 })
 
+watch(() => layoutStore.colors, () => {
+  if (!xterm) return
+  xterm.options.theme = terminalTheme()
+  xterm.options.fontFamily = terminalFont()
+})
+
 watch(() => props.active, async isActive => {
   if (isActive) {
     await nextTick()
@@ -85,5 +108,5 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="container" class="h-full w-full bg-zinc-900 p-1 overflow-hidden" />
+  <div ref="container" class="h-full w-full bg-code p-1 overflow-hidden" />
 </template>

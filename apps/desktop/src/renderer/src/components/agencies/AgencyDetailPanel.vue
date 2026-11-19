@@ -13,7 +13,7 @@
           <span
             v-for="ep in agency.entryPoints"
             :key="ep"
-            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/25"
+            class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-info/15 text-info border border-info/25"
           >
             {{ ep }}
           </span>
@@ -37,7 +37,7 @@
             type="text"
             class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground font-mono focus:outline-none focus:border-foreground/40"
           />
-          <div v-if="idError" class="text-xs text-red-400">{{ idError }}</div>
+          <div v-if="idError" class="text-xs text-destructive">{{ idError }}</div>
         </div>
         <div class="space-y-1">
           <label class="text-xs font-medium text-muted-foreground">Scope</label>
@@ -57,7 +57,7 @@
           type="text"
           class="w-full rounded border border-border bg-muted px-2.5 py-1.5 text-sm text-foreground focus:outline-none focus:border-foreground/40"
         />
-        <div v-if="nameError" class="text-xs text-red-400">{{ nameError }}</div>
+        <div v-if="nameError" class="text-xs text-destructive">{{ nameError }}</div>
       </div>
       <div class="space-y-1">
         <label class="text-xs font-medium text-muted-foreground">Description</label>
@@ -100,7 +100,7 @@
     <div class="mt-auto pt-4 border-t border-border">
       <template v-if="!confirmDelete">
         <button
-          class="w-full text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded px-3 py-1.5 transition-colors text-left"
+          class="w-full text-xs text-destructive hover:text-destructive/80 hover:bg-destructive/10 rounded px-3 py-1.5 transition-colors text-left"
           @click="confirmDelete = true"
         >
           Delete agency…
