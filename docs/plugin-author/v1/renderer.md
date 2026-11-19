@@ -10,6 +10,8 @@ The bridge provides:
 
 - `pluginId`, `viewId`, and `getRoute()`.
 - `onRouteChanged(listener)` with an unsubscribe function.
+- `getTheme()` and `onThemeChanged(listener)` returning a `PluginRendererTheme`
+  (`{ variant, tokens }`).
 - `navigate(path)` for a declared plugin-local route.
 - `invoke(command, args)` for a command owned by this plugin.
 - `openExternal(url)` for an explicit browser handoff.
@@ -22,6 +24,31 @@ navigation. Use backend commands for provider communication; the backend then us
 the network broker. The host validates message source, per-document token, command
 ownership, route declarations, provider ownership, project registration, and session
 ownership.
+
+## Theming
+
+The host sets its theme as CSS custom properties on the iframe's `<html>` before
+the renderer runs and updates them live when the user changes theme or switches
+between light and dark. `<html>` also carries the `dark` class and a matching
+`color-scheme`. Style against the tokens instead of fixed colors, with a fallback
+for hosts that predate theming:
+
+```css
+body { background: var(--background, Canvas); color: var(--foreground, CanvasText); }
+.badge { color: var(--brand, #3b82f6); }
+```
+
+Available tokens: `--background`, `--foreground`, `--card`, `--card-foreground`,
+`--popover`, `--popover-foreground`, `--muted`, `--muted-foreground`, `--accent`
+(hover surface), `--accent-foreground`, `--brand` and `--brand-foreground` (the
+user's accent color), `--primary`, `--primary-foreground`, `--secondary`,
+`--secondary-foreground`, `--border`, `--input`, `--ring`, `--success`, `--warning`,
+`--info`, `--destructive`, `--highlight` (each with a `-foreground` for text on a
+solid fill), `--diff-added`, `--diff-removed`, `--code-background`,
+`--code-foreground`, `--code-font-size`, `--font-sans`, `--font-mono`,
+`--shadow-popover`, and `--shadow-dialog`. Status
+colors meet 4.5:1 contrast against `--background`. Use `onThemeChanged` only for
+output that can't read CSS variables, such as canvas drawing.
 
 ## Framework guidance
 

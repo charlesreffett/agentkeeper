@@ -42,6 +42,7 @@ export const useLayoutStore = defineStore('layout', () => {
   const resolvedTheme = computed(() => resolved.value.variant)
   /** Hex values for consumers that can't read CSS variables (xterm, SVG attributes). */
   const colors = computed(() => resolved.value.colors)
+  const cssVars = computed(() => resolved.value.cssVars)
   let systemThemeQuery: MediaQueryList | null = null
 
   function apply() {
@@ -95,5 +96,5 @@ export const useLayoutStore = defineStore('layout', () => {
     await window.agentkeeper.settings.set(partial)
   }
 
-  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, themes, uiFontSize, codeFontSize, resolvedTheme, colors, initTheme, setTheme, setThemeConfig, setFontSizes }
+  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, themes, uiFontSize, codeFontSize, resolvedTheme, colors, cssVars, initTheme, setTheme, setThemeConfig, setFontSizes }
 })

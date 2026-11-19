@@ -226,6 +226,18 @@ export interface WorkItemRegistry {
   unregister(id: string): void
 }
 
+/**
+ * Host theme exposed to plugin renderer iframes via
+ * `window.agentkeeperPlugin.getTheme()` / `onThemeChanged()`. The same tokens
+ * are already set as CSS custom properties on the iframe's root element, so
+ * most renderers only need `var(--background)` etc. in their styles.
+ */
+export interface PluginRendererTheme {
+  variant: 'light' | 'dark'
+  /** CSS custom properties keyed by name (e.g. `--background`). New tokens may be added; treat unknown keys as optional. */
+  tokens: Readonly<Record<string, string>>
+}
+
 export type UISlot =
   | 'sidebar.primary'
   | 'session.detail.tabs'
