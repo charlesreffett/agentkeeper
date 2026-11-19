@@ -1,14 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, asc, inArray } from 'drizzle-orm'
 import { BrowserWindow } from 'electron'
 import { getDb } from './db/index'
-import { plans as plansTable, planSteps as planStepsTable } from './db/schema'
+import { plans as plansTable, planSteps as planStepsTable, planSessions as planSessionsTable, sessions as sessionsTable } from './db/schema'
 import { IPC_CHANNELS } from '../shared/ipc-contract'
 import type { Plan, PlanStep, PlansCreateInput, PlansStepPatch, PlansUpdateInput } from '../shared/ipc-contract'
 
 function rowToPlan(
   row: typeof plansTable.$inferSelect,
   steps: (typeof planStepsTable.$inferSelect)[],
+  sessionIds: string[],
 ): Plan {
   return {
     id: row.id,
@@ -29,7 +30,8 @@ function rowToPlan(
     estimatedMinutes: row.estimatedMinutes,
     createdAt: new Date(row.createdAt).toISOString(),
     updatedAt: new Date(row.updatedAt).toISOString(),
-    sessionIds: row.sessionId ? [row.sessionId] : [],
+    ...(row.brief ? { brief: row.brief } : {}),
+    sessionIds,
     steps: steps
       .sort((a, b) => a.position - b.position)
       .map(rowToStep),
@@ -54,6 +56,46 @@ function rowToStep(row: typeof planStepsTable.$inferSelect): PlanStep {
   }
 }
 
+function linkedSessionIds(planId: string): string[] {
+  return getDb()
+    .select({ sessionLocalId: planSessionsTable.sessionLocalId })
+    .from(planSessionsTable)
+    .where(eq(planSessionsTable.planId, planId))
+    .orderBy(asc(planSessionsTable.addedAt))
+    .all()
+    .map((r) => r.sessionLocalId)
+}
+
+// Draft sessions have no row yet; linking one would violate the foreign key.
+export function linkSessionToPlan(planId: string, sessionLocalId: string, stepId: string | null = null): void {
+  const db = getDb()
+  const exists = db.select({ id: sessionsTable.localId }).from(sessionsTable)
+    .where(eq(sessionsTable.localId, sessionLocalId)).get()
+  if (!exists) return
+  db
+    .insert(planSessionsTable)
+    .values({ planId, sessionLocalId, stepId, addedAt: Date.now() })
+    .onConflictDoUpdate({
+      target: [planSessionsTable.planId, planSessionsTable.sessionLocalId],
+      set: { stepId },
+    })
+    .run()
+}
+
+function syncLinkedSessions(planId: string, sessionIds: string[]): void {
+  const current = new Set(linkedSessionIds(planId))
+  const wanted = new Set(sessionIds)
+  const removed = [...current].filter((id) => !wanted.has(id))
+  if (removed.length > 0) {
+    getDb().delete(planSessionsTable)
+      .where(and(eq(planSessionsTable.planId, planId), inArray(planSessionsTable.sessionLocalId, removed)))
+      .run()
+  }
+  for (const id of sessionIds) {
+    if (!current.has(id)) linkSessionToPlan(planId, id)
+  }
+}
+
 export async function createPlan(
   projectPath: string,
   data: PlansCreateInput,
@@ -61,14 +103,11 @@ export async function createPlan(
   const db = getDb()
   const id = randomUUID()
   const now = Date.now()
-  const sessionId = data.sessionIds && data.sessionIds.length > 0
-    ? data.sessionIds[data.sessionIds.length - 1]!
-    : null
-
   await db.insert(plansTable).values({
     id,
     projectId: projectPath,
-    sessionId,
+    sessionId: null,
+    brief: data.brief ?? null,
     workItemSourceId: data.workItem?.sourceId ?? null,
     workItemId: data.workItem?.itemId ?? null,
     workItemExternalRef: data.workItem?.externalRef ?? null,
@@ -112,10 +151,12 @@ export async function createPlan(
     await db.insert(planStepsTable).values(stepRows)
   }
 
+  syncLinkedSessions(id, data.sessionIds ?? [])
+
   const planRow = await db.query.plans.findFirst({ where: eq(plansTable.id, id) })
   const stepRowsFresh = await db.query.planSteps.findMany({ where: eq(planStepsTable.planId, id) })
   broadcastPlanUpdated(projectPath, id)
-  return rowToPlan(planRow!, stepRowsFresh)
+  return rowToPlan(planRow!, stepRowsFresh, linkedSessionIds(id))
 }
 
 export async function updatePlan(
@@ -186,11 +227,8 @@ export async function updatePlan(
   const planUpdate: Partial<typeof plansTable.$inferInsert> = { updatedAt: now }
   if (patch.status !== undefined) planUpdate.status = patch.status
   if (patch.estimatedMinutes !== undefined) planUpdate.estimatedMinutes = patch.estimatedMinutes
-  if (patch.sessionIds !== undefined) {
-    planUpdate.sessionId = patch.sessionIds.length > 0
-      ? patch.sessionIds[patch.sessionIds.length - 1]!
-      : null
-  }
+  if (patch.sessionIds !== undefined) syncLinkedSessions(id, patch.sessionIds)
+  if (patch.brief !== undefined) planUpdate.brief = patch.brief || null
   if (patch.prompt !== undefined) planUpdate.prompt = patch.prompt
   if (patch.title !== undefined) planUpdate.title = patch.title
   if (patch.workItem !== undefined) {
@@ -216,7 +254,7 @@ export async function listPlans(projectPath: string): Promise<Plan[]> {
   const result: Plan[] = []
   for (const row of rows) {
     const steps = await db.query.planSteps.findMany({ where: eq(planStepsTable.planId, row.id) })
-    result.push(rowToPlan(row, steps))
+    result.push(rowToPlan(row, steps, linkedSessionIds(row.id)))
   }
   return result.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
 }
@@ -228,7 +266,19 @@ export async function getPlan(projectPath: string, id: string): Promise<Plan | n
   })
   if (!row) return null
   const steps = await db.query.planSteps.findMany({ where: eq(planStepsTable.planId, id) })
-  return rowToPlan(row, steps)
+  return rowToPlan(row, steps, linkedSessionIds(id))
+}
+
+/** Most recently linked plan for a session, regardless of project. */
+export function planIdForSession(sessionLocalId: string): string | null {
+  const row = getDb()
+    .select({ planId: planSessionsTable.planId })
+    .from(planSessionsTable)
+    .where(eq(planSessionsTable.sessionLocalId, sessionLocalId))
+    .orderBy(asc(planSessionsTable.addedAt))
+    .all()
+    .at(-1)
+  return row?.planId ?? null
 }
 
 export async function getPlanByRef(projectPath: string, planRef: string): Promise<{ id: string } | null> {
@@ -249,27 +299,23 @@ export async function deletePlan(projectPath: string, id: string): Promise<boole
   return true
 }
 
-// Removes the session reference from all plans in a project that cite it.
 // Intentionally leaves plan status and step statuses untouched. General sessions
 // have no project, hence no plans.
 export async function removeSessionFromPlans(projectPath: string | null, sessionLocalId: string): Promise<void> {
   if (!projectPath) return
-  const db = getDb()
-  await db.update(plansTable)
-    .set({ sessionId: null })
-    .where(and(eq(plansTable.sessionId, sessionLocalId), eq(plansTable.projectId, projectPath)))
+  getDb().delete(planSessionsTable).where(eq(planSessionsTable.sessionLocalId, sessionLocalId)).run()
 }
 
-// Clears all session references from every plan in the project (used on bulk delete).
 export async function removeAllSessionsFromPlans(projectPath: string | null): Promise<void> {
   if (!projectPath) return
   const db = getDb()
-  await db.update(plansTable)
-    .set({ sessionId: null })
-    .where(eq(plansTable.projectId, projectPath))
+  const planIds = db.select({ id: plansTable.id }).from(plansTable)
+    .where(eq(plansTable.projectId, projectPath)).all().map((r) => r.id)
+  if (planIds.length === 0) return
+  db.delete(planSessionsTable).where(inArray(planSessionsTable.planId, planIds)).run()
 }
 
-function broadcastPlanUpdated(projectPath: string, id: string): void {
+export function broadcastPlanUpdated(projectPath: string, id: string): void {
   BrowserWindow.getAllWindows().forEach((win) =>
     win.webContents.send(IPC_CHANNELS.planUpdated, { projectPath, id }),
   )

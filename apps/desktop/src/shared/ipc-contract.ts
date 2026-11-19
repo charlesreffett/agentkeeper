@@ -728,9 +728,68 @@ export interface Plan {
   estimatedMinutes: number
   createdAt: string
   updatedAt: string
-  /** Computed from single session_id column. */
+  /** Markdown brief every linked job reads via the get_plan MCP tool. */
+  brief?: string
+  /** Sessions linked through plan_sessions, oldest first. */
   sessionIds: string[]
   steps: PlanStep[]
+}
+
+export type ProgressState = 'working' | 'blocked' | 'done'
+
+export interface ProgressUpdatedEvent {
+  sessionLocalId: string
+  planId: string | null
+}
+
+export interface ProgressReport {
+  id: number
+  planId: string | null
+  sessionLocalId: string
+  agentLocalId: string
+  stepId: string | null
+  state: ProgressState
+  note: string
+  createdAt: string
+}
+
+export type PushReviewVerdict = 'approved' | 'changes_requested'
+
+export interface PushReviewFinding {
+  severity: 'blocker' | 'major' | 'minor'
+  file?: string
+  line?: number
+  message: string
+}
+
+export interface PushReview {
+  id: string
+  sessionLocalId: string
+  agentLocalId: string
+  planId: string | null
+  branch: string | null
+  baseSha: string
+  headSha: string
+  verdict: PushReviewVerdict
+  summary: string
+  findings: PushReviewFinding[]
+  createdAt: string
+}
+
+export interface PlanJob {
+  sessionLocalId: string
+  stepId: string | null
+  addedAt: string
+  /** Current HEAD of the job's checkout; null when it can't be read. */
+  headSha: string | null
+  latestProgress: ProgressReport | null
+  latestReview: PushReview | null
+}
+
+export interface SessionActivity {
+  planId: string | null
+  progress: ProgressReport[]
+  reviews: PushReview[]
 }
 
 export type PlansCreateInput = Omit<Plan, 'id' | 'createdAt' | 'updatedAt' | 'sessionIds'> & {
@@ -1111,6 +1170,12 @@ export interface AgentKeeperApi {
     update: (projectPath: string, id: string, patch: PlansUpdateInput) => Promise<Plan | null>
     delete: (projectPath: string, id: string) => Promise<boolean>
     onUpdated: (cb: (data: { projectPath: string; id: string }) => void) => () => void
+    listJobs: (projectPath: string, planId: string) => Promise<PlanJob[]>
+    linkSession: (projectPath: string, planId: string, sessionLocalId: string, stepId?: string | null) => Promise<void>
+  }
+  progress: {
+    forSession: (sessionLocalId: string) => Promise<SessionActivity>
+    onUpdated: (cb: (data: ProgressUpdatedEvent) => void) => () => void
   }
   costs: {
     getDailySummary: () => Promise<DayTotal[]>
@@ -1332,6 +1397,10 @@ export const IPC_CHANNELS = {
   plansUpdate: 'plans:update',
   plansDelete: 'plans:delete',
   planUpdated: 'plan:updated',
+  plansListJobs: 'plans:listJobs',
+  plansLinkSession: 'plans:linkSession',
+  progressForSession: 'progress:forSession',
+  progressUpdated: 'progress:updated',
   costsGetDailySummary: 'costs:getDailySummary',
   costsGetDailySummaryByProject: 'costs:getDailySummaryByProject',
   costsAddLegacy: 'costs:addLegacy',

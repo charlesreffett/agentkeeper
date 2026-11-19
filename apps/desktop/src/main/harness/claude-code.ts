@@ -114,6 +114,7 @@ export class ClaudeCodeHarnessAdapter implements HarnessAdapter {
         env: this.childEnv(auth, configuredEnv),
         permissionMode: 'bypassPermissions',
         abortController: options.abortController,
+        ...(options.disallowedTools?.length ? { disallowedTools: options.disallowedTools } : {}),
         ...externalClaudeOptions(),
       },
     })

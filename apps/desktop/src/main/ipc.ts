@@ -70,7 +70,8 @@ import * as sessionRegistry from './session-registry'
 import { executeReset } from './reset'
 import { adoptSkill, generateSkillContent, installSkill, listSkills, previewSkills, removeSkill, saveSkill } from './skills'
 import { adoptCommand, listCommands, removeCommand, saveCommand, generateCommandContent } from './commands'
-import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans } from './plans'
+import { listPlans, getPlan, createPlan, updatePlan, deletePlan, removeSessionFromPlans, removeAllSessionsFromPlans, linkSessionToPlan, broadcastPlanUpdated } from './plans'
+import { listPlanJobs, sessionActivity } from './plan-orchestration'
 import { getPerformanceSummary } from './performance'
 import { harnessRegistry, getHarness } from './harness/index'
 import { syncMobileServer } from './mobile-server'
@@ -137,7 +138,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
     if (isGeneralProject(projectPath)) return undefined
     return isAgency
       ? () => createOrchestratorMcp(projectPath, agentLocalId)
-      : () => createProjectMcp(projectPath)
+      : () => createProjectMcp(projectPath, agentLocalId)
   })
 
   // Projects (registry)
@@ -320,10 +321,9 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
           }
         }
 
+        // The default MCP resolver binds the agentkeeper server to the agent id
+        // startSession assigns, which progress and review tools need.
         const agentLocalId = await startSession(params, {
-          ...(!isGeneralProject(params.projectPath)
-            ? { mcpFactory: () => createProjectMcp(params.projectPath) }
-            : {}),
           ...(Object.keys(additionalMcpServers).length > 0 ? { additionalMcpServers } : {}),
         })
         if (params.initialPrompt) {
@@ -1091,7 +1091,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
           // General chats carry no agentkeeper MCP server.
           isGeneralProject(session.projectPath)
             ? {}
-            : { mcpFactory: () => createProjectMcp(session.projectPath) },
+            : { mcpFactory: () => createProjectMcp(session.projectPath, agentLocalId) },
         )
       } catch (err) {
         console.error('[ipc] sessions:addAgent failed:', err)
@@ -1109,7 +1109,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
         if (!persistedSession) throw new Error(`No persisted session for agent ${agentLocalId}`)
         const factory = persistedSession.agencyId
           ? () => createOrchestratorMcp(persistedSession.projectPath, agentLocalId)
-          : () => createProjectMcp(persistedSession.projectPath)
+          : () => createProjectMcp(persistedSession.projectPath, agentLocalId)
         return await reconnectSessionMcp(agentLocalId, factory)
       } catch (err) {
         console.error('[ipc] sessions:reconnectMcp failed:', err)
@@ -1297,6 +1297,20 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
   )
   ipcMain.handle(IPC_CHANNELS.plansDelete, (_e, projectPath: string, id: string) =>
     deletePlan(projectPath, id),
+  )
+  ipcMain.handle(IPC_CHANNELS.plansListJobs, (_e, projectPath: string, planId: string) =>
+    listPlanJobs(projectPath, planId),
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.plansLinkSession,
+    async (_e, projectPath: string, planId: string, sessionLocalId: string, stepId: string | null) => {
+      if (!(await getPlan(projectPath, planId))) throw new Error(`Plan "${planId}" not found.`)
+      linkSessionToPlan(planId, sessionLocalId, stepId)
+      broadcastPlanUpdated(projectPath, planId)
+    },
+  )
+  ipcMain.handle(IPC_CHANNELS.progressForSession, (_e, sessionLocalId: string) =>
+    sessionActivity(sessionLocalId),
   )
 
   // Cost ledger + pricing

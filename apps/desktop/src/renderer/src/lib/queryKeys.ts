@@ -49,6 +49,13 @@ export const queryKeys = {
     active: () => ['harness', 'active'] as const,
     auth: () => ['harness', 'auth'] as const,
   },
+  plans: {
+    jobs: (projectPath: string, planId: string) => ['plans', 'jobs', projectPath, planId] as const,
+  },
+  progress: {
+    all: () => ['progress'] as const,
+    session: (sessionLocalId: string) => ['progress', 'session', sessionLocalId] as const,
+  },
   performance: {
     summary: (projectPath: string | null, rangeDays: number) =>
       ['performance', 'summary', projectPath ?? '', rangeDays] as const,
