@@ -6,7 +6,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.renderer.json",
     "build": "pnpm typecheck && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && esbuild src/index.ts --bundle --format=iife --global-name=AgentKeeperPluginModule --platform=browser --target=es2022 --outfile=dist/index.js && esbuild renderer/index.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=dist/renderer.js"
   },
   "devDependencies": {

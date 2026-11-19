@@ -6,7 +6,15 @@ templates, and styles must be bundled or injected by the entry. Production code 
 not require `eval`, runtime template compilation, Node.js, a CDN, or parent-DOM access.
 The renderer entry limit is 5 MiB.
 
-The bridge provides:
+The bridge is typed as `PluginRendererApi` in `@agentkeeper/sdk`. Declare it once in
+the renderer entry:
+
+```ts
+import type { PluginRendererApi } from '@agentkeeper/sdk'
+declare global { interface Window { agentkeeperPlugin: PluginRendererApi } }
+```
+
+It provides:
 
 - `pluginId`, `viewId`, and `getRoute()`.
 - `onRouteChanged(listener)` with an unsubscribe function.

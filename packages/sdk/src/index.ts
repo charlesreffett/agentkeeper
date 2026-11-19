@@ -238,6 +238,46 @@ export interface PluginRendererTheme {
   tokens: Readonly<Record<string, string>>
 }
 
+/** Session summary returned by `getWorkItemSessions`, scoped to the calling plugin's provider. */
+export interface PluginWorkItemSession {
+  id: string
+  itemId: string
+  status: string
+  title?: string | null
+  lastActivityAt: number
+}
+
+/**
+ * The bridge the host installs as `window.agentkeeperPlugin` in a plugin's
+ * renderer iframe. Declare it once in the renderer entry:
+ *
+ * ```ts
+ * import type { PluginRendererApi } from '@agentkeeper/sdk'
+ * declare global { interface Window { agentkeeperPlugin: PluginRendererApi } }
+ * ```
+ */
+export interface PluginRendererApi {
+  readonly pluginId: string
+  /** The `renderer.views` entry this document was opened for. */
+  readonly viewId: string
+  getRoute(): string
+  /** Returns an unsubscribe function. */
+  onRouteChanged(listener: (path: string) => void): () => void
+  /** Navigates to a route declared in this plugin's manifest; undeclared paths are ignored. */
+  navigate(path: string): void
+  /** Calls a command registered by this plugin's backend. Rejects with the command's error message. */
+  invoke<T = unknown>(command: string, args?: unknown): Promise<T>
+  /** Asks the host to open an http(s) URL in the browser after user confirmation. */
+  openExternal(url: string): void
+  /** Opens the host's session composer for one of this plugin's work items. */
+  startSession(itemId: string, projectPath?: string): void
+  getWorkItemSessions(itemId?: string): Promise<PluginWorkItemSession[]>
+  openSession(sessionId: string): void
+  getTheme(): PluginRendererTheme
+  /** Fires after the host has already updated the CSS custom properties. Returns an unsubscribe function. */
+  onThemeChanged(listener: (theme: PluginRendererTheme) => void): () => void
+}
+
 export type UISlot =
   | 'sidebar.primary'
   | 'session.detail.tabs'

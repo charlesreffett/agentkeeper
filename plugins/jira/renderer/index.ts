@@ -1,13 +1,13 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import type { PluginRendererApi, PluginWorkItemSession } from '@agentkeeper/sdk'
 
-type PluginApi = { getRoute(): string; invoke<T>(command: string, args?: unknown): Promise<T>; navigate(path: string): void; openExternal(url: string): void; startSession(itemId: string, projectPath?: string): void; getWorkItemSessions(itemId?: string): Promise<WorkItemSession[]>; openSession(sessionId: string): void; onRouteChanged(listener: (path: string) => void): () => void }
 type WorkItem = { id: string; externalRef: string; title: string; body: string; status: string; statusLabel?: string; assignee?: string; reporter?: string; priority?: string; issueType?: string; storyPoints?: number; parentRef?: string; customFields?: Record<string, string> }
 type JiraProject = { key: string; name: string }
 type JiraSettingsData = { projects: JiraProject[]; projectError: string; agentProjects: Array<{ path: string; name: string }>; selectedKeys: string[]; projectMappings: Array<{ jiraProjectKey: string; projectPath: string }>; email: string; instanceUrl: string; apiTokenSource: 'keychain' | 'none' }
-type WorkItemSession = { id: string; itemId: string; status: string; title?: string | null; lastActivityAt: number }
+type WorkItemSession = PluginWorkItemSession
 type IssueTransition = { name: string; toStatus: string; toStatusLabel: string }
-declare global { interface Window { agentkeeperPlugin: PluginApi } }
+declare global { interface Window { agentkeeperPlugin: PluginRendererApi } }
 
 const api = window.agentkeeperPlugin
 const root = document.querySelector<HTMLDivElement>('#app')!
@@ -78,8 +78,8 @@ function draw(items: WorkItem[], projects: JiraProject[], counts: Record<string,
   heading.append(el('div', 'eyebrow', `${filtered.length} of ${items.length} issues · ${filtered.reduce((sum, item) => sum + (item.storyPoints ?? 0), 0)} points`), el('h1', '', 'Issues'))
   const search = el('input', 'search'); search.type = 'search'; search.placeholder = 'Search issues'; search.value = searchQuery
   search.addEventListener('input', () => { searchQuery = search.value; redraw(); const next = document.querySelector<HTMLInputElement>('.search'); next?.focus(); next?.setSelectionRange(searchQuery.length, searchQuery.length) })
-  const scope = el('select', 'select'); for (const [value, label] of [['all', 'All issues'], ['assigned', 'Assigned'], ['has-session', 'Has session'], ['high-priority', 'High priority']]) { const option = el('option', '', label); option.value = value; option.selected = value === scopeFilter; scope.append(option) }; scope.addEventListener('change', () => { scopeFilter = scope.value as typeof scopeFilter; redraw() })
-  const grouping = el('select', 'select'); for (const [value, label] of [['flat', 'No grouping'], ['status', 'Group by status'], ['priority', 'Group by priority'], ['type', 'Group by type'], ['assignee', 'Group by assignee']]) { const option = el('option', '', label); option.value = value; option.selected = value === groupBy; grouping.append(option) }; grouping.addEventListener('change', () => { groupBy = grouping.value as typeof groupBy; redraw() })
+  const scope = el('select', 'select'); for (const [value, label] of [['all', 'All issues'], ['assigned', 'Assigned'], ['has-session', 'Has session'], ['high-priority', 'High priority']] as const) { const option = el('option', '', label); option.value = value; option.selected = value === scopeFilter; scope.append(option) }; scope.addEventListener('change', () => { scopeFilter = scope.value as typeof scopeFilter; redraw() })
+  const grouping = el('select', 'select'); for (const [value, label] of [['flat', 'No grouping'], ['status', 'Group by status'], ['priority', 'Group by priority'], ['type', 'Group by type'], ['assignee', 'Group by assignee']] as const) { const option = el('option', '', label); option.value = value; option.selected = value === groupBy; grouping.append(option) }; grouping.addEventListener('change', () => { groupBy = grouping.value as typeof groupBy; redraw() })
   const create = el('button', 'save', 'Create ticket'); create.addEventListener('click', () => showCreateTicket(projects, () => { void renderBoard() }))
   toolbarActions.append(scope, grouping, search, create); toolbar.append(heading, toolbarActions); main.append(toolbar)
 

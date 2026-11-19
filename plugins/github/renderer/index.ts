@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import type { PluginRendererApi } from '@agentkeeper/sdk'
 
-type PluginApi = { getRoute(): string; invoke<T>(command: string, args?: unknown): Promise<T>; navigate(path: string): void; openExternal(url: string): void; startSession(itemId: string, projectPath?: string): void; onRouteChanged(listener: (path: string) => void): () => void }
 type PRState = 'open' | 'closed' | 'merged'
 type CheckState = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel'
 type PullRequest = { number: number; title: string; state: PRState; author: string; url: string; repo: string; isDraft: boolean; headRef: string; baseRef: string; updatedAt: string; body?: string; labels: string[]; reviewDecision: string | null; checksState: CheckState | null; additions?: number; deletions?: number; changedFiles?: number; mergeable?: string; comments?: PRComment[]; reviews?: PRReview[] }
@@ -10,7 +10,7 @@ type PRReview = { id: number; author: string; state: string; body: string; submi
 type CheckRun = { name: string; state: CheckState; conclusion: string | null; link: string }
 type GitHubProject = { projectPath: string; projectName: string; repo: string }
 type WorkItem = { id: string; externalRef: string; title: string; body: string; statusLabel?: string; status: string }
-declare global { interface Window { agentkeeperPlugin: PluginApi } }
+declare global { interface Window { agentkeeperPlugin: PluginRendererApi } }
 
 const api = window.agentkeeperPlugin
 const root = document.querySelector<HTMLDivElement>('#app')!
@@ -95,7 +95,7 @@ async function renderChecks(pull: PullRequest, panel: HTMLElement): Promise<void
 async function renderReviews(pull: PullRequest, panel: HTMLElement): Promise<void> {
   const reviews = pull.reviews ?? []; if (!reviews.length) panel.append(el('div', 'empty', 'No reviews yet.'))
   for (const review of reviews) { const card = el('article', 'review'), head = el('div', 'comment-head'); head.append(el('span', 'avatar', review.author[0]?.toUpperCase() ?? '?'), el('strong', '', review.author), el('span', 'review-state', review.state.replaceAll('_', ' ').toLowerCase()), el('span', 'meta', relativeTime(review.submittedAt))); card.append(head); if (review.body) card.append(markdownBody(review.body, pull.url)); panel.append(card) }
-  const form = el('div', 'review'), select = el('select', 'filter'); for (const [value, label] of [['COMMENT', 'Comment'], ['APPROVE', 'Approve'], ['REQUEST_CHANGES', 'Request changes']]) { const option = el('option', '', label); option.value = value; select.append(option) }
+  const form = el('div', 'review'), select = el('select', 'filter'); for (const [value, label] of [['COMMENT', 'Comment'], ['APPROVE', 'Approve'], ['REQUEST_CHANGES', 'Request changes']] as const) { const option = el('option', '', label); option.value = value; select.append(option) }
   const textarea = el('textarea', 'textarea'); textarea.placeholder = 'Review summary…'; const footer = el('div', 'form-actions'), status = el('span', 'meta'), submit = el('button', 'action primary', 'Submit review')
   submit.addEventListener('click', async () => { submit.disabled = true; status.textContent = 'Submitting…'; try { await api.invoke('github.pulls.review', { repo: pull.repo, number: pull.number, event: select.value, body: textarea.value.trim() }); render(api.getRoute()) } catch (error) { status.textContent = error instanceof Error ? error.message : String(error); submit.disabled = false } }); footer.append(status, submit); form.append(select, textarea, footer); panel.append(form)
 }
