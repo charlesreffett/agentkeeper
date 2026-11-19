@@ -18,7 +18,6 @@ export interface UnifiedSession {
   title: string
   status: LiveSessionStatus | 'inactive'
   source: UnifiedSessionSource
-  isDraft: boolean
   /** null = no-project (general) session. */
   projectPath: string | null
   projectName: string
@@ -70,7 +69,8 @@ export function useUnifiedSessions() {
       inMemory.flatMap((s) => s.agents.map((a) => a.sdkSessionId)).filter((id): id is string => id !== null),
     )
 
-    const live: UnifiedSession[] = inMemory.map((s) => {
+    // Drafts only join the list once their first message starts the session.
+    const live: UnifiedSession[] = inMemory.filter((s) => !s.isDraft).map((s) => {
       const projectName = pathToProjectName(s.projectPath)
       return {
         localId: s.localId,
@@ -78,10 +78,9 @@ export function useUnifiedSessions() {
           s.workItem?.title ??
           s.title ??
           s.agencyPrompt ??
-          (s.initialPrompt.trim() || (s.isDraft ? 'New draft' : '(no messages)')),
+          (s.initialPrompt.trim() || '(no messages)'),
         status: s.status,
         source: 'live' as const,
-        isDraft: s.isDraft,
         projectPath: s.projectPath,
         projectName,
         projectColor: projectColor(projectName),
@@ -106,7 +105,6 @@ export function useUnifiedSessions() {
           title: s.workItem?.title ?? s.title ?? (s.initialPrompt.trim() || '(no messages)'),
           status: s.status,
           source: 'persisted' as const,
-          isDraft: false,
           projectPath: s.projectPath,
           projectName,
           projectColor: projectColor(projectName),
@@ -131,7 +129,6 @@ export function useUnifiedSessions() {
           title: s.firstUserMessage ?? '(no user message)',
           status: 'inactive' as const,
           source: 'historical' as const,
-          isDraft: false,
           projectPath,
           projectName,
           projectColor: projectColor(projectName),
