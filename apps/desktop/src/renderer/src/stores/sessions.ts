@@ -657,7 +657,13 @@ export const useSessionStore = defineStore('sessions', () => {
     if (!s) return
     if ((s.agentEvents[agentLocalId]?.length ?? 0) > 0) return
     try {
-      const transcript = await window.agentkeeper.sessions.read(projectPath, sdkSessionId, s.harnessId)
+      // The harness keys transcripts by the cwd it ran in, which is the
+      // worktree when there is one — not the parent project.
+      const transcript = await window.agentkeeper.sessions.read(
+        s.worktreePath ?? projectPath,
+        sdkSessionId,
+        s.harnessId,
+      )
       if (!transcript?.events.length) return
       // Re-check after async gap — live streaming may have populated by now.
       const s2 = sessions[sessionLocalId]

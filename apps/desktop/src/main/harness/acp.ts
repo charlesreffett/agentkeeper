@@ -9,6 +9,7 @@ import { sanitizeCustomModel } from '@agentkeeper/core'
 import { resolveBin, type BinConfig } from './bin'
 import { spawnHarnessProcess } from './cli-process'
 import { promptForTurn } from './codex'
+import { readAcpUpdatesFile } from './acp-transcript'
 
 const execFileAsync = promisify(execFile)
 
@@ -61,6 +62,8 @@ class AcpConnection {
   notify(method: string, params: Record<string, unknown>) { this.write({ jsonrpc: '2.0', method, params }) }
 }
 
+const ACP_LOAD_TIMEOUT_MS = 30_000
+
 type AcpHarnessConfig = {
   id: 'cursor' | 'grok'
   name: string
@@ -70,6 +73,9 @@ type AcpHarnessConfig = {
   defaultModel: string
   provider: string
   login: { command: string; args: string[] }
+  // Where the agent persists its ACP update stream, when it does — read
+  // directly so history loads without spawning (or authenticating) the agent.
+  updatesFile?: (sessionId: string, cwd: string) => string
 }
 
 export function modelsFromAcp(value: unknown, fallback: HarnessModelInfo): HarnessModelInfo[] {
@@ -186,6 +192,44 @@ export class AcpHarnessAdapter implements HarnessAdapter {
       return modelsFromAcp(setup.models ?? initialized.models, fallback)
     } finally { child.kill() }
   }
+  // ACP defines no on-disk transcript format, but session/load obliges the
+  // agent to replay the whole conversation as session/update notifications
+  // before it responds — so history comes from the agent, whatever its storage.
+  async readTranscriptUpdates(sessionId: string, cwd: string): Promise<unknown[] | null> {
+    if (!/^[\w-]+$/.test(sessionId)) return null
+    if (this.config.updatesFile) {
+      const updates = await readAcpUpdatesFile(this.config.updatesFile(sessionId, cwd))
+      if (updates) return updates
+    }
+    return this.loadTranscriptUpdates(sessionId, cwd)
+  }
+
+  private async loadTranscriptUpdates(sessionId: string, cwd: string): Promise<unknown[] | null> {
+    let child: ChildProcessWithoutNullStreams | undefined
+    let timer: NodeJS.Timeout | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${this.name} session/load timed out`)), ACP_LOAD_TIMEOUT_MS)
+    })
+    const load = async (): Promise<unknown[] | null> => {
+      const connected = await this.connect(cwd)
+      child = connected.child
+      const capabilities = connected.initialized.agentCapabilities as { loadSession?: boolean } | undefined
+      if (!capabilities?.loadSession) return null
+      await connected.connection.request('session/load', { sessionId, cwd, mcpServers: [] })
+      return connected.connection.updates
+        .filter((message) => message.method === 'session/update' && message.params?.sessionId === sessionId)
+        .map((message) => message.params?.update)
+    }
+    try {
+      return await Promise.race([load(), timeout])
+    } catch (error) {
+      console.warn(`[acp] ${this.name} transcript load failed for ${sessionId}:`, error)
+      return null
+    } finally {
+      clearTimeout(timer)
+      child?.kill()
+    }
+  }
   getSessionsRoot() { return path.join(os.homedir(), `.${this.id}`, 'sessions') }
   // Cursor and Grok expose no verified native command registration contract.
   getCommandLocations(_scope: 'project' | 'global', _projectPath?: string) { return [] }
@@ -234,4 +278,4 @@ export class AcpHarnessAdapter implements HarnessAdapter {
 }
 
 export const cursorHarness = new AcpHarnessAdapter({ id: 'cursor', name: 'Cursor', bin: { harnessId: 'cursor', fallbackBins: ['cursor-agent'], envVar: 'CURSOR_AGENT_BIN' }, args: ['acp'], authMethod: 'cursor_login', defaultModel: 'default', provider: 'Cursor', login: { command: 'cursor-agent', args: ['login'] } })
-export const grokHarness = new AcpHarnessAdapter({ id: 'grok', name: 'Grok', bin: { harnessId: 'grok', fallbackBins: ['grok'], envVar: 'GROK_BIN' }, args: ['agent', 'stdio'], authMethod: 'cached_token', defaultModel: 'grok-build', provider: 'xAI', login: { command: 'grok', args: ['login'] } })
+export const grokHarness = new AcpHarnessAdapter({ id: 'grok', name: 'Grok', bin: { harnessId: 'grok', fallbackBins: ['grok'], envVar: 'GROK_BIN' }, args: ['agent', 'stdio'], authMethod: 'cached_token', defaultModel: 'grok-build', provider: 'xAI', login: { command: 'grok', args: ['login'] }, updatesFile: (sessionId, cwd) => path.join(process.env['GROK_HOME'] || path.join(os.homedir(), '.grok'), 'sessions', encodeURIComponent(cwd), sessionId, 'updates.jsonl') })

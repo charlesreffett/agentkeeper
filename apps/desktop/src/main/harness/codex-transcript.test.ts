@@ -24,6 +24,24 @@ describe('Codex transcript reader', () => {
     }, 'thread:2')).toMatchObject({ role: 'assistant', content: [{ type: 'text', text: 'Done' }] })
   })
 
+  it('normalizes current item_completed messages and ignores injected prompt context', () => {
+    const item = (item: Record<string, unknown>) => ({ timestamp: '2026-09-09T22:56:06Z', type: 'event_msg', payload: { type: 'item_completed', item } })
+    expect(normalizeCodexTranscriptEvent(
+      item({ type: 'UserMessage', id: 'item-1', content: [{ type: 'text', text: 'test', text_elements: [] }] }), 't:0',
+    )).toMatchObject({ role: 'user', content: [{ type: 'text', text: 'test' }] })
+    expect(normalizeCodexTranscriptEvent(
+      item({ type: 'AgentMessage', content: [{ type: 'Text', text: 'Ready.' }], phase: 'final_answer' }), 't:1',
+    )).toMatchObject({ role: 'assistant', content: [{ type: 'text', text: 'Ready.' }] })
+    expect(normalizeCodexTranscriptEvent(
+      item({ type: 'AgentMessage', content: [{ type: 'Text', text: 'Looking…' }], phase: 'commentary' }), 't:2',
+    )).toBeNull()
+    expect(normalizeCodexTranscriptEvent(item({ type: 'CommandExecution' }), 't:3')).toBeNull()
+    expect(normalizeCodexTranscriptEvent({
+      type: 'response_item',
+      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<recommended_plugins>…' }] },
+    }, 't:4')).toBeNull()
+  })
+
   it('finds a date-partitioned rollout and restores its conversation', async () => {
     const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'agentkeeper-codex-transcript-'))
     temporaryRoots.push(root)

@@ -5,6 +5,8 @@ import readline from 'node:readline'
 import { getHarness } from './harness/index'
 import { readOpenCodeTranscript } from './harness/opencode-transcript'
 import { readCodexTranscript } from './harness/codex-transcript'
+import { AcpHarnessAdapter } from './harness/acp'
+import { acpTranscript } from './harness/acp-transcript'
 import { isGeneralProject } from '../shared/ipc-contract'
 import type {
   ContentBlock,
@@ -384,6 +386,12 @@ export async function readSession(
   }
   if (harnessId === 'codex') {
     return readCodexTranscript(claudeProjectsRoot(harnessId), projectPath, sessionId)
+  }
+  const harness = harnessId ? getHarness(harnessId) : null
+  if (harness instanceof AcpHarnessAdapter) {
+    const cwd = isGeneralProject(projectPath) ? os.homedir() : projectPath
+    const updates = await harness.readTranscriptUpdates(sessionId, cwd)
+    return updates ? acpTranscript(sessionId, projectPath, `acp:${harness.id}`, updates) : null
   }
   const filePath = path.join(projectDir(projectPath, harnessId), `${sessionId}.jsonl`)
   let stat: fs.Stats

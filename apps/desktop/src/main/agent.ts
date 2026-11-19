@@ -1065,15 +1065,17 @@ export async function editAndRerun(
   if (!session) throw new Error(`session not found for agent ${agentLocalId}`)
   await interruptSession(agentLocalId)
   active.delete(agentLocalId)
+  // Transcripts live under the cwd the harness ran in (the worktree if any).
+  const transcriptCwd = session.worktreePath ?? session.projectPath
   const { keptCount, removedLines, keptHasConversation } = await truncateSessionJsonl(
-    session.projectPath,
+    transcriptCwd,
     agent.sdkSessionId,
     truncateFromUuid,
     originalText,
     session.harnessId,
   )
   undoBuffers.set(agentLocalId, {
-    projectPath: session.projectPath,
+    projectPath: transcriptCwd,
     sdkSessionId: agent.sdkSessionId,
     harnessId: session.harnessId ?? getHarness().id,
     keptCount,
