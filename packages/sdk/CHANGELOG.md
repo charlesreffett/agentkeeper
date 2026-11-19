@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/charlesreffett/agentkeeper/compare/sdk-v0.1.0...sdk-v0.2.0) (2026-11-19)
+
+
+### Features
+
+* theme engine, Appearance editor, and themed plugins ([#113](https://github.com/charlesreffett/agentkeeper/issues/113)) ([b7e1166](https://github.com/charlesreffett/agentkeeper/commit/b7e1166782eb191be0ae9e16f53a750449b58a0b))
+
 ## [0.1.0](https://github.com/agentkeeper-ai/agentkeeper/compare/sdk-v0.0.1...sdk-v0.1.0) (2026-09-10)
 
 

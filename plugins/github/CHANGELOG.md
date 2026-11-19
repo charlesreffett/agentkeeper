@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/charlesreffett/agentkeeper/compare/plugin-github-v0.2.0...plugin-github-v0.3.0) (2026-11-19)
+
+
+### Features
+
+* multi harness managed commands ([#104](https://github.com/charlesreffett/agentkeeper/issues/104)) ([be1155b](https://github.com/charlesreffett/agentkeeper/commit/be1155ba0b02868701c269afdb3af2218cc72e0a))
+* remove CLI requirements from work item plugins ([#103](https://github.com/charlesreffett/agentkeeper/issues/103)) ([bea3d0e](https://github.com/charlesreffett/agentkeeper/commit/bea3d0ec600f48f232aec7a0ca619537436460f1))
+* theme engine, Appearance editor, and themed plugins ([#113](https://github.com/charlesreffett/agentkeeper/issues/113)) ([b7e1166](https://github.com/charlesreffett/agentkeeper/commit/b7e1166782eb191be0ae9e16f53a750449b58a0b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @agentkeeper/sdk bumped to 0.2.0
+
 ## [0.2.0](https://github.com/agentkeeper-ai/agentkeeper/compare/plugin-github-v0.1.0...plugin-github-v0.2.0) (2026-09-10)
 
 

@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.3.0](https://github.com/charlesreffett/agentkeeper/compare/desktop-v0.2.0...desktop-v0.3.0) (2026-11-19)
+
+
+### Features
+
+* add multi-harness managed commands ([#101](https://github.com/charlesreffett/agentkeeper/issues/101)) ([a891c46](https://github.com/charlesreffett/agentkeeper/commit/a891c46639e8951457953ae7379c9edc6341f382))
+* multi harness managed commands ([#104](https://github.com/charlesreffett/agentkeeper/issues/104)) ([be1155b](https://github.com/charlesreffett/agentkeeper/commit/be1155ba0b02868701c269afdb3af2218cc72e0a))
+* native textarea autosize ([#106](https://github.com/charlesreffett/agentkeeper/issues/106)) ([8f9e21a](https://github.com/charlesreffett/agentkeeper/commit/8f9e21a27c1be431612eee4a3bbe0031cb81a55c))
+* remove CLI requirements from work item plugins ([#103](https://github.com/charlesreffett/agentkeeper/issues/103)) ([bea3d0e](https://github.com/charlesreffett/agentkeeper/commit/bea3d0ec600f48f232aec7a0ca619537436460f1))
+* theme engine, Appearance editor, and themed plugins ([#113](https://github.com/charlesreffett/agentkeeper/issues/113)) ([b7e1166](https://github.com/charlesreffett/agentkeeper/commit/b7e1166782eb191be0ae9e16f53a750449b58a0b))
+* theme extras — syntax colors, translucent sidebar, cursors, OS contrast ([#114](https://github.com/charlesreffett/agentkeeper/issues/114)) ([cf47058](https://github.com/charlesreffett/agentkeeper/commit/cf47058e92e756e9b324dc18067ee931ef90fbde))
+
+
+### Bug Fixes
+
+* deliver prompts and resume correctly for Cursor/Grok sessions ([#110](https://github.com/charlesreffett/agentkeeper/issues/110)) ([3fc2fa2](https://github.com/charlesreffett/agentkeeper/commit/3fc2fa208fec372a7c93ae1d47766333ebaf067a))
+* don't play completion chime when sending to a dormant session ([#107](https://github.com/charlesreffett/agentkeeper/issues/107)) ([9b3a0e3](https://github.com/charlesreffett/agentkeeper/commit/9b3a0e3006ee7a283a5890c914a4e0e0c920c927))
+* hide unstarted drafts from the session list ([#109](https://github.com/charlesreffett/agentkeeper/issues/109)) ([b5b0980](https://github.com/charlesreffett/agentkeeper/commit/b5b0980ec4cba5062047b40de104f26141be48f4))
+* let inactive sessions accept messages after restart ([#108](https://github.com/charlesreffett/agentkeeper/issues/108)) ([4111e8a](https://github.com/charlesreffett/agentkeeper/commit/4111e8a18e21d5b0a58aba6c12da187dc6d28f92))
+* restore session history after restart for every harness ([#111](https://github.com/charlesreffett/agentkeeper/issues/111)) ([5f31413](https://github.com/charlesreffett/agentkeeper/commit/5f31413754753bb8a5f188e51708978815b26ad8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @agentkeeper/core bumped to 0.2.0
+    * @agentkeeper/sdk bumped to 0.2.0
+
 ## [0.2.0](https://github.com/agentkeeper-ai/agentkeeper/compare/desktop-v0.1.0...desktop-v0.2.0) (2026-09-10)
 
 
