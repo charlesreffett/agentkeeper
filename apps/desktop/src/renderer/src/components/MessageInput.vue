@@ -61,20 +61,13 @@ const modKey = computed<'meta' | 'ctrl' | 'alt' | 'shift'>(() => {
 
 const ac = useCommandAutocomplete(text, resolvedProjectPath)
 
-function autosize() {
-  const el = textarea.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 320) + 'px'
-}
-
 async function send() {
   const v = text.value.trim()
   if ((!v && attachments.value.length === 0) || props.disabled || sending.value) return
   const sentAttachments = attachments.value.map(toRaw)
   sending.value = true
   emit('send', v, sentAttachments, (successful) => {
-    if (successful) void clearIfMatches(v, sentAttachments)
+    if (successful) clearIfMatches(v, sentAttachments)
     sending.value = false
   })
 }
@@ -85,7 +78,7 @@ async function send() {
  * succeeded; keeping the comparison here also avoids erasing anything the user
  * typed while a follow-up message was in flight.
  */
-async function clearIfMatches(sentText: string, sentAttachments: Attachment[]) {
+function clearIfMatches(sentText: string, sentAttachments: Attachment[]) {
   const sameAttachments =
     attachments.value.length === sentAttachments.length &&
     attachments.value.every((attachment, index) => {
@@ -98,8 +91,6 @@ async function clearIfMatches(sentText: string, sentAttachments: Attachment[]) {
   if (text.value.trim() !== sentText || !sameAttachments) return
   text.value = ''
   attachments.value = []
-  await nextTick()
-  autosize()
 }
 
 function onKeyDown(event: KeyboardEvent) {
@@ -162,10 +153,6 @@ const defaultPlaceholder = computed(() => {
   if (props.agencyName) parts.push(props.agencyName)
   if (props.roleName) parts.push(props.roleName)
   return parts.join(' · ')
-})
-
-watch(text, () => {
-  void nextTick(autosize)
 })
 
 watch(
@@ -283,8 +270,7 @@ defineExpose({
             v-model="text"
             :placeholder="placeholder ?? defaultPlaceholder"
             :disabled="disabled"
-            rows="1"
-            class="w-full max-h-[240px] resize-none overflow-y-auto bg-transparent px-4 py-3.5 text-[15px] leading-relaxed focus:outline-none disabled:opacity-60 font-sans"
+            class="w-full [field-sizing:content] [min-block-size:calc(1lh+1.75rem)] [max-block-size:240px] resize-none overflow-y-auto bg-transparent px-4 py-3.5 text-[15px] leading-relaxed focus:outline-none disabled:opacity-60 font-sans"
             @keydown="onKeyDown"
             @paste="handlePaste"
           />

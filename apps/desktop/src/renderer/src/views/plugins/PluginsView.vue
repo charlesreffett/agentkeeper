@@ -7,6 +7,7 @@ import type { PluginRecord, UpdateAvailable } from '@shared/ipc-contract'
 import type { PluginManifest } from '@agentkeeper/sdk'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Search } from '@/components/icons/app-icons'
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const queryClient = useQueryClient()
 const developerMode = ref(false)
 const changingDeveloperMode = ref(false)
+const searchQuery = ref('')
 
 void window.agentkeeper.plugins.getDeveloperMode().then(value => { developerMode.value = value })
 
@@ -320,6 +322,16 @@ const settingsPlugin = ref<PluginRecord | null>(null)
 
 const installedCount = computed(() => plugins.value?.length ?? 0)
 const activeCount = computed(() => plugins.value?.filter(p => p.status === 'active').length ?? 0)
+const filteredPlugins = computed(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase()
+  if (!query) return plugins.value
+
+  return plugins.value?.filter(plugin => [
+    plugin.name,
+    plugin.id,
+    plugin.manifest.description,
+  ].some(value => value?.toLocaleLowerCase().includes(query)))
+})
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -358,16 +370,37 @@ function openExternal(url: string) {
 
 <template>
   <div class="h-full flex flex-col overflow-hidden">
-    <!-- Header -->
-    <div v-if="!embedded" class="px-6 py-4 border-b border-border">
-      <h1 class="text-lg font-semibold">Plugin Management</h1>
-      <p class="text-sm text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</p>
-      <div class="flex items-center gap-2 mt-3">
-        <Button v-if="developerMode" size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
-        <Button size="sm" @click="openInstallDialog">Install from AKP</Button>
+    <!-- Chrome-inspired extensions header -->
+    <header class="shrink-0 border-b border-border bg-background px-4 py-4 sm:px-6">
+      <div class="flex flex-wrap items-center gap-3 sm:flex-nowrap sm:gap-5">
+        <div class="min-w-fit">
+          <h1 class="text-lg font-semibold">Plugins</h1>
+          <p class="text-xs text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</p>
+        </div>
+
+        <label class="relative order-3 w-full sm:order-none sm:mx-auto sm:max-w-xl">
+          <span class="sr-only">Search plugins</span>
+          <Search class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            v-model="searchQuery"
+            type="search"
+            placeholder="Search plugins"
+            class="h-10 w-full rounded-full border border-transparent bg-muted/60 pl-10 pr-4 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:bg-background focus:ring-1 focus:ring-ring"
+          />
+        </label>
+
+        <div class="ml-auto flex min-w-fit items-center gap-2">
+          <span class="text-sm font-medium">Developer mode</span>
+          <Switch :model-value="developerMode" :disabled="changingDeveloperMode" @update:model-value="setDeveloperMode" />
+        </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <Button v-if="developerMode" size="sm" variant="outline" class="rounded-full" @click="loadDev">Load unpacked</Button>
+        <Button size="sm" variant="outline" class="rounded-full" @click="openInstallDialog">Install from AKP</Button>
         <span v-if="mutationError" class="text-xs text-destructive">{{ mutationError }}</span>
       </div>
-    </div>
+    </header>
 
     <!-- Install dialog -->
     <Dialog v-model:open="installDialogOpen">
@@ -471,28 +504,13 @@ function openExternal(url: string) {
 
     <div class="flex-1 overflow-y-auto min-h-0">
       <div class="max-w-[700px] mx-auto px-6 py-4">
-      <section class="mb-4 rounded-lg border p-4">
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <p class="text-sm font-medium">Plugin developer mode</p>
-            <p class="text-xs text-muted-foreground">Allow reviewed unpacked plugins from local directories.</p>
-          </div>
-          <Switch :model-value="developerMode" :disabled="changingDeveloperMode" @update:model-value="setDeveloperMode" />
-        </div>
-        <div v-if="developerMode" class="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+      <section v-if="developerMode" class="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
           Developer mode is enabled. Unpacked files are mutable and unsigned, and may change after review.
           <ul v-if="plugins?.some(plugin => plugin.source === 'dev' && plugin.enabled && plugin.devPath)" class="mt-2 space-y-1 font-mono">
             <li v-for="plugin in plugins.filter(item => item.source === 'dev' && item.enabled && item.devPath)" :key="plugin.id">{{ plugin.name }} — {{ plugin.devPath }}</li>
           </ul>
           <p v-else class="mt-2">No unpacked plugin directories are active.</p>
-        </div>
       </section>
-      <div v-if="embedded" class="mb-4 flex flex-wrap items-center gap-2">
-        <span class="mr-auto text-sm text-muted-foreground">{{ installedCount }} installed · {{ activeCount }} active</span>
-        <Button v-if="developerMode" size="sm" variant="outline" @click="loadDev">Load unpacked</Button>
-        <Button size="sm" @click="openInstallDialog">Install from AKP</Button>
-        <span v-if="mutationError" class="text-xs text-destructive">{{ mutationError }}</span>
-      </div>
       <div v-if="isLoading" class="text-sm text-muted-foreground animate-pulse">
         Loading plugins…
       </div>
@@ -505,9 +523,16 @@ function openExternal(url: string) {
         <strong>Load unpacked</strong> to point at a local directory during development.
       </div>
 
+      <div
+        v-else-if="filteredPlugins?.length === 0 && searchQuery.trim()"
+        class="text-sm text-muted-foreground"
+      >
+        No plugins match “{{ searchQuery.trim() }}”.
+      </div>
+
       <ul v-else class="divide-y divide-border/50">
         <li
-          v-for="plugin in plugins"
+          v-for="plugin in filteredPlugins"
           :key="plugin.id"
           class="py-4 flex items-start gap-4"
         >
