@@ -17,7 +17,7 @@ import type {
   TranscriptEvent,
 } from '@shared/ipc-contract'
 import { isGeneralProject } from '@shared/ipc-contract'
-import { harnessStreamToTranscriptEvent, sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
+import { harnessStreamToTranscriptEvent, mergeThinkingChunk, sdkMessageToTranscriptEvent } from '@/lib/sdk-normalize'
 import { playNotificationSound } from '@/lib/notificationSound'
 import { queryClient } from '@/lib/queryClient'
 import { queryKeys } from '@/lib/queryKeys'
@@ -1273,6 +1273,10 @@ export const useSessionStore = defineStore('sessions', () => {
 
       const providerEvent = harnessStreamToTranscriptEvent(raw)
       if (providerEvent) {
+        if (mergeThinkingChunk(raw['provider'], agentEvts[agentEvts.length - 1], providerEvent)) {
+          s.lastActivityAt = Date.now()
+          return
+        }
         const existing = agentEvts.findIndex((entry) => entry.uuid === providerEvent.uuid)
         if (existing >= 0) {
           const previous = agentEvts[existing]!

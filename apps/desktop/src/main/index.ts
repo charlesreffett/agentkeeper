@@ -299,10 +299,14 @@ app.whenReady().then(async () => {
   await activatePlugins(registry, win.webContents)
   initializeAppUpdater()
   setWebContentsOnActiveHosts(win.webContents)
+  // win and its webContents are already destroyed when this fires; reading
+  // their ids then throws, so capture them up front.
+  const winId = win.id
+  const webContentsId = win.webContents.id
   win.webContents.on('destroyed', () => {
-    externalPromptWindows.delete(win.id)
-    externalPromptCooldowns.delete(win.id)
-    removeSubscriber(win.webContents.id)
+    externalPromptWindows.delete(winId)
+    externalPromptCooldowns.delete(winId)
+    removeSubscriber(webContentsId)
   })
   await startCliSocket()
 

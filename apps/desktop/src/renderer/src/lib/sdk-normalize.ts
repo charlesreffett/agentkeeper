@@ -106,6 +106,20 @@ function eventFromBlocks(
   }
 }
 
+/** ACP harnesses stream reasoning as many tiny `agent_thought_chunk` updates.
+ * Fold a thinking-only event into the immediately preceding thinking-only event
+ * so one reasoning pass renders as one block. Returns true when merged. */
+export function mergeThinkingChunk(provider: unknown, previous: TranscriptEvent | undefined, next: TranscriptEvent): boolean {
+  if (provider !== 'cursor' && provider !== 'grok') return false
+  const isThinkingOnly = (event: TranscriptEvent) =>
+    event.content.length === 1 && event.content[0]!.type === 'thinking'
+  if (!previous || !isThinkingOnly(previous) || !isThinkingOnly(next)) return false
+  const target = previous.content[0] as Extract<ContentBlock, { type: 'thinking' }>
+  const incoming = next.content[0] as Extract<ContentBlock, { type: 'thinking' }>
+  target.thinking += incoming.thinking
+  return true
+}
+
 /** Translate rich provider stream payloads that do not use Anthropic's content
  * block protocol. Unknown/incremental bookkeeping events intentionally return
  * null; completed meaningful activity is retained in the transcript. */
