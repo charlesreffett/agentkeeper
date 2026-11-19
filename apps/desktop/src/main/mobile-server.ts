@@ -273,7 +273,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
         send(res, 200, [])
         return
       }
-      const transcript = await readSession(session.projectPath, entry.sdkSessionId, session.harnessId)
+      const transcript = await readSession(session.worktreePath ?? session.projectPath, entry.sdkSessionId, session.harnessId)
       const rawCount = transcript?.events.length ?? 0
       // Chronological prose-only turns. Pagination walks this list from the tail
       // backwards: `before` is a uuid cursor, `limit` the page size.

@@ -17,19 +17,35 @@ function textContent(value: unknown): ContentBlock[] {
   })
 }
 
+// Older Codex wrote `user_message`/`agent_message` events; current builds log
+// `item_completed` with a `UserMessage`/`AgentMessage` item instead. Both carry
+// the text the user saw, without the context Codex injects into the prompt.
+function conversationalMessage(
+  payload: Record<string, unknown>,
+): { role: 'user' | 'assistant'; phase: unknown; content: unknown } | null {
+  const type = payload['type']
+  if (type === 'user_message') return { role: 'user', phase: null, content: payload['message'] }
+  if (type === 'agent_message') return { role: 'assistant', phase: payload['phase'], content: payload['message'] }
+  if (type !== 'item_completed' || !payload['item'] || typeof payload['item'] !== 'object') return null
+  const item = payload['item'] as Record<string, unknown>
+  if (item['type'] === 'UserMessage') return { role: 'user', phase: null, content: item['content'] }
+  if (item['type'] === 'AgentMessage') return { role: 'assistant', phase: item['phase'], content: item['content'] }
+  return null
+}
+
 export function normalizeCodexTranscriptEvent(raw: unknown, fallbackId: string): TranscriptEvent | null {
   if (!raw || typeof raw !== 'object') return null
   const record = raw as Record<string, unknown>
   if (record['type'] !== 'event_msg' || !record['payload'] || typeof record['payload'] !== 'object') return null
   const payload = record['payload'] as Record<string, unknown>
-  const type = payload['type']
-  if (type !== 'user_message' && type !== 'agent_message') return null
+  const message = conversationalMessage(payload)
+  if (!message) return null
   // Commentary is represented by completed activity items during a live run.
   // Only the final response belongs in the restored conversational transcript.
-  if (type === 'agent_message' && payload['phase'] && payload['phase'] !== 'final_answer') return null
-  const content = textContent(payload['message'])
+  if (message.role === 'assistant' && message.phase && message.phase !== 'final_answer') return null
+  const content = textContent(message.content)
   if (!content.length) return null
-  const role = type === 'user_message' ? 'user' : 'assistant'
+  const role = message.role
   return {
     uuid: fallbackId,
     parentUuid: null,
