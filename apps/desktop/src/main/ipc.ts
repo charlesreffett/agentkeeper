@@ -31,6 +31,7 @@ import { getDb, runMigrations } from './db/index'
 import { sql } from 'drizzle-orm'
 import type { SessionStatRow } from '../shared/ipc-contract'
 import { uiZoomFactor } from '../shared/theme'
+import { applyWindowAppearance } from './window-appearance'
 import { getAllPricing, refreshFromLiteLLM } from './pricing'
 import { getAvailableModels, refreshAvailableModels, getDefaultModel, invalidateAvailableModels, validateCustomModel } from './models'
 import { getCapabilities } from './capabilities'
@@ -409,6 +410,7 @@ export function registerIpcHandlers(registry: WorkItemRegistryFull, mainWebConte
       const { pluginDeveloperMode: _ignored, ...safePartial } = partial
       const updated = settingsStore.set(safePartial)
       if (safePartial.uiFontSize !== undefined) event.sender.setZoomFactor(uiZoomFactor(updated.uiFontSize))
+      if (safePartial.theme !== undefined || safePartial.themes !== undefined || safePartial.translucentSidebar !== undefined) applyWindowAppearance(updated)
       syncMobileServer(updated)
       if (safePartial.harnessBins || safePartial.customModels) {
         for (const id of new Set([

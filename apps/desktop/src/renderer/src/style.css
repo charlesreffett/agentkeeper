@@ -63,3 +63,17 @@
 ::selection {
   background-color: color-mix(in oklab, var(--brand) 32%, transparent);
 }
+
+/* The window is transparent under macOS vibrancy (main/window-appearance.ts);
+   only the sidebar lets it through, everything else stays opaque. */
+html.translucent-sidebar,
+html.translucent-sidebar body {
+  background-color: transparent;
+}
+html.translucent-sidebar [data-sidebar='sidebar'] {
+  background-color: color-mix(in oklab, var(--sidebar-background) 70%, transparent);
+}
+
+html.no-pointer-cursors :is(button, [role='button'], [role='tab'], [role='menuitem'], [role='option'], [role='switch'], [role='checkbox'], [role='radio'], a[href], summary, select, label, .cursor-pointer) {
+  cursor: default;
+}

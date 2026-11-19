@@ -17,7 +17,10 @@ import {
   type ThemeSettings,
   type ThemeVariant,
 } from '@shared/theme'
-import { applyThemeToDocument } from '@/lib/theme'
+import { applyAppearanceClasses, applyThemeToDocument } from '@/lib/theme'
+
+const OS_HIGH_CONTRAST_FLOOR = 85
+const isMacOS = navigator.userAgent.includes('Macintosh')
 
 export const useLayoutStore = defineStore('layout', () => {
   const rightPanelOpen = ref(false)
@@ -43,14 +46,21 @@ export const useLayoutStore = defineStore('layout', () => {
   /** Hex values for consumers that can't read CSS variables (xterm, SVG attributes). */
   const colors = computed(() => resolved.value.colors)
   const cssVars = computed(() => resolved.value.cssVars)
+  const translucentSidebar = ref(false)
+  const pointerCursors = ref(true)
+  const osHighContrast = ref(window.matchMedia('(prefers-contrast: more)').matches)
   let systemThemeQuery: MediaQueryList | null = null
 
   function apply() {
     const variant = resolveThemeVariant(theme.value, window.matchMedia('(prefers-color-scheme: dark)').matches)
-    const derived = deriveTheme(themes.value[variant], variant)
+    const config = themes.value[variant]
+    // The OS accessibility setting raises the floor without rewriting the user's saved contrast.
+    const contrast = osHighContrast.value ? Math.max(config.contrast, OS_HIGH_CONTRAST_FLOOR) : config.contrast
+    const derived = deriveTheme({ ...config, contrast }, variant)
     derived.cssVars['--code-font-size'] = `${codeFontSize.value}px`
     resolved.value = derived
     applyThemeToDocument(derived)
+    applyAppearanceClasses({ translucentSidebar: translucentSidebar.value && isMacOS, pointerCursors: pointerCursors.value })
   }
 
   function onSystemThemeChange() {
@@ -61,14 +71,20 @@ export const useLayoutStore = defineStore('layout', () => {
     if (systemThemeQuery) return
     systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)')
     systemThemeQuery.addEventListener('change', onSystemThemeChange)
+    window.matchMedia('(prefers-contrast: more)').addEventListener('change', e => {
+      osHighContrast.value = e.matches
+      apply()
+    })
   }
 
-  function initTheme(settings: Pick<AppSettings, 'theme' | 'themes' | 'uiFontSize' | 'codeFontSize'>) {
+  function initTheme(settings: Pick<AppSettings, 'theme' | 'themes' | 'uiFontSize' | 'codeFontSize' | 'translucentSidebar' | 'pointerCursors'>) {
     watchSystemTheme()
     theme.value = settings.theme ?? 'dark'
     themes.value = normalizeThemeSettings(settings.themes)
     uiFontSize.value = clampFontSize(settings.uiFontSize, UI_FONT_SIZE)
     codeFontSize.value = clampFontSize(settings.codeFontSize, CODE_FONT_SIZE)
+    translucentSidebar.value = settings.translucentSidebar === true
+    pointerCursors.value = settings.pointerCursors !== false
     apply()
   }
 
@@ -98,5 +114,12 @@ export const useLayoutStore = defineStore('layout', () => {
     await window.agentkeeper.settings.set(partial)
   }
 
-  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, themes, uiFontSize, codeFontSize, resolvedTheme, colors, cssVars, initTheme, setTheme, setThemeConfig, setFontSizes }
+  async function setWindowOptions(options: Partial<Pick<AppSettings, 'translucentSidebar' | 'pointerCursors'>>) {
+    if (options.translucentSidebar !== undefined) translucentSidebar.value = options.translucentSidebar
+    if (options.pointerCursors !== undefined) pointerCursors.value = options.pointerCursors
+    apply()
+    await window.agentkeeper.settings.set(options)
+  }
+
+  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, themes, uiFontSize, codeFontSize, resolvedTheme, colors, cssVars, translucentSidebar, pointerCursors, osHighContrast, isMacOS, initTheme, setTheme, setThemeConfig, setFontSizes, setWindowOptions }
 })

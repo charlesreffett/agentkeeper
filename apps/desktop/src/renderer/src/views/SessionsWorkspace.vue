@@ -61,6 +61,8 @@ const settings = ref<AppSettings>({
   themes: DEFAULT_THEMES,
   uiFontSize: UI_FONT_SIZE.default,
   codeFontSize: CODE_FONT_SIZE.default,
+  translucentSidebar: false,
+  pointerCursors: true,
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],

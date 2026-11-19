@@ -20,6 +20,8 @@ const DEFAULTS: AppSettings = {
   themes: DEFAULT_THEMES,
   uiFontSize: UI_FONT_SIZE.default,
   codeFontSize: CODE_FONT_SIZE.default,
+  translucentSidebar: false,
+  pointerCursors: true,
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],
@@ -64,6 +66,8 @@ function read(): AppSettings {
     merged.themes = normalizeThemeSettings(parsed.themes)
     merged.uiFontSize = clampFontSize(merged.uiFontSize, UI_FONT_SIZE)
     merged.codeFontSize = clampFontSize(merged.codeFontSize, CODE_FONT_SIZE)
+    merged.translucentSidebar = merged.translucentSidebar === true
+    merged.pointerCursors = merged.pointerCursors !== false
     if (!NOTIFICATIONS_VALUES.includes(merged.notifications)) {
       merged.notifications = DEFAULTS.notifications
     }

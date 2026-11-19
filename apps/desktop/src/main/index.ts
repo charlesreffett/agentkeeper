@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu, dialog, nativeTheme } from 'electron'
+import { app, BrowserWindow, shell, Menu, dialog } from 'electron'
 // DEV ONLY: enable CDP for agent-browser testing. NODE_ENV is commonly unset in
 // packaged apps, so use Electron's packaged-state flag as the source of truth.
 // The port remains overridable so concurrent development instances can run.
@@ -33,8 +33,9 @@ import { stopAllWatchers, removeSubscriber } from './watcher.js'
 import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
 import { isTrustedRendererNavigation, normalizeExternalUrl } from './navigation-policy'
 import { RENDERER_SECURITY_WEB_PREFERENCES } from './renderer-security-policy'
-import { resolveThemeVariant, uiZoomFactor } from '../shared/theme'
+import { uiZoomFactor } from '../shared/theme'
 import { stepUiFontSize } from './ui-scale'
+import { initialWindowAppearance } from './window-appearance'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const devUserDataPath = process.env['AGENTKEEPER_USER_DATA_DIR']
@@ -166,26 +167,21 @@ function viewMenu(): Electron.MenuItemConstructorOptions {
   }
 }
 
-// Matches the renderer's first paint so light themes don't flash a dark frame.
-function initialWindowBackground(): string {
-  const { theme, themes } = settingsStore.get()
-  const variant = resolveThemeVariant(theme, nativeTheme.shouldUseDarkColors)
-  return themes[variant].background
-}
-
 function createWindow(): BrowserWindow {
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
   const rendererEntryUrl = devUrl ?? packagedRendererUrl
+  const appearance = initialWindowAppearance()
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: initialWindowBackground(),
+    // Matches the renderer's first paint so light themes don't flash a dark frame.
+    backgroundColor: appearance.backgroundColor,
     ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset' as const }
+      ? { titleBarStyle: 'hiddenInset' as const, ...(appearance.vibrancy ? { vibrancy: appearance.vibrancy } : {}) }
       : {}),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
