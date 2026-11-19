@@ -48,6 +48,14 @@ export const DEFAULT_THEMES: ThemeSettings = {
 export const DEFAULT_UI_FONT = "InterVariable, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 export const DEFAULT_CODE_FONT = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
 
+/** Named UI font choices; anything else stored in fonts.ui is a custom stack. */
+export const UI_FONT_CHOICES = [
+  { id: 'default', label: 'Default (Inter)', value: null },
+  { id: 'system', label: 'Match system', value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" },
+  // Bundled with the app (renderer main.ts) so it works without a system install.
+  { id: 'dyslexic', label: 'Dyslexia-friendly (OpenDyslexic)', value: "OpenDyslexic, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
+] as const
+
 export const UI_FONT_SIZE = { min: 11, max: 20, default: 14 } as const
 export const CODE_FONT_SIZE = { min: 10, max: 20, default: 13 } as const
 

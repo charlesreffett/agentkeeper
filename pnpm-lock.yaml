@@ -35,6 +35,9 @@ importers:
       '@comark/vue':
         specifier: ^0.3.1
         version: 0.3.1(shiki@4.0.2)(vue@3.5.32(typescript@5.9.3))
+      '@fontsource/opendyslexic':
+        specifier: ^5.3.0
+        version: 5.3.0
       '@iconify/vue':
         specifier: ^5.0.1
         version: 5.0.1(vue@3.5.32(typescript@5.9.3))
@@ -817,6 +820,9 @@ packages:
 
   '@floating-ui/vue@1.1.11':
     resolution: {integrity: sha512-HzHKCNVxnGS35r9fCHBc3+uCnjw9IWIlCPL683cGgM9Kgj2BiAl8x1mS7vtvP6F9S/e/q4O6MApwSHj8hNLGfw==}
+
+  '@fontsource/opendyslexic@5.3.0':
+    resolution: {integrity: sha512-BVYIW/ghc1U2iAghhYTN+GFWiZ3lnCy8Jf2KkZC23aHQHBNcMqKT718zckfqVxRx4qsXJmIMPWvczirRuhmtsg==}
 
   '@hono/node-server@1.19.14':
     resolution: {integrity: sha512-GwtvgtXxnWsucXvbQXkRgqksiH2Qed37H9xHZocE5sA3N8O8O8/8FA3uclQXxXVzc9XBZuEOMK7+r02FmSpHtw==}
@@ -4059,6 +4065,8 @@ snapshots:
     transitivePeerDependencies:
       - '@vue/composition-api'
       - vue
+
+  '@fontsource/opendyslexic@5.3.0': {}
 
   '@hono/node-server@1.19.14(hono@4.12.30)':
     dependencies:

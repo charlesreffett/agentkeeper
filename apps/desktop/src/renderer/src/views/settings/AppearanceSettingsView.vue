@@ -11,9 +11,13 @@ import { useLayoutStore } from '@/stores/layout'
 import {
   CODE_FONT_SIZE,
   DEFAULT_THEMES,
+  UI_FONT_CHOICES,
   UI_FONT_SIZE,
+  contrastRatio,
   decodeTheme,
+  deriveTheme,
   encodeTheme,
+  type SemanticColorKey,
   type ThemeConfig,
   type ThemeVariant,
 } from '@shared/theme'
@@ -44,6 +48,42 @@ function selectPreset(id: string) {
 
 function updateFont(kind: 'ui' | 'code', value: string) {
   update({ fonts: { ...config.value.fonts, [kind]: value.trim() || null } })
+}
+
+const customUiFont = ref(false)
+const uiFontChoice = computed(() => {
+  if (customUiFont.value) return 'custom'
+  return UI_FONT_CHOICES.find(c => c.value === config.value.fonts.ui)?.id ?? 'custom'
+})
+function selectUiFont(id: string) {
+  customUiFont.value = id === 'custom'
+  const choice = UI_FONT_CHOICES.find(c => c.id === id)
+  if (choice) update({ fonts: { ...config.value.fonts, ui: choice.value } })
+}
+watch(editing, () => { customUiFont.value = false })
+
+const STATUS_COLORS: { key: SemanticColorKey; token: 'success' | 'warning' | 'info' | 'destructive' | 'highlight' | 'diff-added' | 'diff-removed'; label: string; hint: string }[] = [
+  { key: 'success', token: 'success', label: 'Success', hint: 'Running and completed states' },
+  { key: 'warning', token: 'warning', label: 'Warning', hint: 'Drafts, attention, and caveats' },
+  { key: 'info', token: 'info', label: 'Info', hint: 'Neutral status and badges' },
+  { key: 'destructive', token: 'destructive', label: 'Error', hint: 'Failures and destructive actions' },
+  { key: 'highlight', token: 'highlight', label: 'Highlight', hint: 'Completed plans and delegated work' },
+  { key: 'diffAdded', token: 'diff-added', label: 'Diff added', hint: 'Added lines and files' },
+  { key: 'diffRemoved', token: 'diff-removed', label: 'Diff removed', hint: 'Removed lines and files' },
+]
+const derived = computed(() => deriveTheme(config.value, editing.value).colors)
+const overrideCount = computed(() => Object.keys(config.value.semantic).length)
+
+function setSemantic(key: SemanticColorKey, value: string | null) {
+  const semantic = { ...config.value.semantic }
+  if (value) semantic[key] = value
+  else delete semantic[key]
+  update({ semantic })
+}
+
+function lowContrast(key: SemanticColorKey): boolean {
+  const value = config.value.semantic[key]
+  return !!value && contrastRatio(value, config.value.background) < 4.5
 }
 
 function reset() {
@@ -146,22 +186,63 @@ const textClass = 'h-8 w-full rounded-md border border-input bg-background px-2 
             />
             <span class="w-8 text-right text-xs tabular-nums text-muted-foreground">{{ config.contrast }}</span>
           </label>
-          <label class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
-            <span class="min-w-0 flex-1 text-sm font-medium">UI font</span>
-            <input :value="config.fonts.ui ?? ''" placeholder="Default (Inter)" spellcheck="false" :class="textClass" @change="updateFont('ui', ($event.target as HTMLInputElement).value)" />
-          </label>
+          <div class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start">
+            <label for="ui-font-choice" class="min-w-0 flex-1 pt-1.5 text-sm font-medium">UI font</label>
+            <div class="flex w-full flex-col gap-2 sm:w-64">
+              <select id="ui-font-choice" :value="uiFontChoice" :class="selectClass" @change="selectUiFont(($event.target as HTMLSelectElement).value)">
+                <option v-for="choice in UI_FONT_CHOICES" :key="choice.id" :value="choice.id">{{ choice.label }}</option>
+                <option value="custom">Custom…</option>
+              </select>
+              <input
+                v-if="uiFontChoice === 'custom'"
+                :value="config.fonts.ui ?? ''"
+                aria-label="Custom UI font family"
+                placeholder="e.g. Avenir, sans-serif"
+                spellcheck="false"
+                :class="textClass"
+                @change="updateFont('ui', ($event.target as HTMLInputElement).value)"
+              />
+            </div>
+          </div>
           <label class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
             <span class="min-w-0 flex-1 text-sm font-medium">Code font</span>
             <input :value="config.fonts.code ?? ''" placeholder="Default (system monospace)" spellcheck="false" :class="textClass" class="font-mono" @change="updateFont('code', ($event.target as HTMLInputElement).value)" />
           </label>
         </div>
 
-        <div class="space-y-3">
+        <details class="group rounded-lg border lg:col-start-1" :open="overrideCount > 0">
+          <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium">
+            Status colors
+            <span class="text-xs font-normal text-muted-foreground">{{ overrideCount ? `${overrideCount} customized` : 'Automatic' }}</span>
+            <span class="ml-auto text-xs font-normal text-muted-foreground group-open:hidden">Show</span>
+            <span class="ml-auto hidden text-xs font-normal text-muted-foreground group-open:inline">Hide</span>
+          </summary>
+          <p class="border-t px-4 py-2.5 text-xs text-muted-foreground">Automatic colors are adjusted to stay readable on your background. Custom colors are used exactly as chosen.</p>
+          <div class="divide-y border-t">
+            <div v-for="item in STATUS_COLORS" :key="item.key" class="flex items-center gap-4 px-4 py-2.5">
+              <span class="min-w-0 flex-1">
+                <span class="block text-sm font-medium">{{ item.label }}</span>
+                <span class="mt-0.5 block text-xs" :class="lowContrast(item.key) ? 'text-warning' : 'text-muted-foreground'">
+                  {{ lowContrast(item.key) ? 'Low contrast against the background' : item.hint }}
+                </span>
+              </span>
+              <button
+                v-if="config.semantic[item.key]"
+                type="button"
+                class="text-xs text-muted-foreground hover:text-foreground"
+                @click="setSemantic(item.key, null)"
+              >Use automatic</button>
+              <ColorField :model-value="config.semantic[item.key] ?? derived[item.token]" :label="item.label" @update:model-value="setSemantic(item.key, $event)" />
+            </div>
+          </div>
+        </details>
+
+        <div class="space-y-3 lg:col-start-2 lg:row-start-1">
           <ThemePreview :config="config" :variant="editing" :code-font-size="layoutStore.codeFontSize" />
           <div class="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" @click="importing = !importing">Import</Button>
             <Button size="sm" variant="outline" @click="copyTheme">Copy theme</Button>
-            <Button size="sm" variant="ghost" class="ml-auto" :disabled="presetId === 'agentkeeper' && !config.fonts.ui && !config.fonts.code" @click="reset">Reset</Button>
+            <Button size="sm" variant="ghost" class="ml-auto" :disabled="presetId === 'agentkeeper' && !config.fonts.ui && !config.fonts.code && overrideCount === 0" @click="reset">Reset</Button>
           </div>
           <form v-if="importing" class="flex gap-2" @submit.prevent="applyImport">
             <input
