@@ -621,6 +621,10 @@ export interface AppSettings {
   uiFontSize: number
   /** Code blocks, diffs, and terminal text size in px. */
   codeFontSize: number
+  /** macOS only: sidebar shows the desktop through a vibrancy material. */
+  translucentSidebar: boolean
+  /** When false, interactive controls keep the arrow cursor like native apps. */
+  pointerCursors: boolean
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
   notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
   /** User-configured external MCP servers available to sessions. */

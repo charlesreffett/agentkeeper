@@ -12,6 +12,11 @@ describe('theme presets', () => {
         }
         expect(contrastRatio(colors.brand, colors['brand-foreground']), 'brand fill').toBeGreaterThanOrEqual(4.5)
         expect(contrastRatio(colors.brand, colors.background), 'brand on background').toBeGreaterThanOrEqual(3)
+        expect(contrastRatio(colors.link, colors.background), 'link').toBeGreaterThanOrEqual(4.5)
+        const { cssVars } = deriveTheme({ ...DEFAULT_THEMES[variant], ...seeds }, variant)
+        for (const [name, value] of Object.entries(cssVars).filter(([n]) => n.startsWith('--shiki-token-'))) {
+          expect(contrastRatio(value, colors['code-background']), name).toBeGreaterThanOrEqual(4.5)
+        }
       })
     }
   }

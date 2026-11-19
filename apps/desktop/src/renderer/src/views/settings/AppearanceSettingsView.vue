@@ -6,6 +6,7 @@ import SettingsPage from '@/components/settings/SettingsPage.vue'
 import ColorField from '@/components/settings/ColorField.vue'
 import ThemePreview from '@/components/settings/ThemePreview.vue'
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useLayoutStore } from '@/stores/layout'
 import {
@@ -177,7 +178,7 @@ const textClass = 'h-8 w-full rounded-md border border-input bg-background px-2 
             <ColorField :model-value="config.foreground" label="Foreground" @update:model-value="update({ foreground: $event })" />
           </div>
           <label class="flex items-center gap-4 px-4 py-3">
-            <span class="min-w-0 flex-1"><span class="block text-sm font-medium">Contrast</span><span class="mt-0.5 block text-xs text-muted-foreground">How strongly surfaces and secondary text separate from the background.</span></span>
+            <span class="min-w-0 flex-1"><span class="block text-sm font-medium">Contrast</span><span class="mt-0.5 block text-xs text-muted-foreground">{{ layoutStore.osHighContrast && config.contrast < 85 ? 'Raised to at least 85 while your system’s Increase contrast setting is on.' : 'How strongly surfaces and secondary text separate from the background.' }}</span></span>
             <input
               type="range" min="0" max="100" step="1"
               class="w-36 accent-[var(--brand)]"
@@ -273,6 +274,20 @@ const textClass = 'h-8 w-full rounded-md border border-input bg-background px-2 
             <option v-for="size in range(CODE_FONT_SIZE)" :key="size" :value="size">{{ size }}px</option>
           </select>
         </label>
+      </div>
+    </section>
+
+    <section aria-labelledby="window-heading" class="space-y-3">
+      <h2 id="window-heading" class="text-sm font-semibold">Window</h2>
+      <div class="divide-y rounded-lg border">
+        <div v-if="layoutStore.isMacOS" class="flex items-center gap-4 px-4 py-3">
+          <span class="min-w-0 flex-1"><span id="translucent-sidebar-label" class="block text-sm font-medium">Translucent sidebar</span><span class="mt-0.5 block text-xs text-muted-foreground">Let the desktop show through the sidebar.</span></span>
+          <Switch :model-value="layoutStore.translucentSidebar" aria-labelledby="translucent-sidebar-label" @update:model-value="void layoutStore.setWindowOptions({ translucentSidebar: $event })" />
+        </div>
+        <div class="flex items-center gap-4 px-4 py-3">
+          <span class="min-w-0 flex-1"><span id="pointer-cursors-label" class="block text-sm font-medium">Pointer cursors</span><span class="mt-0.5 block text-xs text-muted-foreground">Show a hand cursor over buttons and links. Off matches native desktop apps.</span></span>
+          <Switch :model-value="layoutStore.pointerCursors" aria-labelledby="pointer-cursors-label" @update:model-value="void layoutStore.setWindowOptions({ pointerCursors: $event })" />
+        </div>
       </div>
     </section>
   </SettingsPage>
