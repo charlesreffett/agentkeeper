@@ -98,6 +98,10 @@ export interface InternalStartExtras {
    *  scheduled, after the active-map entry has been removed. Fired in
    *  consumeStream's finally block so startSession can be called again safely. */
   onTerminalError?: () => void
+  /** The caller pushes a user message right after startSession returns, so a
+   *  resume must not report a transient idle/suspended — the renderer treats
+   *  that as a finished turn and fires the completion notification. */
+  inputPending?: boolean
 }
 
 type DefaultMcpFactoryResolver = (args: {
@@ -745,7 +749,7 @@ export async function startSession(
   broadcastStatus({ sessionId: sessionLocalId, agentLocalId, status: 'starting' })
   // A resume with nothing queued spawns a subprocess that just waits for
   // input — reporting 'running' there leaves phantom-running agents in the UI.
-  const resumedWaiting = isResume && input.pendingCount === 0
+  const resumedWaiting = isResume && input.pendingCount === 0 && !extras.inputPending
   setStatus(
     session,
     resumedWaiting ? (sessionLocalId !== agentLocalId ? 'idle' : 'suspended') : 'running',
@@ -796,7 +800,7 @@ export async function sendInput(sessionId: string, text: string, attachments?: A
       agencyId: persistedSession.agencyId ?? undefined,
       agencyScope: persistedSession.agencyScope ?? undefined,
       isEntryPoint: agent.isEntryPoint,
-    })
+    }, { inputPending: true })
     s = active.get(sessionId)!
   }
   const userMsg = await messageFromInput(text, attachments, s.worktreePath ?? s.projectPath ?? os.homedir())

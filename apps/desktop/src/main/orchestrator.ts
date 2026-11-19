@@ -620,7 +620,10 @@ async function injectAndWait(
         agencyName: runtime.agencyName,
         isEntryPoint: persistedAgent.isEntryPoint,
       },
-      { mcpFactory: () => createOrchestratorMcp(runtime.projectPath, toSessionId) },
+      {
+        mcpFactory: () => createOrchestratorMcp(runtime.projectPath, toSessionId),
+        inputPending: true,
+      },
     )
     target = getActiveSession(toSessionId)!
   }
