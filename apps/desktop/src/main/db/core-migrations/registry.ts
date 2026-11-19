@@ -2,6 +2,7 @@ import baseline from './001_current_schema'
 import pluginWorkItemBoundary from './002_plugin_work_item_boundary'
 import pluginPermissionGrants from './003_plugin_permission_grants'
 import providerNeutralProjectRemotes from './004_provider_neutral_project_remotes'
+import planOrchestration from './005_plan_orchestration'
 import type { Migration } from './Migration'
 
 export const coreMigrations: readonly Migration[] = [
@@ -9,4 +10,5 @@ export const coreMigrations: readonly Migration[] = [
   pluginWorkItemBoundary,
   pluginPermissionGrants,
   providerNeutralProjectRemotes,
+  planOrchestration,
 ]

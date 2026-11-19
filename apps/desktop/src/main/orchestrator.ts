@@ -30,7 +30,8 @@ import {
 } from './agent'
 import * as registry from './session-registry'
 import type { Agent } from './session-registry'
-import { createPlan, updatePlan, getPlanByRef } from './plans'
+import { createPlan, updatePlan, getPlanByRef, linkSessionToPlan } from './plans'
+import { describePlanForAgent, formatReview, recordProgress, resolveCaller, reviewPush } from './plan-orchestration'
 
 interface AgencyRoleRestartParams {
   systemPromptAppend: string
@@ -995,8 +996,12 @@ function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefi
             estimatedMinutes,
             steps: steps.map((s) => ({ ...s, id: s.id ?? '', status: s.status ?? 'pending' })),
             status: 'planned',
-            sessionIds: sessionId ? [sessionId] : [],
+            sessionIds: [],
           })
+          if (sessionId) {
+            linkSessionToPlan(plan.id, resolveCaller(sessionId).sessionLocalId)
+            plan.sessionIds = [resolveCaller(sessionId).sessionLocalId]
+          }
           if (sessionId) {
             registry.updateSession(sessionId, {
               planState: plan.steps.map((s) => ({
@@ -1062,18 +1067,77 @@ function buildPlanTools(projectPath: string, sessionId?: string): SdkMcpToolDefi
         }
       },
     ),
+    ...(sessionId ? buildJobTools(sessionId) : []),
+  ]
+}
+
+function textResult(text: string) {
+  return { content: [{ type: 'text' as const, text }] }
+}
+
+function errorResult(err: unknown) {
+  return textResult(`Error: ${err instanceof Error ? err.message : String(err)}`)
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildJobTools(callerId: string): SdkMcpToolDefinition<any>[] {
+  return [
+    tool(
+      'get_plan',
+      'Read the plan (task) this session is working on: its brief, steps with stepIds, and every job linked to it with their latest progress. Call this before starting work on a plan and whenever you need to re-check scope.',
+      {
+        id: z.string().optional().describe('Plan UUID. Omit to use the plan linked to this session.'),
+      },
+      async ({ id }) => {
+        try {
+          return textResult(await describePlanForAgent(resolveCaller(callerId), id))
+        } catch (err) {
+          return errorResult(err)
+        }
+      },
+    ),
+    tool(
+      'report_progress',
+      'Report your progress to the user and the other jobs on this plan. Call with state "working" when you start a step and at meaningful milestones (a report older than 10 minutes shows as stale), "blocked" when you need a human or another job, and "done" when your assignment is finished. Passing stepId also updates that plan step\'s status.',
+      {
+        state: z.enum(['working', 'blocked', 'done']),
+        note: z.string().min(1).describe('One sentence: what you did or what is blocking you.'),
+        stepId: z.string().optional().describe('Plan step this report is about (from get_plan).'),
+      },
+      async ({ state, note, stepId }) => {
+        try {
+          const report = await recordProgress(resolveCaller(callerId), { state, note, ...(stepId ? { stepId } : {}) })
+          return textResult(`Recorded ${report.state} at ${report.createdAt}.`)
+        } catch (err) {
+          return errorResult(err)
+        }
+      },
+    ),
+    tool(
+      'review_push',
+      'Required before every git push. Reviews the commits on your current branch (since its merge-base with the default branch) and returns APPROVED with a receipt for that exact HEAD, or CHANGES REQUESTED with findings. Commit everything first. Push only an approved HEAD; any new commit needs a new review.',
+      {},
+      async () => {
+        try {
+          return textResult(formatReview(await reviewPush(resolveCaller(callerId))))
+        } catch (err) {
+          return errorResult(err)
+        }
+      },
+    ),
   ]
 }
 
 export function createProjectMcp(
   projectPath: string | null,
+  callerId: string,
 ): ReturnType<typeof createSdkMcpServer> {
   // General chats have no plan store to bind to — expose an empty toolset so
   // the agent stays a clean Claude Code with no agentkeeper MCP surface.
   return createSdkMcpServer({
     name: 'agentkeeper',
     version: '1.0.0',
-    tools: isGeneralProject(projectPath) ? [] : buildPlanTools(projectPath),
+    tools: isGeneralProject(projectPath) ? [] : buildPlanTools(projectPath, callerId),
   })
 }
 

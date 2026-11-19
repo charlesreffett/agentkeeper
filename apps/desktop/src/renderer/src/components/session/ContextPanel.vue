@@ -6,6 +6,8 @@ import TokenBreakdownPopover from './TokenBreakdownPopover.vue'
 import { useSessionStore } from '@/stores/sessions'
 import { formatRelativeTime } from '@/lib/format'
 import { useModelsQuery } from '@/composables/useModelsQuery'
+import { jobDisplayState, useSessionActivity } from '@/composables/usePlanJobs'
+import { useNow } from '@vueuse/core'
 import type { Agent, GitDiffStatFile, LiveSessionStatus, Plan } from '@shared/ipc-contract'
 import type { WorkItem } from '@shared/ipc-contract'
 
@@ -148,6 +150,12 @@ async function fetchWorkItem() {
 // ─── Linked plan ─────────────────────────────────────────────────────────────
 
 const linkedPlan = ref<Plan | null>(null)
+
+const { activity } = useSessionActivity(computed(() => props.rootSessionId))
+const nowTick = useNow({ interval: 30_000 })
+const latestProgress = computed(() => activity.value?.progress[0] ?? null)
+const latestReview = computed(() => activity.value?.reviews[0] ?? null)
+const progressState = computed(() => jobDisplayState(latestProgress.value, nowTick.value.getTime()))
 const planLoading = ref(false)
 const resumingPlan = ref(false)
 
@@ -584,6 +592,35 @@ async function reconnectMcp() {
           <Loader2 v-else class="size-3 animate-spin" />
           {{ resumingPlan ? 'Resuming…' : 'Resume plan' }}
         </button>
+      </section>
+
+      <section v-if="latestProgress || latestReview" class="px-3 py-3">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 mb-2 flex items-center gap-1.5">
+          <CornerDownRight class="size-3" />
+          Progress
+          <span
+            v-if="latestProgress"
+            class="ml-auto font-normal normal-case tracking-normal"
+            :class="{
+              'text-emerald-600 dark:text-emerald-400': progressState === 'working',
+              'text-amber-600 dark:text-amber-400': progressState === 'stale',
+              'text-destructive': progressState === 'blocked',
+              'text-muted-foreground': progressState === 'done',
+            }"
+          >
+            {{ progressState }} · {{ formatRelativeTime(Date.parse(latestProgress.createdAt), nowTick.getTime()) }}
+          </span>
+        </div>
+        <p v-if="latestProgress" class="text-[11px] text-foreground leading-snug">{{ latestProgress.note }}</p>
+        <p
+          v-if="latestReview"
+          class="mt-1.5 text-[11px] leading-snug"
+          :class="latestReview.verdict === 'approved' ? 'text-emerald-600 dark:text-emerald-400' : 'text-destructive'"
+          :title="latestReview.summary"
+        >
+          {{ latestReview.verdict === 'approved' ? 'Push approved' : 'Changes requested' }}
+          for {{ latestReview.headSha.slice(0, 7) }}
+        </p>
       </section>
 
       <!-- ── BRANCH & PR ─────────────────────────────────────────────────────── -->

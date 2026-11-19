@@ -32,6 +32,8 @@ import { useModelsQuery } from '@/composables/useModelsQuery'
 import { useHarnessCapabilities } from '@/composables/useHarnessCapabilities'
 import { PROVIDER_UNAVAILABLE_LABEL, useProviderWorkItems } from '@/composables/useProviderWorkItems'
 import { projectColor } from '@/lib/projectColor'
+import PlanBriefPanel from '@/components/planner/PlanBriefPanel.vue'
+import PlanJobsPanel from '@/components/planner/PlanJobsPanel.vue'
 import type { Plan, PlanStep, PlanStepStatus, Session } from '@shared/ipc-contract'
 import type { AgencyScope } from '@shared/ipc-contract'
 import {
@@ -456,6 +458,12 @@ async function saveContext(index: number) {
   )
 }
 
+async function saveBrief(brief: string) {
+  if (!plan.value || !planProjectPath.value) return
+  const updated = await window.agentkeeper.plans.update(planProjectPath.value, planId.value, { brief })
+  if (updated) plan.value = updated
+}
+
 // ── Prompt builder helper ─────────────────────────────────────────────────────
 
 function buildStepsText(steps: PlanStep[]): { text: string; hasGates: boolean } {
@@ -516,7 +524,7 @@ Plan: ${cur.title} (${cur.planRef ?? cur.id})
 Steps:
 ${stepsText}
 
-Execute each step in sequence (run parallel:true steps concurrently where safe). Mark steps complete as you finish each one using the update_plan MCP tool with id "${cur.id}".${gateNote}`
+Execute each step in sequence (run parallel:true steps concurrently where safe). Mark steps complete as you finish each one using the update_plan MCP tool with id "${cur.id}". Before any git push, call review_push and push only a HEAD it approved.${gateNote}`
   try {
     const updated = await window.agentkeeper.plans.update(project.path, planId.value, { status: 'running' })
     if (updated) plan.value = updated
@@ -965,6 +973,9 @@ Guidelines:
           </div>
           <p v-else class="text-sm italic text-foreground/80">{{ plan.prompt }}</p>
         </div>
+
+        <PlanBriefPanel :brief="plan.brief" @save="(b) => void saveBrief(b)" />
+        <PlanJobsPanel v-if="planProjectPath" :plan="plan" :project-path="planProjectPath" />
 
         <!-- Steps -->
         <div>

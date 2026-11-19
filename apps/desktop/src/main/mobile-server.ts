@@ -7,7 +7,7 @@ import { sendInput, interruptSession, setMobileEventNotifier, setMobileSessionsN
 import { readSession } from './sessions'
 import { listCommands, expandCommandInput } from './commands'
 import { settingsStore } from './settings'
-import { startAgency, createProjectMcp, generateAndPersistSessionTitle } from './orchestrator'
+import { startAgency, generateAndPersistSessionTitle } from './orchestrator'
 import { listRoles } from './roles'
 import { removeSessionFromPlans } from './plans'
 import { listAgencies } from './agencies'
@@ -220,9 +220,7 @@ export function startMobileServer(port: number, secretKey: string): http.Server 
           ...(role?.id ? { roleId: role.id } : {}),
           ...(attachments.length ? { initialAttachments: attachments } : {}),
         }
-        const agentLocalId = await startSession(params, {
-          mcpFactory: () => createProjectMcp(projectPath),
-        })
+        const agentLocalId = await startSession(params)
         void generateAndPersistSessionTitle(agentLocalId, prompt)
         send(res, 200, { sessionId: agentLocalId })
       } catch (err) {

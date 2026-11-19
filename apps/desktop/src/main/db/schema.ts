@@ -126,6 +126,41 @@ export const plans = sqliteTable('plans', {
   startedAt: integer('started_at'),
   updatedAt: integer('updated_at').notNull(),
   completedAt: integer('completed_at'),
+  brief: text('brief'),
+})
+
+export const planSessions = sqliteTable('plan_sessions', {
+  planId: text('plan_id').notNull().references(() => plans.id, { onDelete: 'cascade' }),
+  sessionLocalId: text('session_local_id').notNull().references(() => sessions.localId, { onDelete: 'cascade' }),
+  stepId: text('step_id'),
+  addedAt: integer('added_at').notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.planId, table.sessionLocalId] }),
+}))
+
+export const progressReports = sqliteTable('progress_reports', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  planId: text('plan_id').references(() => plans.id, { onDelete: 'set null' }),
+  sessionLocalId: text('session_local_id').notNull().references(() => sessions.localId, { onDelete: 'cascade' }),
+  agentLocalId: text('agent_local_id').notNull(),
+  stepId: text('step_id'),
+  state: text('state').notNull(),
+  note: text('note').notNull(),
+  createdAt: integer('created_at').notNull(),
+})
+
+export const pushReviews = sqliteTable('push_reviews', {
+  id: text('id').primaryKey(),
+  sessionLocalId: text('session_local_id').notNull().references(() => sessions.localId, { onDelete: 'cascade' }),
+  agentLocalId: text('agent_local_id').notNull(),
+  planId: text('plan_id').references(() => plans.id, { onDelete: 'set null' }),
+  branch: text('branch'),
+  baseSha: text('base_sha').notNull(),
+  headSha: text('head_sha').notNull(),
+  verdict: text('verdict').notNull(),
+  summary: text('summary').notNull(),
+  findings: text('findings').notNull().default('[]'),
+  createdAt: integer('created_at').notNull(),
 })
 
 export const pluginStorage = sqliteTable('plugin_storage', {

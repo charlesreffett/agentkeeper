@@ -32,6 +32,9 @@ import {
   type Plan,
   type PlansCreateInput,
   type PlansUpdateInput,
+  type PlanJob,
+  type SessionActivity,
+  type ProgressUpdatedEvent,
   type Session,
   type PermissionMode,
   type ModelPricing,
@@ -457,6 +460,16 @@ const api: AgentKeeperApi = {
       invoke(IPC_CHANNELS.plansDelete, projectPath, id) as Promise<boolean>,
     onUpdated: (cb: (data: { projectPath: string; id: string }) => void) =>
       onChannel<{ projectPath: string; id: string }>(IPC_CHANNELS.planUpdated, cb),
+    listJobs: (projectPath: string, planId: string) =>
+      invoke(IPC_CHANNELS.plansListJobs, projectPath, planId) as Promise<PlanJob[]>,
+    linkSession: (projectPath: string, planId: string, sessionLocalId: string, stepId?: string | null) =>
+      invoke(IPC_CHANNELS.plansLinkSession, projectPath, planId, sessionLocalId, stepId ?? null) as Promise<void>,
+  },
+  progress: {
+    forSession: (sessionLocalId: string) =>
+      invoke(IPC_CHANNELS.progressForSession, sessionLocalId) as Promise<SessionActivity>,
+    onUpdated: (cb: (data: ProgressUpdatedEvent) => void) =>
+      onChannel<ProgressUpdatedEvent>(IPC_CHANNELS.progressUpdated, cb),
   },
   costs: {
     getDailySummary: () =>
