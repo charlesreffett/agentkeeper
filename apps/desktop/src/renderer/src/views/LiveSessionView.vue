@@ -389,7 +389,6 @@ const wasInterrupted = computed(() => !!session.value?.interruptedAt)
 const isTerminal = computed(
   () =>
     session.value?.status === 'completed' ||
-    session.value?.status === 'inactive' ||
     session.value?.status === 'error',
 )
 
@@ -440,7 +439,6 @@ const rootIsRunning = computed(
 const rootIsTerminal = computed(
   () =>
     rootSession.value?.status === 'completed' ||
-    rootSession.value?.status === 'inactive' ||
     rootSession.value?.status === 'error',
 )
 const rootIsDraft = computed(() => !!rootSession.value?.isDraft)
