@@ -54,7 +54,7 @@ function wireListeners(id: string): void {
 onMounted(async () => {
   xterm = new Terminal({
     theme: terminalTheme(),
-    fontSize: 13,
+    fontSize: layoutStore.codeFontSize,
     fontFamily: terminalFont(),
     cursorBlink: true,
   })
@@ -89,6 +89,8 @@ watch(() => layoutStore.colors, () => {
   if (!xterm) return
   xterm.options.theme = terminalTheme()
   xterm.options.fontFamily = terminalFont()
+  xterm.options.fontSize = layoutStore.codeFontSize
+  fitAddon?.fit()
 })
 
 watch(() => props.active, async isActive => {

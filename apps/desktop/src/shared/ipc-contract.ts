@@ -617,6 +617,10 @@ export interface AppSettings {
   theme: ThemePreference
   /** Seed colors, contrast, and fonts per variant; tokens are derived in shared/theme.ts. */
   themes: ThemeSettings
+  /** Base UI text size in px; applied as window zoom relative to 14px. */
+  uiFontSize: number
+  /** Code blocks, diffs, and terminal text size in px. */
+  codeFontSize: number
   notifications: 'all' | 'notification-only' | 'sound-only' | 'toast' | 'disabled'
   notificationSound: 'chime' | 'bell' | 'ping' | 'ding' | 'pulse'
   /** User-configured external MCP servers available to sessions. */

@@ -7,6 +7,7 @@
 @layer base {
   :root {
     --radius: 0.5rem;
+    --code-font-size: 13px;
   }
 }
 
@@ -36,7 +37,7 @@
 
 /* Shiki v4 dual-theme: light color is a direct inline style on spans; dark overrides via CSS var.
    Surface colors come from theme tokens so code blocks follow the user's background. */
-.shiki { background-color: var(--code-background) !important; color: var(--code-foreground) !important; overflow-x: auto; max-width: 100%; }
+.shiki { background-color: var(--code-background) !important; color: var(--code-foreground) !important; font-size: var(--code-font-size); overflow-x: auto; max-width: 100%; }
 .dark .shiki span { color: var(--shiki-dark) !important; }
 
 @layer utilities {

@@ -5,7 +5,7 @@ import {
   ROLE_EFFORT_VALUES,
   type AppSettings,
 } from '../shared/ipc-contract'
-import { DEFAULT_THEMES, normalizeThemeSettings } from '../shared/theme'
+import { CODE_FONT_SIZE, DEFAULT_THEMES, UI_FONT_SIZE, clampFontSize, normalizeThemeSettings } from '../shared/theme'
 
 const DEFAULTS: AppSettings = {
   pluginDeveloperMode: false,
@@ -18,6 +18,8 @@ const DEFAULTS: AppSettings = {
   sessionExpiryDays: 14,
   theme: 'dark',
   themes: DEFAULT_THEMES,
+  uiFontSize: UI_FONT_SIZE.default,
+  codeFontSize: CODE_FONT_SIZE.default,
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],
@@ -60,6 +62,8 @@ function read(): AppSettings {
       merged.theme = DEFAULTS.theme
     }
     merged.themes = normalizeThemeSettings(parsed.themes)
+    merged.uiFontSize = clampFontSize(merged.uiFontSize, UI_FONT_SIZE)
+    merged.codeFontSize = clampFontSize(merged.codeFontSize, CODE_FONT_SIZE)
     if (!NOTIFICATIONS_VALUES.includes(merged.notifications)) {
       merged.notifications = DEFAULTS.notifications
     }
@@ -88,6 +92,8 @@ export const settingsStore = {
   set(partial: Partial<AppSettings>): AppSettings {
     const next = { ...read(), ...partial }
     if (partial.themes) next.themes = normalizeThemeSettings(partial.themes)
+    next.uiFontSize = clampFontSize(next.uiFontSize, UI_FONT_SIZE)
+    next.codeFontSize = clampFontSize(next.codeFontSize, CODE_FONT_SIZE)
     write(next)
     return next
   },

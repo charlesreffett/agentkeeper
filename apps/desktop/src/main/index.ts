@@ -33,7 +33,7 @@ import { stopAllWatchers, removeSubscriber } from './watcher.js'
 import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
 import { isTrustedRendererNavigation, normalizeExternalUrl } from './navigation-policy'
 import { RENDERER_SECURITY_WEB_PREFERENCES } from './renderer-security-policy'
-import { resolveThemeVariant } from '../shared/theme'
+import { resolveThemeVariant, uiZoomFactor } from '../shared/theme'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const devUserDataPath = process.env['AGENTKEEPER_USER_DATA_DIR']
@@ -173,6 +173,7 @@ function createWindow(): BrowserWindow {
 
   win.on('ready-to-show', () => win.show())
   win.webContents.on('did-finish-load', () => {
+    win.webContents.setZoomFactor(uiZoomFactor(settingsStore.get().uiFontSize))
     if (!win.isVisible()) win.show()
   })
   win.webContents.on('did-fail-load', (_event, code, description) => {

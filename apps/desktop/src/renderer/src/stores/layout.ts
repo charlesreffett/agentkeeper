@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
+import type { AppSettings } from '@shared/ipc-contract'
 import {
+  CODE_FONT_SIZE,
   DEFAULT_THEMES,
+  UI_FONT_SIZE,
+  clampFontSize,
   deriveTheme,
   normalizeThemeConfig,
   normalizeThemeSettings,
@@ -31,6 +36,8 @@ export const useLayoutStore = defineStore('layout', () => {
 
   const theme = ref<ThemePreference>('dark')
   const themes = ref<ThemeSettings>(structuredClone(DEFAULT_THEMES))
+  const uiFontSize = ref<number>(UI_FONT_SIZE.default)
+  const codeFontSize = ref<number>(CODE_FONT_SIZE.default)
   const resolved = ref<ResolvedTheme>(deriveTheme(DEFAULT_THEMES.dark, 'dark'))
   const resolvedTheme = computed(() => resolved.value.variant)
   /** Hex values for consumers that can't read CSS variables (xterm, SVG attributes). */
@@ -39,8 +46,10 @@ export const useLayoutStore = defineStore('layout', () => {
 
   function apply() {
     const variant = resolveThemeVariant(theme.value, window.matchMedia('(prefers-color-scheme: dark)').matches)
-    resolved.value = deriveTheme(themes.value[variant], variant)
-    applyThemeToDocument(resolved.value)
+    const derived = deriveTheme(themes.value[variant], variant)
+    derived.cssVars['--code-font-size'] = `${codeFontSize.value}px`
+    resolved.value = derived
+    applyThemeToDocument(derived)
   }
 
   function onSystemThemeChange() {
@@ -53,10 +62,12 @@ export const useLayoutStore = defineStore('layout', () => {
     systemThemeQuery.addEventListener('change', onSystemThemeChange)
   }
 
-  function initTheme(pref: ThemePreference, configs: ThemeSettings | undefined) {
+  function initTheme(settings: Pick<AppSettings, 'theme' | 'themes' | 'uiFontSize' | 'codeFontSize'>) {
     watchSystemTheme()
-    theme.value = pref
-    themes.value = normalizeThemeSettings(configs)
+    theme.value = settings.theme ?? 'dark'
+    themes.value = normalizeThemeSettings(settings.themes)
+    uiFontSize.value = clampFontSize(settings.uiFontSize, UI_FONT_SIZE)
+    codeFontSize.value = clampFontSize(settings.codeFontSize, CODE_FONT_SIZE)
     apply()
   }
 
@@ -67,11 +78,22 @@ export const useLayoutStore = defineStore('layout', () => {
     await window.agentkeeper.settings.set({ theme: pref })
   }
 
-  async function setThemeConfig(variant: ThemeVariant, config: ThemeConfig) {
+  // Color pickers emit on every drag frame; apply live, persist once input settles.
+  const persist = useDebounceFn((partial: Partial<AppSettings>) => window.agentkeeper.settings.set(partial), 300)
+
+  function setThemeConfig(variant: ThemeVariant, config: ThemeConfig) {
     themes.value = { ...themes.value, [variant]: normalizeThemeConfig(config, DEFAULT_THEMES[variant]) }
     apply()
-    await window.agentkeeper.settings.set({ themes: JSON.parse(JSON.stringify(themes.value)) as ThemeSettings })
+    void persist({ themes: JSON.parse(JSON.stringify(themes.value)) as ThemeSettings })
   }
 
-  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, themes, resolvedTheme, colors, initTheme, setTheme, setThemeConfig }
+  async function setFontSizes(sizes: { uiFontSize?: number; codeFontSize?: number }) {
+    const partial: Partial<AppSettings> = {}
+    if (sizes.uiFontSize !== undefined) partial.uiFontSize = uiFontSize.value = clampFontSize(sizes.uiFontSize, UI_FONT_SIZE)
+    if (sizes.codeFontSize !== undefined) partial.codeFontSize = codeFontSize.value = clampFontSize(sizes.codeFontSize, CODE_FONT_SIZE)
+    apply()
+    await window.agentkeeper.settings.set(partial)
+  }
+
+  return { rightPanelOpen, toggleRightPanel, hoveredEdgeId, setHoveredEdge, theme, themes, uiFontSize, codeFontSize, resolvedTheme, colors, initTheme, setTheme, setThemeConfig, setFontSizes }
 })

@@ -48,6 +48,20 @@ export const DEFAULT_THEMES: ThemeSettings = {
 export const DEFAULT_UI_FONT = "InterVariable, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
 export const DEFAULT_CODE_FONT = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
 
+export const UI_FONT_SIZE = { min: 11, max: 20, default: 14 } as const
+export const CODE_FONT_SIZE = { min: 10, max: 20, default: 13 } as const
+
+export function clampFontSize(value: unknown, range: { min: number; max: number; default: number }): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.min(range.max, Math.max(range.min, Math.round(value)))
+    : range.default
+}
+
+/** UI size is applied as page zoom so fixed-px classes scale along with rem-based ones. */
+export function uiZoomFactor(uiFontSize: number): number {
+  return clampFontSize(uiFontSize, UI_FONT_SIZE) / UI_FONT_SIZE.default
+}
+
 export function resolveThemeVariant(pref: ThemePreference, prefersDark: boolean): ThemeVariant {
   return pref === 'system' ? (prefersDark ? 'dark' : 'light') : pref
 }
@@ -144,6 +158,21 @@ export function contrastRatio(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
 }
 
+const TEXT_CONTRAST = 4.5
+
+/** Walks lightness away from the background until the color reads as body text. */
+function ensureLegible(color: Lab, bg: string): string {
+  const bgL = hexToLab(bg)[0]
+  const step = bgL > 0.6 ? -0.01 : 0.01
+  let [L, a, b] = color
+  let hex = labToHex([L, a, b])
+  for (let i = 0; i < 60 && contrastRatio(hex, bg) < TEXT_CONTRAST; i++) {
+    L = Math.min(1, Math.max(0, L + step))
+    hex = labToHex([L, a, b])
+  }
+  return hex
+}
+
 function onColor(fill: string, light: string, dark: string): string {
   return contrastRatio(fill, light) >= contrastRatio(fill, dark) ? light : dark
 }
@@ -222,12 +251,17 @@ export function deriveTheme(config: ThemeConfig, variant: ThemeVariant): Resolve
   const subtle = toward(0.05)
   const hover = toward(isDark ? 0.12 : 0.045)
   const border = toward(isDark ? 0.08 : 0.11)
-  const mutedFg = mixHex(bg, fg, Math.min(0.92, (isDark ? 0.64 : 0.6) * (0.75 + 0.25 * k)))
+  let mutedT = Math.min(0.92, (isDark ? 0.64 : 0.6) * (0.75 + 0.25 * k))
+  let mutedFg = mixHex(bg, fg, mutedT)
+  while (mutedT < 1 && contrastRatio(mutedFg, bg) < TEXT_CONTRAST) {
+    mutedT = Math.min(1, mutedT + 0.02)
+    mutedFg = mixHex(bg, fg, mutedT)
+  }
   const sidebarBg = isDark ? mixHex(bg, BLACK, 0.22) : toward(0.008)
   const sidebarHover = mixHex(sidebarBg, fg, Math.min(1, (isDark ? 0.08 : 0.07) * k))
 
   const semantic = (key: keyof (typeof SEMANTIC_DEFAULTS)['light']): string =>
-    isHexColor(config.semantic[key]) ? config.semantic[key]! : labToHex(SEMANTIC_DEFAULTS[variant][key])
+    isHexColor(config.semantic[key]) ? config.semantic[key]! : ensureLegible(SEMANTIC_DEFAULTS[variant][key], bg)
 
   const primaryFg = isDark ? mixHex(bg, BLACK, 0.15) : mixHex(bg, WHITE, 0.6)
   const success = semantic('success')
