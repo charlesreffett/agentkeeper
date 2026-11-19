@@ -1040,6 +1040,8 @@ export interface AgentKeeperApi {
   settings: {
     get: () => Promise<AppSettings>
     set: (partial: Partial<AppSettings>) => Promise<AppSettings>
+    /** Fires when the main process changes uiFontSize (View menu zoom, Ctrl/Cmd+scroll). */
+    onUiFontSizeChanged: (callback: (size: number) => void) => () => void
   }
   notifications: {
     trigger: (sessionLocalId: string, sessionTitle: string, silent: boolean) => Promise<void>
@@ -1262,6 +1264,7 @@ export const IPC_CHANNELS = {
   commandsChanged: 'commands:changed',
   settingsGet: 'settings:get',
   settingsSet: 'settings:set',
+  settingsUiFontSizeChanged: 'settings:uiFontSizeChanged',
   resetExecute: 'reset:execute',
   workItemsList: 'workItems:list',
   workItemsGet: 'workItems:get',

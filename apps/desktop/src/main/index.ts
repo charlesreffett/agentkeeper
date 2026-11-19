@@ -34,6 +34,7 @@ import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
 import { isTrustedRendererNavigation, normalizeExternalUrl } from './navigation-policy'
 import { RENDERER_SECURITY_WEB_PREFERENCES } from './renderer-security-policy'
 import { resolveThemeVariant, uiZoomFactor } from '../shared/theme'
+import { stepUiFontSize } from './ui-scale'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const devUserDataPath = process.env['AGENTKEEPER_USER_DATA_DIR']
@@ -144,6 +145,27 @@ async function startCliSocket(): Promise<void> {
   cliServer = server
 }
 
+// Replaces the stock viewMenu so zoom shortcuts drive the uiFontSize setting
+// instead of an untracked Chromium zoom level.
+function viewMenu(): Electron.MenuItemConstructorOptions {
+  return {
+    label: 'View',
+    submenu: [
+      { role: 'reload' },
+      { role: 'forceReload' },
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => stepUiFontSize('reset') },
+      { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => stepUiFontSize(1) },
+      // Shift+= on most layouts; hidden so the menu shows one Zoom In entry.
+      { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', visible: false, click: () => stepUiFontSize(1) },
+      { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => stepUiFontSize(-1) },
+      { type: 'separator' },
+      { role: 'togglefullscreen' },
+    ],
+  }
+}
+
 // Matches the renderer's first paint so light themes don't flash a dark frame.
 function initialWindowBackground(): string {
   const { theme, themes } = settingsStore.get()
@@ -175,6 +197,9 @@ function createWindow(): BrowserWindow {
   win.webContents.on('did-finish-load', () => {
     win.webContents.setZoomFactor(uiZoomFactor(settingsStore.get().uiFontSize))
     if (!win.isVisible()) win.show()
+  })
+  win.webContents.on('zoom-changed', (_event, direction) => {
+    stepUiFontSize(direction === 'in' ? 1 : -1)
   })
   win.webContents.on('did-fail-load', (_event, code, description) => {
     dialog.showErrorBox('AgentKeeper could not load', `${description} (${code})`)
@@ -277,7 +302,14 @@ app.whenReady().then(async () => {
         ],
       },
       { role: 'editMenu' },
-      { role: 'viewMenu' },
+      viewMenu(),
+      { role: 'windowMenu' },
+    ]))
+  } else {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'fileMenu' },
+      { role: 'editMenu' },
+      viewMenu(),
       { role: 'windowMenu' },
     ]))
     app.setAboutPanelOptions({

@@ -88,6 +88,8 @@ export const useLayoutStore = defineStore('layout', () => {
     void persist({ themes: JSON.parse(JSON.stringify(themes.value)) as ThemeSettings })
   }
 
+  window.agentkeeper.settings.onUiFontSizeChanged(size => { uiFontSize.value = size })
+
   async function setFontSizes(sizes: { uiFontSize?: number; codeFontSize?: number }) {
     const partial: Partial<AppSettings> = {}
     if (sizes.uiFontSize !== undefined) partial.uiFontSize = uiFontSize.value = clampFontSize(sizes.uiFontSize, UI_FONT_SIZE)
