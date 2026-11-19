@@ -315,6 +315,8 @@ const api: AgentKeeperApi = {
     get: () => invoke(IPC_CHANNELS.settingsGet) as Promise<never>,
     set: (partial: Partial<AppSettings>) =>
       invoke(IPC_CHANNELS.settingsSet, partial) as Promise<never>,
+    onUiFontSizeChanged: (callback: (size: number) => void) =>
+      onChannel<number>(IPC_CHANNELS.settingsUiFontSizeChanged, callback),
   },
   notifications: {
     trigger: (sessionLocalId: string, sessionTitle: string, silent: boolean) =>

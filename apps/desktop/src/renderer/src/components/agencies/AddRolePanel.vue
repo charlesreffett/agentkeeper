@@ -90,7 +90,7 @@
         />
       </div>
 
-      <div v-if="createError" class="text-xs text-red-400">{{ createError }}</div>
+      <div v-if="createError" class="text-xs text-destructive">{{ createError }}</div>
 
       <div class="flex items-center gap-2">
         <button
@@ -140,7 +140,7 @@
           <div class="text-[10px] font-mono text-muted-foreground">{{ role.id }}</div>
         </div>
         <div class="shrink-0">
-          <Check v-if="inAgency(role.id)" class="w-4 h-4 text-green-500" />
+          <Check v-if="inAgency(role.id)" class="w-4 h-4 text-success" />
           <Plus v-else class="w-4 h-4 text-muted-foreground" />
         </div>
       </button>

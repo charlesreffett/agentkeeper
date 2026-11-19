@@ -51,10 +51,10 @@ async function load() {
 }
 
 const statusColor: Record<string, string> = {
-  M: 'text-blue-400',
-  A: 'text-green-400',
-  D: 'text-red-400',
-  R: 'text-yellow-400',
+  M: 'text-info',
+  A: 'text-diff-added',
+  D: 'text-diff-removed',
+  R: 'text-warning',
 }
 
 function buildTrie(files: Change[]): (DirNode | FileNode)[] {
@@ -168,7 +168,7 @@ function onCommitted() {
           <div
             class="flex items-center gap-1 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest"
           >
-            <span class="size-1.5 rounded-full bg-green-500 shrink-0" />
+            <span class="size-1.5 rounded-full bg-success shrink-0" />
             Staged ({{ gitStatus.staged.length }})
           </div>
           <div
@@ -196,7 +196,7 @@ function onCommitted() {
           <div
             class="flex items-center gap-1 pt-2 pb-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest"
           >
-            <span class="size-1.5 rounded-full bg-amber-500 shrink-0" />
+            <span class="size-1.5 rounded-full bg-warning shrink-0" />
             Unstaged ({{ gitStatus.unstaged.length }})
           </div>
           <div

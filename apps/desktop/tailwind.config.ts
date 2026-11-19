@@ -2,6 +2,11 @@ import type { Config } from 'tailwindcss'
 import animate from 'tailwindcss-animate'
 import typography from '@tailwindcss/typography'
 
+// Tailwind 3 can't apply `/50` opacity modifiers to bare var() colors and
+// silently emits nothing; color-mix with <alpha-value> makes them work.
+const token = (name: string) => `color-mix(in oklab, var(--${name}) calc(<alpha-value> * 100%), transparent)`
+const pair = (name: string, fg = `${name}-foreground`) => ({ DEFAULT: token(name), foreground: token(fg) })
+
 export default {
   darkMode: ['class', '.dark'],
   content: [
@@ -15,49 +20,41 @@ export default {
   	},
   	extend: {
   		colors: {
-  			border: 'var(--border)',
-  			input: 'var(--input)',
-  			ring: 'var(--ring)',
-  			background: 'var(--background)',
-  			foreground: 'var(--foreground)',
-  			primary: {
-  				DEFAULT: 'var(--primary)',
-  				foreground: 'var(--primary-foreground)'
-  			},
-  			secondary: {
-  				DEFAULT: 'var(--secondary)',
-  				foreground: 'var(--secondary-foreground)'
-  			},
-  			destructive: {
-  				DEFAULT: 'var(--destructive)',
-  				foreground: 'var(--destructive-foreground)'
-  			},
-  			muted: {
-  				DEFAULT: 'var(--muted)',
-  				foreground: 'var(--muted-foreground)'
-  			},
-  			accent: {
-  				DEFAULT: 'var(--accent)',
-  				foreground: 'var(--accent-foreground)'
-  			},
+  			border: token('border'),
+  			input: token('input'),
+  			ring: token('ring'),
+  			background: token('background'),
+  			foreground: token('foreground'),
+  			primary: pair('primary'),
+  			secondary: pair('secondary'),
+  			destructive: pair('destructive'),
+  			success: pair('success'),
+  			warning: pair('warning'),
+  			info: pair('info'),
+  			highlight: pair('highlight'),
+  			brand: pair('brand'),
+  			muted: pair('muted'),
+  			accent: pair('accent'),
   			popover: {
-  				DEFAULT: 'var(--popover)',
-  				foreground: 'var(--popover-foreground)',
-  				border: 'var(--popover-border)'
+  				DEFAULT: token('popover'),
+  				foreground: token('popover-foreground'),
+  				border: token('popover-border')
   			},
-  			card: {
-  				DEFAULT: 'var(--card)',
-  				foreground: 'var(--card-foreground)'
+  			card: pair('card'),
+  			code: pair('code-background', 'code-foreground'),
+  			diff: {
+  				added: token('diff-added'),
+  				removed: token('diff-removed')
   			},
   			sidebar: {
-  				DEFAULT: 'var(--sidebar-background)',
-  				foreground: 'var(--sidebar-foreground)',
-  				primary: 'var(--sidebar-primary)',
-  				'primary-foreground': 'var(--sidebar-primary-foreground)',
-  				accent: 'var(--sidebar-accent)',
-  				'accent-foreground': 'var(--sidebar-accent-foreground)',
-  				border: 'var(--sidebar-border)',
-  				ring: 'var(--sidebar-ring)'
+  				DEFAULT: token('sidebar-background'),
+  				foreground: token('sidebar-foreground'),
+  				primary: token('sidebar-primary'),
+  				'primary-foreground': token('sidebar-primary-foreground'),
+  				accent: token('sidebar-accent'),
+  				'accent-foreground': token('sidebar-accent-foreground'),
+  				border: token('sidebar-border'),
+  				ring: token('sidebar-ring')
   			}
   		},
   		boxShadow: {
@@ -70,23 +67,8 @@ export default {
   			sm: 'calc(var(--radius) - 4px)'
   		},
   		fontFamily: {
-  			sans: [
-  				'InterVariable',
-  				'Inter',
-  				'-apple-system',
-  				'BlinkMacSystemFont',
-  				'Segoe UI',
-  				'Roboto',
-  				'sans-serif'
-  			],
-  			mono: [
-  				'ui-monospace',
-  				'SFMono-Regular',
-  				'Menlo',
-  				'Monaco',
-  				'Consolas',
-  				'monospace'
-  			]
+  			sans: ['var(--font-sans)'],
+  			mono: ['var(--font-mono)']
   		}
   	}
   },

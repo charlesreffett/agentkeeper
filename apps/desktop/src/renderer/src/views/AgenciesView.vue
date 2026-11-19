@@ -44,7 +44,7 @@
               enter-from-class="opacity-0"
               leave-to-class="opacity-0"
             >
-              <span v-if="savedFlash" class="flex items-center gap-1 text-xs text-green-500">
+              <span v-if="savedFlash" class="flex items-center gap-1 text-xs text-success">
                 <Check class="w-3 h-3" />
                 Saved
               </span>

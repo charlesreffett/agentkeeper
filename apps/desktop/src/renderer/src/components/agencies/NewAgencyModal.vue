@@ -59,8 +59,8 @@
 
       <!-- Status -->
       <div class="px-5 py-2 border-t border-border shrink-0 text-[11px]">
-        <span v-if="error" class="text-red-400">{{ error }}</span>
-        <span v-else-if="missingHint" class="text-amber-400">{{ missingHint }}</span>
+        <span v-if="error" class="text-destructive">{{ error }}</span>
+        <span v-else-if="missingHint" class="text-warning">{{ missingHint }}</span>
         <span v-else class="text-muted-foreground">Ready to create.</span>
       </div>
 

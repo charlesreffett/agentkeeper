@@ -49,12 +49,12 @@ function statusDotClass(status: LiveSessionStatus): string {
   switch (status) {
     case 'running':
     case 'starting':
-      return 'bg-emerald-500 animate-pulse'
+      return 'bg-success animate-pulse'
     case 'idle':
     case 'suspended':
-      return 'bg-amber-500'
+      return 'bg-warning'
     case 'blocked':
-      return 'bg-blue-500'
+      return 'bg-info'
     case 'completed':
     case 'inactive':
       return 'bg-muted-foreground/40'
@@ -83,12 +83,12 @@ function statusTextClass(status: LiveSessionStatus): string {
   switch (status) {
     case 'running':
     case 'starting':
-      return 'text-emerald-500'
+      return 'text-success'
     case 'idle':
     case 'suspended':
-      return 'text-amber-500'
+      return 'text-warning'
     case 'blocked':
-      return 'text-blue-500'
+      return 'text-info'
     case 'error':
       return 'text-destructive'
     default:
@@ -219,11 +219,11 @@ async function resumePlanFromContext() {
 
 function planStepStatusClass(status: string): string {
   switch (status) {
-    case 'complete':    return 'text-emerald-500'
-    case 'running':     return 'text-emerald-500'
+    case 'complete':    return 'text-success'
+    case 'running':     return 'text-success'
     case 'failed':      return 'text-destructive'
     case 'skipped':     return 'text-muted-foreground/40'
-    case 'replanning':  return 'text-amber-500'
+    case 'replanning':  return 'text-warning'
     default:            return 'text-muted-foreground/40'
   }
 }
@@ -233,9 +233,9 @@ function priorityClass(priority: string | undefined): string {
   switch (priority?.toLowerCase()) {
     case 'highest':
     case 'critical': return 'bg-destructive/15 text-destructive'
-    case 'high':     return 'bg-orange-500/15 text-orange-500'
-    case 'medium':   return 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
-    case 'low':      return 'bg-blue-500/15 text-blue-500'
+    case 'high':     return 'bg-destructive/15 text-destructive'
+    case 'medium':   return 'bg-warning/15 text-warning'
+    case 'low':      return 'bg-info/15 text-info'
     case 'lowest':
     case 'trivial':  return 'bg-muted text-muted-foreground'
     default:         return 'bg-muted text-muted-foreground'
@@ -482,7 +482,7 @@ async function reconnectMcp() {
         <div class="text-[11px] font-medium text-foreground leading-snug mb-1.5">
           {{ workItem?.title ?? rootSession.workItem.title ?? rootSession.workItem.externalRef }}
         </div>
-        <div v-if="workItemUnavailable" class="mb-2 text-[11px] text-amber-600 dark:text-amber-400">
+        <div v-if="workItemUnavailable" class="mb-2 text-[11px] text-warning">
           Provider not available
         </div>
 
@@ -538,7 +538,7 @@ async function reconnectMcp() {
         <!-- Progress bar -->
         <div class="h-0.5 rounded-full bg-muted overflow-hidden mb-2.5">
           <div
-            class="h-full rounded-full bg-emerald-500 transition-all duration-300"
+            class="h-full rounded-full bg-success transition-all duration-300"
             :style="{ width: `${linkedPlan.steps.length > 0 ? (linkedPlan.steps.filter(s => s.status === 'complete').length / linkedPlan.steps.length) * 100 : 0}%` }"
           />
         </div>
@@ -626,8 +626,8 @@ async function reconnectMcp() {
             :title="f.file"
           >
             <span class="flex-1 text-foreground truncate font-mono">{{ truncatePath(f.file) }}</span>
-            <span v-if="f.added > 0" class="text-emerald-500 tabular-nums shrink-0">+{{ f.added }}</span>
-            <span v-if="f.removed > 0" class="text-destructive tabular-nums shrink-0">-{{ f.removed }}</span>
+            <span v-if="f.added > 0" class="text-diff-added tabular-nums shrink-0">+{{ f.added }}</span>
+            <span v-if="f.removed > 0" class="text-diff-removed tabular-nums shrink-0">-{{ f.removed }}</span>
           </div>
         </div>
 

@@ -41,9 +41,9 @@ const preview = computed(() => {
         class="size-3 shrink-0 text-muted-foreground/60 transition-transform group-open:rotate-90"
       />
       <!-- Tool icon -->
-      <KeyRound class="size-3 shrink-0 text-sky-500/80" />
+      <KeyRound class="size-3 shrink-0 text-info/80" />
       <!-- Tool name -->
-      <span class="font-mono text-xs font-medium text-sky-500 shrink-0">
+      <span class="font-mono text-xs font-medium text-info shrink-0">
         {{ block.name }}
       </span>
       <!-- Argument preview -->
@@ -55,7 +55,7 @@ const preview = computed(() => {
       </span>
       <span
         class="ml-auto size-2 rounded-full shrink-0 opacity-80"
-        :class="status === 'running' ? 'bg-amber-400 animate-pulse' : status === 'error' ? 'bg-destructive' : 'bg-emerald-500'"
+        :class="status === 'running' ? 'bg-warning animate-pulse' : status === 'error' ? 'bg-destructive' : 'bg-success'"
       />
     </summary>
     <!-- Expanded: full input JSON -->

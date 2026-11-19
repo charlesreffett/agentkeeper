@@ -163,7 +163,7 @@ useSettingsLeavePrompt(isDirty, save)
         <div class="divide-y rounded-lg border">
           <div v-for="harness in harnesses" :key="harness.id" class="space-y-3 px-4 py-3">
             <div class="flex items-center gap-3">
-              <span class="size-2 shrink-0 rounded-full" :class="!harness.available || ['unauthenticated', 'expired'].includes(authFor(harness.id)?.status ?? '') ? 'bg-destructive' : authFor(harness.id)?.status === 'unknown' ? 'bg-amber-500' : 'bg-emerald-500'" aria-hidden="true" />
+              <span class="size-2 shrink-0 rounded-full" :class="!harness.available || ['unauthenticated', 'expired'].includes(authFor(harness.id)?.status ?? '') ? 'bg-destructive' : authFor(harness.id)?.status === 'unknown' ? 'bg-warning' : 'bg-success'" aria-hidden="true" />
               <div class="min-w-0 flex-1"><p class="text-sm font-medium">{{ harness.name }}</p><p class="mt-0.5 text-xs text-muted-foreground">{{ harness.available ? (authFor(harness.id)?.detail ?? 'Available') : (harness.unavailableReason ?? 'Unavailable') }}</p></div>
               <Button v-if="harness.available && harness.authentication?.login" size="sm" variant="outline" :disabled="authenticatingId !== null || authFor(harness.id)?.status === 'authenticated'" @click="authenticate(harness.id)">{{ authenticatingId === harness.id ? 'Authenticating…' : authFor(harness.id)?.status === 'authenticated' ? 'Authenticated' : (harness.authentication.login.label ?? 'Authenticate') }}</Button>
             </div>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, Menu, dialog } from 'electron'
+import { app, BrowserWindow, shell, Menu, dialog, nativeTheme } from 'electron'
 // DEV ONLY: enable CDP for agent-browser testing. NODE_ENV is commonly unset in
 // packaged apps, so use Electron's packaged-state flag as the source of truth.
 // The port remains overridable so concurrent development instances can run.
@@ -33,6 +33,8 @@ import { stopAllWatchers, removeSubscriber } from './watcher.js'
 import { checkForAppUpdate, initializeAppUpdater } from './app-updater'
 import { isTrustedRendererNavigation, normalizeExternalUrl } from './navigation-policy'
 import { RENDERER_SECURITY_WEB_PREFERENCES } from './renderer-security-policy'
+import { resolveThemeVariant, uiZoomFactor } from '../shared/theme'
+import { stepUiFontSize } from './ui-scale'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const devUserDataPath = process.env['AGENTKEEPER_USER_DATA_DIR']
@@ -143,6 +145,34 @@ async function startCliSocket(): Promise<void> {
   cliServer = server
 }
 
+// Replaces the stock viewMenu so zoom shortcuts drive the uiFontSize setting
+// instead of an untracked Chromium zoom level.
+function viewMenu(): Electron.MenuItemConstructorOptions {
+  return {
+    label: 'View',
+    submenu: [
+      { role: 'reload' },
+      { role: 'forceReload' },
+      { role: 'toggleDevTools' },
+      { type: 'separator' },
+      { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: () => stepUiFontSize('reset') },
+      { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => stepUiFontSize(1) },
+      // Shift+= on most layouts; hidden so the menu shows one Zoom In entry.
+      { label: 'Zoom In', accelerator: 'CmdOrCtrl+Plus', visible: false, click: () => stepUiFontSize(1) },
+      { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => stepUiFontSize(-1) },
+      { type: 'separator' },
+      { role: 'togglefullscreen' },
+    ],
+  }
+}
+
+// Matches the renderer's first paint so light themes don't flash a dark frame.
+function initialWindowBackground(): string {
+  const { theme, themes } = settingsStore.get()
+  const variant = resolveThemeVariant(theme, nativeTheme.shouldUseDarkColors)
+  return themes[variant].background
+}
+
 function createWindow(): BrowserWindow {
   const devUrl = process.env['ELECTRON_RENDERER_URL']
   const packagedRendererUrl = pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
@@ -153,7 +183,7 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    backgroundColor: '#0a0a0b',
+    backgroundColor: initialWindowBackground(),
     ...(process.platform === 'darwin'
       ? { titleBarStyle: 'hiddenInset' as const }
       : {}),
@@ -165,7 +195,11 @@ function createWindow(): BrowserWindow {
 
   win.on('ready-to-show', () => win.show())
   win.webContents.on('did-finish-load', () => {
+    win.webContents.setZoomFactor(uiZoomFactor(settingsStore.get().uiFontSize))
     if (!win.isVisible()) win.show()
+  })
+  win.webContents.on('zoom-changed', (_event, direction) => {
+    stepUiFontSize(direction === 'in' ? 1 : -1)
   })
   win.webContents.on('did-fail-load', (_event, code, description) => {
     dialog.showErrorBox('AgentKeeper could not load', `${description} (${code})`)
@@ -268,7 +302,14 @@ app.whenReady().then(async () => {
         ],
       },
       { role: 'editMenu' },
-      { role: 'viewMenu' },
+      viewMenu(),
+      { role: 'windowMenu' },
+    ]))
+  } else {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'fileMenu' },
+      { role: 'editMenu' },
+      viewMenu(),
       { role: 'windowMenu' },
     ]))
     app.setAboutPanelOptions({

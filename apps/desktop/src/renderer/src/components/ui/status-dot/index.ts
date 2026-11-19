@@ -6,10 +6,10 @@ export { default as StatusDot } from './StatusDot.vue'
 export const statusDotVariants = cva('size-1.5 shrink-0 rounded-full', {
   variants: {
     variant: {
-      running: 'bg-emerald-500 animate-pulse',
+      running: 'bg-success animate-pulse',
       idle: 'bg-muted-foreground',
-      suspended: 'bg-amber-500',
-      blocked: 'bg-blue-500',
+      suspended: 'bg-warning',
+      blocked: 'bg-info',
       error: 'bg-destructive',
     },
   },

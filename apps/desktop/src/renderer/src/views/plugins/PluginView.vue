@@ -4,16 +4,20 @@ import { useRoute, useRouter } from 'vue-router'
 import type { PluginRecord, WorkItem } from '@shared/ipc-contract'
 import WorkItemSessionModal from './WorkItemSessionModal.vue'
 import { useSessionStore } from '@/stores/sessions'
+import { useLayoutStore } from '@/stores/layout'
 import {
   PLUGIN_IFRAME_CSP,
   normalizeRequestedExternalUrl,
   parsePluginBridgeRequest,
+  pluginThemePayload,
   resolveDeclaredPluginRoute,
 } from './plugin-view-policy'
 
 const route = useRoute()
 const router = useRouter()
 const sessionStore = useSessionStore()
+const layoutStore = useLayoutStore()
+const themePayload = computed(() => pluginThemePayload(layoutStore.resolvedTheme, layoutStore.cssVars))
 const frame = ref<HTMLIFrameElement | null>(null)
 const loading = ref(true)
 const unavailable = ref(false)
@@ -54,13 +58,23 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
     // data:/file: documents have opaque origins and require a wildcard. In
     // development the parent is HTTP(S), so outbound messages can be scoped.
     hostTargetOrigin: ['http:', 'https:'].includes(window.location.protocol) ? window.location.origin : '*',
-    colorScheme: document.documentElement.classList.contains('dark') ? 'dark' : 'light',
+    theme: themePayload.value,
   }).replaceAll('<', '\\u003c')
   const bridge = `
     (() => {
       const initial = ${initial};
       const pending = new Map();
       const routeListeners = new Set();
+      const themeListeners = new Set();
+      let theme = initial.theme;
+      const applyTheme = () => {
+        const rootStyle = document.documentElement.style;
+        for (const [name, value] of Object.entries(theme.tokens)) rootStyle.setProperty(name, value);
+        document.documentElement.classList.toggle('dark', theme.variant === 'dark');
+        rootStyle.colorScheme = theme.variant;
+      };
+      const snapshot = () => Object.freeze({ variant: theme.variant, tokens: Object.freeze({ ...theme.tokens }) });
+      applyTheme();
       const send = (message) => parent.postMessage(
         { channel: 'agentkeeper-plugin', token: initial.token, ...message },
         initial.hostTargetOrigin,
@@ -84,6 +98,8 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
         },
         openSession(sessionId) { send({ type: 'openSession', sessionId }); },
         onRouteChanged(listener) { routeListeners.add(listener); return () => routeListeners.delete(listener); },
+        getTheme: snapshot,
+        onThemeChanged(listener) { themeListeners.add(listener); return () => themeListeners.delete(listener); },
         __signalReady() { send({ type: 'ready' }); },
       });
       addEventListener('message', (event) => {
@@ -95,6 +111,12 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
           pending.delete(message.id);
           if (message.error) request.reject(new Error(message.error));
           else request.resolve(message.result);
+        }
+        if (message.type === 'theme.changed' && message.theme && typeof message.theme.tokens === 'object') {
+          theme = message.theme;
+          applyTheme();
+          const next = snapshot();
+          for (const listener of themeListeners) listener(next);
         }
         if (message.type === 'route.changed') {
           initial.path = message.path;
@@ -109,13 +131,13 @@ function buildDocument(script: string, viewId: string, providerId: string, path:
   const runtimeUrl = scriptDataUrl(`${bridge}\n${script}\nwindow.agentkeeperPlugin.__signalReady();`)
   const scriptClose = '<' + '/script>'
   return `<!doctype html>
-<html class="${document.documentElement.classList.contains('dark') ? 'dark' : ''}">
+<html class="${themePayload.value.variant === 'dark' ? 'dark' : ''}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="${PLUGIN_IFRAME_CSP}">
   <meta http-equiv="x-dns-prefetch-control" content="off">
-  <style>html,body,#app{height:100%;margin:0}body{font:13px system-ui,sans-serif;color:#1f2937;background:#fff}.dark body{color:#e5e7eb;background:#111827}*{box-sizing:border-box}button,input,select,textarea{font:inherit}</style>
+  <style>html,body,#app{height:100%;margin:0}body{font:13px var(--font-sans,system-ui,sans-serif);color:var(--foreground,CanvasText);background:var(--background,Canvas)}*{box-sizing:border-box}button,input,select,textarea{font:inherit}</style>
 </head>
 <body><div id="app"></div>
 <script src="${runtimeUrl}">${scriptClose}
@@ -220,6 +242,8 @@ async function onMessage(event: MessageEvent<unknown>): Promise<void> {
       type: 'route.changed',
       path: pluginPath.value,
     }, requestToken)
+    // The theme may have changed between building the document and `ready`.
+    postToPlugin({ type: 'theme.changed', theme: JSON.parse(JSON.stringify(themePayload.value)) }, requestToken)
     return
   }
   if (message.type === 'navigate') {
@@ -300,6 +324,10 @@ onBeforeUnmount(() => {
   cleanupPluginEvents?.()
   cleanupPluginEvents = null
   revokeView()
+})
+
+watch(themePayload, theme => {
+  if (readyToken === bridgeToken) postToPlugin({ type: 'theme.changed', theme: JSON.parse(JSON.stringify(theme)) })
 })
 
 watch([pluginId, pluginPath], ([nextId], [previousId]) => {

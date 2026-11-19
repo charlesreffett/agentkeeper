@@ -181,7 +181,7 @@
 
       <!-- Remove -->
       <button
-        class="text-sm text-red-500 hover:text-red-400 transition-colors"
+        class="text-sm text-destructive hover:text-destructive/80 transition-colors"
         @click="emit('remove-role', roleSlot.roleId)"
       >
         Remove from this agency

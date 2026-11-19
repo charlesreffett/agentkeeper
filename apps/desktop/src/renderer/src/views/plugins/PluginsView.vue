@@ -336,15 +336,15 @@ const filteredPlugins = computed(() => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const sourceBadgeClass: Record<string, string> = {
-  bundled: 'bg-blue-500/20 text-blue-400',
-  local:   'bg-green-500/20 text-green-400',
-  dev:     'bg-orange-500/20 text-orange-400',
+  bundled: 'bg-info/20 text-info',
+  local:   'bg-success/20 text-success',
+  dev:     'bg-warning/20 text-warning',
 }
 
 const statusBadgeClass: Record<string, string> = {
-  active:    'bg-green-500/15 text-green-600 dark:text-green-400',
+  active:    'bg-success/15 text-success',
   inactive:  'bg-muted text-muted-foreground',
-  unhealthy: 'bg-red-500/15 text-red-500',
+  unhealthy: 'bg-destructive/15 text-destructive',
 }
 
 const AVATAR_COLORS: string[] = ['#3b82f6', '#1e293b', '#7c3aed', '#0d9488', '#ea580c', '#16a34a', '#dc2626']
@@ -431,7 +431,7 @@ function openExternal(url: string) {
 
           <p v-if="installError" class="text-xs text-destructive -mt-2">{{ installError }}</p>
 
-          <div v-if="installUrl.trim()" class="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
+          <div v-if="installUrl.trim()" class="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2.5 text-xs text-warning">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-3.5 mt-px shrink-0">
               <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
               <path d="M12 9v4M12 17h.01"/>
@@ -471,7 +471,7 @@ function openExternal(url: string) {
                   :key="perm"
                   class="flex items-start gap-2.5 text-sm"
                 >
-                  <span class="text-amber-500 mt-px shrink-0">⚠</span>
+                  <span class="text-warning mt-px shrink-0">⚠</span>
                   <span>{{ permissionLabels[perm] ?? perm }}</span>
                 </li>
               </ul>
@@ -504,7 +504,7 @@ function openExternal(url: string) {
 
     <div class="flex-1 overflow-y-auto min-h-0">
       <div class="max-w-[700px] mx-auto px-6 py-4">
-      <section v-if="developerMode" class="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+      <section v-if="developerMode" class="mb-4 rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
           Developer mode is enabled. Unpacked files are mutable and unsigned, and may change after review.
           <ul v-if="plugins?.some(plugin => plugin.source === 'dev' && plugin.enabled && plugin.devPath)" class="mt-2 space-y-1 font-mono">
             <li v-for="plugin in plugins.filter(item => item.source === 'dev' && item.enabled && item.devPath)" :key="plugin.id">{{ plugin.name }} — {{ plugin.devPath }}</li>
@@ -569,12 +569,12 @@ function openExternal(url: string) {
               >{{ plugin.status }}</span>
               <button
                 v-if="plugin.actionRequired"
-                class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-500 hover:bg-amber-500/30 transition-colors"
+                class="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/20 text-warning hover:bg-warning/30 transition-colors"
                 @click="reviewPermissionsPlugin = plugin"
               >Action required</button>
               <button
                 v-if="pendingUpdates.has(plugin.id)"
-                class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-colors"
+                class="text-[10px] px-1.5 py-0.5 rounded-full bg-warning/20 text-warning hover:bg-warning/30 transition-colors"
                 @click="promptUpdate(plugin)"
               >
                 Update available
@@ -602,7 +602,7 @@ function openExternal(url: string) {
             <!-- Enable/disable switch -->
             <Switch
               v-model="localEnabled[plugin.id]"
-              class="data-[state=checked]:bg-amber-500"
+              class="data-[state=checked]:bg-warning"
               :disabled="plugin.actionRequired"
             />
 
@@ -713,7 +713,7 @@ function openExternal(url: string) {
             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-1">New permissions</p>
             <ul class="space-y-1">
               <li v-for="permission in addedAuthority.permissions" :key="permission" class="flex gap-2">
-                <span class="text-amber-500">⚠</span>
+                <span class="text-warning">⚠</span>
                 <span>{{ permissionLabels[permission] ?? permission }}</span>
               </li>
             </ul>

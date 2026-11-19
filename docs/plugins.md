@@ -95,7 +95,8 @@ or compiled as host Vue components.
 See [Plugin UI contribution contract](plugins/ui-contributions.md) for the
 namespace rules, lifecycle model, and rationale for manifest-owned surfaces.
 
-The iframe receives `window.agentkeeperPlugin`, which provides:
+The iframe receives `window.agentkeeperPlugin` (typed as `PluginRendererApi` in
+`@agentkeeper/sdk`), which provides:
 
 - `getRoute()` and `onRouteChanged()` for plugin-local routing
 - `navigate(path)` for navigation within the plugin
@@ -105,6 +106,9 @@ The iframe receives `window.agentkeeperPlugin`, which provides:
   work item owned by the plugin
 - `getWorkItemSessions(itemId?)` for provider-scoped session history
 - `openSession(sessionId)` to navigate to a validated provider-owned session
+- `getTheme()` and `onThemeChanged(listener)` for the host theme; the same tokens are
+  also applied as CSS custom properties on the iframe's `<html>` (see the
+  [renderer guide](plugin-author/v1/renderer.md#theming))
 
 The host owns session creation, project/role/agency selection, worktrees, and session
 navigation. Plugins supply only the work-item ID and an optional suggested registered

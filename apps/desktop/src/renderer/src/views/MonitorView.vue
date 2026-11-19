@@ -41,10 +41,10 @@ function statusTone(s: LiveSession) {
   switch (s.status) {
     case 'running':
     case 'starting':
-      return 'bg-emerald-500 animate-pulse'
+      return 'bg-success animate-pulse'
     case 'idle':
     case 'suspended':
-      return 'bg-amber-500'
+      return 'bg-warning'
     case 'completed':
     case 'inactive':
       return 'bg-muted-foreground'
@@ -174,11 +174,11 @@ async function openSession(s: LiveSession) {
 
               <div
                 v-if="s.plan.hasPlan"
-                class="rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/30 px-2.5 py-1.5 flex flex-col gap-1"
+                class="rounded bg-warning/10 border border-warning/25 px-2.5 py-1.5 flex flex-col gap-1"
               >
                 <div class="flex items-center justify-between gap-2 text-xs">
                   <div class="flex items-center gap-1.5 min-w-0">
-                    <span class="text-amber-500 shrink-0 leading-none">✦</span>
+                    <span class="text-warning shrink-0 leading-none">✦</span>
                     <span class="font-semibold text-foreground/70 shrink-0">PLAN</span>
                     <span class="text-muted-foreground truncate">
                       {{ s.plan.activeTodo?.content ?? s.plan.lastCompletedTodo?.content ?? titleFor(s) }}
@@ -186,9 +186,9 @@ async function openSession(s: LiveSession) {
                   </div>
                   <span class="text-muted-foreground font-mono shrink-0">{{ s.plan.completedCount }}/{{ s.plan.totalCount }}</span>
                 </div>
-                <div class="h-0.5 rounded-full bg-amber-200/60 dark:bg-amber-800/30 overflow-hidden">
+                <div class="h-0.5 rounded-full bg-warning/25 overflow-hidden">
                   <div
-                    class="h-full rounded-full bg-green-500 transition-all duration-300"
+                    class="h-full rounded-full bg-success transition-all duration-300"
                     :style="{ width: `${s.plan.totalCount > 0 ? (s.plan.completedCount / s.plan.totalCount) * 100 : 0}%` }"
                   />
                 </div>

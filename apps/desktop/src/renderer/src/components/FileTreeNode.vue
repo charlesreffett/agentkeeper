@@ -51,7 +51,7 @@ watch(() => props.refreshKey, () => {
         :class="{ 'rotate-90': expanded }"
       />
       <span v-else class="w-3 shrink-0" />
-      <Folder v-if="entry.isDirectory" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
+      <Folder v-if="entry.isDirectory" class="h-3.5 w-3.5 text-warning shrink-0" />
       <File v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       <span class="truncate" :class="statusColor || 'text-foreground'">{{ entry.name }}</span>
     </button>

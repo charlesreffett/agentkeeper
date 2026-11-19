@@ -84,7 +84,7 @@ function onLeave() {
 }
 
 // Hover highlight follows the theme: black line on light, white on dark.
-const hoverColor = computed(() => layoutStore.theme === 'dark' ? '#ffffff' : '#000000')
+const hoverColor = computed(() => layoutStore.colors.foreground)
 
 const gradId = `ag-edge-${props.id.replace(/[^a-zA-Z0-9]/g, '_')}`
 

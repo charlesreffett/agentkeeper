@@ -235,11 +235,11 @@ function onEditKeydown(e: KeyboardEvent) {
   <!-- ── Delegated task brief ──────────────────────────────────────────── -->
   <div
     v-else-if="isDelegatedTask"
-    class="border-l-2 border-violet-500/40 bg-violet-500/5 rounded-r-md px-3 py-2 space-y-1.5"
+    class="border-l-2 border-highlight/40 bg-highlight/5 rounded-r-md px-3 py-2 space-y-1.5"
   >
     <header class="flex items-center gap-1.5 text-xs select-none">
-      <CornerDownRight class="size-3 shrink-0 text-violet-400/70" />
-      <span class="font-medium text-violet-400/70">delegated task</span>
+      <CornerDownRight class="size-3 shrink-0 text-highlight/70" />
+      <span class="font-medium text-highlight/70">delegated task</span>
       <span class="ml-auto tabular-nums text-muted-foreground/50">
         {{ formatTimestamp(event.timestamp) }}
       </span>
@@ -287,7 +287,7 @@ function onEditKeydown(e: KeyboardEvent) {
     <!-- Avatar -->
     <div
       class="mt-0.5 size-7 rounded-full shrink-0 flex items-center justify-center text-[11px] font-bold text-white select-none"
-      :class="isUser ? 'bg-blue-500' : 'bg-orange-400'"
+      :class="isUser ? 'bg-info' : 'bg-brand'"
     >
       {{ avatarLetter }}
     </div>
@@ -300,7 +300,7 @@ function onEditKeydown(e: KeyboardEvent) {
         <!-- Sub-agent badge -->
         <span
           v-if="isSubAgent"
-          class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-500/15 text-purple-400 border border-purple-500/20"
+          class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-highlight/15 text-highlight border border-highlight/20"
         >
           sub-agent
         </span>

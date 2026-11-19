@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   PLUGIN_IFRAME_CSP,
   normalizePluginPath,
+  pluginThemePayload,
   normalizeRequestedExternalUrl,
   parsePluginBridgeRequest,
   resolveDeclaredPluginRoute,
@@ -60,5 +61,22 @@ describe('plugin view boundary policy', () => {
     expect(normalizeRequestedExternalUrl('https://example.com/path')).toBe('https://example.com/path')
     expect(normalizeRequestedExternalUrl('file:///etc/passwd')).toBeNull()
     expect(normalizeRequestedExternalUrl('https://user:secret@example.com')).toBeNull()
+  })
+})
+
+describe('pluginThemePayload', () => {
+  it('passes custom properties through and drops anything unsafe', () => {
+    const payload = pluginThemePayload('dark', {
+      '--background': '#17202a',
+      '--font-sans': "Inter, 'Segoe UI', sans-serif",
+      '--evil': 'red;} body{display:none',
+      '--tag': '</style><script>',
+      color: 'red',
+      '--Upper': '#fff',
+    })
+    expect(payload).toEqual({
+      variant: 'dark',
+      tokens: { '--background': '#17202a', '--font-sans': "Inter, 'Segoe UI', sans-serif" },
+    })
   })
 })

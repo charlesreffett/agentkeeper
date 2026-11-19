@@ -9,6 +9,7 @@ import { useSessionStore } from '@/stores/sessions'
 import { useUnifiedSessions } from '@/composables/useUnifiedSessions'
 import { defaultModelFor } from '@/composables/useModelMemory'
 import { type AppSettings } from '@shared/ipc-contract'
+import { CODE_FONT_SIZE, DEFAULT_THEMES, UI_FONT_SIZE } from '@shared/theme'
 
 const route = useRoute()
 const router = useRouter()
@@ -57,6 +58,9 @@ const settings = ref<AppSettings>({
   sessionExpiryEnabled: false,
   sessionExpiryDays: 14,
   theme: 'dark',
+  themes: DEFAULT_THEMES,
+  uiFontSize: UI_FONT_SIZE.default,
+  codeFontSize: CODE_FONT_SIZE.default,
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],

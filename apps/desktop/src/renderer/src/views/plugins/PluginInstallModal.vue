@@ -61,7 +61,7 @@ const permissionLabels: Record<string, string> = {
               :key="perm"
               class="flex items-start gap-2 text-sm"
             >
-              <span class="mt-0.5 text-amber-500">⚠</span>
+              <span class="mt-0.5 text-warning">⚠</span>
               <span>{{ permissionLabels[perm] ?? perm }}</span>
             </li>
           </ul>

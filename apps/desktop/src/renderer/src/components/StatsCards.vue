@@ -7,6 +7,7 @@ import { useTimeSeries } from '@/composables/useTimeSeries'
 import { usePerformanceQuery } from '@/composables/usePerformanceQuery'
 import { formatDuration } from '@/lib/format'
 import SparklineChart from '@/components/SparklineChart.vue'
+import { useLayoutStore } from '@/stores/layout'
 
 const props = defineProps<{
   /** When set, every metric is scoped to this project. `null` → all projects. */
@@ -126,6 +127,7 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)} est.`
 }
 
+const layoutStore = useLayoutStore()
 </script>
 
 <template>
@@ -139,7 +141,7 @@ function formatCost(usd: number): string {
         <span class="text-3xl font-bold leading-none">{{ runningCount }}</span>
         <span class="text-sm text-muted-foreground">active · {{ todayCount }} today</span>
       </div>
-      <SparklineChart :data="activeSparkline" color="#6366f1" :height="36" class="mt-auto" />
+      <SparklineChart :data="activeSparkline" :color="layoutStore.colors.brand" :height="36" class="mt-auto" />
     </div>
 
     <!-- Card 2: Running Agents -->
@@ -154,7 +156,7 @@ function formatCost(usd: number): string {
           {{ agentStats.sessionCount === 1 ? 'session' : 'sessions' }}
         </span>
       </div>
-      <SparklineChart :data="agentSparkline" color="#a855f7" :height="36" class="mt-auto" />
+      <SparklineChart :data="agentSparkline" :color="layoutStore.colors.highlight" :height="36" class="mt-auto" />
     </div>
 
     <!-- Card 3: Tokens -->
@@ -188,7 +190,7 @@ function formatCost(usd: number): string {
         <SparklineChart
           :data="tokenSparkline"
           :hovered-index="hoveredDayIndex"
-          color="#f59e0b"
+          :color="layoutStore.colors.warning"
           :height="36"
           @hover="hoveredDayIndex = $event"
         />

@@ -5,6 +5,7 @@ import {
   ROLE_EFFORT_VALUES,
   type AppSettings,
 } from '../shared/ipc-contract'
+import { CODE_FONT_SIZE, DEFAULT_THEMES, UI_FONT_SIZE, clampFontSize, normalizeThemeSettings } from '../shared/theme'
 
 const DEFAULTS: AppSettings = {
   pluginDeveloperMode: false,
@@ -16,6 +17,9 @@ const DEFAULTS: AppSettings = {
   sessionExpiryEnabled: false,
   sessionExpiryDays: 14,
   theme: 'dark',
+  themes: DEFAULT_THEMES,
+  uiFontSize: UI_FONT_SIZE.default,
+  codeFontSize: CODE_FONT_SIZE.default,
   notifications: 'all',
   notificationSound: 'chime',
   mcpServers: [],
@@ -57,6 +61,9 @@ function read(): AppSettings {
     if (!THEME_VALUES.includes(merged.theme)) {
       merged.theme = DEFAULTS.theme
     }
+    merged.themes = normalizeThemeSettings(parsed.themes)
+    merged.uiFontSize = clampFontSize(merged.uiFontSize, UI_FONT_SIZE)
+    merged.codeFontSize = clampFontSize(merged.codeFontSize, CODE_FONT_SIZE)
     if (!NOTIFICATIONS_VALUES.includes(merged.notifications)) {
       merged.notifications = DEFAULTS.notifications
     }
@@ -72,10 +79,20 @@ function read(): AppSettings {
   }
 }
 
+// Untouched theme slots stay off disk so a future change to the default
+// theme reaches users who never customized it.
+function themesForDisk(themes: AppSettings['themes']): Partial<AppSettings['themes']> {
+  const out: Partial<AppSettings['themes']> = {}
+  for (const variant of ['light', 'dark'] as const) {
+    if (JSON.stringify(themes[variant]) !== JSON.stringify(DEFAULT_THEMES[variant])) out[variant] = themes[variant]
+  }
+  return out
+}
+
 function write(data: AppSettings): void {
   const f = filePath()
   fs.mkdirSync(path.dirname(f), { recursive: true })
-  fs.writeFileSync(f, JSON.stringify(data, null, 2))
+  fs.writeFileSync(f, JSON.stringify({ ...data, themes: themesForDisk(data.themes) }, null, 2))
 }
 
 export const settingsStore = {
@@ -84,6 +101,9 @@ export const settingsStore = {
   },
   set(partial: Partial<AppSettings>): AppSettings {
     const next = { ...read(), ...partial }
+    if (partial.themes) next.themes = normalizeThemeSettings(partial.themes)
+    next.uiFontSize = clampFontSize(next.uiFontSize, UI_FONT_SIZE)
+    next.codeFontSize = clampFontSize(next.codeFontSize, CODE_FONT_SIZE)
     write(next)
     return next
   },

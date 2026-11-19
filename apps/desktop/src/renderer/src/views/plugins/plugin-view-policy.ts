@@ -58,6 +58,25 @@ function hasSafeSerializedSize(value: unknown): boolean {
 }
 
 /** Parse, size-limit, and narrow messages from an untrusted plugin frame. */
+export interface PluginThemePayload {
+  variant: 'light' | 'dark'
+  tokens: Record<string, string>
+}
+
+const THEME_TOKEN_NAME = /^--[a-z][a-z0-9-]*$/
+// Values land in a sandboxed document's CSSOM; reject anything that could
+// close a declaration or smuggle markup if a plugin echoes them into HTML.
+const THEME_TOKEN_VALUE = /^[^;{}<>\\]*$/
+
+/** Plain, structured-clone-safe theme snapshot for plugin iframes. */
+export function pluginThemePayload(variant: 'light' | 'dark', cssVars: Record<string, string>): PluginThemePayload {
+  const tokens: Record<string, string> = {}
+  for (const [name, value] of Object.entries(cssVars)) {
+    if (THEME_TOKEN_NAME.test(name) && typeof value === 'string' && THEME_TOKEN_VALUE.test(value)) tokens[name] = value
+  }
+  return { variant, tokens }
+}
+
 export function parsePluginBridgeRequest(value: unknown, expectedToken: string): ValidBridgeRequest | null {
   if (!isRecord(value) || value.channel !== 'agentkeeper-plugin' || value.token !== expectedToken) return null
   switch (value.type) {
