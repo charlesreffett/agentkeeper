@@ -17,7 +17,7 @@ describe('theme presets', () => {
   }
 
   it('recognizes the default theme and detects customization', () => {
-    expect(matchPreset(DEFAULT_THEMES.dark, 'dark')).toBe('agentkeeper')
+    expect(matchPreset(DEFAULT_THEMES.dark, 'dark')).toBe('graphite')
     expect(matchPreset({ ...DEFAULT_THEMES.dark, accent: '#123456' }, 'dark')).toBeNull()
   })
 

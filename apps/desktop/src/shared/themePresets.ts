@@ -11,17 +11,9 @@ const seeds = (c: ThemeConfig) => ({ accent: c.accent, background: c.background,
 
 export const THEME_PRESETS: ThemePreset[] = [
   {
-    id: 'agentkeeper',
-    label: 'AgentKeeper',
-    variants: { light: seeds(DEFAULT_THEMES.light), dark: seeds(DEFAULT_THEMES.dark) },
-  },
-  {
     id: 'graphite',
     label: 'Graphite',
-    variants: {
-      light: { accent: '#3a63c8', background: '#f4f4f5', foreground: '#18181b', contrast: 50 },
-      dark: { accent: '#8aa4ee', background: '#18181a', foreground: '#ececee', contrast: 50 },
-    },
+    variants: { light: seeds(DEFAULT_THEMES.light), dark: seeds(DEFAULT_THEMES.dark) },
   },
   {
     id: 'paper',

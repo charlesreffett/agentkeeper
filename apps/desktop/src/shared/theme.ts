@@ -28,17 +28,17 @@ export interface ThemeSettings {
 
 export const DEFAULT_THEMES: ThemeSettings = {
   light: {
-    accent: '#2f64d6',
-    background: '#f7f7f7',
-    foreground: '#211e1c',
+    accent: '#3a63c8',
+    background: '#f4f4f5',
+    foreground: '#18181b',
     contrast: 50,
     fonts: { ui: null, code: null },
     semantic: {},
   },
   dark: {
-    accent: '#6d9bf1',
-    background: '#17202a',
-    foreground: '#fafafa',
+    accent: '#8aa4ee',
+    background: '#18181a',
+    foreground: '#ececee',
     contrast: 50,
     fonts: { ui: null, code: null },
     semantic: {},

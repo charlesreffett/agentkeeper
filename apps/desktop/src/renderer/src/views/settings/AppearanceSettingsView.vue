@@ -242,7 +242,7 @@ const textClass = 'h-8 w-full rounded-md border border-input bg-background px-2 
           <div class="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" @click="importing = !importing">Import</Button>
             <Button size="sm" variant="outline" @click="copyTheme">Copy theme</Button>
-            <Button size="sm" variant="ghost" class="ml-auto" :disabled="presetId === 'agentkeeper' && !config.fonts.ui && !config.fonts.code && overrideCount === 0" @click="reset">Reset</Button>
+            <Button size="sm" variant="ghost" class="ml-auto" :disabled="presetId === 'graphite' && !config.fonts.ui && !config.fonts.code && overrideCount === 0" @click="reset">Reset</Button>
           </div>
           <form v-if="importing" class="flex gap-2" @submit.prevent="applyImport">
             <input

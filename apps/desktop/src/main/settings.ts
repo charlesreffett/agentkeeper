@@ -79,10 +79,20 @@ function read(): AppSettings {
   }
 }
 
+// Untouched theme slots stay off disk so a future change to the default
+// theme reaches users who never customized it.
+function themesForDisk(themes: AppSettings['themes']): Partial<AppSettings['themes']> {
+  const out: Partial<AppSettings['themes']> = {}
+  for (const variant of ['light', 'dark'] as const) {
+    if (JSON.stringify(themes[variant]) !== JSON.stringify(DEFAULT_THEMES[variant])) out[variant] = themes[variant]
+  }
+  return out
+}
+
 function write(data: AppSettings): void {
   const f = filePath()
   fs.mkdirSync(path.dirname(f), { recursive: true })
-  fs.writeFileSync(f, JSON.stringify(data, null, 2))
+  fs.writeFileSync(f, JSON.stringify({ ...data, themes: themesForDisk(data.themes) }, null, 2))
 }
 
 export const settingsStore = {

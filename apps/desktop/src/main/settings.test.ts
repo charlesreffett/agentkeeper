@@ -10,6 +10,7 @@ vi.mock('electron', () => ({
 }))
 
 import { settingsStore } from './settings'
+import { DEFAULT_THEMES } from '../shared/theme'
 
 describe('plugin developer-mode settings', () => {
   beforeEach(() => {
@@ -37,5 +38,23 @@ describe('plugin developer-mode settings', () => {
     expect(settingsStore.setPluginDeveloperMode(true).pluginDeveloperMode).toBe(true)
     expect(settingsStore.get().pluginDeveloperMode).toBe(true)
     expect(settingsStore.setPluginDeveloperMode(false).pluginDeveloperMode).toBe(false)
+  })
+})
+
+describe('theme settings persistence', () => {
+  beforeEach(() => {
+    state.userDataPath = fs.mkdtempSync(path.join(os.tmpdir(), 'agentkeeper-settings-'))
+  })
+
+  afterEach(() => {
+    fs.rmSync(state.userDataPath, { recursive: true, force: true })
+  })
+
+  it('keeps untouched theme slots off disk so default changes still apply', () => {
+    const custom = { ...DEFAULT_THEMES.dark, accent: '#ff79c6' }
+    settingsStore.set({ notifications: 'toast', themes: { light: DEFAULT_THEMES.light, dark: custom } })
+    const onDisk = JSON.parse(fs.readFileSync(path.join(state.userDataPath, 'settings.json'), 'utf8'))
+    expect(onDisk.themes).toEqual({ dark: custom })
+    expect(settingsStore.get().themes).toEqual({ light: DEFAULT_THEMES.light, dark: custom })
   })
 })
